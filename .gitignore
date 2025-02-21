@@ -1,0 +1,7 @@
+*.npy
+*.ext3
+*.log
+*.pyc
+*.out
+*.mif
+*.mps
