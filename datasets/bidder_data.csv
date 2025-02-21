@@ -1,0 +1,256 @@
+bidder_num_fox,bidder_num,co_name,pops_eligible,bta,City,State,Applicant_Status,Legal_Classification
+1,2000,"MLCS Industries II, Inc.",3777777.8,78,Schaumburg,IL,,Corporation
+2,2001,"MLCS Industries, Inc.",422222.2333,78,Schaumburg,IL,,Corporation
+3,2004,"Holland Wireless, L.L.C.",316633.0,453,Holland Patent,NY,,Corporation
+4,2005,"PerCommServ, Inc.",2412161.0,404,San Jose,CA,Minority Owned Business,Corporation
+5,2006,E. Ritter Telephone Company,79446.66667,219,Marked Tree,AR,Rural Telephone Company,Corporation
+6,2009,Southwest Texas Telephone_Company,190434.0,400,Rocksprings,TX,Rural Telephone Company,Corporation
+7,2010,St. Lawrence Seaway PCS Partnership,1087393.0,463,Hammond,NY,,General Partnership
+8,2013,"WIRELESS VENTURES, INC.",555555.5667,84,Cleveland,OH,,Corporation
+9,2017,"MBO Wireless, Inc.",486828.0,311,Warner,OK,"Minority Owned Business,Woman Owned Business",Corporation
+10,2018,FAMS & ASSOCIATES,94444.46667,461,ROCKVILLE,MD,,Individual
+11,2019,"Western New York Cellular, Inc.",186945.0,215,Westfield,NY,,Corporation
+12,2020,NORTHEAST NEBRASKA TELEPHONE COMPANY,649161.0,421,JACKSON,NE,Rural Telephone Company,Corporation
+13,2021,PCS of Maine,471614.0,357,Portland,ME,,Corporation
+14,2025,"Lackawaxen Telephone Company, Inc.",1000000.0,321,Rowland,PA,Rural Telephone Company,Corporation
+15,2028,"JOMR Wireless, L.L.C.",190806.0,210,Hazlehurst,MS,,Limited Liability Company
+16,2030,Cable & Communications Corporation,422222.2333,41,Circle,MT,Rural Telephone Company,Corporation
+17,2031,"West Enfield Communications, Inc.",317777.8,461,Washington,DC,,Corporation
+18,2034,Telephone Service Company,249734.0,255,Wapakoneta,OH,Rural Telephone Company,Corporation
+19,2035,HAMIILTON TELEPHONE COMPANY,604138.0,167,AURORA,NE,Rural Telephone Company,Corporation
+20,2038,"Tipton Telephone Co., Inc.",184899.0,233,Tipton,IN,Rural Telephone Company,Corporation
+21,2040,"Mid-State Systems, Inc.",36618.0,270,McCook,NE,,Corporation
+22,2042,"DATA LINK ONE, INC.",222222.2333,84,CLEVELAND,OH,,Corporation
+23,2043,"James Communications Partners, GP",136656.0,112,Bloomfield Hills,MI,,General Partnership
+24,2044,"Silver Palm Communications, Inc.",333333.3333,461,Washington,DC,,Corporation
+25,2049,"Silver Star Telephone Company, Inc.",56981.0,381,Freedom,WY,Rural Telephone Company,Corporation
+26,2053,"Pyramid Broadcasting Company, Inc.",152585.0,360,Pottsville,PA,,Corporation
+27,2056,"Pinnacle Telecom, L.P. of the U.S. Virgin Islands",102000.0,461,Alexandria,VA,Woman Owned Business,Limited Partnership
+28,2058,"Pinnacle Telecom, L.P. of Meridian, Mississippi",200024.0,461,Alexandria,VA,Woman Owned Business,Limited Partnership
+29,2060,"Pinnacle Telecom, L.P. of Jackson, Mississippi",674771.0,461,Alexandria,VA,Woman Owned Business,Limited Partnership
+30,2062,"Mercury PCS, L.L.C.",10000000.0,210,Jackson,MS,,Limited Liability Company
+31,2064,KMTel L.L.C.,2066666.667,461,Washington,DC,Minority Owned Business,Limited Liability Company
+32,2065,"Teltrust PCS of the Intermountain States, Inc.",1297135.567,399,Salt Lake City,UT,,Corporation
+33,2069,"PCS Devco, Inc.",1200000.0,321,Fairfield,NJ,,Corporation
+34,2070,Baton Rouge PCS Limited Partnership,623657.0,320,Metairie,LA,,Limited Partnership
+35,2071,"Teltrust PCS of Utah, Inc.",83264.46667,399,Salt Lake City,UT,,Corporation
+36,2072,William Ingram,777777.8,321,New York,NY,,Individual
+37,2074,"Americall International, L.L.C.",10736088.93,297,North Prairie,WI,,Corporation
+38,2075,"Windkeeper Communications, Inc.",666666.6667,404,San Francisco,CA,Woman Owned Business,Corporation
+39,2076,PACIFIC WIRELESS CORP.,440000.0,404,ATHERTON,CA,,Corporation
+40,2077,Nortex Mainstreet Wireless Limited Partnership,209339.0,101,Muenster,TX,,Limited Partnership
+41,2078,Cherokee Mainstreet Limited Partnership,235893.0,418,Calera,OK,,Limited Partnership
+42,2079,Comtel PCS Mainstreet Limited Partnership,177830.0,473,Windthorst,TX,,Limited Partnership
+43,2081,Triad Cellular Corporation,11666666.67,404,Menlo Park,CA,,Corporation
+44,2082,R.F.W. Inc.,90247.0,321,New York,NY,,Corporation
+45,2086,"Alpine PCS, Inc.",9111111.133,345,Gaylord,MI,,Corporation
+46,2088,"FCCA, LLC",2222222.233,74,Charlotte,NC,,Limited Liability Company
+47,2090,GILCOM ASSOC. INC.,244444.4667,12,Altoona,PA,Woman Owned Business,Corporation
+48,2092,Arctic Slope Telephone Association Cooperative,550043.0,14,Anchorage,AK,Rural Telephone Company,Corporation
+49,2093,Communications Venture PCS Limited Partnership,6409957.0,126,New Paris,IN,,Limited Partnership
+50,2096,Cal-Ore Wireless / Mainstreet Limited Partnership,386349.0,371,Dorris,CA,,Limited Partnership
+51,2097,Kalona Cooperative Telephone Company,115731.0,205,Kalona,IA,Rural Telephone Company,Corporation
+52,2098,"Table Top Telephone Company, Inc.",122277.0,447,Ajo,AZ,Rural Telephone Company,Corporation
+53,2099,Lamar PCS Inc.,3111111.133,32,Baton Rouge,LA,,Corporation
+54,2100,"RT  Communications, Inc.",285925.5667,375,Worland,WY,Rural Telephone Company,Corporation
+55,2101,"Mountain Solutions, Ltd",1344444.467,110,Lakewood,CO,Woman Owned Business,Corporation
+56,2103,"Lite-Wave Communications, L.L.C.",2200000.0,25,Woodbine,NJ,,Corporation
+57,2104,"Massillon Cable TV, Inc.",555555.5667,65,Massillon,OH,,Corporation
+58,2106,"R & S PCS, Inc.",11111111.13,461,Washington,DC,Minority Owned Business,Corporation
+59,2107,"B & P PCS, Inc.",12236333.33,461,Washington,DC,Minority Owned Business,Corporation
+60,2110,"Lynk Telecommunications, Inc.",4444444.467,262,Alta Loma,CA,Minority Owned Business,Corporation
+61,2112,"Devon Mobile Communications, L.P.",6666666.667,330,Coudersport,PA,Woman Owned Business,Limited Partnership
+62,2113,Sky Ranchers L.L.C.,333333.3333,447,Tucson,AZ,Woman Owned Business,Limited Liability Company
+63,2115,"Wagner Telecommunications, Inc.",388888.9,89,Colorado Springs,CO,,Corporation
+64,2116,Mesa Communications Limited Partnership,1146666.667,245,Overton,NV,Rural Telephone Company,Limited Partnership
+65,2117,"Personal Technology Services, Inc.",777777.8,262,Malibu,CA,,Corporation
+66,2119,"National Telecom Holdings, Inc.",1666666.667,404,Tiburon,CA,,Corporation
+67,2120,South Central Utah Telephone Association,0.0,392,Escalante,UT,Rural Telephone Company,Corporation
+68,2123,"PCS Spectrum Partners, L.P.",2666666.667,461,Falls Church,VA,Minority Owned Business,Limited Partnership
+69,2124,Houma-Thibodaux PCS Limited Partnership,263681.0,320,Metairie,LA,,Limited Partnership
+70,2127,"Overland Company, Inc.",176666.6667,262,Monrovia,CA,Minority Owned Business,Corporation
+71,2129,"MGW Communications, Inc.",229232.0,376,Williamsville,VA,Rural Telephone Company,Corporation
+72,2130,Virginia PCS Alliance Consortium,1347400.0,430,Waynesboro,VA,Rural Telephone Company,Consortium
+73,2132,"EATELCORP, Inc.",2666666.667,32,Gonzales,LA,,Corporation
+74,2134,Carolina PCS I Limited Partnership,5555555.567,74,Shelby,NC,,Limited Partnership
+75,2144,"CH PCS, Inc.",664444.4667,262,Victorville,CA,Minority Owned Business,Corporation
+76,2145,"Lubbock Radio Paging Service, Inc.",400000.0,264,Lubbock,TX,Woman Owned Business,Corporation
+77,2146,NextWave Personal Communications Inc.,176055555.6,402,Solana Beach,CA,,Corporation
+78,2148,"Point-To-Point Communications, Inc.",12222222.23,321,New York,NY,,Corporation
+79,2149,Third Kentucky Cellular Corporation,1003950.0,252,Lexington,KY,,Corporation
+80,2154,STARBAND SERVICES LLC,152099.0,469,W.PALM BEACH,FL,Woman Owned Business,Limited Liability Company
+81,2155,Cook Inlet Wireless Inc.,550043.0,110,Boulder,CO,Minority Owned Business,Corporation
+82,2156,"LITC, Inc.",6666666.667,237,West Point,GA,,Corporation
+83,2157,New Wave LLC,4444444.467,262,Santa Monica,CA,,Limited Liability Company
+84,2158,Mobile Tri-States L.P. 130,4944444.467,302,Foley,AL,Rural Telephone Company,Limited Partnership
+85,2162,"High Country Communications, L.P.",955555.5667,78,Chicago,IL,,Limited Partnership
+86,2163,"Southeast Wireless Communications, L.P.",3111155.567,321,New York,NY,,Limited Partnership
+87,2164,"Fortunet Wireless Communications, L.P.",2955520.0,321,New York,NY,,Limited Partnership
+88,2165,"3 Rivers PCS, Inc",640361.0,171,Fairfield,MT,Rural Telephone Company,Corporation
+89,2167,"Aer Force Communications, L.P.",9333333.333,321,Rye,NY,,Limited Partnership
+90,2168,"New England Wireless Communications, L.P.",555555.5667,321,Wilton,CT,,Limited Partnership
+91,2172,Iowa L.P. 136,2277777.8,421,Sioux Center,IA,,Limited Partnership
+92,2174,"Cook Inlet BellSouth PCS, L.P.",4241627.0,110,Boulder,CO,Minority Owned Business,Limited Partnership
+93,2177,"Radio Telematic Systems, Inc. d/b/a Omni Electroni",152888.9,242,Laredo,TX,Minority Owned Business,Corporation
+94,2178,"Eldorado Communications, L.L.C.",8244444.467,290,Memphis,TN,,Corporation
+95,2180,"SPD CableTel, Inc.",2220832.0,110,Englewood,CO,,Corporation
+96,2181,Central Alabama Partnership L.P. 132,3000000.0,305,Montgomery,AL,Rural Telephone Company,Limited Partnership
+97,2182,"BTA Ventures, Inc.",1111111.133,321,Locust,NJ,,Corporation
+98,2183,High Plains Wireless L.P.,392901.0,13,Amarillo,TX,,Limited Partnership
+99,2186,GO Telecommunications Corporation I,100000000.0,461,Alexandria,VA,,Corporation
+100,2187,"Infocore Wireless, Inc.",1784444.467,346,King of Prussia,PA,,Corporation
+101,2188,Conestoga Wireless Company,1195555.567,370,Birdsboro,PA,Rural Telephone Company,Corporation
+102,2190,Enterprise Communications Partnership,1333333.0,271,Reynolds,GA,,General Partnership
+103,2194,"Mercury Mobility, LLC",8888888.9,238,Lake Charles,LA,,Corporation
+104,2195,Northern Michigan PCS Consortium L.L.C.,719098.0,207,Ontonagon,MI,,Limited Liability Company
+105,2196,"NATIONAL TELECOM PCS, INC.",111111.1333,321,STAMFORD,CT,Minority Owned Business,Corporation
+106,2197,"Wireless PCS, Inc.",10000000.0,18,Little Chute,WI,,Corporation
+107,2198,"Mid-South Telecommunications Company, Inc.",46157.8,196,Houston,TX,Rural Telephone Company,Corporation
+108,2199,Urban Communicators PCS Limited Partnership,11111111.13,461,Washington,DC,Minority Owned Business,Limited Partnership
+109,2201,"Southern Wireless, L.P.",6189688.9,410,Hilton Head Islan,SC,,Limited Partnership
+110,2202,"Rosas, Inc.",544444.4667,264,Lubbock,TX,"Minority Owned Business,Woman Owned Business",Corporation
+111,2203,"New Wave PCS, Inc.",444444.4667,372,Zephyr Cove,NV,,Corporation
+112,2204,"Clairity Wireless Communications, Inc.",4444444.467,78,Naperville,IL,,Corporation
+113,2207,"AirLink, L.L.C.",44444444.47,24,Atlanta,GA,,Limited Liability Company
+114,2210,"SouthEast Telephone Limited Partnership, Ltd.",1453577.9,474,Pikeville,KY,,Limited Partnership
+115,2212,Tennessee L.P. 121,1546922.0,314,McMinnville,TN,,Limited Partnership
+116,2213,"Quantum Communications Group, Inc.",500000.0,298,Eden Prairie,MN,,Corporation
+117,2214,Alaska Telephone Company,161100.0,356,Port Townsend,WA,Rural Telephone Company,Corporation
+118,2215,"AirCom PCS, Inc.",398978.0,289,Melbourne Beach,FL,,Corporation
+119,2216,PriCellular Corporation,9200722.233,321,New York,NY,,Corporation
+120,2218,"Telecell Systems, Inc.",4945757.0,489,Mercedita,PR,Minority Owned Business,Corporation
+121,2219,"Washington PCS Group, L.L.C.",8267230.0,461,Bethesda,MD,,Limited Liability Company
+122,2222,Mountain Wireless Limited Partnership,124444.4667,463,Chaumont,NY,,Limited Partnership
+123,2224,North Coast Mobile Communications Inc.,26000000.0,321,Huntington,NY,,Corporation
+124,2227,Super Plus PCS Limited Partnership,118539.0,352,Crown Point,NY,,Limited Partnership
+125,2228,"TEXAS PCS, INC.",1095245.8,196,HOUSTON,TX,"Minority Owned Business,Woman Owned Business",Corporation
+126,2230,"InTouch PCS, Inc.",7222222.233,78,Chicago,IL,Minority Owned Business,Corporation
+127,2231,Great Lakes Wireless Limited Partnership,1448888.9,463,Chaumont,NY,,Limited Partnership
+128,2233,"Western Systems, Inc.",176000.0,490,Agana,GU,,Corporation
+129,2234,"Magic Telecom, A Joint Venture of Project Mutual",555555.5667,451,Rupert,ID,Rural Telephone Company,Joint Venture
+130,2235,"GST Wireless Communications, Inc.",540704.0,274,Weare,NH,,Corporation
+131,2237,RT Wireless Partnership,139352.0,351,Richmond,MA,,General Partnership
+132,2238,River Run PCS Limited Partnership,424766.0,7,Chatham,NY,,Limited Partnership
+133,2240,"IT&E Overseas,  Inc.",176000.0,490,Tamuning,GU,Minority Owned Business,Corporation
+134,2241,New York BTA 208 PCS Limited Partnership,94097.8,379,Phelps,NY,,Limited Partnership
+135,2242,New York BTA 453 PCS Limited Partnership,316633.3333,453,Newport,NY,,Limited Partnership
+136,2244,"West Coast PCS, LLC",19911111.13,389,Roseville,CA,Rural Telephone Company,Limited Liability Company
+137,2245,"Kansas Personal Communication Services, LTD",513333.3333,445,Council Grove,KS,"Rural Telephone Company,Woman Owned Business",Corporation
+138,2246,"Calhoun I, Inc.",2222222.233,169,Grand Rapids,MI,,Corporation
+139,2247,"ACS Worldlink, LLC",1000000.0,272,Madison,WI,Minority Owned Business,Limited Liability Company
+140,2248,"Indus, Inc.",1800000.0,297,Milwaukee,WI,Minority Owned Business,Corporation
+141,2249,LDMS Partnership,1555555.567,321,Fort Lee,NJ,,General Partnership
+142,2255,South Central Communications Corporation,1536177.0,135,Evansville,IN,,Corporation
+143,2258,"PCS Plus, LLC An Arizona Limited Liability Company",811111.1333,347,Scottsdale,AZ,"Minority Owned Business,Woman Owned Business",Limited Partnership
+144,2260,"GLOBAL INFORMATION TECHNOLOGIES, INC.",1444444.467,27,Austin,TX,,Corporation
+145,2263,"New England PCS, L.P.",3333333.333,364,Providence,RI,,Limited Partnership
+146,2264,"PCS Standard, Inc.",626630.0,380,Rockford,IL,Minority Owned Business,Corporation
+147,2266,"Jory,Inc.",1111111.133,89,Colorado Springs,CO,Woman Owned Business,Corporation
+148,2267,"WIRELESS TELECOM, INC.",170365.0,160,CORNELIA,GA,,Corporation
+149,2268,"USA Micro-Cellular, Inc.",666666.6667,411,Scottsbluff,NE,Woman Owned Business,Corporation
+150,2269,"Pioneer Telephone Association, Inc.",444444.4667,163,Ulysses,KS,Rural Telephone Company,Corporation
+151,2270,Antigone Communications Limited Partnership,6666666.667,461,Bethesda,MD,Woman Owned Business,Limited Partnership
+152,2271,21st Century Telesis Joint Venture,6000000.0,262,Newport Beach,CA,,Joint Venture
+153,2272,"Midwest PCS One, Inc.",254697.8,78,Hoffman Estates,IL,,Corporation
+154,2273,Pine Island Wireless Corporation,560000.0,477,Hector,MN,Rural Telephone Company,Corporation
+155,2274,I-90 PCS West (a small business consortium),482008.0,369,Wall,SD,Rural Telephone Company,Consortium
+156,2275,Integrated Communications Group Corporation,777777.8,262,Pasadena,CA,Minority Owned Business,Corporation
+157,2276,Whidbey Telephone Company,653058.0,413,Langley,WA,Rural Telephone Company,Corporation
+158,2277,I-90 PCS East (a small business consortium),207716.0,422,Garretson,SD,Rural Telephone Company,Consortium
+159,2278,North Dakota PCS Limited Partnership,1181850.0,298,Plymouth,MN,,Limited Partnership
+160,2279,Western Minnesota PCS Limited Partnership,1063351.0,298,Plymouth,MN,,Limited Partnership
+161,2280,"Madrona PCS, LLC",777777.8,413,Seattle,WA,,Corporation
+162,2281,"Omni-Link, Inc.",7833333.333,78,Chicago,IL,"Minority Owned Business,Woman Owned Business",Corporation
+163,2282,"Public Service PCS, Inc.",342333.0,271,Reynolds,GA,,Corporation
+164,2283,"Poka Lambro PCS, Inc.",1853215.0,264,Tahoka,TX,,Corporation
+165,2284,PVT Wireless Limited Partnership,315839.0,68,Artesia,NM,Rural Telephone Company,Limited Partnership
+166,2285,"The Chillicothe Telephone Co.-Communications, Inc.",1033333.333,80,Chillicothe,OH,Rural Telephone Company,Corporation
+167,2286,"PersonalConnect Communications, Inc.",66666666.67,413,Seattle,WA,,Corporation
+168,2287,Poka Lambro/PVT Wireless Limited Partnership,776649.0,264,Tahoka,TX,,Limited Partnership
+169,2288,"Atlantic Wireless, a Limited Liability Company",471615.5667,51,Farmington,NH,,Corporation
+170,2289,Betty A. Gleaton,480000.0,6,Tifton,GA,Woman Owned Business,Individual
+171,2290,"New Hampshire Wireless, a Limited Liability Co.",1524195.567,51,Farmington,NH,,Corporation
+172,2291,"ACN, Inc.",471615.5667,51,Farmington,NH,,Corporation
+173,2292,Central Wireless Partnership,5555555.567,262,Glendale,CA,,General Partnership
+174,2293,"Personal Communications Network, Inc.",2222222.233,321,Fairfield,NJ,,Corporation
+175,2294,Brookings Municipal Utilities,1000000.0,422,Brookings,SD,Rural Telephone Company,Government Entity
+176,2295,"BC&D Partners II, L.L.C.",11111111.13,321,Morristown,NJ,,Limited Liability Company
+177,2296,Chase Telecommunications L.P.,12000000.0,196,Houston,TX,Minority Owned Business,Limited Partnership
+178,2297,"Radiofone PCS, L.L.C.",1367169.0,320,Metairie,LA,,Corporation
+179,2298,"Radiofone Nationwide PCS, L.L.C.",4444444.467,320,Metairie,LA,,Limited Liability Company
+180,2299,"Universal Wireless, L.L.C.",1108888.9,358,Vancouver,WA,,Limited Liability Company
+181,2300,"GWI PCS, Inc.",119960413.3,101,Dallas,TX,,Corporation
+182,2301,"PCS 2000, L.P.",111111111.1,488,SAN JUAN,PR,Minority Owned Business,Limited Partnership
+183,2302,Southwest Minnesota PCS Limited Partnership,1174990.0,298,Plymouth,MN,,Limited Partnership
+184,2303,"Cook Inlet Western Wireless PV/SS PCS, L.P.",31111111.13,110,Boulder,CO,Minority Owned Business,Limited Partnership
+185,2304,Southwest Washington PCS LP  #2,269762.0,358,Vancouver,WA,,Limited Partnership
+186,2305,"BDPCS, Inc.",15555555.57,404,Portola Valley,CA,,Corporation
+187,2306,Savannah Independent PCS Corporation,2576239.0,410,Hinesville,GA,,Corporation
+188,2307,Georgia Independent PCS Corporation,2117155.0,76,Ringgold,GA,,Corporation
+189,2308,SOUTHWEST MICHIGAN L..P. 129,773333.3333,33,DELTON,MI,Rural Telephone Company,Limited Partnership
+190,2309,"DCC PCS, Inc.",11111111.13,329,Oklahoma City,OK,,Corporation
+191,2310,PCS AMERICA LIMITED PARTNERSHIP II,3644444.467,184,HARTFORD,CT,,Limited Partnership
+192,2311,"Miccom Associates, Ltd.",7555555.567,84,Akron,OH,,Limited Partnership
+193,2312,Wireless Telecommunications Company,1088888.9,411,Scottsbluff,NE,,General Partnership
+194,2313,Southwest Washington PCS LP #1,106895.0,358,Vancouver,WA,,Limited Partnership
+195,2314,"Pioneer Consolidated, Inc.",292659.0,395,Philomath,OR,,Corporation
+196,2315,"WILLCOMM, L.L.C.",440062.0,395,Philomath,OR,,Limited Liability Company
+197,2316,N.W. PCS Consortium,1751525.0,358,Vancouver,WA,,Consortium
+198,2318,Delaware PCS Limited Partnership,107742.0,333,Margaretville,NY,,Limited Partnership
+199,2319,KEC PARTNERSHIP,18050615.57,262,WRIGHTWOOD,CA,,Limited Partnership
+200,2320,GLENN ISHIHARA,424766.6667,262,REDONDO BEACH,CA,Minority Owned Business,Individual
+201,2321,ADILIA M. AGUILAR,166415.5667,262,LOS ANGELES,CA,"Minority Owned Business,Woman Owned Business",Individual
+202,2322,"MCG PCS, Inc.",2511111.133,461,Betheseda,MD,,Corporation
+203,2325,"POLYCELL COMMUNICATIONS, INC.",7300000.0,78,"NORTHBROOK,",IL,"Minority Owned Business,Woman Owned Business",Corporation
+204,2326,Independent Seven PCS Partnership,1028615.0,7,Chatham,NY,,General Partnership
+205,2327,"MAP Wireless, L.L.C.",1000000.0,321,Port Chester,NY,,Limited Partnership
+206,2328,"Graceba Total Communications, Inc.",611111.1333,461,Washington,DC,Rural Telephone Company,Corporation
+207,2329,"PCS Mobile America, Inc.",4000000.0,95,Columbus,OH,Minority Owned Business,Corporation
+208,2331,Wireless Telephone Company of America (Minnesota),11111111.13,298,Minneapolis,MN,,Corporation
+209,2332,"Omnipoint PCS Entrepreneurs, Inc.",88888888.9,461,Arlington,VA,,Corporation
+210,2333,Vincent  D. McBride,27512.0,262,Santa Monica,CA,,Individual
+211,2334,"Merchants, LTD.",166666.6667,404,San Francisco,CA,,Corporation
+212,2335,"Reserve Telephone Company, Inc.",359264.0,320,Reserve,LA,Rural Telephone Company,Corporation
+213,2336,HARVEY LEONG,140000.0,321,WESTPORT,CT,Minority Owned Business,Individual
+214,2337,C'S PUBLISHING COMPANY,221697.8,251,Lewiston,ME,,Corporation
+215,2338,"QUALICOM SYSTEMS, INC.",10000000.0,151,Fort Myers,FL,,Corporation
+216,2339,MFRI Inc.,326950.0,435,Stroudsburg,PA,,Corporation
+217,2340,"TWS, LLC",555555.5667,204,Indianapolis,IN,"Minority Owned Business,Woman Owned Business",Corporation
+218,2341,LORALEN CORP.,500000.0,51,Hyde Park,MA,Minority Owned Business,Corporation
+219,2342,"ROBERTS-ROBERTS & ASSOCIATES, LLC",2744444.467,394,St Louis,MO,Minority Owned Business,Limited Liability Company
+220,2343,Mark M. Guest,363104.4667,101,Dallas,TX,,Individual
+221,2345,"Accipiter Communications, Inc.",3222222.233,110,Lakewood,CO,,Corporation
+222,2346,ELIZABETH R. GUEST,402613.3333,101,Dallas,TX,,Individual
+223,2347,"Sawbucks, Incorporated",103939.0,77,Laramie,WY,Woman Owned Business,Corporation
+224,2348,"SOUTHERN COMMUNICATIONS SYSTEMS, INC.",188888.9,290,MEMPHIS,TN,Minority Owned Business,Corporation
+225,2349,"TELEPACIFIC  NETWORK,  INC.",133000.0,490,Agana,GU,Minority Owned Business,Corporation
+226,2350,NOVERR PUBLISHING INC.,290463.0,446,TRAVERSE CITY,MI,,Corporation
+227,2351,"Anishnabe Communications Enterprise, Inc.",5931111.133,307,Mt. Pleasant,MI,Minority Owned Business,Corporation
+228,2352,Magnus Asset Management Company,2444444.467,78,Arlington Hts.,IL,,Trust
+229,2353,JIT Partners,8888888.9,413,Bellevue,WA,,Limited Partnership
+230,2354,"Harold L. Sudbury, Jr.",79446.0,49,Blytheville,AR,,Individual
+231,2355,New Dakota Investment Trust,5555555.567,422,Sioux Falls,SD,,Trust
+232,2356,"Choice PCS, Inc.",490366.6667,8,Albuquerque,NM,,Corporation
+233,2357,"TELSPAN Wireless, L.L.C.",211111.1333,461,Landover,MD,"Minority Owned Business,Woman Owned Business",Corporation
+234,2358,"DCR PCS, Inc.",89000000.0,461,Washington,DC,"Minority Owned Business,Woman Owned Business",Corporation
+235,2359,Mary J Kuiken,304444.4667,422,Sioux Falls,SD,Woman Owned Business,Limited Partnership
+236,2360,"Win Bee Resources, Inc.",777777.8,404,San Francisco,CA,Woman Owned Business,Corporation
+237,2361,"Magnacom Wireless, L.L.C.",177777.8,358,Vancouver,WA,,Limited Liability Company
+238,2362,"OnQue Communications, Inc.",444444.4667,329,Oklahoma City,OK,,Corporation
+239,2363,CELLUTECH,48666.66667,461,Washington,DC,"Minority Owned Business,Woman Owned Business",Corporation
+240,2364,"SOWEGA Wireless Communications, L.P.",888888.9,92,Leslie,GA,Woman Owned Business,Limited Partnership
+241,2365,"TeleCorp, Inc.",46666666.67,461,Arlington,VA,,Corporation
+242,2366,TELEWAVES CORPORATION,12666666.67,110,ENGLEWOOD,CO,Woman Owned Business,Corporation
+243,2367,"Mid-Plains Telephone, Inc.",984197.0,272,Middleton,WI,Rural Telephone Company,Corporation
+244,2368,"Wireless 2000, Inc.",1191111.133,9,Marksville,LA,Woman Owned Business,Corporation
+245,2369,"Meretel Communications, LP",17777777.8,238,Lake Charles,LA,,Limited Partnership
+246,2370,"VTel Wireless, Inc.",746666.6667,249,Springfield,VT,Rural Telephone Company,Corporation
+247,2371,"Pegasus PCS Partners, L. P.",2222222.233,346,Radnor,PA,,Limited Partnership
+248,2372,U.S. AirWaves Holdings Inc.,180611430.0,413,Bellevue,WA,,Corporation
+249,2373,"PCS One, Inc.",40000000.0,25,Egg Harbor Twp.,NJ,,Corporation
+250,2374,"PCSouth, Inc.",1760893.0,210,Jackson,MS,Rural Telephone Company,Corporation
+251,2375,RLV-PCS I PARTNERSHIP,2666666.667,336,"LONGWOOD,",FL,"Minority Owned Business,Woman Owned Business",General Partnership
+252,2376,"BRK WIRELESS CO., INC.",1111111.133,78,PARK RIDGE,IL,Minority Owned Business,Corporation
+253,2377,"SJI, Inc.",2582988.0,195,Larose,LA,Rural Telephone Company,Corporation
+254,2378,"Longstreet Communication International, Inc",570673.0,321,HOLMDEL,NJ,Minority Owned Business,Corporation
+255,2379,Shawn Capistrano,251257.8,262,Santa Monica,CA,"Minority Owned Business,Woman Owned Business",Individual
