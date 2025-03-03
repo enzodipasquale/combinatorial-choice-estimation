@@ -31,7 +31,8 @@ if rank == 0:
     # Create data chunks to scatter
     
     indeces_chunks = np.array_split(np.kron(np.ones(num_simulations, dtype = int),
-                                         np.arange(num_agents)), comm_size)
+                                            np.arange(num_agents)), 
+                                            comm_size)
 
     data_chunks = []
     start = 0  
@@ -61,9 +62,10 @@ del local_data
 
 if rank == 0:
     del data_chunks 
-    print("##############################################################")
+    print("############################################################################################################################")
     print('Data loaded and scattered. Time: ', datetime.datetime.now().time().strftime("%H:%M:%S"))
-    print("##############################################################")
+    print("############################################################################################################################")
+
 
 solution_master_pb = np.load('output/solution_master_pb.npy')
 
@@ -75,6 +77,7 @@ solution_master_pb = np.load('output/solution_master_pb.npy')
 max_iters = 200
 
 for iteration in range(max_iters):
+
     ### Solve pricing
     local_results = [
                     pricing(local_modular[ell], quadratic_j_j_k, weight_j, local_capacity[ell],
@@ -82,16 +85,17 @@ for iteration in range(max_iters):
                     for ell in range(len(local_indices))
                     ]
 
-    # Gather results at rank 0
+    # Gather pricing results at rank 0
     pricing_results = comm.gather(local_results, root=0)
-
 
     ### Solve master at rank 0  
     if rank == 0:
-        print("##############################################################")
+        print("############################################################################################################################")
+        print("############################################################################################################################")
         print("ITERATION: ", iteration)
         print('TIME after pricing: ', datetime.datetime.now().time().strftime("%H:%M:%S"))
-        print("##############################################################") 
+        print("############################################################################################################################") 
+        print("############################################################################################################################")
 
         pricing_results  =  np.vstack(list(chain.from_iterable(pricing_results)))    
         np.save(f'output/constraints/pricing_results_{iteration}.npy', pricing_results)
@@ -104,17 +108,17 @@ for iteration in range(max_iters):
         stop  = None
         solution_master_pb = None
 
-    # Broadcast to all ranks
+    # Broadcast master results to all ranks
     stop  = comm.bcast(stop , root=0)
     solution_master_pb = comm.bcast(solution_master_pb,root = 0)
 
-    if stop :
+    if stop:
         if rank == 0:
-            print("##############################################################")
-            print("##############################################################")
+            print("############################################################################################################################")
+            print("############################################################################################################################")
             print('SOLUTION FOUND:',solution_master_pb[:num_characteristics])
-            print("##############################################################")
-            print("##############################################################")
+            print("############################################################################################################################")
+            print("############################################################################################################################")
         break
 
     
