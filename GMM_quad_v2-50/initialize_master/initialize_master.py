@@ -27,7 +27,7 @@ def initialize_pb(modular_characteristics_i_j_k, quadratic_characteristic_j_j_k,
                                 np.einsum('jlk,ij,il->ik', quadratic_characteristic_j_j_k, matching_i_j, matching_i_j
                                 )), axis = 1)
     
-    phi_hat_k = phi_hat_i_k.sum(0) * (1-1e-9)
+    phi_hat_k = phi_hat_i_k.sum(0) #* (1-1e-9)
 
 
     model = gp.Model('GMM_pb')
@@ -59,6 +59,18 @@ def initialize_pb(modular_characteristics_i_j_k, quadratic_characteristic_j_j_k,
             + gp.quicksum(phi_hat_i_k[si % num_agents, k]  * (1+1e-9)* lambda_k[k] for k in range(num_characteristics))
             for si in range(num_simulations * num_agents)
                     ))
+    model.update()
+
+    modular_characteristics_i_all_k = modular_characteristics_i_j_k.sum(1)
+    quadratic_characteristic_all_k = quadratic_characteristic_j_j_k.sum((0,1))
+    phi_i_all_k = np.concatenate((modular_characteristics_i_all_k, quadratic_characteristic_all_k[None,:]* np.ones(num_agents)[:,None] ), axis = 1)
+
+    model.addConstrs((
+            u_si[si] + gp.quicksum(p_j[j] for j in range(num_objects)) 
+            >= epsilon_si_j[si].sum() 
+            + gp.quicksum(phi_i_all_k[si % num_agents, k]  * (1+1e-9)* lambda_k[k] for k in range(num_characteristics))
+            for si in range(num_simulations * num_agents)
+                    ))
 
     model.update()
 
@@ -68,10 +80,10 @@ def initialize_pb(modular_characteristics_i_j_k, quadratic_characteristic_j_j_k,
 
     # for constr in model.getConstrs():
     #     constr.CBasis = -1
-    lambda_k.PStart = np.zeros(num_characteristics)
-    u_si.PStart = np.maximum(np.einsum('sij,ij->si',epsilon_s_i_j, matching_i_j),0).flatten()
-    p_j.PStart = np.zeros(num_objects)
-    print(np.maximum(np.einsum('sij,ij->si',epsilon_s_i_j, matching_i_j),0).flatten().shape)
+    # lambda_k.PStart = np.zeros(num_characteristics)
+    # u_si.PStart = np.maximum(np.einsum('sij,ij->si',epsilon_s_i_j, matching_i_j),0).flatten()
+    # p_j.PStart = np.zeros(num_objects)
+    # print(np.maximum(np.einsum('sij,ij->si',epsilon_s_i_j, matching_i_j),0).flatten().shape)
 
     for constr in model.getConstrs():
         constr.DStart = 0

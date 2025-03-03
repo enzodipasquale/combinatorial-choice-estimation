@@ -3,9 +3,9 @@
 import numpy as np
 import gurobipy as gp
 
-def master(pricing_results, tol = 1e-3):
+def master(pricing_results, slack_counter , tol = 1e-3):
 
-    num_characteristics = 5
+    num_characteristics = 4
     num_simulations = 50
     num_agents = 255
     num_objects = 493
@@ -23,6 +23,7 @@ def master(pricing_results, tol = 1e-3):
     # Load master model and solution from previous iteration
     model = gp.read("output/master_pb.mps")
     model.setParam('Method', 0)
+    # model.setParam('Threads', 1)
 
     lambda_k = gp.tupledict({k: model.getVarByName(f"parameters[{k}]") for k in range(num_characteristics)})
     u_si = gp.tupledict({si: model.getVarByName(f"utilities[{si}]") for si in range(num_simulations * num_agents)})
@@ -35,7 +36,7 @@ def master(pricing_results, tol = 1e-3):
     # Check certificates
     max_reduced_cost = np.max(u_star_si - u_si_master)
     if max_reduced_cost < tol:
-        return True, solution_master_pb
+        return True, solution_master_pb, slack_counter
 
     else:
         # Add new constraints
@@ -51,9 +52,25 @@ def master(pricing_results, tol = 1e-3):
         # Get previous basis information
         model.read('output/master_pb.bas')
         model.setParam('LPWarmStart',2)
+
         # model.setParam('OutputFlag', 0)
         model.optimize()
         solution_master_pb = np.array(model.x)
+
+
+        # update slack_counter dictionary
+        constraints_removed = 0
+        for row in model.getConstrs():
+            if row.CBasis == 0:
+                if row.ConstrName not in slack_counter:
+                    slack_counter[row.ConstrName] = 1
+                else:
+                    slack_counter[row.ConstrName] += 1
+            if slack_counter[row.ConstrName] >= 3:
+                model.remove(row)
+                slack_counter.pop(row.ConstrName)
+                constraints_removed += 1
+
 
         # Save results
         model.write('output/master_pb.mps')
@@ -69,11 +86,12 @@ def master(pricing_results, tol = 1e-3):
         print('Max price        ', np.max(solution_master_pb[-num_objects:]))
         print('--------------------------------------------------------')
         print("Constraints added:    ", (u_si_master < u_star_si).sum())
+        print("Constraints removed:  ", constraints_removed)
         print("Parameters: ", solution_master_pb[:num_characteristics])
         print("Objective:  ", model.objVal)
         print('--------------------------------------------------------')
 
-        return False, solution_master_pb
+        return False, solution_master_pb, slack_counter
         
       
         

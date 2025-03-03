@@ -2,10 +2,10 @@
 
 #SBATCH --job-name=GMM_quad-v1_50
 #SBATCH --nodes=15
-#SBATCH --ntasks-per-node=20 
+#SBATCH --ntasks-per-node=18 
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=10G
-#SBATCH --time=06:00:00
+#SBATCH --time=04:00:00
 
 module purge
 

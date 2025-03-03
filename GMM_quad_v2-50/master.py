@@ -4,25 +4,19 @@ import numpy as np
 import gurobipy as gp
 
 def master(pricing_results, tol = 1e-3):
-
-    num_characteristics = 5
-    num_simulations = 50
     num_agents = 255
     num_objects = 493
+    num_simulations = int(pricing_results.shape[0] / num_agents)
 
     u_star_si = pricing_results[:,0]
     characteristics_star_si_k = pricing_results[:,1: - num_objects]
     B_star_si_j = pricing_results[:,- num_objects:]
 
-    if characteristics_star_si_k.shape[1] != num_characteristics + 1 or characteristics_star_si_k.shape[0] != num_simulations * num_agents:
-        raise ValueError('Characteristics do not match')
-    if not np.all(np.logical_or(B_star_si_j == 0, B_star_si_j == 1)):
-        raise ValueError('B_star_si_j is not binary')
-
-
+    num_characteristics = characteristics_star_si_k.shape[1] -1
     # Load master model and solution from previous iteration
     model = gp.read("output/master_pb.mps")
     model.setParam('Method', 0)
+    # model.setParam('Threads', 1)
 
     lambda_k = gp.tupledict({k: model.getVarByName(f"parameters[{k}]") for k in range(num_characteristics)})
     u_si = gp.tupledict({si: model.getVarByName(f"utilities[{si}]") for si in range(num_simulations * num_agents)})
