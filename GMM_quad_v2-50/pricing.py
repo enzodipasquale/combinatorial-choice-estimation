@@ -40,8 +40,10 @@ def pricing(modular_j_k, quadratic_j_j_k, weight_j, capacity, solution_master_pb
     env.dispose()
 
     if gap > 1e-2:
+        print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
         print('WARNING: Gap is too high', gap, capacity, modular_j_k)
-
+        print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+        
     ### Compute value of characteristics at optimal bundle
 
     row =   np.concatenate(([value],
