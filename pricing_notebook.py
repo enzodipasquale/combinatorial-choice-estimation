@@ -6,7 +6,7 @@ import gurobipy as gp
 from gurobipy import *
 import time
 
-def pricing(modular_j_k, quadratic_j_j_k, weight_j, capacity, solution_master_pb):
+def pricing(modular_j_k, quadratic_j_j_k, weight_j, capacity, solution_master_pb, OutputFlag = False):
     tic = time.time()
     num_MOD = modular_j_k.shape[1] - 1
     num_characteristics = num_MOD +  quadratic_j_j_k.shape[2]
@@ -24,7 +24,8 @@ def pricing(modular_j_k, quadratic_j_j_k, weight_j, capacity, solution_master_pb
 
     ### Solve Pricing Problem (Quadratic Knapsack Problem)
     env = gp.Env(empty=True)
-    env.setParam("OutputFlag",0)
+    if not OutputFlag:
+        env.setParam("OutputFlag",0)
     env.start()
     model = gp.Model(env = env) 
 
@@ -40,8 +41,10 @@ def pricing(modular_j_k, quadratic_j_j_k, weight_j, capacity, solution_master_pb
     gap = model.MIPGap
     env.dispose()
     if gap > 1e-2:
+        print("--------------------------------------------------------------------------------------------------------------------------------")
         print('Warning: Gap is too high', gap)
-
+        print("--------------------------------------------------------------------------------------------------------------------------------")
+        
     ### Compute value of characteristics at optimal bundle
 
     row =       np.concatenate(([value],
