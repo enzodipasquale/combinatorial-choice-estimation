@@ -1,11 +1,11 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_quad-old
-#SBATCH --nodes=20
-#SBATCH --ntasks-per-node=15 
+#SBATCH --job-name=GMM_quad-new
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=10
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=20G
-#SBATCH --time=00:06:00
+#SBATCH --mem=25G
+#SBATCH --time=04:00:00
 
 module purge
 
