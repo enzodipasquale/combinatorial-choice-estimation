@@ -1,6 +1,7 @@
 #!/bin/env python
 
 import numpy as np
+import datetime
 
 def generate_data_chunks(epsilon_si_j, modular_i_j_k, capacity_i, comm_size):
 
@@ -26,8 +27,9 @@ def update_slack_counter(master_pb, slack_counter):
     for constr in master_pb.getConstrs():
         if constr.ConstrName not in slack_counter:
             slack_counter[constr.ConstrName] = 0
-        if constr.Slack > 0:
+        if constr.Slack < 0:
             slack_counter[constr.ConstrName] += 1
+
         if slack_counter[constr.ConstrName] >= slack_counter["MAX_SLACK_COUNTER"]:
             master_pb.remove(constr)
             slack_counter.pop(constr.ConstrName)
@@ -36,9 +38,33 @@ def update_slack_counter(master_pb, slack_counter):
     return slack_counter, num_constrs_removed
 
 
-
-
 ############## print functions ####################
+
+def my_print(list):
+    print("#" * 100)
+    print("#" * 100)
+    for element in list:
+        print(element[0], element[1])
+    print("#" * 100)
+    print("#" * 100)
+
+
+def print_init_master(model, num_MOD, num_QUAD, num_simulations, num_agents, num_objects, phi_hat_k, UB):
+    print('-' * 100)
+    print('modular characteristics:  ', num_MOD)
+    print('quadratic characteristics:', num_QUAD)
+    print('simulations:              ', num_simulations)
+    print('agents:                   ', num_agents)
+    print('objects:                  ', num_objects)
+    print('phi_hat:                  ', phi_hat_k)
+    print('-'* 100)
+    print('ObjVal:              ', model.objVal)
+    print('upper bound:         ' , UB)
+    print('min solution:', np.array(model.x).min(), 'max solution:', np.array(model.x).max())
+    print('-'* 100)
+    print('parameters:' ,np.array(model.x)[:num_MOD + num_QUAD])
+    print('-'* 100)
+
 
 def check_gap(gap):
     if gap > 1e-2:
@@ -48,48 +74,21 @@ def check_gap(gap):
 
 
 
-def  print_master_info(model , u_si_star , u_si_master, lambda_k , p_j, num_constrs_removed, num_constrs_added):
-
-        solution_master_pb = np.array(model.x)
+def  print_master_info(u_si_star , u_si_master, lambda_k , num_constrs_removed, num_constrs_added):
         print('--------------------------------------------------------')
         print('Max reduced cost ', np.max(u_si_star - u_si_master))
         print('Max u_si_star     ', np.max(u_si_star))
-        print('Max u_si_master   ', np.max(u_si_master))
-        print('Max price        ', max(p_j))
+        print('Max u_si_master   ', max(u_si_master))
         print('--------------------------------------------------------')
-        print("Constraints added:    ",  (u_si_star > u_si_master * (1+tol_row_generation)).sum(), 'out of', (u_si_star > u_si_master ).sum())
-        print('--------------------------------------------------------')
-        print("Parameters: ", lambda_k)
-        print("Objective:  ", model.objVal)
-        print('--------------------------------------------------------')
+        print("Constraints added:    ", num_constrs_added, 'out of', (u_si_star > u_si_master).sum())
         print("Constraints removed:  ", num_constrs_removed)
         print('--------------------------------------------------------')
+        print("Parameters: ", lambda_k.x)
+        print('--------------------------------------------------------')
+        print('TIME after master: ', datetime.datetime.now().time().strftime("%H:%M:%S"))
+        
 
 
 
 
 
-
-def print_init_master(model, num_characteristics, num_simulations, num_agents, num_objects, phi_hat_k, UB):
-    print('#' * 100)
-    print('num_characteristics: ', num_characteristics)
-    print('num_simulations:     ', num_simulations)
-    print('num_agents:          ', num_agents)
-    print('num_objects:         ', num_objects)
-    print('phi_hat:             ', phi_hat_k)
-    print('-'* 100)
-    print('ObjVal:              ', model.objVal)
-    print('upper bound:         ' , UB)
-    print('min solution:', np.array(model.x).min(), 'max solution:', np.array(model.x).max())
-    print('-'* 100)
-    print('parameters:' ,np.array(model.x)[:num_characteristics])
-    print('-'* 100)
-
-
-def my_print(list):
-    print("#" * 100)
-    print("#" * 100)
-    for element in list:
-        print(element[0], element[1])
-    print("#" * 100)
-    print("#" * 100)
