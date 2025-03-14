@@ -26,9 +26,10 @@ def init_master(epsilon_si_j, modular_i_j_k, quadratic_j_j_k, num_simulations):
 
     master_pb = gp.Model('GMM_pb')
     master_pb.setParam('Method', 0)
-    master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-
+    master_pb.setParam('LPWarmStart', 2)
+    
     # Variables and Objective
+    master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
     lambda_k = master_pb.addMVar(num_characteristics, obj = phi_hat_k, lb= -1e9, ub = 1e9 , name='parameter')
     u_si = master_pb.addMVar(num_simulations * num_agents, obj = - (1/ num_simulations), name='utility')
     p_j = master_pb.addMVar(num_objects, obj = -1 , name='price')
@@ -56,5 +57,5 @@ def init_master(epsilon_si_j, modular_i_j_k, quadratic_j_j_k, num_simulations):
     print_init_master(master_pb, num_MOD, num_QUAD, num_simulations, num_agents, num_objects, phi_hat_k, UB)
     my_print([['Pricing and Master init done. Time: ', datetime.datetime.now().time().strftime("%H:%M:%S")]])
 
-    return master_pb, (lambda_k, u_si, p_j) 
+    return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x
 

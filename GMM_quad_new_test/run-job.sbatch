@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_quad-new
+#SBATCH --job-name=GMM_quad-new-test
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=10
 #SBATCH --cpus-per-task=1
