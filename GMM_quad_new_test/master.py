@@ -6,21 +6,19 @@ from utilities import print_master_info, update_slack_counter, my_print
 
 def solve_master(master_pb, vars_tuple, pricing_results, slack_counter = None, tol_opt = 1e-3, tol_row_gen = 0):
 
-    num_objects = 493
+    lambda_k, u_si, p_j = vars_tuple
+    num_objects = p_j.size
 
     u_si_star = pricing_results[:,0]
     eps_si_star = pricing_results[:,1]
     X_star_si_k = pricing_results[:,2: - num_objects]
     B_star_si_j = pricing_results[:,- num_objects:]
 
-    lambda_k, u_si, p_j = vars_tuple
-
     # Check certificates
     u_si_master = u_si.x
-  
     max_reduced_cost = np.max(u_si_star - u_si_master)
     if max_reduced_cost < tol_opt:
-        return True
+        return True, lambda_k.x, p_j.x
 
     # Add new constraints
     new_constrs_id = np.where(u_si_star > u_si_master * (1+tol_row_gen))[0]
@@ -42,5 +40,5 @@ def solve_master(master_pb, vars_tuple, pricing_results, slack_counter = None, t
     # Print some information
     print_master_info(u_si_star, u_si_master, lambda_k, num_constrs_removed, len(new_constrs_id))
                         
-    return False
+    return False, lambda_k.x, p_j.x
     
