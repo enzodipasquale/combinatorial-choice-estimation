@@ -26,17 +26,14 @@ def init_master(epsilon_si_j, modular_i_j_k, quadratic_j_j_k, num_simulations):
 
     master_pb = gp.Model('GMM_pb')
     master_pb.setParam('Method', 0)
-    master_pb.setParam('LPWarmStart', 2)
+    # master_pb.setParam('LPWarmStart', 2)
     
     # Variables and Objective
     master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-    lambda_k = master_pb.addMVar(num_characteristics, obj = phi_hat_k, lb= -1e9, ub = 1e9 , name='parameter')
+    lambda_k = master_pb.addMVar(num_characteristics, obj = phi_hat_k, ub = 1e9 , name='parameter')
     u_si = master_pb.addMVar(num_simulations * num_agents, obj = - (1/ num_simulations), name='utility')
     p_j = master_pb.addMVar(num_objects, obj = -1 , name='price')
 
-    # Non negativity constraint lambda_k[2]>=0
-    for k in range(num_MOD, num_characteristics):
-        master_pb.addConstr(lambda_k[k] >= 0, name=f"non_negativity_lambda_{k}")
 
     # Constraints
     phi_i_all_k = np.concatenate((modular_i_j_k.sum(1), 
