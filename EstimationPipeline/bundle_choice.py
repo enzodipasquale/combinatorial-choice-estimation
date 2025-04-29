@@ -140,9 +140,6 @@ class BundleChoice:
         # Save results
         # master_pb.write('output/master_pb.mps')
         # master_pb.write('output/master_pb.bas')
-
-        # Print some information
-        # print_master_info(u_si_star, u_si_master, lambda_k, num_constrs_removed, len(new_constrs_id))
                             
         return False, lambda_k.x, p_j.x
     
@@ -178,6 +175,7 @@ class BundleChoice:
 
             if self.rank == 0:        
                 ### Solve master at rank 0 
+                print("ITERATION:", iteration)
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
                 print("#" * 80)
