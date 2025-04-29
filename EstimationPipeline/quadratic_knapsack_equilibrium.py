@@ -14,7 +14,11 @@ with open('config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 # Load data on rank 0
-if rank == 0:
+if rank == 0:  
+    # Observed bundles
+    obs_bundle = np.load("./data/matching_i_j.npy")
+
+    # Item specific data
     item_data = {
                 "quadratic" : np.load("./data/quadratic_characteristic_j_j_k.npy"),
                 "weights" : np.load("./data/weight_j.npy")
@@ -28,12 +32,14 @@ if rank == 0:
 
     # errors are a 3D tensor (modular!)
     np.random.seed(0)
+    errors = np.random.normal(0,1,size = (config["num_simuls"], 255, 493))
+
 
     data = {
             "item_data": item_data,
             "agent_data": agent_data,
-            "errors": np.random.normal(0,1,size = (config["num_simuls"], 255, 493)),
-            "obs_bundle": np.load("./data/matching_i_j.npy")
+            "errors": errors,
+            "obs_bundle": obs_bundle
             }
 else:
     data = None
@@ -61,7 +67,6 @@ def compute_features(self, bundle_i_j):
 def init_pricing(self, local_id):
 
     subproblem = gp.Model() 
-
     subproblem.setParam('OutputFlag', 0)
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
 
@@ -83,16 +88,15 @@ def solve_pricing(self, subproblem, local_id, lambda_k, p_j):
     modular_j_k = self.local_agent_data["modular"][local_id]
     quadratic_j_j_k = self.item_data["quadratic"]
 
-    ### Define objective from data and master solution 
+    # Define objective from data and master solution 
     num_MOD = modular_j_k.shape[1]
     L_j =  error_j + modular_j_k @ lambda_k[:num_MOD] - p_j
     Q_j_j = quadratic_j_j_k @ lambda_k[num_MOD: ]
 
-    # Set objective
     B_j = subproblem.getVars()
     subproblem.setObjective(B_j @ L_j + B_j @ Q_j_j @ B_j)
 
-    # # Solve the updated subproblem
+    # Solve the updated subproblem
     subproblem.optimize()
 
     optimal_bundle = np.array(subproblem.x, dtype=bool)
@@ -100,7 +104,7 @@ def solve_pricing(self, subproblem, local_id, lambda_k, p_j):
     if subproblem.MIPGap > .01:
         raise ValueError("MIP gap is larger than 1%")
 
-    ### Compute value of value, characteristics and error at optimal bundle
+    # Compute value, characteristics and error at optimal bundle
     pricing_result =   np.concatenate(([value],
                                         [error_j[optimal_bundle].sum(0)],
                                         (modular_j_k[optimal_bundle]).sum(0), 
