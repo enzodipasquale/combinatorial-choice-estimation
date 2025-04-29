@@ -1,3 +1,5 @@
+#!/bin/env python
+
 from bundle_choice import BundleChoice
 import numpy as np
 import gurobipy as gp
