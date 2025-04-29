@@ -49,12 +49,12 @@ def compute_features(self, bundle_i_j):
     modular_i_j_k = self.agent_data["modular"]
     quadratic_j_j_k = self.item_data["quadratic"]
 
-    features_hat_i_k = np.concatenate((
+    features_i_k = np.concatenate((
                                     np.einsum('ijk,ij->ik', modular_i_j_k, bundle_i_j),
                                     np.einsum('jlk,ij,il->ik', quadratic_j_j_k, bundle_i_j, bundle_i_j)
                                     ), axis = 1)
 
-    return features_hat_i_k
+    return features_i_k
 
 
 # Pricing oracle
