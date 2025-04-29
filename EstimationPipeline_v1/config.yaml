@@ -1,4 +1,4 @@
-use_prices: false
+use_prices: true
 tol_certificate: 1e-3
 max_slack_counter: 3
 tol_row_generation: 5
