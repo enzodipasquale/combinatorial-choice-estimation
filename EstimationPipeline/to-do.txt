@@ -1,0 +1,2 @@
+* Ellipsoid method
+* parallel pricing (for instance with Lovatz)
