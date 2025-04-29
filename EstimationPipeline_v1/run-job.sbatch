@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_quad_delta_2
+#SBATCH --job-name=GMM_last
 #SBATCH --nodes=5
 #SBATCH --ntasks-per-node=5
 #SBATCH --cpus-per-task=1
