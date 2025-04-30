@@ -1,17 +1,25 @@
-# Ignore virtual environments
+# Virtual environments
 venv/
 */venv/
 
-# Ignore Python bytecode/cache
+# Python artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*.so
 
-# Ignore data and output files
-*.ext3
+# Data and logs
+# *.npy
 *.log
 *.out
 *.mif
 *.mps
+*.ext3
+
+# Jupyter
+.ipynb_checkpoints/
 
 # macOS junk
 .DS_Store
+
+# VSCode settings (optional)
+.vscode/
