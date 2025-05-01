@@ -12,7 +12,7 @@ setup(
         'pandas',
         'scipy',
         'gurobipy',
-        'mpi4py',
+        # 'mpi4py',
         'pyyaml',
         'matplotlib',
     ],

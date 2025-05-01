@@ -1,0 +1,4 @@
+# /scratch/ed2189/JMP/pyproject.toml
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

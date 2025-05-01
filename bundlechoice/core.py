@@ -103,6 +103,7 @@ class BundleChoice:
         master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
         lambda_k = master_pb.addMVar(self.num_features, obj = x_hat_k, ub = 1e9 , name='parameter')
         u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - (1/ self.num_simuls), name='utility')
+
         if self.use_prices:
             p_j = master_pb.addMVar(self.num_items, obj = -1 , name='price')
         else:
@@ -125,6 +126,7 @@ class BundleChoice:
 
         lambda_k, u_si, p_j = vars_tuple
 
+        # Unpack pricing results
         u_si_star = pricing_results[:,0]
         eps_si_star = pricing_results[:,1]
         x_star_si_k = pricing_results[:,2: - self.num_items]

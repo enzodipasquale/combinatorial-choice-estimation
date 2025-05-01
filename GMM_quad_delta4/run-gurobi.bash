@@ -22,7 +22,7 @@ else
 fi
 
 singularity exec ${nv} \
-	    --overlay /scratch/ed2189/JMP/overlay-15GB-500K.ext3:ro \
+	    --overlay /scratch/ed2189/JMP/my_overlay.ext3:ro \
 --overlay /scratch/work/public/singularity/openmpi-4.1.6-ubuntu-24.04.1.sqf:ro \
 /scratch/work/public/singularity/ubuntu-24.04.1.sif \
 /bin/bash -c "
