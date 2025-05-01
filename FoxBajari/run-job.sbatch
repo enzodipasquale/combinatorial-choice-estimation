@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_new
+#SBATCH --job-name=FoxBajari
 #SBATCH --nodes=5
 #SBATCH --ntasks-per-node=5
 #SBATCH --cpus-per-task=1
