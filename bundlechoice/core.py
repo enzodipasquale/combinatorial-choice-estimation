@@ -17,7 +17,7 @@ class BundleChoice:
 
 
         # Unpack config 
-        self.use_prices = bool(config["use_prices"])
+        self.item_fixed_effects = bool(config["item_fixed_effects"])
         self.tol_certificate = float(config["tol_certificate"])
         self.max_slack_counter = int(config["max_slack_counter"])
         self.tol_row_generation = int(config["tol_row_generation"])
@@ -81,6 +81,33 @@ class BundleChoice:
         self.local_agent_data = local_data["agent_data"]
         self.num_local_agents = len(self.local_indeces)
 
+
+    def move_data_to_torch(self, precision="float32"):
+        import torch
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        dtype = torch.float64 if precision == "float64" else torch.float32
+
+        self.using_torch = True
+        self.torch_device = device
+        self.torch_dtype = dtype
+
+        def to_tensor(x):
+            return torch.tensor(x, device=device, dtype=dtype) if x is not None else None
+
+        self.torch_item_data = {
+                                    k: to_tensor(v) for k, v in self.item_data.items()
+                                } if self.item_data is not None else None
+
+        self.torch_local_agent_data = {
+                                            k: to_tensor(v) for k, v in self.local_agent_data.items()
+                                        } if self.local_agent_data is not None else None
+
+        self.torch_local_errors = to_tensor(self.local_errors)
+
+
+    
+
     @staticmethod
     def price_term(p_j, bundle_j = None):
         if p_j is None:
@@ -104,7 +131,7 @@ class BundleChoice:
         lambda_k = master_pb.addMVar(self.num_features, obj = x_hat_k, ub = 1e9 , name='parameter')
         u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - (1/ self.num_simuls), name='utility')
 
-        if self.use_prices:
+        if self.item_fixed_effects:
             p_j = master_pb.addMVar(self.num_items, obj = -1 , name='price')
         else:
             p_j = None
@@ -165,7 +192,9 @@ class BundleChoice:
     def compute_estimator_row_gen(self):
 
         # Initialize pricing 
-        local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)] 
+        if self._init_pricing is not None:
+            self.local_pricing_pbs = [self._init_pricing(local_id) for local_id in range(self.num_local_agents)]
+            
 
         if self.rank == 0:
             # Initialize master problem
