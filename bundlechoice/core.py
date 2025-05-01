@@ -181,15 +181,18 @@ class BundleChoice:
 
         # Main loop
         for iteration in range(self.max_iters):
-            # Solve pricing and update problems/new rows 
+
+            ### Solve pricing problems
             local_new_rows = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                                         for local_id, pricing_pb in enumerate(local_pricing_pbs)])
 
             # Gather pricing results at rank 0
             pricing_results = self.comm.gather(local_new_rows, root= 0)
 
+
+            ### Solve master at rank 0 
             if self.rank == 0:        
-                ### Solve master at rank 0 
+                
                 print("ITERATION:", iteration)
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
