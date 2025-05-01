@@ -1,7 +1,7 @@
 #!/bin/env python
 
 from bundlechoice import BundleChoice
-from bundlechoice.pricing_problems import PRICING_PROBLEMS
+from bundlechoice.subproblems import get_subproblem
 
 import numpy as np
 import yaml
@@ -15,7 +15,7 @@ with open('config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 # Select pricing problem from config
-init_pricing, solve_pricing = PRICING_PROBLEMS[config["pricing_problem"]]
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 # Load data on rank 0
 if rank == 0:  
