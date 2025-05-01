@@ -1,11 +1,11 @@
 #!/bin/bash 
 
 #SBATCH --job-name=FoxBajari
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2
+#SBATCH --nodes=5
+#SBATCH --ntasks-per-node=5
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=10G
-#SBATCH --time=00:05:00
+#SBATCH --time=01:00:00
 
 module purge
 
