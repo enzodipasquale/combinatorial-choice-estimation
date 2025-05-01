@@ -15,7 +15,7 @@ with open('config.yaml', 'r') as file:
 
 # Load data on rank 0
 if rank == 0:  
-    path = './cleaned_data/'
+    path = './input_data/'
 
     # Observed bundles
     obs_bundle = np.load(path + "matching_i_j.npy")

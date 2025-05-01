@@ -192,6 +192,8 @@ class BundleChoice:
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
                 print("#" * 80)
+                print('Parameter:', lambda_k_iter)
+                print("#" * 80)
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
