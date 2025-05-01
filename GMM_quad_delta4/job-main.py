@@ -20,7 +20,7 @@ TOL_CERTIFICATE = 1e-3
 MAX_SLACK_COUNTER = 3
 TOL_ROW_GENERATION = 10
 ROW_GENERATION_DECAY = 0.5
-NUM_SIMULATIONS = 100
+NUM_SIMULATIONS = 10
 
 MAX_ITERS = 10000
 MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENERATION_DECAY)
@@ -30,15 +30,16 @@ MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENE
 ################################################################################################################################
 
 # Load agent-independent data on all ranks
-quadratic_j_j_k = np.load('./data/quadratic_characteristic_j_j_k.npy')
-weight_j = np.load('./data/weight_j.npy')
+quadratic_j_j_k = np.load('./input_data/quadratic_characteristic_j_j_k.npy')
+weight_j = np.load('./input_data/weight_j.npy')
 
 if rank == 0:
     # Load full individual specific data on Rank 0 only
-    modular_i_j_k = np.load('./data/modular_characteristics_i_j_k.npy')[:,:,0][:,:,None]
-    capacity_i = np.load('./data/capacity_i.npy')
+    modular_i_j_k = np.load('./input_data/modular_characteristics_i_j_k.npy')[:,:,0][:,:,None]
+    capacity_i = np.load('./input_data/capacity_i.npy')
     num_agents = len(capacity_i)
-    epsilon_si_j = np.load('./data/epsilon_si_j.npy')[:num_agents * NUM_SIMULATIONS]
+    np.random.seed(0)
+    epsilon_si_j = np.random.normal(0, 1, (num_agents * NUM_SIMULATIONS, len(weight_j)))
     
     # Create data chunks 
     data_chunks = generate_data_chunks(epsilon_si_j , modular_i_j_k , capacity_i , comm_size)
