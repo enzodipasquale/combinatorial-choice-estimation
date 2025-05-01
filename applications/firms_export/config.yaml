@@ -1,0 +1,9 @@
+tol_certificate: 1e-3
+max_slack_counter: 3
+tol_row_generation: 5
+row_generation_decay: 0.5
+num_simuls: 1
+max_iters: 70
+min_iters: null
+item_fixed_effects: true
+subproblem: UnconstrSupermod
