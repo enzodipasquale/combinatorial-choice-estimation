@@ -82,7 +82,7 @@ class BundleChoice:
         self.num_local_agents = len(self.local_indeces)
 
 
-    def move_data_to_torch(self, precision="float32"):
+    def local_data_to_torch(self, precision="float32"):
         import torch
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
