@@ -62,7 +62,7 @@ def compute_features(self, bundle_i_j):
 ### Run the estimation
 my_test = BundleChoice(data, dims, config, compute_features, init_pricing, solve_pricing)
 my_test.scatter_data()
-my_test.move_data_to_torch()
+my_test.local_data_to_torch()
 
 
 # my_test.compute_estimator_row_gen()
