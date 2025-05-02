@@ -1,7 +1,7 @@
 from mpi4py import MPI
 import numpy as np
 import gurobipy as gp
-from .utils import update_slack_counter
+from .utils import update_slack_counter, suppress_output
 from datetime import datetime
 
 class BundleChoice:
@@ -194,7 +194,8 @@ class BundleChoice:
 
         # Initialize pricing 
         if self._init_pricing is not None:
-            local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+            with suppress_output():
+                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
             
 
         if self.rank == 0:
