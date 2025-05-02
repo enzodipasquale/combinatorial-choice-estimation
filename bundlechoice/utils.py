@@ -1,6 +1,9 @@
 import sys
 import os
 import contextlib
+from datetime import datetime
+import numpy as np
+
 
 
 def update_slack_counter(master_pb, slack_counter):
@@ -29,3 +32,13 @@ def suppress_output():
             yield
         finally:
             sys.stdout, sys.stderr = old_stdout, old_stderr
+
+
+def log_iteration(iteration, lambda_k, rank=0):
+    if rank != 0:
+        return
+    print("#" * 80)
+    print(f"ITERATION: {iteration}")
+    print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    print("Parameter:", np.array2string(lambda_k, precision=4, separator=', '))
+    print("#" * 80)
