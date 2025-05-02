@@ -2,6 +2,7 @@ from mpi4py import MPI
 import numpy as np
 import gurobipy as gp
 from .utils import update_slack_counter
+from datetime import datetime
 
 class BundleChoice:
     def __init__(self, data, dims, config, compute_features, init_pricing, solve_pricing):
@@ -221,13 +222,14 @@ class BundleChoice:
 
             ### Solve master at rank 0 
             if self.rank == 0:        
-                
-                print("ITERATION:", iteration)
-                pricing_results = np.concatenate(pricing_results)
-                stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
                 print("#" * 80)
+                print("ITERATION:", iteration)
+                print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 print('Parameter:', lambda_k_iter)
                 print("#" * 80)
+
+                pricing_results = np.concatenate(pricing_results)
+                stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
