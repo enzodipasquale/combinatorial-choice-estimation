@@ -4,7 +4,13 @@ import contextlib
 from datetime import datetime
 import numpy as np
 
-
+def price_term(p_j, bundle_j = None):
+        if p_j is None:
+            return np.array([0])
+        if bundle_j is None:
+            return p_j
+        else:
+            return bundle_j @ p_j 
 
 def update_slack_counter(master_pb, slack_counter):
     num_constrs_removed = 0
