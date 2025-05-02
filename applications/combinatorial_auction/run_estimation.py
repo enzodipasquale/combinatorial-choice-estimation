@@ -7,16 +7,18 @@ import numpy as np
 import yaml
 from mpi4py import MPI
 import os
+import platform
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Base directory of the current script
+
 BASE_DIR = os.path.dirname(__file__)
 INPUT_DIR = os.path.join(BASE_DIR, "input_data")
-CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
-# Load configuration
+IS_LOCAL = os.path.exists("/Users/enzo-macmini") or os.path.exists("/Users/enzo-macbookpro") 
+CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
+
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
