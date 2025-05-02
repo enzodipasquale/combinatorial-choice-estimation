@@ -30,12 +30,12 @@ MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENE
 ################################################################################################################################
 
 # Load agent-independent data on all ranks
-quadratic_j_j_k = np.load('./data/quadratic_characteristic_j_j_k.npy')[:,:,1:]
+quadratic_j_j_k = np.load('./data/quadratic_characteristic_j_j_k.npy')
 weight_j = np.load('./data/weight_j.npy')
 
 if rank == 0:
     # Load full individual specific data on Rank 0 only
-    modular_i_j_k = np.load('./data/modular_characteristics_i_j_k.npy')[:,:,0][:,:,None]
+    modular_i_j_k = np.load('./data/modular_characteristics_i_j_k.npy')
     capacity_i = np.load('./data/capacity_i.npy')
     num_agents = len(capacity_i)
     # epsilon_si_j = np.load('./data/epsilon_si_j.npy')[:num_agents * NUM_SIMULATIONS]

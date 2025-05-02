@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_quad-new-test
+#SBATCH --job-name=combinatorial_auction_old
 #SBATCH --nodes=10
 #SBATCH --ntasks-per-node=15
 #SBATCH --cpus-per-task=1
