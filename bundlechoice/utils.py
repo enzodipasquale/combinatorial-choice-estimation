@@ -1,3 +1,8 @@
+import sys
+import os
+import contextlib
+
+
 def update_slack_counter(master_pb, slack_counter):
     num_constrs_removed = 0
     for constr in master_pb.getConstrs():
@@ -12,3 +17,15 @@ def update_slack_counter(master_pb, slack_counter):
             num_constrs_removed += 1
 
     return slack_counter, num_constrs_removed
+
+
+@contextlib.contextmanager
+def suppress_output():
+    """Context manager to suppress stdout and stderr (e.g. Gurobi license banner)."""
+    with open(os.devnull, 'w') as devnull:
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
