@@ -6,48 +6,50 @@ from bundlechoice.subproblems import get_subproblem
 import numpy as np
 import yaml
 from mpi4py import MPI
+import os
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-### Load configuration from YAML file
-with open('config.yaml', 'r') as file:
+# Base directory of the current script
+BASE_DIR = os.path.dirname(__file__)
+INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
+# Load configuration
+with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
 # Select pricing problem from config
 # init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 init_pricing, solve_pricing = None, None
 
-
-### Load data on rank 0
+# Load data on rank 0
 if rank == 0:  
-    path = './input_data/'
-
-    obs_bundle = np.load(path + "matching_i_j.npy")
+    obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
 
     item_data = {
-        "quadratic": np.load(path + "quadratic_characteristic_j_j_k.npy"),
-        "weights": np.load(path + "weight_j.npy")
-    }
+                    "quadratic": np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy"))
+                }
 
     agent_data = {
-        "modular": np.load(path + "modular_characteristics_i_j_k.npy"),
-        "capacity": np.load(path + "capacity_i.npy"),
-    }
+                    "modular": np.load(os.path.join(INPUT_DIR, "modular_characteristics_i_j_k.npy"))
+                }
 
     np.random.seed(0)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], 255, 493))
 
     data = {
-        "item_data": item_data,
-        "agent_data": agent_data,
-        "errors": errors,
-        "obs_bundle": obs_bundle
-    }
+                "item_data": item_data,
+                "agent_data": agent_data,
+                "errors": errors,
+                "obs_bundle": obs_bundle
+            }
 else:
     data = None
 
 dims = (255, 493, 4)
+
 
 ### User-defined feature oracle
 def compute_features(self, bundle_i_j):
