@@ -187,9 +187,6 @@ class BundleChoice:
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
     
-    
-
-
     def compute_estimator_row_gen(self):
 
         # Initialize pricing 

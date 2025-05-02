@@ -4,7 +4,7 @@ def get_subproblem(name):
         return init_QKP, solve_QKP
 
     elif name == "UnconstrSupermod":
-        from .unconstr_supermod import init_USM, solve_USM
+        from .quadratic_supermod import init_USM, solve_USM
         return init_USM, solve_USM
         
     else:
