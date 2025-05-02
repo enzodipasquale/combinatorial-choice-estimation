@@ -1,11 +1,11 @@
 #!/bin/bash 
 
-#SBATCH --job-name=GMM_quad_old
+#SBATCH --job-name=combinatorial_auction_old
 #SBATCH --nodes=5
-#SBATCH --ntasks-per-node=5
+#SBATCH --ntasks-per-node=10
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=10G
-#SBATCH --time=01:00:00
+#SBATCH --mem=25G
+#SBATCH --time=03:00:00
 
 module purge
 
