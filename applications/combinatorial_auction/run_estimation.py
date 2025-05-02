@@ -18,10 +18,6 @@ INPUT_DIR = os.path.join(BASE_DIR, "input_data")
 IS_LOCAL = os.path.exists("/Users/enzo-macmini") or os.path.exists("/Users/enzo-macbookpro") 
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
-# print config path
-if rank == 0:
-    print(f"Using config file: {CONFIG_PATH}")
-
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
