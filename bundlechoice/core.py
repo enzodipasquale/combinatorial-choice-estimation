@@ -193,7 +193,7 @@ class BundleChoice:
 
         # Initialize pricing 
         if self._init_pricing is not None:
-            self.local_pricing_pbs = [self._init_pricing(local_id) for local_id in range(self.num_local_agents)]
+            self.local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
             
 
         if self.rank == 0:
