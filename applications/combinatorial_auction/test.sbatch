@@ -1,11 +1,11 @@
 #!/bin/bash 
 
-#SBATCH --job-name=combinatorial_auction
-#SBATCH --nodes=5
-#SBATCH --ntasks-per-node=10
+#SBATCH --job-name=combinatorial_auction_test
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=25G
-#SBATCH --time=05:00:00
+#SBATCH --mem=5G
+#SBATCH --time=00:10:00
 
 module purge
 
