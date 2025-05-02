@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 #SBATCH --job-name=combinatorial_auction
-#SBATCH --nodes=5
+#SBATCH --nodes=10
 #SBATCH --ntasks-per-node=10
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=25G
