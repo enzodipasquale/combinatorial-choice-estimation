@@ -1,7 +1,7 @@
 from mpi4py import MPI
 import numpy as np
 import gurobipy as gp
-from .utils import update_slack_counter, suppress_output, log_iteration
+from .utils import price_term, update_slack_counter, suppress_output, log_iteration
 from datetime import datetime
 
 class BundleChoice:
@@ -109,14 +109,14 @@ class BundleChoice:
 
     
 
-    @staticmethod
-    def price_term(p_j, bundle_j = None):
-        if p_j is None:
-            return 0
-        if bundle_j is None:
-            return p_j.sum() 
-        else:
-            return bundle_j @ p_j 
+    # @staticmethod
+    # def price_term(p_j, bundle_j = None):
+    #     if p_j is None:
+    #         return 0
+    #     if bundle_j is None:
+    #         return p_j.sum() 
+    #     else:
+    #         return bundle_j @ p_j 
     
     def init_master(self):
 
@@ -140,7 +140,7 @@ class BundleChoice:
         # Initial Constraint (to make problem bounded)
         x_i_k_all = self.compute_features(np.ones_like(self.obs_bundle))
         master_pb.addConstrs((
-                u_si[si] + self.price_term(p_j) >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
+                u_si[si] + price_term(p_j).sum() >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
                 for si in range(self.num_simuls * self.num_agents)
                             ))
 
@@ -169,7 +169,7 @@ class BundleChoice:
         # Add new constraints
         new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
         master_pb.addConstrs((  
-                            u_si[si] + self.price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
+                            u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
                             for si in new_constrs_id
                             ))
 
