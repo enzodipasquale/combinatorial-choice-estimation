@@ -69,7 +69,7 @@ def print_init_master(model, num_MOD, num_QUAD, num_simulations, num_agents, num
 def check_gap(gap):
     if gap > 1e-2:
         print('X' * 200)
-        print('WARNING: Gap is too high', gap, capacity, modular_j_k)
+        print('WARNING: Gap is too high', gap)
         print('X' * 200)
 
 
