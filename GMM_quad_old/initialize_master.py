@@ -4,12 +4,14 @@ import numpy as np
 import gurobipy as gp
 import datetime
 from utilities import print_init_master, my_print
-
+import os
 
 def init_master(epsilon_si_j, modular_i_j_k, quadratic_j_j_k, num_simulations):
 
     ### Load modular_i_j_k, quadratic_j_j_k, matching_i_j
-    matching_i_j = np.load('GMM_quad_old/data/matching_i_j.npy')
+    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    matching_i_j = np.load(os.path.join(DATA_DIR, 'matching_i_j.npy'))
+
     num_agents, num_objects = matching_i_j.shape
     num_characteristics = modular_i_j_k.shape[2] + quadratic_j_j_k.shape[2]
 

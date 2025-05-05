@@ -4,7 +4,7 @@ from mpi4py import MPI
 import numpy as np
 import datetime
 import gurobipy as gp
-
+import os
 
 from initialize_master import init_master
 from pricing import init_pricing, solve_pricing
@@ -29,14 +29,22 @@ MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENE
 ####################### LOAD DATA ##############################################################################################
 ################################################################################################################################
 
+# Get path to the GMM_quad_old/data folder
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+
 # Load agent-independent data on all ranks
-quadratic_j_j_k = np.load('GMM_quad_old/data/quadratic_characteristic_j_j_k.npy')
-weight_j = np.load('GMM_quad_old/data/weight_j.npy')
+quadratic_j_j_k = np.load(os.path.join(DATA_DIR, 'quadratic_characteristic_j_j_k.npy'))
+weight_j = np.load(os.path.join(DATA_DIR, 'weight_j.npy'))
+
+# Get MPI rank
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 if rank == 0:
-    # Load full individual specific data on Rank 0 only
-    modular_i_j_k = np.load('GMM_quad_old/data/modular_characteristics_i_j_k.npy')
-    capacity_i = np.load('GMM_quad_old/data/capacity_i.npy')
+    # Load full individual-specific data on Rank 0 only
+    modular_i_j_k = np.load(os.path.join(DATA_DIR, 'modular_characteristics_i_j_k.npy'))
+    capacity_i = np.load(os.path.join(DATA_DIR, 'capacity_i.npy'))
     num_agents = len(capacity_i)
     # epsilon_si_j = np.load('GMM_quad_old/data/epsilon_si_j.npy')[:num_agents * NUM_SIMULATIONS]
     np.random.seed(0)
