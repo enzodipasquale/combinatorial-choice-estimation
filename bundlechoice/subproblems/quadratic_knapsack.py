@@ -29,6 +29,7 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
 
     # Define objective from data and master solution 
     num_mod = modular_j_k.shape[-1]
+
     L_j =  error_j + modular_j_k @ lambda_k[:num_mod] - price_term(p_j)
     Q_j_j = quadratic_j_j_k @ lambda_k[num_mod: ]
 
@@ -43,7 +44,7 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     
     if subproblem.MIPGap > .01:
         raise ValueError("MIP gap is larger than 1%")
-
+    
     # Compute value, characteristics and error at optimal bundle
     pricing_result =   np.concatenate(( [value],
                                         [error_j[optimal_bundle].sum(0)],
