@@ -10,7 +10,7 @@ __pycache__/
 # Data and logs
 # *.npy
 *.log
-*.out
+# *.out
 *.mif
 *.mps
 *.ext3
