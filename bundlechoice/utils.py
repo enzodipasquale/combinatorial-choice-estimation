@@ -46,5 +46,5 @@ def log_iteration(iteration, lambda_k, rank=0):
     print("#" * 80)
     print(f"ITERATION: {iteration}")
     print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print("Parameter:", np.array2string(lambda_k, precision=4, separator=', '))
+    # print("Parameter:", np.array2string(lambda_k, precision=4, separator=', '))
     print("#" * 80)

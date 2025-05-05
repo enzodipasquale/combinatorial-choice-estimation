@@ -175,7 +175,10 @@ class BundleChoice:
 
         # Solve master problem
         master_pb.optimize()
+        print('-'*80)
         print("Reduced cost:", max_reduced_cost)
+        print("Parameter:", lambda_k.x)
+
 
         # Save results
         # master_pb.write('output/master_pb.mps')

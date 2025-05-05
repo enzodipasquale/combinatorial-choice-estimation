@@ -34,8 +34,8 @@ def solve_master(master_pb, vars_tuple, pricing_results, slack_counter = None, t
     master_pb.optimize()
 
     # Save results
-    master_pb.write('output/master_pb.mps')
-    master_pb.write('output/master_pb.bas')
+    # master_pb.write('output/master_pb.mps')
+    # master_pb.write('output/master_pb.bas')
 
     # Print some information
     print_master_info(u_si_star, u_si_master, lambda_k, num_constrs_removed, len(new_constrs_id))
