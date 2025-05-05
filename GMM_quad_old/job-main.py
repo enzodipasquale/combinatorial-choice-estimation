@@ -20,7 +20,7 @@ TOL_CERTIFICATE = 1e-3
 MAX_SLACK_COUNTER = 5
 TOL_ROW_GENERATION = 5
 ROW_GENERATION_DECAY = 0.5
-NUM_SIMULATIONS = 30
+NUM_SIMULATIONS = 3
 
 MAX_ITERS = 100
 MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENERATION_DECAY)
@@ -30,15 +30,15 @@ MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENE
 ################################################################################################################################
 
 # Load agent-independent data on all ranks
-quadratic_j_j_k = np.load('./data/quadratic_characteristic_j_j_k.npy')
-weight_j = np.load('./data/weight_j.npy')
+quadratic_j_j_k = np.load('GMM_quad_old/data/quadratic_characteristic_j_j_k.npy')
+weight_j = np.load('GMM_quad_old/data/weight_j.npy')
 
 if rank == 0:
     # Load full individual specific data on Rank 0 only
-    modular_i_j_k = np.load('./data/modular_characteristics_i_j_k.npy')
-    capacity_i = np.load('./data/capacity_i.npy')
+    modular_i_j_k = np.load('GMM_quad_old/data/modular_characteristics_i_j_k.npy')
+    capacity_i = np.load('GMM_quad_old/data/capacity_i.npy')
     num_agents = len(capacity_i)
-    # epsilon_si_j = np.load('./data/epsilon_si_j.npy')[:num_agents * NUM_SIMULATIONS]
+    # epsilon_si_j = np.load('GMM_quad_old/data/epsilon_si_j.npy')[:num_agents * NUM_SIMULATIONS]
     np.random.seed(0)
     epsilon_si_j = np.random.normal(0, 1, size=(num_agents * NUM_SIMULATIONS, len(weight_j)))
     
