@@ -58,7 +58,7 @@ def solve_pricing(subproblem, modular_j_k, quadratic_j_j_k ,lambda_k, p_j):
                             quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
                             subproblem.x
                             ))
-    print('Row generated in %f seconds' % (time.time() - tic))
+    # print('Row generated in %f seconds' % (time.time() - tic))
     return row
 
 
