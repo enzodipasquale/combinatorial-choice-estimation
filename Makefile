@@ -11,3 +11,7 @@ run_firms_mpi:
 
 run_auction_mpi:
 	mpiexec -n 4 python3 -m applications.combinatorial_auction.run_estimation
+
+run_auction_mpi_old:
+	mpiexec -n 4 python3 GMM_quad_old/job-main.py
+
