@@ -9,7 +9,11 @@ def init_pricing(weight_j, capacity):
     # Create subproblem
     subproblem = gp.Model() 
     subproblem.setParam('OutputFlag', 0)
+    subproblem.setParam('Threads', 1)
+    subproblem.setParam('TimeLimit', 60)
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+
+
     # Create variables
     B_j = subproblem.addMVar(len(weight_j), vtype = gp.GRB.BINARY)
 
@@ -36,6 +40,10 @@ def solve_pricing(subproblem, modular_j_k, quadratic_j_j_k ,lambda_k, p_j):
     optimal_bundle = np.array(subproblem.x, dtype=bool)
     value = subproblem.objVal
     check_gap(subproblem.MIPGap)
+
+    # print runtime of the subproblem
+    print('Subproblem solved in %f seconds' % subproblem.Runtime)
+
 
     ### Compute value of characteristics at optimal bundle (1+1+K+J)
     row =   np.concatenate(([value],
