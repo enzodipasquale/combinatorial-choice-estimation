@@ -12,13 +12,13 @@ def init_QKP(self, local_id):
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
 
     # Create variables
-    B_j = subproblem.addMVar(self.num_items, vtype = gp.GRB.BINARY)
+    B_j = subproblem.addVars(self.num_items, vtype = gp.GRB.BINARY)
 
     # Knapsack constraint
     weight_j = self.item_data["weights"]
     capacity = self.local_agent_data["capacity"][local_id]
 
-    subproblem.addConstr(weight_j @ B_j <= capacity)
+    subproblem.addConstr(gp.quicksum(weight_j[j] * B_j[j] for j in range(self.num_items)) <= capacity)
     subproblem.update()
 
     return subproblem 
@@ -36,7 +36,12 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     Q_j_j = quadratic_j_j_k @ lambda_k[num_mod: ]
 
     B_j = subproblem.getVars()
-    subproblem.setObjective(B_j @ L_j + B_j @ Q_j_j @ B_j)
+    quad_expr = gp.QuadExpr()
+    for i in range(self.num_items):
+        for j in range(self.num_items):
+            quad_expr.add(B_j[i] * B_j[j], Q_j_j[i, j])
+
+    subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)) + quad_expr)
 
     # Solve the updated subproblem
     subproblem.optimize()
