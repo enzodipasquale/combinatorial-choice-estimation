@@ -50,7 +50,7 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     value = subproblem.objVal
     
     if subproblem.MIPGap > .01:
-        print(f"Subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap:.2f}")
+        print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
     # Compute value, characteristics and error at optimal bundle
     pricing_result =   np.concatenate(( [value],
