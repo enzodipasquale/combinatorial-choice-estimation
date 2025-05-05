@@ -47,7 +47,8 @@ def solve_pricing(subproblem, modular_j_k, quadratic_j_j_k ,lambda_k, p_j):
     subproblem.optimize()
     optimal_bundle = np.array(subproblem.x, dtype=bool)
     value = subproblem.objVal
-    check_gap(subproblem.MIPGap)
+    if subproblem.MIPGap > .01:
+        print(f"WARNING: MIPGap: {subproblem.MIPGap}, value: {value}")
 
     # print runtime of the subproblem
     # print('Subproblem solved in %f seconds' % subproblem.Runtime)
