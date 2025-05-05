@@ -10,7 +10,6 @@ def init_QKP(self, local_id):
     subproblem.setParam('Threads', 1)
     subproblem.setParam('TimeLimit', 60)
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-    subproblem.setParam('TimeLimit', 60)
 
     # Create variables
     B_j = subproblem.addMVar(self.num_items, vtype = gp.GRB.BINARY)
