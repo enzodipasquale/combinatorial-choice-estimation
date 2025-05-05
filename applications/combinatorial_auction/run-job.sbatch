@@ -2,10 +2,10 @@
 
 #SBATCH --job-name=combinatorial_auction
 #SBATCH --nodes=10
-#SBATCH --ntasks-per-node=10
+#SBATCH --ntasks-per-node=15
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=25G
-#SBATCH --time=05:00:00
+#SBATCH --time=03:00:00
 
 module purge
 

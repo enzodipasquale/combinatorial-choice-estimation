@@ -106,15 +106,12 @@ class BundleChoice:
 
         self.torch_local_errors = to_tensor(self.local_errors)
 
-
-    
-
     # @staticmethod
     # def price_term(p_j, bundle_j = None):
     #     if p_j is None:
     #         return 0
     #     if bundle_j is None:
-    #         return p_j.sum() 
+    #         return p_j
     #     else:
     #         return bundle_j @ p_j 
     
