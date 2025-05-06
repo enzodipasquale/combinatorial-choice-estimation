@@ -20,9 +20,9 @@ TOL_CERTIFICATE = 1e-3
 MAX_SLACK_COUNTER = 100
 TOL_ROW_GENERATION = 0
 ROW_GENERATION_DECAY = 0.5
-NUM_SIMULATIONS = 1
+NUM_SIMULATIONS = 30
 
-MAX_ITERS = 20
+MAX_ITERS = 100
 MIN_ITERS = np.log(TOL_CERTIFICATE / (TOL_ROW_GENERATION - 1)) / np.log(ROW_GENERATION_DECAY)
 
 ################################################################################################################################ 
