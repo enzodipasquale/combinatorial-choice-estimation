@@ -223,6 +223,7 @@ class BundleChoice:
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
+                print(f"stop={stop}")
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
