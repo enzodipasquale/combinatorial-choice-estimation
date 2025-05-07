@@ -26,7 +26,10 @@ class BundleChoice:
         self.num_simuls = int(config["num_simuls"])
         self.max_iters = int(config["max_iters"])
         if config["min_iters"] is None:
-            self.min_iters = np.log(self.tol_certificate / (self.tol_row_generation - 1)) / np.log(self.row_generation_decay)
+            if self.tol_row_generation == 0:
+                self.min_iters = 0
+            else:
+                self.min_iters = np.log(self.tol_certificate / (self.tol_row_generation - 1)) / np.log(self.row_generation_decay)
         else:
             self.min_iters = config["min_iters"]
 
