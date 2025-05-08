@@ -243,7 +243,6 @@ class BundleChoice:
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
-                print(f"stop={stop}")
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
@@ -254,6 +253,9 @@ class BundleChoice:
             if stop and iteration > self.min_iters:
                 if self.rank == 0:
                     print("Solution found:", lambda_k_iter)
+                    os.makedirs("output", exist_ok=True)
+                    master_pb.write('output/master_pb.mps')
+                    master_pb.write('output/master_pb.bas')
                 break
 
 
