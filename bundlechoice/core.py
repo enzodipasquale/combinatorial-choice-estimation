@@ -145,27 +145,27 @@ class BundleChoice:
     
     def update_slack_counter(self, master_pb, slack_counter):
 
-        num_constrs_removed = 0
+        to_remove = []
         for constr in master_pb.getConstrs():
             constr_name = constr.ConstrName
             
-            # If the constraint is not in the slack_counter, initialize it
             if constr_name not in slack_counter:
                 slack_counter[constr_name] = 0
 
-            # If the constraint is slack, increment the counter. Else, reset it
             if constr.Slack < 0:
                 slack_counter[constr_name] += 1
             else:
                 slack_counter[constr_name] = 0
-            
-            # If the counter exceeds the max slack counter, remove the constraint from master problem
+  
             if slack_counter[constr_name] >= self.max_slack_counter:
-                master_pb.remove(constr)
-                slack_counter.pop(constr_name)
-                num_constrs_removed += 1
+                to_remove.append(constr_name)
 
-        return slack_counter, num_constrs_removed
+        for constr_name in to_remove:
+            master_pb.remove(master_pb.getConstrByName(constr_name))
+            slack_counter.pop(constr_name, None)
+            num_constrs_removed += 1
+
+        return slack_counter, len(to_remove)
 
 
     def solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
