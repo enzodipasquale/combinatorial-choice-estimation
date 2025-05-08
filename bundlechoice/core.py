@@ -5,7 +5,7 @@ from .utils import price_term, suppress_output, log_iteration
 from datetime import datetime
 
 class BundleChoice:
-    def __init__(self, data, dims, config, compute_features, init_pricing, solve_pricing):
+    def __init__(self, data, dims, config, get_x_i_k, init_pricing, solve_pricing):
 
         # Initialize MPI
         self.comm = MPI.COMM_WORLD
@@ -34,14 +34,14 @@ class BundleChoice:
             self.min_iters = config["min_iters"]
 
         # Initialize user-defined variables
-        self._compute_features = compute_features
+        self._get_x_i_k = get_x_i_k
         self._init_pricing = init_pricing
         self._solve_pricing = solve_pricing
 
 
 
-    def compute_features(self, bundles):
-        return self._compute_features(self, bundles)
+    def get_x_i_k(self, bundles):
+        return self._get_x_i_k(self, bundles)
 
     def init_pricing(self, local_id):
         return self._init_pricing(self, local_id)
@@ -119,7 +119,7 @@ class BundleChoice:
         # master_pb.setParam('LPWarmStart', 2)
 
         # Variables and Objective
-        x_hat_k = self.compute_features(self.obs_bundle).sum(0)
+        x_hat_k = self.get_x_i_k(self.obs_bundle).sum(0)
 
         master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
         lambda_k = master_pb.addMVar(self.num_features, obj = x_hat_k, ub = 1e9 , name='parameter')
@@ -131,7 +131,7 @@ class BundleChoice:
             p_j = None
 
         # Initial Constraint (to make problem bounded)
-        x_i_k_all = self.compute_features(np.ones_like(self.obs_bundle))
+        x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
         master_pb.addConstrs((
                 u_si[si] + price_term(p_j).sum() >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
                 for si in range(self.num_simuls * self.num_agents)
@@ -158,12 +158,11 @@ class BundleChoice:
                 slack_counter[constr_name] = 0
   
             if slack_counter[constr_name] >= self.max_slack_counter:
-                to_remove.append(constr_name)
+                to_remove.append((constr_name, constr))
 
-        for constr_name in to_remove:
-            master_pb.remove(master_pb.getConstrByName(constr_name))
+        for constr_name, constr in to_remove:
+            master_pb.remove(constr)
             slack_counter.pop(constr_name, None)
-            num_constrs_removed += 1
 
         return slack_counter, len(to_remove)
 
