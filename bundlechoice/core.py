@@ -1,7 +1,7 @@
 from mpi4py import MPI
 import numpy as np
 import gurobipy as gp
-from .utils import price_term, update_slack_counter, suppress_output, log_iteration
+from .utils import price_term, suppress_output, log_iteration
 from datetime import datetime
 
 class BundleChoice:
@@ -109,14 +109,7 @@ class BundleChoice:
 
         self.torch_local_errors = to_tensor(self.local_errors)
 
-    # @staticmethod
-    # def price_term(p_j, bundle_j = None):
-    #     if p_j is None:
-    #         return 0
-    #     if bundle_j is None:
-    #         return p_j
-    #     else:
-    #         return bundle_j @ p_j 
+    
     
     def init_master(self):
 
@@ -149,6 +142,31 @@ class BundleChoice:
 
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
+    
+    def update_slack_counter(self, master_pb, slack_counter):
+
+        num_constrs_removed = 0
+        for constr in master_pb.getConstrs():
+            constr_name = constr.ConstrName
+            
+            # If the constraint is not in the slack_counter, initialize it
+            if constr_name not in slack_counter:
+                slack_counter[constr_name] = 0
+
+            # If the constraint is slack, increment the counter. Else, reset it
+            if constr.Slack < 0:
+                slack_counter[constr_name] += 1
+            else:
+                slack_counter[constr_name] = 0
+            
+            # If the counter exceeds the max slack counter, remove the constraint from master problem
+            if slack_counter[constr_name] >= self.max_slack_counter:
+                master_pb.remove(constr)
+                slack_counter.pop(constr_name)
+                num_constrs_removed += 1
+
+        return slack_counter, num_constrs_removed
+
 
     def solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
 
@@ -174,7 +192,7 @@ class BundleChoice:
                             ))
 
         # Update slack_counter
-        slack_counter, num_constrs_removed = update_slack_counter(master_pb, slack_counter)
+        slack_counter, num_constrs_removed = self.update_slack_counter(master_pb, slack_counter)
 
         # Solve master problem
         master_pb.optimize()
@@ -201,8 +219,8 @@ class BundleChoice:
         if self.rank == 0:
             # Initialize master problem
             master_pb, vars_tuple, lambda_k_iter, p_j_iter = self.init_master()
-            # Initialize slack counter                                                               
-            slack_counter = {"MAX_SLACK_COUNTER": self.max_slack_counter}
+            # Initialize slack counter       
+            slack_counter = {}
         else:
             lambda_k_iter, p_j_iter = None, None
 
