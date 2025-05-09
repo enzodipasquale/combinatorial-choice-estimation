@@ -1,12 +1,24 @@
-from mpi4py import MPI
+import os
+from datetime import datetime
+from typing import Callable, Tuple
+
 import numpy as np
 import gurobipy as gp
+from mpi4py import MPI
+
 from .utils import price_term, suppress_output, log_iteration
-from datetime import datetime
-import os
+
 
 class BundleChoice:
-    def __init__(self, data, dims, config, get_x_i_k, init_pricing, solve_pricing):
+    def __init__(
+                    self,
+                    data: dict,
+                    dims: Tuple[int, int, int],
+                    config: dict,
+                    get_x_i_k: Callable,
+                    init_pricing: Callable,
+                    solve_pricing: Callable,
+                ):
 
         # Initialize MPI
         self.comm = MPI.COMM_WORLD
