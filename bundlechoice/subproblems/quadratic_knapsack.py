@@ -8,7 +8,7 @@ def init_QKP(self, local_id):
     subproblem = gp.Model() 
     subproblem.setParam('OutputFlag', 0)
     subproblem.setParam('Threads', 1)
-    subproblem.setParam('TimeLimit', 60)
+    # subproblem.setParam('TimeLimit', 60)
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
 
     # Create variables
