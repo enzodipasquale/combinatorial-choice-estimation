@@ -3,6 +3,7 @@ import numpy as np
 import gurobipy as gp
 from .utils import price_term, suppress_output, log_iteration
 from datetime import datetime
+import os
 
 class BundleChoice:
     def __init__(self, data, dims, config, get_x_i_k, init_pricing, solve_pricing):

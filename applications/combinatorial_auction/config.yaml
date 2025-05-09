@@ -1,6 +1,6 @@
 tol_certificate: 1e-3
 max_slack_counter: 5
-tol_row_generation: 0
+tol_row_generation: 3
 row_generation_decay: 0.5
 num_simuls: 30
 max_iters: 100
