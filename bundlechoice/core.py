@@ -250,6 +250,7 @@ class BundleChoice:
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
                 stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
+                self.tol_row_generation *= self.row_generation_decay
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
@@ -266,6 +267,15 @@ class BundleChoice:
                 break
 
         return lambda_k_iter, p_j_iter
+
+
+
+
+
+
+
+
+
 
 
     def compute_estimator_ellipsoid(self, tol, A_init = None, c_init = None, max_iters = np.inf, lb_c = None):
