@@ -182,9 +182,13 @@ class BundleChoice:
         max_reduced_cost = np.max(u_si_star - u_si_master)
         if max_reduced_cost < self.tol_certificate:
             return True, lambda_k.x, p_j.x if p_j is not None else None
-
+        
         # Add new constraints
         new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
+        print('-'*80)
+
+        print("New constraints:", len(new_constrs_id))
+
         master_pb.addConstrs((  
                             u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
                             for si in new_constrs_id
@@ -192,6 +196,9 @@ class BundleChoice:
 
         # Update slack_counter
         slack_counter, num_constrs_removed = self.update_slack_counter(master_pb, slack_counter)
+
+        print("Removed constraints:", num_constrs_removed)
+        print('-'*80)
 
         # Solve master problem
         master_pb.optimize()
@@ -257,5 +264,70 @@ class BundleChoice:
                     master_pb.write('output/master_pb.mps')
                     master_pb.write('output/master_pb.bas')
                 break
+
+        return lambda_k_iter, p_j_iter
+
+
+    def compute_estimator_ellipsoid(self, tol, A_init = None, c_init = None, max_iters = np.inf, lb_c = None):
+
+        if self.item_fixed_effects:
+            raise NotImplementedError("Ellipsoid method not implemented for item fixed effects.") 
+
+        if self.rank == 0:
+
+            num_dims = self.num_features 
+            A_k = np.eye(num_dim) if A_init is None else A_init
+            c_k = np.zeros(num_dim) if c_init is None else c_init
+            lb_c = - np.inf if lb_c is None else lb_c
+
+            # check this
+            max_iters = self.num_features * (self.num_features - 1) * np.log(1/ tol)  if max_iters is None else max_iters
+            centers, matrices = [c_k], [A_k]
+
+        # Initialize pricing 
+        if self._init_pricing is not None:
+            with suppress_output():
+                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+
+        iter = 0
+        while iter < max_iters:
+            # if self.rank == 0:
+            if np.any(c_k < 0):
+                a_k = - ((c_k < 0) * 1)
+                value = np.inf
+                # print('Non productive')
+            
+            else:
+                # Solve pricing problems
+                local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
+                                            for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+
+                # Gather pricing results at rank 0
+                pricing_results = self.comm.gather(local_pricing_results, root= 0)
+
+                # Compute subgradient
+                
+                
+
+
+            
+            ### Update ellipsoid
+            b_k = (A_k @ a_k) / ((a_k @ A_k @ a_k) ** (1 / 2))
+            c_k = c_k - (1 / (num_dim + 1)) * b_k
+            A_k = gamma_1 * A_k - gamma_2 * np.outer(b_k, b_k)
+
+
+            hplanes.append(a_k.copy())
+            values.append(value)
+
+            centers.append(c_k.copy())
+            ellipsoid_matrices.append(A_k.copy())
+
+            iter += 1
+
+        best_val_id = np.argmin(values)
+        solution = centers[best_val_id]
+
+        return solution, hplanes, values, centers, ellipsoid_matrices
 
 
