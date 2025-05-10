@@ -129,7 +129,7 @@ class BundleChoice:
         master_pb = gp.Model('GMM_pb')
         master_pb.setParam('Method', 0)
         # master_pb.setParam('OutputFlag', 0)
-        # master_pb.setParam('LPWarmStart', 2)
+        master_pb.setParam('LPWarmStart', 2)
 
         # Variables and Objective
         x_hat_k = self.get_x_i_k(self.obs_bundle).sum(0)
