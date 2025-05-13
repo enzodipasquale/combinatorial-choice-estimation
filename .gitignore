@@ -1,6 +1,5 @@
 # Virtual environments
-venv/
-*/venv/
+.bundle/
 
 # Python artifacts
 __pycache__/
