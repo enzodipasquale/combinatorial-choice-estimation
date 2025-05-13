@@ -8,17 +8,18 @@ def init_QKP(self, local_id):
     subproblem = gp.Model() 
     subproblem.setParam('OutputFlag', 0)
     subproblem.setParam('Threads', 1)
-    subproblem.setParam('TimeLimit', 100)
-    subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+    time_limit = self.subproblem_settings.get("TimeLimit")
+    if time_limit is not None:  
+        subproblem.setParam("TimeLimit", time_limit)
 
-    # Create variables
+    subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
     B_j = subproblem.addVars(self.num_items, vtype = gp.GRB.BINARY)
 
     # Knapsack constraint
     weight_j = self.item_data["weights"]
     capacity = self.local_agent_data["capacity"][local_id]
-
     subproblem.addConstr(gp.quicksum(weight_j[j] * B_j[j] for j in range(self.num_items)) <= capacity)
+    
     subproblem.update()
 
     return subproblem 
@@ -49,8 +50,10 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     optimal_bundle = np.array(subproblem.x, dtype=bool)
     value = subproblem.objVal
     
-    if subproblem.MIPGap > .01:
-        print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
+    mip_gap_tol = self.subproblem_settings.get("MIPGap_tol")
+    if mip_gap_tol is not None:
+        if subproblem.MIPGap > mip_gap_tol:
+            print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
     # Compute value, characteristics and error at optimal bundle
     pricing_result =   np.concatenate(( [value],

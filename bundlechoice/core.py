@@ -46,11 +46,12 @@ class BundleChoice:
         else:
             self.min_iters = config["min_iters"]
 
-        # Initialize user-defined variables
+        self.subproblem_settings = config.get("subproblem_settings", {})
+            
+        # Initialize user-defined methods
         self._get_x_i_k = get_x_i_k
         self._init_pricing = init_pricing
         self._solve_pricing = solve_pricing
-
 
 
     def get_x_i_k(self, bundles):
