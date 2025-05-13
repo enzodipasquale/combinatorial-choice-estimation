@@ -49,9 +49,9 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     optimal_bundle = np.array(subproblem.x, dtype=bool)
     value = subproblem.objVal
     
-    mip_gap_tol = float(self.subproblem_settings.get("MIPGap_tol"))
+    mip_gap_tol = self.subproblem_settings.get("MIPGap_tol")
     if mip_gap_tol is not None:
-        if subproblem.MIPGap > mip_gap_tol:
+        if subproblem.MIPGap > float(mip_gap_tol):
             print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
     # Compute value, characteristics and error at optimal bundle
