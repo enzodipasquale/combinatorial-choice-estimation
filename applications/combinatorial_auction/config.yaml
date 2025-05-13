@@ -1,8 +1,11 @@
+num_agents: 255
+num_items: 493
+num_features: 4
+num_simuls: 50
 tol_certificate: 1e-3
 max_slack_counter: 6
 tol_row_generation: 10
 row_generation_decay: 0.5
-num_simuls: 50
 max_iters: 100
 min_iters: null
 item_fixed_effects: true

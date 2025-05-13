@@ -52,8 +52,6 @@ if rank == 0:
 else:
     data = None
 
-dims = (255, 493, 4)
-
 ### User-defined feature oracle
 def get_x_i_k(self, bundle_i_j):
     modular = self.agent_data["modular"]
@@ -65,6 +63,6 @@ def get_x_i_k(self, bundle_i_j):
 
 
 ### Run the estimation
-my_test = BundleChoice(data, dims, config, get_x_i_k, init_pricing, solve_pricing)
+my_test = BundleChoice(data, config, get_x_i_k, init_pricing, solve_pricing)
 my_test.scatter_data()
 my_test.compute_estimator_row_gen()

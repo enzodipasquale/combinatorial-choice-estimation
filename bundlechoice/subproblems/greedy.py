@@ -15,7 +15,7 @@ def greedy(self, local_id, lambda_k, p_j):
         best_item = -1
         for j in items_left:
             B_j[j] = True
-            marginal_j = error_j[j] + self.get_x_i_k(i_id, B_j) @ lambda_k - price_term(p_j, B_j) 
+            marginal_j = error_j[j] + self.get_x_k(i_id, B_j) @ lambda_k - price_term(p_j, B_j) 
             B_j[j] = False
             if marginal_j > best_val:
                 best_val = marginal_j
@@ -27,15 +27,7 @@ def greedy(self, local_id, lambda_k, p_j):
 
     optimal_bundle = B_j
 
-
-
-
-
-    
-
-
-
-    x_hat_k = self.get_x_i_k(i_id, optimal_bundle)
+    x_hat_k = self.get_x_k(i_id, optimal_bundle)
     # Compute value, characteristics and error at optimal bundle
     pricing_result =   np.concatenate(( [value],
                                         [error_j[optimal_bundle].sum(0)],

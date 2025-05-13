@@ -13,7 +13,6 @@ class BundleChoice:
     def __init__(
                     self,
                     data: dict,
-                    dims: Tuple[int, int, int],
                     config: dict,
                     get_x_i_k: Callable,
                     init_pricing: Callable,
@@ -27,16 +26,18 @@ class BundleChoice:
 
         # Load data 
         self.data = data
-        self.num_agents, self.num_items, self.num_features = dims
-
-
+        
         # Unpack config 
+        self.num_agents = int(config["num_agents"])
+        self.num_items = int(config["num_items"])
+        self.num_features = int(config["num_features"])
+        self.num_simuls = int(config["num_simuls"])
+
         self.item_fixed_effects = bool(config["item_fixed_effects"])
         self.tol_certificate = float(config["tol_certificate"])
         self.max_slack_counter = int(config["max_slack_counter"])
         self.tol_row_generation = int(config["tol_row_generation"])
         self.row_generation_decay = float(config["row_generation_decay"])
-        self.num_simuls = int(config["num_simuls"])
         self.max_iters = int(config["max_iters"])
         if config["min_iters"] is None:
             if self.tol_row_generation == 0:
