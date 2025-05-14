@@ -51,18 +51,6 @@ else:
 dims = (255, 493, 4)
 
 
-### User-defined feature oracle
-def compute_features(self, bundle_i_j):
-    modular = self.agent_data["modular"]
-    quadratic = self.item_data["quadratic"]
-    return np.concatenate((
-                            np.einsum('ijk,ij->ik', modular, bundle_i_j),
-                            np.einsum('jlk,ij,il->ik', quadratic, bundle_i_j, bundle_i_j)
-                            ), axis=1)
-
-
-### Run the estimation
-my_test = BundleChoice(data, dims, config, compute_features, init_pricing, solve_pricing)
 my_test.scatter_data()
 my_test.local_data_to_torch()
 
