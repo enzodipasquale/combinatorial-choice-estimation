@@ -42,8 +42,6 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
             quad_expr.add(B_j[i] * B_j[j], Q_j_j[i, j])
 
     subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)) + quad_expr)
-
-    # Solve the updated subproblem
     subproblem.optimize()
 
     optimal_bundle = np.array(subproblem.x, dtype=bool)
@@ -55,10 +53,10 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
             print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
     # Compute value, characteristics and error at optimal bundle
-    pricing_result =   np.concatenate(( [value],
-                                        [error_j[optimal_bundle].sum(0)],
-                                        (modular_j_k[optimal_bundle]).sum(0), 
-                                        quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
-                                        subproblem.x
-                                        ))
-    return pricing_result
+    results =   np.concatenate((    [value],
+                                    [error_j[optimal_bundle].sum(0)],
+                                    (modular_j_k[optimal_bundle]).sum(0), 
+                                    quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
+                                    subproblem.x
+                                    ))
+    return results
