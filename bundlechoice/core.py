@@ -159,7 +159,6 @@ class BundleChoice:
 
     
     def update_slack_counter(self, master_pb, slack_counter):
-
         to_remove = []
         for constr in master_pb.getConstrs():
             constr_name = constr.ConstrName
@@ -186,12 +185,10 @@ class BundleChoice:
     def solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
 
         lambda_k, u_si, p_j = vars_tuple
-
-        # Unpack pricing results
         u_si_star = pricing_results[:,0]
         eps_si_star = pricing_results[:,1]
         x_star_si_k = pricing_results[:,2: - self.num_items]
-        B_star_si_j = pricing_results[:,- self.num_items:]
+        B_star_si_j = pricing_results[:,- self.num_items:].bool()
 
         # Check certificate
         u_si_master = u_si.x
@@ -203,9 +200,7 @@ class BundleChoice:
         
         # Add new constraints
         new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
-
         print("New constraints:", len(new_constrs_id))
-
         master_pb.addConstrs((  
                             u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
                             for si in new_constrs_id
@@ -213,7 +208,6 @@ class BundleChoice:
 
         # Update slack_counter
         slack_counter, num_constrs_removed = self.update_slack_counter(master_pb, slack_counter)
-
         print("Removed constraints:", num_constrs_removed)
         print('-'*80)
 
@@ -221,12 +215,9 @@ class BundleChoice:
         master_pb.optimize()
         print('-'*80)
         print("Parameter:", lambda_k.x)
-
-
         # Save results
         # master_pb.write('output/master_pb.mps')
         # master_pb.write('output/master_pb.bas')
-                            
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
     
@@ -246,10 +237,8 @@ class BundleChoice:
 
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 
-
         #=========== Main loop ===========#
         for iteration in range(self.max_iters):
-
             # Solve pricing 
             local_new_rows = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                                         for local_id, pricing_pb in enumerate(local_pricing_pbs)])
