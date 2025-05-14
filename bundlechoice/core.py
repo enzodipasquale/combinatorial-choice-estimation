@@ -1,4 +1,5 @@
 import os
+import inspect
 from datetime import datetime
 from typing import Callable, Tuple
 
@@ -54,8 +55,9 @@ class BundleChoice:
         self._init_pricing = init_pricing
         self._solve_pricing = solve_pricing
 
-    def get_x_k(self, i_id, B_j):
-        return self._get_x_k(self, i_id, B_j)
+    # Features methods
+    def get_x_k(self, i_id, B_j, local = False):
+        return self._get_x_k(self, i_id, B_j, local)
 
     def get_x_i_k(self, B_i_j):
         x_i_k = []
@@ -63,13 +65,7 @@ class BundleChoice:
             x_i_k.append(self.get_x_k(i, B_i_j[i]))
         return np.stack(x_i_k)
 
-    # def get_x_i_k(self, B_i_j):
-    #     x_i_k = []
-    #     for i in range(self.num_agents):
-    #         x_i_k.append(self.get_x_k(i, B_i_j[i]))
-    #     return np.stack(x_i_k)
-    
-
+    # Pricing problem methods
     def init_pricing(self, local_id):
         return self._init_pricing(self, local_id)
 
@@ -79,6 +75,17 @@ class BundleChoice:
     def solve_local_pricing(self, local_pricing_pbs, lambda_k_iter, p_j_iter):
         return np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                             for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+
+    def solve_pricing_offline(self, lambda_k, p_j = None):
+        if self._init_pricing is not None:
+            with suppress_output():
+                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+        else:
+            local_pricing_pbs = self.local_indeces
+        local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k, p_j)
+        pricing_results = self.comm.gather(local_pricing_results, root= 0)
+
+        return np.concatenate(pricing_results) if self.rank == 0 else None
 
     def scatter_data(self):
         # Load agent-independent data on all ranks
@@ -91,11 +98,9 @@ class BundleChoice:
             self.obs_bundle = self.data.get("obs_bundle", None)
         else:
             self.item_data = None
-
-        # scatter item_data to all ranks
         self.item_data = self.comm.bcast(self.item_data, root=0)
 
-        # scatter agent_data and errors in chunks
+        # Scatter agent-dependant data and errors in chunks
         if self.rank == 0:
             i_chunks = np.array_split(np.tile(np.arange(self.num_agents), self.num_simuls), self.comm_size)
             si_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
@@ -104,14 +109,14 @@ class BundleChoice:
                             "agent_data": {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
                                             if self.agent_data is not None else None,
                             "errors": self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
-                            # "obs_bundle": self.obs_bundle[i_chunks[r],:] if self.obs_bundle is not None else None
                             }
                             for r in range(self.comm_size)
                             ]
         else:
             data_chunks = None
-        
         local_data = self.comm.scatter(data_chunks, root=0)
+
+        # Unpack local data
         self.local_indeces = local_data["agent_indeces"]
         self.local_errors = local_data["errors"]
         self.local_agent_data = local_data["agent_data"]
@@ -141,21 +146,7 @@ class BundleChoice:
 
         self.torch_local_errors = to_tensor(self.local_errors)
 
-    def solve_pricing_offline(self, lambda_k, p_j = None):
-        if self._init_pricing is not None:
-            with suppress_output():
-                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
-        else:
-            local_pricing_pbs = self.local_indeces
-        print(local_pricing_pbs)
-        local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k, p_j) 
-                                        for local_id, pricing_pb in enumerate(local_pricing_pbs)])
-        # pricing_results = self.comm.gather(local_pricing_results, root= 0)
-
-        # return np.concatenate(pricing_results) if self.rank == 0 else None
-        
-
-    
+    # Master problem methods
     def init_master(self):
 
         master_pb = gp.Model('GMM_pb')
@@ -188,9 +179,6 @@ class BundleChoice:
 
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
-    
-
-    
     def update_slack_counter(self, master_pb, slack_counter):
         to_remove = []
         for constr in master_pb.getConstrs():
@@ -252,6 +240,7 @@ class BundleChoice:
         # master_pb.write('output/master_pb.bas')
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
+    # ROW GENERATION
     def compute_estimator_row_gen(self):
 
         # Initialize pricing 

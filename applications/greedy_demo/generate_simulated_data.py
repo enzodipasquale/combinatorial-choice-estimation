@@ -35,10 +35,12 @@ else:
 
 def get_x_k(self, i_id, B_j, local= False):  
     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
-    return np.concatenate((modular[B_j].sum(1), [B_j.sum(0) **2]))
-
+    return np.concatenate((modular[B_j].sum(0), [-B_j.sum() **2]))
 
 greedy_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 greedy_demo.scatter_data()
 lambda_k_star = np.ones(config["num_features"])
-greedy_demo.solve_all_pricing(lambda_k_star)
+results = greedy_demo.solve_pricing_offline(lambda_k_star)
+
+if rank == 0:
+    print(results.shape)
