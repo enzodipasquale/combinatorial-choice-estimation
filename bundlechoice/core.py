@@ -6,7 +6,7 @@ import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
 
-from .utils import price_term, suppress_output, log_iteration
+from .utils import price_term, suppress_output, log_iteration, log_solution
 
 
 class BundleChoice:
@@ -195,13 +195,14 @@ class BundleChoice:
 
         # Check certificate
         u_si_master = u_si.x
+        print('-'*80)
         max_reduced_cost = np.max(u_si_star - u_si_master)
+        print("Reduced cost:", max_reduced_cost)
         if max_reduced_cost < self.tol_certificate:
             return True, lambda_k.x, p_j.x if p_j is not None else None
         
         # Add new constraints
         new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
-        print('-'*80)
 
         print("New constraints:", len(new_constrs_id))
 
@@ -219,7 +220,6 @@ class BundleChoice:
         # Solve master problem
         master_pb.optimize()
         print('-'*80)
-        print("Reduced cost:", max_reduced_cost)
         print("Parameter:", lambda_k.x)
 
 
@@ -237,31 +237,25 @@ class BundleChoice:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
             
-
+        # Initialize master 
         if self.rank == 0:
-            # Initialize master problem
-            master_pb, vars_tuple, lambda_k_iter, p_j_iter = self.init_master()
-            # Initialize slack counter       
+            master_pb, vars_tuple, lambda_k_iter, p_j_iter = self.init_master()     
             slack_counter = {}
         else:
             lambda_k_iter, p_j_iter = None, None
 
-        # Broadcast master solution to all ranks
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 
 
-        # Main loop
+        #=========== Main loop ===========#
         for iteration in range(self.max_iters):
 
-            ### Solve pricing problems
+            # Solve pricing 
             local_new_rows = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                                         for local_id, pricing_pb in enumerate(local_pricing_pbs)])
-
-            # Gather pricing results at rank 0
             pricing_results = self.comm.gather(local_new_rows, root= 0)
 
-
-            ### Solve master at rank 0 
+            # Solve master 
             if self.rank == 0:        
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
@@ -270,18 +264,12 @@ class BundleChoice:
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
 
-            # Broadcast master results to all ranks
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
             # Break loop if stop is True and min iters is reached
             if stop and iteration > self.min_iters:
-                if self.rank == 0:
-                    print("Solution found:", lambda_k_iter)
-                    os.makedirs("output", exist_ok=True)
-                    master_pb.write('output/master_pb.mps')
-                    master_pb.write('output/master_pb.bas')
+                log_solution(master_pb, lambda_k_iter, self.rank)
                 break
-
         return lambda_k_iter, p_j_iter
 
 

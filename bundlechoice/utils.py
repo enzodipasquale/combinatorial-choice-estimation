@@ -33,3 +33,10 @@ def log_iteration(iteration, lambda_k, rank=0):
     print(f"ITERATION: {iteration}")
     print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     # print("Parameter:", np.array2string(lambda_k, precision=4, separator=', '))
+
+def log_solution(master_pb, lambda_k_iter, rank):
+    if rank == 0:
+        print("Solution found:", lambda_k_iter)
+        os.makedirs("output", exist_ok=True)
+        master_pb.write('output/master_pb.mps')
+        master_pb.write('output/master_pb.bas')
