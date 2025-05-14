@@ -17,3 +17,6 @@ run_auction_old:
 
 run_auction_mpi_old:
 	mpiexec -n 4 python3 GMM_quad_old/job-main.py
+
+greedy_simulate_data:
+	mpiexec -n 4 python3 -m applications.greedy_demo.generate_simulated_data

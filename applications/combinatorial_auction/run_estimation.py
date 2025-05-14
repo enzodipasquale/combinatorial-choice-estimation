@@ -15,7 +15,7 @@ rank = comm.Get_rank()
 
 BASE_DIR = os.path.dirname(__file__)
 INPUT_DIR = os.path.join(BASE_DIR, "input_data")
-IS_LOCAL = os.path.exists("/Users/enzo-macmini") or os.path.exists("/Users/enzo-macbookpro") 
+IS_LOCAL = os.path.exists("/Users/enzo-macbookpro") 
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
 with open(CONFIG_PATH, 'r') as file:
@@ -41,7 +41,7 @@ if rank == 0:
     }
 
     np.random.seed(0)
-    errors = np.random.normal(0, 1, size=(config["num_simuls"], 255, 493))
+    errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
 
     data = {
         "item_data": item_data,
@@ -63,6 +63,6 @@ def get_x_i_k(self, bundle_i_j):
 
 
 ### Run the estimation
-my_test = BundleChoice(data, config, get_x_i_k, init_pricing, solve_pricing)
-my_test.scatter_data()
-my_test.compute_estimator_row_gen()
+combinatorial_auction = BundleChoice(data, config, get_x_i_k, init_pricing, solve_pricing)
+combinatorial_auction.scatter_data()
+combinatorial_auction.compute_estimator_row_gen()
