@@ -167,7 +167,8 @@ class BundleChoice:
             if constr_name not in slack_counter:
                 slack_counter[constr_name] = 0
 
-            if constr.Slack < 0:
+            # if constr.Slack < 0:
+            if constr.CBasis == 0:
                 slack_counter[constr_name] += 1
             else:
                 slack_counter[constr_name] = 0
