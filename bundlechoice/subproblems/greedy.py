@@ -4,9 +4,7 @@ from bundlechoice.utils import price_term
 
 def solve_greedy(self, _,local_id, lambda_k, p_j):
 
-    i_id = self.local_indeces[local_id]
     error_j = self.local_errors[local_id]
-
     B_j = np.zeros(self.num_items, dtype=bool)
     items_left = np.arange(self.num_items)
 
@@ -15,7 +13,7 @@ def solve_greedy(self, _,local_id, lambda_k, p_j):
         best_item = -1
         for j in items_left:
             B_j[j] = True
-            marginal_j = error_j[j] + self.get_x_k(i_id, B_j) @ lambda_k - price_term(p_j, B_j) 
+            marginal_j = error_j[j] + self.get_x_k(local_id, B_j, local =True) @ lambda_k - price_term(p_j, B_j) 
             B_j[j] = False
             if marginal_j > best_val:
                 best_val = marginal_j
@@ -26,12 +24,13 @@ def solve_greedy(self, _,local_id, lambda_k, p_j):
         items_left = items_left[items_left != best_item]
 
     optimal_bundle = B_j
+    x_hat_k = self.get_x_k(local_id, optimal_bundle, local =True)
+    value = x_hat_k @ lambda_k - price_term(p_j, optimal_bundle) + error_j[optimal_bundle].sum()
 
-    x_hat_k = self.get_x_k(i_id, optimal_bundle)
-    # Compute value, characteristics and error at optimal bundle
-    results =   np.concatenate(( [value],
-                                        [error_j[optimal_bundle].sum(0)],
-                                        x_hat_k,
-                                        optimal_bundle.astype(float)
-                                        ))
+    results = np.concatenate((  value,
+                                [error_j[optimal_bundle].sum(0)],
+                                x_hat_k,
+                                optimal_bundle.astype(float)
+                                ))
     return results
+

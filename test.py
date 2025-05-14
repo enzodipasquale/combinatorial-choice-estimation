@@ -1,8 +1,11 @@
-import numpy as np
-# print((np.ones((493,493,3)) @ np.ones(3)).shape)
-for i in range(300,350):
-    with np.errstate(divide='ignore', overflow='ignore', invalid='ignore'):
-        result = np.ones((i, 3)) @ np.ones(3)
-        print(result.shape)
-# print((np.ones(3) @ np.ones(3)).shape)
+import inspect
 
+def my_function(arg1, arg2, kwarg1=None):
+    pass
+
+# Get the function signature
+num_args = len(inspect.signature(my_function).parameters)
+
+
+# Print the number of arguments (both positional and keyword)
+print(f"The function has {num_args} parameters.")

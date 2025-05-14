@@ -54,22 +54,13 @@ else:
 
 ### User-defined feature oracle
 
-def get_x_k(self, i_id, B_j):
+def get_x_k(self, i_id, B_j, _):
     modular = self.agent_data["modular"][i_id]
     quadratic = self.item_data["quadratic"]
     return np.concatenate((
                             np.einsum('jk,j->k', modular, B_j),
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
-# def get_x_k(self, i_id, B_j):
-#     modular = self.local_agent_data["modular"][i_id]
-#     quadratic = self.item_data["quadratic"]
-#     return np.concatenate((
-#                             np.einsum('jk,j->k', modular, B_j),
-#                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
-#                             ))
-
-
 
 ### Run the estimation
 combinatorial_auction = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
