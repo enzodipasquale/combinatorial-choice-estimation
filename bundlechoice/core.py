@@ -33,12 +33,12 @@ class BundleChoice:
         self.num_features = int(config["num_features"])
         self.num_simuls = int(config["num_simuls"])
 
-        self.item_fixed_effects = bool(config["item_fixed_effects"])
-        self.tol_certificate = float(config["tol_certificate"])
-        self.max_slack_counter = int(config["max_slack_counter"])
-        self.tol_row_generation = int(config["tol_row_generation"])
-        self.row_generation_decay = float(config["row_generation_decay"])
-        self.max_iters = int(config["max_iters"])
+        self.item_fixed_effects = bool(config["item_fixed_effects"]) if "item_fixed_effects" in config else False
+        self.tol_certificate = float(config["tol_certificate"]) if "tol_certificate" in config else 0.01
+        self.max_slack_counter = int(config["max_slack_counter"]) if "max_slack_counter" in config else np.inf
+        self.tol_row_generation = float(config["tol_row_generation"]) if "tol_row_generation" in config else 0
+        self.row_generation_decay = float(config["row_generation_decay"]) if "row_generation_decay" in config else 0
+        self.max_iters = int(config["max_iters"]) if "max_iters" in config else np.inf
         if config["min_iters"] is None:
             if self.tol_row_generation == 0:
                 self.min_iters = 0
@@ -72,7 +72,7 @@ class BundleChoice:
             self.error_s_i_j = self.data.get("errors", None)
             self.error_si_j = self.error_s_i_j.reshape(self.num_simuls * self.num_agents, self.num_items) if self.error_s_i_j is not None else None
 
-            self.obs_bundle = self.data["obs_bundle"]
+            self.obs_bundle = self.data.get("obs_bundle", None)
         else:
             self.item_data = None
 
@@ -124,7 +124,20 @@ class BundleChoice:
 
         self.torch_local_errors = to_tensor(self.local_errors)
 
-    
+    def solve_all_pricing(self, lambda_k, p_j = None):
+        if self._init_pricing is not None:
+            with suppress_output():
+                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+        else:
+            local_pricing_pbs = self.local_indeces
+        print(local_pricing_pbs)
+        local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k, p_j) 
+                                        for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+        # pricing_results = self.comm.gather(local_pricing_results, root= 0)
+
+        # return np.concatenate(pricing_results) if self.rank == 0 else None
+        
+
     
     def init_master(self):
 
@@ -240,9 +253,9 @@ class BundleChoice:
         #=========== Main loop ===========#
         for iteration in range(self.max_iters):
             # Solve pricing 
-            local_new_rows = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
+            local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                                         for local_id, pricing_pb in enumerate(local_pricing_pbs)])
-            pricing_results = self.comm.gather(local_new_rows, root= 0)
+            pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
             # Solve master 
             if self.rank == 0:        
@@ -291,7 +304,8 @@ class BundleChoice:
         if self._init_pricing is not None:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
-
+        else:
+            local_pricing_pbs = self.local_indeces
         iter = 0
         while iter < max_iters:
             # if self.rank == 0:

@@ -2,7 +2,7 @@ import numpy as np
 from bundlechoice.utils import price_term
 
 
-def greedy(self, local_id, lambda_k, p_j):
+def solve_greedy(self, _,local_id, lambda_k, p_j):
 
     i_id = self.local_indeces[local_id]
     error_j = self.local_errors[local_id]

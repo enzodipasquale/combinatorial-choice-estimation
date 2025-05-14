@@ -6,6 +6,10 @@ def get_subproblem(name):
     elif name == "UnconstrSupermod":
         from .quadratic_supermod import solve_QS
         return None, solve_USM
+    
+    elif name == "Greedy":
+        from .greedy import solve_greedy
+        return None, solve_greedy
         
     else:
         raise ValueError(f"Unknown subproblem: {name}")
