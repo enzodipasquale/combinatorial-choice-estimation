@@ -24,6 +24,7 @@ def init_QKP(self, local_id):
 
     return subproblem 
 
+
 def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
 
     error_j = self.local_errors[local_id]

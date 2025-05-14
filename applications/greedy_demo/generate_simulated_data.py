@@ -33,18 +33,12 @@ if rank == 0:
 else:
     data = None
 
-def get_x_k(self, i_id, B_j):  
-    x_i_j_k = self.agent_data["modular"]  
-    return np.concatenate((x_i_j_k[i_id, B_j].sum(1), [B_j.sum(0) **2]))
+def get_x_k(self, i_id, B_j, local= False):  
+    modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
+    return np.concatenate((modular[B_j].sum(1), [B_j.sum(0) **2]))
 
-def get_x_i_k(self, bundle_i_j):
-    modular = self.agent_data["modular"]
-    return np.concatenate((
-                            np.einsum('ijk,ij->ik', modular, bundle_i_j),
-                            bundle_i_j.sum(1, keepdims=True) ** 2
-                            ), axis=1)
 
-greedy_demo = BundleChoice(data, config, get_x_i_k, init_pricing, solve_pricing)
+greedy_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 greedy_demo.scatter_data()
 lambda_k_star = np.ones(config["num_features"])
 greedy_demo.solve_all_pricing(lambda_k_star)

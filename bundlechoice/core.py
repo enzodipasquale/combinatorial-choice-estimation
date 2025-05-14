@@ -6,7 +6,7 @@ import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
 
-from .utils import price_term, suppress_output, log_iteration, log_solution
+from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
 
 class BundleChoice:
@@ -14,7 +14,7 @@ class BundleChoice:
                     self,
                     data: dict,
                     config: dict,
-                    get_x_i_k: Callable,
+                    get_x_k: Callable,
                     init_pricing: Callable,
                     solve_pricing: Callable,
                 ):
@@ -50,19 +50,35 @@ class BundleChoice:
         self.subproblem_settings = config.get("subproblem_settings", {})
             
         # Initialize user-defined methods
-        self._get_x_i_k = get_x_i_k
+        self._get_x_k = get_x_k
         self._init_pricing = init_pricing
         self._solve_pricing = solve_pricing
 
+    def get_x_k(self, i_id, B_j):
+        return self._get_x_k(self, i_id, B_j)
 
-    def get_x_i_k(self, bundles):
-        return self._get_x_i_k(self, bundles)
+    def get_x_i_k(self, B_i_j):
+        x_i_k = []
+        for i in range(self.num_agents):
+            x_i_k.append(self.get_x_k(i, B_i_j[i]))
+        return np.stack(x_i_k)
+
+    # def get_x_i_k(self, B_i_j):
+    #     x_i_k = []
+    #     for i in range(self.num_agents):
+    #         x_i_k.append(self.get_x_k(i, B_i_j[i]))
+    #     return np.stack(x_i_k)
+    
 
     def init_pricing(self, local_id):
         return self._init_pricing(self, local_id)
 
     def solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter):
         return self._solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter)
+
+    def solve_local_pricing(self, local_pricing_pbs, lambda_k_iter, p_j_iter):
+        return np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
+                            for local_id, pricing_pb in enumerate(local_pricing_pbs)])
 
     def scatter_data(self):
         # Load agent-independent data on all ranks
@@ -71,7 +87,7 @@ class BundleChoice:
             self.agent_data = self.data.get("agent_data", None)
             self.error_s_i_j = self.data.get("errors", None)
             self.error_si_j = self.error_s_i_j.reshape(self.num_simuls * self.num_agents, self.num_items) if self.error_s_i_j is not None else None
-
+            del self.error_s_i_j
             self.obs_bundle = self.data.get("obs_bundle", None)
         else:
             self.item_data = None
@@ -88,6 +104,7 @@ class BundleChoice:
                             "agent_data": {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
                                             if self.agent_data is not None else None,
                             "errors": self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
+                            # "obs_bundle": self.obs_bundle[i_chunks[r],:] if self.obs_bundle is not None else None
                             }
                             for r in range(self.comm_size)
                             ]
@@ -124,7 +141,7 @@ class BundleChoice:
 
         self.torch_local_errors = to_tensor(self.local_errors)
 
-    def solve_all_pricing(self, lambda_k, p_j = None):
+    def solve_pricing_offline(self, lambda_k, p_j = None):
         if self._init_pricing is not None:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
@@ -143,7 +160,6 @@ class BundleChoice:
 
         master_pb = gp.Model('GMM_pb')
         master_pb.setParam('Method', 0)
-        # master_pb.setParam('OutputFlag', 0)
         master_pb.setParam('LPWarmStart', 2)
 
         # Variables and Objective
@@ -165,10 +181,14 @@ class BundleChoice:
                 for si in range(self.num_simuls * self.num_agents)
                             ))
 
+        log_init_master(self, x_hat_k)
+
         # Solve master problem
         master_pb.optimize()
 
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
+
+    
 
     
     def update_slack_counter(self, master_pb, slack_counter):
@@ -194,14 +214,13 @@ class BundleChoice:
 
         return slack_counter, len(to_remove)
 
-
     def solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
 
         lambda_k, u_si, p_j = vars_tuple
         u_si_star = pricing_results[:,0]
         eps_si_star = pricing_results[:,1]
         x_star_si_k = pricing_results[:,2: - self.num_items]
-        B_star_si_j = pricing_results[:,- self.num_items:].bool()
+        B_star_si_j = pricing_results[:,- self.num_items:].astype(bool)
 
         # Check certificate
         u_si_master = u_si.x
@@ -233,7 +252,6 @@ class BundleChoice:
         # master_pb.write('output/master_pb.bas')
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
-    
     def compute_estimator_row_gen(self):
 
         # Initialize pricing 
@@ -253,8 +271,7 @@ class BundleChoice:
         #=========== Main loop ===========#
         for iteration in range(self.max_iters):
             # Solve pricing 
-            local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
-                                        for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+            local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
             # Solve master 
@@ -284,67 +301,67 @@ class BundleChoice:
 
 
 
-    def compute_estimator_ellipsoid(self, tol, A_init = None, c_init = None, max_iters = np.inf, lb_c = None):
+    # def compute_estimator_ellipsoid(self, tol, A_init = None, c_init = None, max_iters = np.inf, lb_c = None):
 
-        if self.item_fixed_effects:
-            raise NotImplementedError("Ellipsoid method not implemented for item fixed effects.") 
+    #     if self.item_fixed_effects:
+    #         raise NotImplementedError("Ellipsoid method not implemented for item fixed effects.") 
 
-        if self.rank == 0:
+    #     if self.rank == 0:
 
-            num_dims = self.num_features 
-            A_k = np.eye(num_dim) if A_init is None else A_init
-            c_k = np.zeros(num_dim) if c_init is None else c_init
-            lb_c = - np.inf if lb_c is None else lb_c
+    #         num_dims = self.num_features 
+    #         A_k = np.eye(num_dim) if A_init is None else A_init
+    #         c_k = np.zeros(num_dim) if c_init is None else c_init
+    #         lb_c = - np.inf if lb_c is None else lb_c
 
-            # check this
-            max_iters = self.num_features * (self.num_features - 1) * np.log(1/ tol)  if max_iters is None else max_iters
-            centers, matrices = [c_k], [A_k]
+    #         # check this
+    #         max_iters = self.num_features * (self.num_features - 1) * np.log(1/ tol)  if max_iters is None else max_iters
+    #         centers, matrices = [c_k], [A_k]
 
-        # Initialize pricing 
-        if self._init_pricing is not None:
-            with suppress_output():
-                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
-        else:
-            local_pricing_pbs = self.local_indeces
-        iter = 0
-        while iter < max_iters:
-            # if self.rank == 0:
-            if np.any(c_k < 0):
-                a_k = - ((c_k < 0) * 1)
-                value = np.inf
-                # print('Non productive')
+    #     # Initialize pricing 
+    #     if self._init_pricing is not None:
+    #         with suppress_output():
+    #             local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+    #     else:
+    #         local_pricing_pbs = self.local_indeces
+    #     iter = 0
+    #     while iter < max_iters:
+    #         # if self.rank == 0:
+    #         if np.any(c_k < 0):
+    #             a_k = - ((c_k < 0) * 1)
+    #             value = np.inf
+    #             # print('Non productive')
             
-            else:
-                # Solve pricing problems
-                local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
-                                            for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+    #         else:
+    #             # Solve pricing problems
+    #             local_pricing_results = np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
+    #                                         for local_id, pricing_pb in enumerate(local_pricing_pbs)])
 
-                # Gather pricing results at rank 0
-                pricing_results = self.comm.gather(local_pricing_results, root= 0)
+    #             # Gather pricing results at rank 0
+    #             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
-                # Compute subgradient
+    #             # Compute subgradient
                 
                 
 
 
             
-            ### Update ellipsoid
-            b_k = (A_k @ a_k) / ((a_k @ A_k @ a_k) ** (1 / 2))
-            c_k = c_k - (1 / (num_dim + 1)) * b_k
-            A_k = gamma_1 * A_k - gamma_2 * np.outer(b_k, b_k)
+    #         ### Update ellipsoid
+    #         b_k = (A_k @ a_k) / ((a_k @ A_k @ a_k) ** (1 / 2))
+    #         c_k = c_k - (1 / (num_dim + 1)) * b_k
+    #         A_k = gamma_1 * A_k - gamma_2 * np.outer(b_k, b_k)
 
 
-            hplanes.append(a_k.copy())
-            values.append(value)
+    #         hplanes.append(a_k.copy())
+    #         values.append(value)
 
-            centers.append(c_k.copy())
-            ellipsoid_matrices.append(A_k.copy())
+    #         centers.append(c_k.copy())
+    #         ellipsoid_matrices.append(A_k.copy())
 
-            iter += 1
+    #         iter += 1
 
-        best_val_id = np.argmin(values)
-        solution = centers[best_val_id]
+    #     best_val_id = np.argmin(values)
+    #     solution = centers[best_val_id]
 
-        return solution, hplanes, values, centers, ellipsoid_matrices
+    #     return solution, hplanes, values, centers, ellipsoid_matrices
 
 

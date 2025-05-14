@@ -40,3 +40,21 @@ def log_solution(master_pb, lambda_k_iter, rank):
         os.makedirs("output", exist_ok=True)
         master_pb.write('output/master_pb.mps')
         master_pb.write('output/master_pb.bas')
+
+
+def log_init_master(self, x_hat_k):
+    print("#"*80)
+    print("#"*80)
+
+    print("number of agents     :", self.num_agents)
+    print("number of items      :", self.num_items)
+    print("number of features   :", self.num_features)
+    print("number of simulations:", self.num_simuls)
+    print("first moments:", x_hat_k)
+    print('-'*80)
+    print("max slack_counter   : ", self.max_slack_counter)
+    print("tol row_generation  :", self.tol_row_generation)
+    print("row generation decay:", self.row_generation_decay)
+    print("mininmum iterations :", self.min_iters)
+    print("#"*80)
+    print("#"*80)
