@@ -29,9 +29,9 @@ def greedy(self, local_id, lambda_k, p_j):
 
     x_hat_k = self.get_x_k(i_id, optimal_bundle)
     # Compute value, characteristics and error at optimal bundle
-    pricing_result =   np.concatenate(( [value],
+    results =   np.concatenate(( [value],
                                         [error_j[optimal_bundle].sum(0)],
                                         x_hat_k,
                                         optimal_bundle.astype(float)
                                         ))
-    return pricing_result
+    return results
