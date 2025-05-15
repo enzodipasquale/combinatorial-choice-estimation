@@ -1,10 +1,11 @@
 # Virtual environments
 .bundle/
 
-# Python artifacts
+# Python-related artifacts
 __pycache__/
 *.py[cod]
 *.so
+*.egg-info/
 
 # Data and logs
 # *.npy
@@ -16,11 +17,11 @@ __pycache__/
 *.bas
 *.mps
 
-# Jupyter
+# Jupyter Notebook artifacts
 .ipynb_checkpoints/
 
-# macOS junk
+# macOS system files
 .DS_Store
 
-# VSCode settings (optional)
+# Editor settings
 .vscode/
