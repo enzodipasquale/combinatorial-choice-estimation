@@ -183,11 +183,9 @@ class BundleChoice:
 
 
         log_init_master(self, x_hat_k)
-        
-
-        # Solve master problem
         master_pb.optimize()
-  
+        print('-'*80)
+        print("Parameter:", lambda_k.x)
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
     def update_slack_counter(self, master_pb, slack_counter):
