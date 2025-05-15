@@ -10,62 +10,6 @@ from mpi4py import MPI
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
-# At top of bundle_choice.py or in bundle_config.py
-
-from dataclasses import dataclass, field
-from typing import Optional
-import numpy as np
-
-@dataclass(frozen=True)
-class BundleConfig:
-    num_agents: int
-    num_items: int
-    num_features: int
-    num_simuls: int
-
-    item_fixed_effects: bool = False
-
-    tol_certificate: float = 0.01
-    max_slack_counter: int = np.inf
-    tol_row_generation: float = 0
-    row_generation_decay: float = 0
-    max_iters: int = np.inf
-    min_iters: Optional[float] = None
-
-    subproblem: Optional[str] = None 
-    subproblem_settings: dict = field(default_factory=dict)
-
-    @staticmethod
-    def from_dict(cfg: dict) -> 'BundleConfig':
-        cfg = dict(cfg)  
-
-        # Set defaults
-        cfg.setdefault("item_fixed_effects", False)
-
-        cfg.setdefault("tol_certificate", 0.01)
-        cfg.setdefault("max_slack_counter", np.inf)
-        cfg.setdefault("tol_row_generation", 0)
-        cfg.setdefault("row_generation_decay", 0)
-        cfg.setdefault("max_iters", np.inf)
-
-        cfg.setdefault("subproblem", None)
-        cfg.setdefault("subproblem_settings", {})
-        
-        cfg["tol_certificate"] = float(cfg["tol_certificate"])
-        cfg["tol_row_generation"] = float(cfg["tol_row_generation"])
-        cfg["row_generation_decay"] = float(cfg["row_generation_decay"])
-
-        # Compute min_iters 
-        if cfg.get("min_iters") is None:
-            tol_cert = cfg["tol_certificate"]
-            tol_row = cfg["tol_row_generation"]
-            decay = cfg["row_generation_decay"]
-            if tol_row == 0:
-                cfg["min_iters"] = 0
-            else:
-                cfg["min_iters"] = np.log(tol_cert / (tol_row - 1)) / np.log(decay)
-
-        return BundleConfig(**cfg)
 
 class BundleChoice:
     def __init__(
@@ -76,38 +20,40 @@ class BundleChoice:
                     init_pricing: Callable,
                     solve_pricing: Callable,
                 ):
+
         # Initialize MPI
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.comm_size = self.comm.Get_size()
 
-        # Load data
+        # Load data 
         self.data = data
+        
+        # Unpack config 
+        self.num_agents = int(config["num_agents"])
+        self.num_items = int(config["num_items"])
+        self.num_features = int(config["num_features"])
+        self.num_simuls = int(config["num_simuls"])
 
-        # Parse config and unpack parameters
-        self.config = BundleConfig.from_dict(config)
-
-        self.num_agents = self.config.num_agents
-        self.num_items = self.config.num_items
-        self.num_features = self.config.num_features
-        self.num_simuls = self.config.num_simuls
-
-        self.item_fixed_effects = self.config.item_fixed_effects
-        self.tol_certificate = self.config.tol_certificate
-        self.max_slack_counter = self.config.max_slack_counter
-        self.tol_row_generation = self.config.tol_row_generation
-        self.row_generation_decay = self.config.row_generation_decay
-
-        self.max_iters = self.config.max_iters
-        self.min_iters = self.config.min_iters
-
-        self.subproblem_settings = self.config.subproblem_settings
-
+        self.item_fixed_effects = bool(config["item_fixed_effects"]) if "item_fixed_effects" in config else False
+        self.tol_certificate = float(config["tol_certificate"]) if "tol_certificate" in config else 0.01
+        self.max_slack_counter = int(config["max_slack_counter"]) if "max_slack_counter" in config else np.inf
+        self.tol_row_generation = float(config["tol_row_generation"]) if "tol_row_generation" in config else 0
+        self.row_generation_decay = float(config["row_generation_decay"]) if "row_generation_decay" in config else 0
+        self.max_iters = int(config["max_iters"]) if "max_iters" in config else np.inf
+        if config["min_iters"] is None:
+            if self.tol_row_generation == 0:
+                self.min_iters = 0
+            else:
+                self.min_iters = np.log(self.tol_certificate / (self.tol_row_generation - 1)) / np.log(self.row_generation_decay)
+        else:
+            self.min_iters = config["min_iters"]
+        self.subproblem_settings = config.get("subproblem_settings", {})
+            
         # Initialize user-defined methods
         self._get_x_k = get_x_k
         self._init_pricing = init_pricing
         self._solve_pricing = solve_pricing
-
 
     # Features methods
     def get_x_k(self, i_id, B_j, local = False):
@@ -298,7 +244,9 @@ class BundleChoice:
         master_pb.optimize()
         print('-'*80)
         print("Parameter:", lambda_k.x)
-
+        # Save results
+        # master_pb.write('output/master_pb.mps')
+        # master_pb.write('output/master_pb.bas')
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
     # ROW GENERATION
@@ -338,7 +286,7 @@ class BundleChoice:
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
             # Break loop if stop is True and min iters is reached
-            if stop and iteration >= self.min_iters:
+            if stop and iteration > self.min_iters:
                 log_solution(master_pb, lambda_k_iter, self.rank)
                 break
         return lambda_k_iter, p_j_iter

@@ -4,11 +4,9 @@ import contextlib
 from datetime import datetime
 import numpy as np
 
-def price_term(p_j, bundle_j = None):
+def price_term(p_j, bundle_j):
         if p_j is None:
             return 0
-        if bundle_j is None:
-            return p_j.sum()
         else:
             return bundle_j @ p_j
 
@@ -44,15 +42,19 @@ def log_solution(master_pb, lambda_k_iter, rank):
 
 def log_init_master(self, x_hat_k):
     print("#"*80)
+    print("PROBLEM INFORMATION")
     print("number of agents     :", self.num_agents)
     print("number of items      :", self.num_items)
     print("number of features   :", self.num_features)
     print("number of simulations:", self.num_simuls)
     print("first moments:", x_hat_k)
     print('-'*80)
+    print("SETTINGS")
+    print("tol certificate     :", self.tol_certificate)
     print("max slack_counter   : ", self.max_slack_counter)
     print("tol row_generation  :", self.tol_row_generation)
     print("row generation decay:", self.row_generation_decay)
     print("mininmum iterations :", self.min_iters)
+    print("maximum iterations  :", self.max_iters)
     print("#"*80)
 

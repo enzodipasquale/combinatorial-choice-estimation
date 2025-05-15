@@ -1,6 +1,5 @@
 import numpy as np
 import gurobipy as gp
-from bundlechoice.utils import price_term
 import sys
 
 def init_QKP(self, local_id):
@@ -33,7 +32,9 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
 
     # Define objective from data and master solution 
     num_mod = modular_j_k.shape[-1]
-    L_j =  error_j + modular_j_k @ lambda_k[:num_mod] - price_term(p_j)
+    L_j =  error_j + modular_j_k @ lambda_k[:num_mod] 
+    if p_j is not None:
+        L_j -= p_j
     Q_j_j = quadratic_j_j_k @ lambda_k[num_mod: ]
     
     B_j = subproblem.getVars()
