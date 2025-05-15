@@ -3,7 +3,7 @@ num_items: 493
 num_features: 4
 num_simuls: 50
 tol_certificate: 1e-3
-max_slack_counter: 8
+max_slack_counter: 100
 tol_row_generation: 10
 row_generation_decay: 0.5
 max_iters: 100
