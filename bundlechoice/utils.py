@@ -44,8 +44,6 @@ def log_solution(master_pb, lambda_k_iter, rank):
 
 def log_init_master(self, x_hat_k):
     print("#"*80)
-    print("#"*80)
-
     print("number of agents     :", self.num_agents)
     print("number of items      :", self.num_items)
     print("number of features   :", self.num_features)
@@ -57,4 +55,4 @@ def log_init_master(self, x_hat_k):
     print("row generation decay:", self.row_generation_decay)
     print("mininmum iterations :", self.min_iters)
     print("#"*80)
-    print("#"*80)
+
