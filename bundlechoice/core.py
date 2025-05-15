@@ -96,6 +96,8 @@ class BundleChoice:
             self.error_si_j = self.error_s_i_j.reshape(self.num_simuls * self.num_agents, self.num_items) if self.error_s_i_j is not None else None
             del self.error_s_i_j
             self.obs_bundle = self.data.get("obs_bundle", None)
+            if self.obs_bundle is not None:
+                self.obs_bundle = self.obs_bundle.astype(bool)
         else:
             self.item_data = None
         self.item_data = self.comm.bcast(self.item_data, root=0)
@@ -154,7 +156,8 @@ class BundleChoice:
         master_pb.setParam('LPWarmStart', 2)
 
         # Variables and Objective
-        x_hat_k = self.get_x_i_k(self.obs_bundle).sum(0)
+        x_hat_i_k = self.get_x_i_k(self.obs_bundle)
+        x_hat_k = x_hat_i_k.sum(0)
 
         master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
         lambda_k = master_pb.addMVar(self.num_features, obj = x_hat_k, ub = 1e9 , name='parameter')
@@ -168,15 +171,23 @@ class BundleChoice:
         # Initial Constraint (to make problem bounded)
         x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
         master_pb.addConstrs((
-                u_si[si] + price_term(p_j).sum() >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
+                u_si[si] + price_term(p_j, np.ones(self.num_items)) >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
                 for si in range(self.num_simuls * self.num_agents)
                             ))
 
+        master_pb.addConstrs((
+                u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
+                                                                                    + x_hat_i_k[si % self.num_agents, :] @ lambda_k
+                for si in range(self.num_simuls * self.num_agents)
+                            ))
+
+
         log_init_master(self, x_hat_k)
+        
 
         # Solve master problem
         master_pb.optimize()
-
+  
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
     def update_slack_counter(self, master_pb, slack_counter):
@@ -247,13 +258,15 @@ class BundleChoice:
         if self._init_pricing is not None:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+        else:
+            local_pricing_pbs = self.local_indeces
             
         # Initialize master 
         if self.rank == 0:
             master_pb, vars_tuple, lambda_k_iter, p_j_iter = self.init_master()     
             slack_counter = {}
         else:
-            lambda_k_iter, p_j_iter = None, None
+            master_pb, lambda_k_iter, p_j_iter = None, None, None
 
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 

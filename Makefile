@@ -20,3 +20,6 @@ run_auction_mpi_old:
 
 greedy_simulate_data:
 	mpiexec -n 4 python3 -m applications.greedy_demo.generate_simulated_data
+
+run_greedy:
+	mpiexec -n 4 python3 -m applications.greedy_demo.run_estimation
