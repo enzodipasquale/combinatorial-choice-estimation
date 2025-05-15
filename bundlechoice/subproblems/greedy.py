@@ -12,8 +12,10 @@ def solve_greedy(self, _,local_id, lambda_k, p_j):
         best_val = - np.inf
         best_item = -1
         for j in items_left:
+            base_x_k = self.get_x_k(local_id, B_j, local =True)
             B_j[j] = True
-            marginal_j = error_j[j] + self.get_x_k(local_id, B_j, local =True) @ lambda_k - price_term(p_j, B_j) 
+            marginal_j = error_j[j] + (self.get_x_k(local_id, B_j, local =True) - base_x_k) @ lambda_k 
+            marginal_j -= p_j[j] if p_j is not None else 0
             B_j[j] = False
             if marginal_j > best_val:
                 best_val = marginal_j
@@ -25,9 +27,8 @@ def solve_greedy(self, _,local_id, lambda_k, p_j):
 
     optimal_bundle = B_j
     x_hat_k = self.get_x_k(local_id, optimal_bundle, local =True)
-    value = x_hat_k @ lambda_k - price_term(p_j, optimal_bundle) + error_j[optimal_bundle].sum()
-
-    results = np.concatenate((  value,
+    value = x_hat_k @ lambda_k  + error_j[optimal_bundle].sum() - price_term(p_j, optimal_bundle)
+    results = np.concatenate((  [value],
                                 [error_j[optimal_bundle].sum(0)],
                                 x_hat_k,
                                 optimal_bundle.astype(float)

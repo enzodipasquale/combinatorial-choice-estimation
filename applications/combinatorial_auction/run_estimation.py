@@ -14,20 +14,16 @@ rank = comm.Get_rank()
 
 
 BASE_DIR = os.path.dirname(__file__)
-INPUT_DIR = os.path.join(BASE_DIR, "input_data")
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro") 
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
-# Select pricing problem from config
-init_pricing, solve_pricing = get_subproblem(config["subproblem"])
-
 ### Load data on rank 0
 if rank == 0:  
-    path = './input_data/'
-
+    # path = './input_data/'
+    INPUT_DIR = os.path.join(BASE_DIR, "input_data")
     obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
 
     item_data = {
@@ -53,7 +49,6 @@ else:
     data = None
 
 ### User-defined feature oracle
-
 def get_x_k(self, i_id, B_j, _):
     modular = self.agent_data["modular"][i_id]
     quadratic = self.item_data["quadratic"]
@@ -61,6 +56,9 @@ def get_x_k(self, i_id, B_j, _):
                             np.einsum('jk,j->k', modular, B_j),
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
+### Demand oracle
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
+
 
 ### Run the estimation
 combinatorial_auction = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)

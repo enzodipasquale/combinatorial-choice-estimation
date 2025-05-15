@@ -6,11 +6,11 @@ import numpy as np
 
 def price_term(p_j, bundle_j = None):
         if p_j is None:
-            return np.array([0])
+            return 0
         if bundle_j is None:
-            return p_j
+            return p_j.sum()
         else:
-            return bundle_j @ p_j 
+            return bundle_j @ p_j
 
 
 @contextlib.contextmanager

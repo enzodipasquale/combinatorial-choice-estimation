@@ -1,7 +1,7 @@
-num_agents: 10
-num_items: 10
-num_features: 4
-num_simuls: 20
+num_agents: 200
+num_items: 300
+num_features: 5
+num_simuls: 1
 
 min_iters: null
 subproblem: Greedy
