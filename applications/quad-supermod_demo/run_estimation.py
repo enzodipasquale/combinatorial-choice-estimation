@@ -51,12 +51,22 @@ else:
 dims = (255, 493, 4)
 
 
-my_test.scatter_data()
-my_test.local_data_to_torch()
+### User-defined feature oracle
+def get_x_k(self, i_id, B_j, local= False):  
+    modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
+    return np.concatenate((modular[B_j].sum(0), [-B_j.sum() **(1.5)]))
+
+### Demand oracle
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
+
+# Create the BundleChoice instance
+quadsupermod_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
+quadsupermod_demo.scatter_data()
+quadsupermod_demo.local_data_to_torch()
 
 
 # my_test.compute_estimator_row_gen()
-print("Rank", rank, "Hi", print(my_test.torch_local_agent_data['modular'].shape))
+print("Rank", rank, "Hi", print(quadsupermod_demo.torch_local_agent_data['modular'].shape))
 
 if rank == 0:
     print(data["agent_data"]["modular"].shape)
