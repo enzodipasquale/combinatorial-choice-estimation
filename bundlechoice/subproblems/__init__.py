@@ -5,7 +5,7 @@ def get_subproblem(name):
 
     elif name == "QuadSupermod":
         from .quadratic_supermod import solve_QS
-        return None, solve_USM
+        return None, solve_QS
     
     elif name == "Greedy":
         from .greedy import solve_greedy

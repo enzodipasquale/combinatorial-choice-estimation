@@ -48,9 +48,6 @@ if rank == 0:
 else:
     data = None
 
-dims = (255, 493, 4)
-
-
 ### User-defined feature oracle
 def get_x_k(self, i_id, B_j, local= False):  
     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]

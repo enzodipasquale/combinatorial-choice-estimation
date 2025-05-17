@@ -1,0 +1,66 @@
+import os
+
+import numpy as np
+import torch 
+import yaml
+from mpi4py import MPI
+
+from bundlechoice import BundleChoice
+from bundlechoice.subproblems import get_subproblem
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+# Select pricing problem from config
+BASE_DIR = os.path.dirname(__file__)
+CONFIG_PATH = os.path.join(BASE_DIR, "config_simul.yaml")
+with open(CONFIG_PATH, 'r') as file:
+    config = yaml.safe_load(file)
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
+
+### Load data on rank 0
+if rank == 0:  
+    num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
+    np.random.seed(0)
+    num_mod = num_features - 2
+    agent_data = {
+                 "modular": np.random.normal(0, 1, (num_agents, num_items, num_mod))**2
+                }
+    item_data = {
+                 "quadratic": np.random.normal(0, 1, (num_items, num_items, num_features - num_mod))**2
+                }
+    num_simuls = config["num_simuls"]
+    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+
+    data = {
+            "agent_data": agent_data,
+            "item_data": item_data,
+            "errors": errors
+            }
+else:
+    data = None
+
+### User-defined feature oracle
+def get_x_k(self, i_id, B_j, local= False):
+    modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
+    quadratic = self.item_data["quadratic"]
+    return np.concatenate((
+                            np.einsum('jk,j->k', modular, B_j),
+                            np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
+                            ))
+        
+
+quadsupermod_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
+quadsupermod_demo.scatter_data()
+quadsupermod_demo.local_data_to_torch()
+
+
+lambda_k_star = torch.ones(config["num_features"]) 
+results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
+
+# results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
+
+# print("Rank", rank, "Hi", print(quadsupermod_demo.torch_local_agent_data['modular'].shape))
+# print("Rank", rank, "Hi", print(quadsupermod_demo.torch_local_agent_data['modular'].device))
+
+# print("Rank", rank, "Hi", print(quadsupermod_demo.local_agent_data['modular'][0].shape))

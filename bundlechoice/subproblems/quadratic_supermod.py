@@ -1,21 +1,77 @@
 import torch
 
-def solve_QS(self, lambda_k, p_j, num_iters_SGD, alpha, method = 'constant_step_lenght'):
-
+# def solve_QS(self, lambda_k, p_j, num_iters_SGD, alpha, method = 'constant_step_lenght'):
+def solve_QS(self, _,local_id, lambda_k, p_j):
+    
     error_i_j = self.torch_local_errors
-    modular_i_j_k = self.torch_local_agent_data["modular"]
-    quadratic_i_j_j_k = self.torch_local_agent_data["quadratic"]
-    quadratic_j_j_k = self.torch_item_data["quadratic"]
+    modular_i_j_k = self.torch_local_agent_data.get("modular", None)
+    quadratic_j_j_k = self.torch_item_data.get("quadratic", None)
+    quadratic_i_j_j_k = self.torch_local_agent_data.get("quadratic", None)
 
-    num_MOD = modular_i_j_k.shape[-1]
+    device = error_i_j.device
 
-    z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= self.torch_device, dtype= self.torch_dtype)
+    z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
     z_best_i_j = torch.zeros_like(z_t)
-    val_best_i = torch.full_like(z_t, -torch.inf)
+    # val_best_i = torch.full_like(z_t, -torch.inf)
+    val_best_i = torch.full((self.num_local_agents,),  -torch.inf)
+
+
+    num_mod = modular_i_j_k.shape[2] if modular_i_j_k is not None else 0
+    num_quad = quadratic_j_j_k.shape[2] if quadratic_j_j_k is not None else 0
+    num_quad_agent = quadratic_i_j_j_k.shape[2] if quadratic_i_j_j_k is not None else 0
+
+    lambda_k_mod = lambda_k[:num_mod]
+    lambda_k_quad = lambda_k[num_mod : num_mod + num_quad]
+    lambda_k_quad_agent = lambda_k[num_mod + num_quad: num_mod + num_quad + num_quad_agent]
+
+    zeros_i_j_j = torch.zeros((self.num_local_agents, self.num_items, self.num_items), device=device)
+    upper_triangular = torch.triu(torch.ones((self.num_items, self.num_items), device=device), diagonal=1)
+
+    def _grad_lovatz_extension(z_i_j, lambda_k, p_j, error_i_j, modular_i_j_k, quadratic_i_j_j_k, quadratic_j_j_k):
+    
+        ### Sort z_i_j for each i
+        sorted_z_id_j = torch.argsort(z_i_j, dim=1, descending=True)
+
+        zeros_i_j_j[torch.arange(self.num_local_agents).unsqueeze(1).unsqueeze(2) ,
+                        sorted_z_id_j.unsqueeze(1) ,
+                        sorted_z_id_j.unsqueeze(2)] = upper_triangular
+
+        mask = zeros_i_j_j.unsqueeze(-1)
+
+        ### Compute gradient
+        grad_i_j = torch.zeros_like(z_i_j, device=device)
+
+        if modular_i_j_k is not None:
+            grad_i_j += modular_i_j_k @ lambda_k_mod
+
+        if quadratic_j_j_k is not None:
+            grad_i_j = torch.matmul((quadratic_j_j_k.unsqueeze(0) * mask).sum(-2) , lambda_k_quad)
+
+        if quadratic_i_j_j_k is not None:
+            grad_i_j += torch.matmul((quadratic_i_j_j_k * mask).sum(-2) , lambda_k_quad_agent)
+
+        # Add heterogeneity
+        if error_i_j is not None:
+            grad_i_j  += error_i_j
+
+        # Add prices
+        if p_j is not None:
+            grad_i_j += p_j[None, :]
+
+        # Compute the value of the Lovatz extension (assuming the value of the empty bundle is 0)
+        fun_value_i = (z_i_j * grad_i_j).sum(1)
+
+        return grad_i_j, fun_value_i
+    
+    num_iters_SGD = int(self.subproblem_settings["num_iters_SGD"])
+    alpha = float(self.subproblem_settings["alpha"])
+    method = self.subproblem_settings["method"]
 
     for iter in range(num_iters_SGD):
+        if self.rank == 0:
+            print(iter)
         ### Compute gradient
-        grad_i_j , val_i = _grad_lovatz_extension(z_t, lambda_k, p_j)
+        grad_i_j , val_i = _grad_lovatz_extension(z_t, lambda_k, p_j, error_i_j, modular_i_j_k, quadratic_i_j_j_k, quadratic_j_j_k)
 
         ### Compute proj_H (z_t + α g_t) 
         # Take step z_t + α g_t
@@ -43,48 +99,15 @@ def solve_QS(self, lambda_k, p_j, num_iters_SGD, alpha, method = 'constant_step_
     z_star = z_best_i_j
     bundle_star = (z_star.round() > 0).bool()
 
+    
+
     # random_tensor = torch.rand_like(z_star)
     # bundle_star = (random_tensor < z_star).bool()
-    # violations_rounding = ((z_star > 0.25) & (z_star < 0.75)).sum(1).cpu().numpy()
-    # print('violations of rounding in SFM: ', violations_rounding.sum(),
-    #       ', mean: ', violations_rounding.mean(),
-    #       ', std : ', violations_rounding.std(),
-    #       ', max: ', violations_rounding.max())
-    # print('gradiend min:', grad_i_j.min().cpu().numpy(), 'max:', grad_i_j.max().cpu().numpy())
-    # print('step lenght gradient: ', torch.norm(grad_i_j, dim=1, keepdim=True).mean().cpu().numpy())
+    violations_rounding = ((z_star > 0.25) & (z_star < 0.75)).sum(1).cpu().numpy()
+    print('violations of rounding in SFM: ', violations_rounding.sum(),
+          ', mean: ', violations_rounding.mean(),
+          ', std : ', violations_rounding.std(),
+          ', max: ', violations_rounding.max())
+    print('gradiend min:', grad_i_j.min().cpu().numpy(), 'max:', grad_i_j.max().cpu().numpy())
+    print('step lenght gradient: ', torch.norm(grad_i_j, dim=1, keepdim=True).mean().cpu().numpy())
 
-
-def _grad_lovatz_extension(i_idx, z_i_j, lambda_k, p_j, return_fun_value = True):
-
-    ### Sort z_i_j for each i
-    sorted_z_id_j = torch.argsort(z_i_j, dim=1, descending=True)
-
-    self.zeros_i_j_j[i_idx.unsqueeze(1).unsqueeze(2) ,
-                      sorted_z_id_j.unsqueeze(1) ,
-                      sorted_z_id_j.unsqueeze(2)] = self.upper_triangular
-
-    mask = self.zeros_i_j_j.unsqueeze(-1)
-
-    ### Compute gradient
-    # Supermodular
-    grad_i_j = torch.matmul((self.P_j_j_k.unsqueeze(0) * mask).sum(-2) , lambda_k[self.K_MOD : -self.K_QS_i])
-    grad_i_j += torch.matmul((self.P_i_j_j_k * mask).sum(-2) , lambda_k[-self.K_QS_i:])
-
-    # Modular
-    grad_i_j += self.φ_i_j_k[i_idx] @ lambda_k[:self.K_MOD]
-
-    # Add heterogeneity
-    if eps_i_j is not None:
-        grad_i_j  += eps_i_j
-
-    # Add prices
-    if p_j is not None:
-        grad_i_j += p_j[None, :]
-
-    if return_fun_value:
-        # Compute the value of the Lovatz extension (assuming the value of the empty bundle is 0)
-        fun_value_i = (z_i_j * grad_i_j).sum(1)
-
-        return grad_i_j, fun_value_i
-    else:
-        return grad_i_j
