@@ -43,7 +43,8 @@ greedy_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 greedy_demo.scatter_data()
 lambda_k_star = np.ones(config["num_features"]) 
 results = greedy_demo.solve_pricing_offline(lambda_k_star)
-# Save results to a file
+
+# Save results 
 if rank == 0:
     obs_bundles = results[:, -num_items:].astype(bool)
     input_data_path = os.path.join(BASE_DIR, "input_data")
