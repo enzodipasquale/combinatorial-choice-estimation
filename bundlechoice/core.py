@@ -144,7 +144,7 @@ class BundleChoice:
             self.item_data = self.data.get("item_data", None)
             self.agent_data = self.data.get("agent_data", None)
             self.error_s_i_j = self.data.get("errors", None)
-            self.error_si_j = self.error_s_i_j.reshape(self.num_simuls * self.num_agents, self.num_items) if self.error_s_i_j is not None else None
+            self.error_si_j = self.error_s_i_j.reshape(-1, self.num_items) if self.error_s_i_j is not None else None
             del self.error_s_i_j
             self.obs_bundle = self.data.get("obs_bundle", None)
             if self.obs_bundle is not None:
@@ -168,7 +168,6 @@ class BundleChoice:
             data_chunks = None
         local_data = self.comm.scatter(data_chunks, root=0)
 
-        # Unpack local data
         self.local_indeces = local_data["agent_indeces"]
         self.local_errors = local_data["errors"]
         self.local_agent_data = local_data["agent_data"]
@@ -294,15 +293,13 @@ class BundleChoice:
     
     # Row generation 
     def compute_estimator_row_gen(self):
-
-        # Initialize pricing 
+        #========== Initialization =========#
         if self._init_pricing is not None:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
         else:
             local_pricing_pbs = self.local_indeces
             
-        # Initialize master 
         if self.rank == 0:
             master_pb, vars_tuple, lambda_k_iter, p_j_iter = self._init_master()     
             slack_counter = {}
@@ -313,11 +310,9 @@ class BundleChoice:
 
         #=========== Main loop ===========#
         for iteration in range(self.max_iters):
-            # Solve pricing 
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
-            # Solve master 
             if self.rank == 0:        
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
@@ -328,7 +323,6 @@ class BundleChoice:
 
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
-            # Break loop if stop is True and min iters is reached
             if stop and iteration >= self.min_iters:
                 log_solution(master_pb, lambda_k_iter, self.rank)
                 break
