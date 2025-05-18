@@ -22,12 +22,12 @@ init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 if rank == 0:  
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
-    num_mod = num_features - 2
+    num_mod = num_features - 1
     agent_data = {
-                 "modular": np.random.normal(0, 1, (num_agents, num_items, num_mod))**2
+                 "modular": - 5 * np.random.normal(0, 1, (num_agents, num_items, num_mod))**2
                 }
     item_data = {
-                 "quadratic": np.random.normal(0, 1, (num_items, num_items, num_features - num_mod))**2
+                 "quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2]) 
                 }
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
@@ -58,9 +58,3 @@ quadsupermod_demo.local_data_to_torch()
 lambda_k_star = torch.ones(config["num_features"]) 
 results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
 
-# results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
-
-# print("Rank", rank, "Hi", print(quadsupermod_demo.torch_local_agent_data['modular'].shape))
-# print("Rank", rank, "Hi", print(quadsupermod_demo.torch_local_agent_data['modular'].device))
-
-# print("Rank", rank, "Hi", print(quadsupermod_demo.local_agent_data['modular'][0].shape))
