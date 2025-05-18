@@ -9,6 +9,9 @@ run_quad-supermod:
 quad_supermod_simulate_data:
 	mpiexec -n 4 python3 -m applications.quad-supermod_demo.generate_simulated_data
 
+# quad_supermod_simulate_data:
+# 	python3 -m applications.quad-supermod_demo.generate_simulated_data
+
 greedy_simulate_data:
 	mpiexec -n 4 python3 -m applications.greedy_demo.generate_simulated_data
 

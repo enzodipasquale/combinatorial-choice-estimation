@@ -1,12 +1,12 @@
-num_agents: 200
-num_items: 300
+num_agents: 30
+num_items: 200
 num_features: 5
 num_simuls: 1
 
-min_iters: null
 subproblem: QuadSupermod
 subproblem_settings:
-    num_iters_SGD: 200
-    alpha: 1e-2
-    method: constant_step_size
+    num_iters_SGD: 5000
+    alpha: .1
+    method: constant_step_lenght
+    parallel_local: true
 

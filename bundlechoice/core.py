@@ -10,12 +10,6 @@ from mpi4py import MPI
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
-# At top of bundle_choice.py or in bundle_config.py
-
-from dataclasses import dataclass, field
-from typing import Optional
-import numpy as np
-
 @dataclass(frozen=True)
 class BundleConfig:
     num_agents: int
@@ -38,8 +32,6 @@ class BundleConfig:
     @staticmethod
     def from_dict(cfg: dict) -> 'BundleConfig':
         cfg = dict(cfg)  
-
-        # Set defaults
         cfg.setdefault("item_fixed_effects", False)
 
         cfg.setdefault("tol_certificate", 0.01)
@@ -101,6 +93,7 @@ class BundleChoice:
         self.max_iters = self.config.max_iters
         self.min_iters = self.config.min_iters
 
+        self.subproblem = self.config.subproblem
         self.subproblem_settings = self.config.subproblem_settings
 
         # Initialize user-defined methods
@@ -127,7 +120,10 @@ class BundleChoice:
         return self._solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter)
 
     def solve_local_pricing(self, local_pricing_pbs, lambda_k_iter, p_j_iter):
-        return np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
+        if self.subproblem_settings.get("parallel_local", False):
+            return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k_iter, p_j_iter))
+        else:
+            return np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
                             for local_id, pricing_pb in enumerate(local_pricing_pbs)])
 
     def solve_pricing_offline(self, lambda_k, p_j = None):
@@ -136,13 +132,14 @@ class BundleChoice:
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
         else:
             local_pricing_pbs = self.local_indeces
+        
         local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k, p_j)
         pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
         return np.concatenate(pricing_results) if self.rank == 0 else None
 
+    # Data methods
     def scatter_data(self):
-        # Load agent-independent data on all ranks
         if self.rank == 0:
             self.item_data = self.data.get("item_data", None)
             self.agent_data = self.data.get("agent_data", None)
@@ -156,7 +153,6 @@ class BundleChoice:
             self.item_data = None
         self.item_data = self.comm.bcast(self.item_data, root=0)
 
-        # Scatter agent-dependant data and errors in chunks
         if self.rank == 0:
             i_chunks = np.array_split(np.tile(np.arange(self.num_agents), self.num_simuls), self.comm_size)
             si_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
@@ -189,27 +185,26 @@ class BundleChoice:
         self.torch_device = device
         self.torch_dtype = dtype
 
-        def to_tensor(x):
+        def to_torch(x):
             return torch.tensor(x, device=device, dtype=dtype) if x is not None else None
 
         self.torch_item_data = {
-                                    k: to_tensor(v) for k, v in self.item_data.items()
+                                k: to_torch(v) for k, v in self.item_data.items()
                                 } if self.item_data is not None else None
 
         self.torch_local_agent_data = {
-                                            k: to_tensor(v) for k, v in self.local_agent_data.items()
+                                        k: to_torch(v) for k, v in self.local_agent_data.items()
                                         } if self.local_agent_data is not None else None
 
-        self.torch_local_errors = to_tensor(self.local_errors)
+        self.torch_local_errors = to_torch(self.local_errors)
 
     # Master problem methods
-    def init_master(self):
+    def _init_master(self):
 
         master_pb = gp.Model('GMM_pb')
         master_pb.setParam('Method', 0)
         master_pb.setParam('LPWarmStart', 2)
 
-        # Variables and Objective
         x_hat_i_k = self.get_x_i_k(self.obs_bundle)
         x_hat_k = x_hat_i_k.sum(0)
 
@@ -222,17 +217,18 @@ class BundleChoice:
         else:
             p_j = None
 
-        # Initial Constraint (to make problem bounded)
         x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
         master_pb.addConstrs((
-                u_si[si] + price_term(p_j, np.ones(self.num_items)) >= self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
+                u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
+                self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
                 for si in range(self.num_simuls * self.num_agents)
                             ))
 
         master_pb.addConstrs((
-                u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
-                                                                                    + x_hat_i_k[si % self.num_agents, :] @ lambda_k
-                for si in range(self.num_simuls * self.num_agents)
+                                u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
+                                self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
+                                + x_hat_i_k[si % self.num_agents, :] @ lambda_k
+                                for si in range(self.num_simuls * self.num_agents)
                             ))
 
 
@@ -242,7 +238,7 @@ class BundleChoice:
         print("Parameter:", lambda_k.x)
         return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
-    def update_slack_counter(self, master_pb, slack_counter):
+    def _update_slack_counter(self, master_pb, slack_counter):
         to_remove = []
         for constr in master_pb.getConstrs():
             constr_name = constr.ConstrName
@@ -265,7 +261,7 @@ class BundleChoice:
 
         return slack_counter, len(to_remove)
 
-    def solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
+    def _solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
 
         lambda_k, u_si, p_j = vars_tuple
         u_si_star = pricing_results[:,0]
@@ -273,15 +269,13 @@ class BundleChoice:
         x_star_si_k = pricing_results[:,2: - self.num_items]
         B_star_si_j = pricing_results[:,- self.num_items:].astype(bool)
 
-        # Check certificate
         u_si_master = u_si.x
-        print('-'*80)
         max_reduced_cost = np.max(u_si_star - u_si_master)
+        print('-'*80)
         print("Reduced cost:", max_reduced_cost)
         if max_reduced_cost < self.tol_certificate:
             return True, lambda_k.x, p_j.x if p_j is not None else None
         
-        # Add new constraints
         new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
         print("New constraints:", len(new_constrs_id))
         master_pb.addConstrs((  
@@ -289,19 +283,16 @@ class BundleChoice:
                             for si in new_constrs_id
                             ))
 
-        # Update slack_counter
-        slack_counter, num_constrs_removed = self.update_slack_counter(master_pb, slack_counter)
+        slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
         print("Removed constraints:", num_constrs_removed)
         print('-'*80)
-
-        # Solve master problem
         master_pb.optimize()
         print('-'*80)
         print("Parameter:", lambda_k.x)
 
         return False, lambda_k.x, p_j.x if p_j is not None else None
     
-    # ROW GENERATION
+    # Row generation 
     def compute_estimator_row_gen(self):
 
         # Initialize pricing 
@@ -313,7 +304,7 @@ class BundleChoice:
             
         # Initialize master 
         if self.rank == 0:
-            master_pb, vars_tuple, lambda_k_iter, p_j_iter = self.init_master()     
+            master_pb, vars_tuple, lambda_k_iter, p_j_iter = self._init_master()     
             slack_counter = {}
         else:
             master_pb, lambda_k_iter, p_j_iter = None, None, None
@@ -330,7 +321,7 @@ class BundleChoice:
             if self.rank == 0:        
                 log_iteration(iteration, lambda_k_iter)
                 pricing_results = np.concatenate(pricing_results)
-                stop, lambda_k_iter, p_j_iter = self.solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
+                stop, lambda_k_iter, p_j_iter = self._solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
                 self.tol_row_generation *= self.row_generation_decay
             else:
                 stop, lambda_k_iter, p_j_iter = None, None, None
