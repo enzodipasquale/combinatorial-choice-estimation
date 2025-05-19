@@ -49,7 +49,7 @@ else:
     data = None
 
 ### User-defined feature oracle
-def get_x_k(self, i_id, B_j, _):
+def get_x_k(self, i_id, B_j):
     modular = self.agent_data["modular"][i_id]
     quadratic = self.item_data["quadratic"]
     return np.concatenate((
