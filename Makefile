@@ -3,14 +3,11 @@
 run_auction:
 	mpiexec -n 4 python3 -m applications.combinatorial_auction.run_estimation
 
-run_quad-supermod:
-	mpiexec -n 4 python3 -m applications.quad-supermod_demo.run_estimation
-
-quad_supermod_simulate_data:
+quadsupermod_simulate_data:
 	mpiexec -n 4 python3 -m applications.quad-supermod_demo.generate_simulated_data
 
-# quad_supermod_simulate_data:
-# 	python3 -m applications.quad-supermod_demo.generate_simulated_data
+run_quadsupermod:
+	mpiexec -n 4 python3 -m applications.quad-supermod_demo.run_estimation
 
 greedy_simulate_data:
 	mpiexec -n 4 python3 -m applications.greedy_demo.generate_simulated_data

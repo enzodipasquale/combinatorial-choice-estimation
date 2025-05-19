@@ -107,14 +107,24 @@ class BundleChoice:
         return self._get_x_k(self, i_id, B_j, local)
 
     def get_x_i_k(self, B_i_j):
-        x_i_k = []
-        for i in range(self.num_agents):
-            x_i_k.append(self.get_x_k(i, B_i_j[i]))
-        return np.stack(x_i_k)
+        return np.stack([self.get_x_k(i, B_i_j[i]) for i in range(self.num_agents)])
+
+    def get_x_si_k(self, B_si_j):
+        return np.stack([self.get_x_k(si % self.num_agents, B_si_j[si]) 
+                        for si in range(self.num_simuls * self.num_agents)])
+
 
     # Pricing problem methods
     def init_pricing(self, local_id):
         return self._init_pricing(self, local_id)
+
+    def init_local_pricing(self):
+        if self._init_pricing is not None:
+            with suppress_output():
+                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
+        else:
+            local_pricing_pbs = self.local_indeces
+        return local_pricing_pbs
 
     def solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter):
         return self._solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter)
@@ -127,12 +137,7 @@ class BundleChoice:
                             for local_id, pricing_pb in enumerate(local_pricing_pbs)])
 
     def solve_pricing_offline(self, lambda_k, p_j = None):
-        if self._init_pricing is not None:
-            with suppress_output():
-                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
-        else:
-            local_pricing_pbs = self.local_indeces
-        
+        local_pricing_pbs = self.init_local_pricing()
         local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k, p_j)
         pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
@@ -147,8 +152,8 @@ class BundleChoice:
             self.error_si_j = self.error_s_i_j.reshape(-1, self.num_items) if self.error_s_i_j is not None else None
             del self.error_s_i_j
             self.obs_bundle = self.data.get("obs_bundle", None)
-            if self.obs_bundle is not None:
-                self.obs_bundle = self.obs_bundle.astype(bool)
+            # if self.obs_bundle is not None:
+            #     self.obs_bundle = self.obs_bundle.astype(bool)
         else:
             self.item_data = None
         self.item_data = self.comm.bcast(self.item_data, root=0)
@@ -157,13 +162,13 @@ class BundleChoice:
             i_chunks = np.array_split(np.tile(np.arange(self.num_agents), self.num_simuls), self.comm_size)
             si_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
 
-            data_chunks = [{"agent_indeces": i_chunks[r],
+            data_chunks = [
+                            {"agent_indeces": i_chunks[r],
                             "agent_data": {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
                                             if self.agent_data is not None else None,
                             "errors": self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
                             }
-                            for r in range(self.comm_size)
-                            ]
+                            for r in range(self.comm_size)]
         else:
             data_chunks = None
         local_data = self.comm.scatter(data_chunks, root=0)
@@ -199,43 +204,46 @@ class BundleChoice:
 
     # Master problem methods
     def _init_master(self):
+        if self.rank == 0:
+            master_pb = gp.Model('GMM_pb')
+            master_pb.setParam('Method', 0)
+            master_pb.setParam('LPWarmStart', 2)
 
-        master_pb = gp.Model('GMM_pb')
-        master_pb.setParam('Method', 0)
-        master_pb.setParam('LPWarmStart', 2)
+            x_hat_i_k = self.get_x_i_k(self.obs_bundle)
+            x_hat_k = x_hat_i_k.sum(0)
 
-        x_hat_i_k = self.get_x_i_k(self.obs_bundle)
-        x_hat_k = x_hat_i_k.sum(0)
+            master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e9 , name='parameter')
+            u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
 
-        master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-        lambda_k = master_pb.addMVar(self.num_features, obj = x_hat_k, ub = 1e9 , name='parameter')
-        u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - (1/ self.num_simuls), name='utility')
+            if self.item_fixed_effects:
+                p_j = master_pb.addMVar(self.num_items, obj = - self.num_simuls, name='price')
+            else:
+                p_j = None
 
-        if self.item_fixed_effects:
-            p_j = master_pb.addMVar(self.num_items, obj = -1 , name='price')
+            x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
+            master_pb.addConstrs((
+                    u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
+                    self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
+                    for si in range(self.num_simuls * self.num_agents)
+                                ))
+
+            master_pb.addConstrs((
+                                    u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
+                                    self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
+                                    + x_hat_i_k[si % self.num_agents, :] @ lambda_k
+                                    for si in range(self.num_simuls * self.num_agents)
+                                ))
+
+
+            log_init_master(self, x_hat_k)
+            master_pb.optimize()
+            print('-'*80)
+            print("Parameter:", lambda_k.x)
+            return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
         else:
-            p_j = None
+            return None, None, None, None
 
-        x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
-        master_pb.addConstrs((
-                u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
-                self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
-                for si in range(self.num_simuls * self.num_agents)
-                            ))
-
-        master_pb.addConstrs((
-                                u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
-                                self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
-                                + x_hat_i_k[si % self.num_agents, :] @ lambda_k
-                                for si in range(self.num_simuls * self.num_agents)
-                            ))
-
-
-        log_init_master(self, x_hat_k)
-        master_pb.optimize()
-        print('-'*80)
-        print("Parameter:", lambda_k.x)
-        return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
 
     def _update_slack_counter(self, master_pb, slack_counter):
         to_remove = []
@@ -260,52 +268,49 @@ class BundleChoice:
 
         return slack_counter, len(to_remove)
 
-    def _solve_master(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
+    def _master_iteration(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
+        if self.rank == 0:
+            pricing_results = np.concatenate(pricing_results)
+            lambda_k, u_si, p_j = vars_tuple
+            u_si_star = pricing_results[:,0]
+            B_star_si_j = pricing_results[:,1:].astype(bool)
 
-        lambda_k, u_si, p_j = vars_tuple
-        u_si_star = pricing_results[:,0]
-        eps_si_star = pricing_results[:,1]
-        x_star_si_k = pricing_results[:,2: - self.num_items]
-        B_star_si_j = pricing_results[:,- self.num_items:].astype(bool)
+            eps_si_star = (self.error_si_j * B_star_si_j).sum(1)
+            x_star_si_k = self.get_x_si_k(B_star_si_j)
+            
+            u_si_master = u_si.x
+            max_reduced_cost = np.max(u_si_star - u_si_master)
+            print('-'*80)
+            print("Reduced cost:", max_reduced_cost)
+            if max_reduced_cost < self.tol_certificate:
+                return True, lambda_k.x, p_j.x if p_j is not None else None
+            
+            new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
+            print("New constraints:", len(new_constrs_id))
+            master_pb.addConstrs((  
+                                u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
+                                for si in new_constrs_id
+                                ))
 
-        u_si_master = u_si.x
-        max_reduced_cost = np.max(u_si_star - u_si_master)
-        print('-'*80)
-        print("Reduced cost:", max_reduced_cost)
-        if max_reduced_cost < self.tol_certificate:
-            return True, lambda_k.x, p_j.x if p_j is not None else None
-        
-        new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
-        print("New constraints:", len(new_constrs_id))
-        master_pb.addConstrs((  
-                            u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
-                            for si in new_constrs_id
-                            ))
+            slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
+            print("Removed constraints:", num_constrs_removed)
+            print('-'*80)
+            master_pb.optimize()
+            print('-'*80)
+            print("Parameter:", lambda_k.x)
 
-        slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
-        print("Removed constraints:", num_constrs_removed)
-        print('-'*80)
-        master_pb.optimize()
-        print('-'*80)
-        print("Parameter:", lambda_k.x)
+            self.tol_row_generation *= self.row_generation_decay
 
-        return False, lambda_k.x, p_j.x if p_j is not None else None
+            return False, lambda_k.x, p_j.x if p_j is not None else None
+        else:
+            return None, None, None
     
     # Row generation 
     def compute_estimator_row_gen(self):
         #========== Initialization =========#
-        if self._init_pricing is not None:
-            with suppress_output():
-                local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
-        else:
-            local_pricing_pbs = self.local_indeces
-            
-        if self.rank == 0:
-            master_pb, vars_tuple, lambda_k_iter, p_j_iter = self._init_master()     
-            slack_counter = {}
-        else:
-            master_pb, lambda_k_iter, p_j_iter = None, None, None
-
+        local_pricing_pbs = self.init_local_pricing()
+        master_pb, vars_tuple, lambda_k_iter, p_j_iter = self._init_master()     
+        slack_counter = {}
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 
         #=========== Main loop ===========#
@@ -313,14 +318,8 @@ class BundleChoice:
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
-            if self.rank == 0:        
-                log_iteration(iteration, lambda_k_iter)
-                pricing_results = np.concatenate(pricing_results)
-                stop, lambda_k_iter, p_j_iter = self._solve_master(master_pb, vars_tuple, pricing_results, slack_counter)
-                self.tol_row_generation *= self.row_generation_decay
-            else:
-                stop, lambda_k_iter, p_j_iter = None, None, None
-
+            log_iteration(iteration, lambda_k_iter, self.rank )                
+            stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
             if stop and iteration >= self.min_iters:

@@ -55,10 +55,11 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
             print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
     # Compute value, characteristics and error at optimal bundle
-    results =   np.concatenate((    [value],
-                                    [error_j[optimal_bundle].sum(0)],
-                                    (modular_j_k[optimal_bundle]).sum(0), 
-                                    quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
-                                    subproblem.x
-                                    ))
-    return results
+    # results =   np.concatenate((    [value],
+    #                                 [error_j[optimal_bundle].sum(0)],
+    #                                 (modular_j_k[optimal_bundle]).sum(0), 
+    #                                 quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
+    #                                 subproblem.x
+    #                                 ))
+    # return results
+    return np.concatenate(( [value], optimal_bundle))
