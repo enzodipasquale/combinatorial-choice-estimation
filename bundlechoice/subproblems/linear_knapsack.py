@@ -1,7 +1,7 @@
 import numpy as np
 import gurobipy as gp
 
-def init_QKP(self, local_id):
+def init_KP(self, local_id):
 
     subproblem = gp.Model() 
     subproblem.setParam('OutputFlag', 0)
@@ -22,29 +22,20 @@ def init_QKP(self, local_id):
     return subproblem 
 
 
-def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
+def solve_KP(self, subproblem, local_id, lambda_k, p_j):
 
     error_j = self.local_errors[local_id]
     modular_j_k = self.local_agent_data["modular"][local_id]
-    quadratic_j_j_k = self.item_data["quadratic"]
-    num_mod = modular_j_k.shape[-1]
     
-    L_j =  error_j + modular_j_k @ lambda_k[:num_mod] 
+    L_j =  error_j + modular_j_k @ lambda_k
     if p_j is not None:
         L_j -= p_j
-    Q_j_j = quadratic_j_j_k @ lambda_k[num_mod: ]
-    
-    B_j = subproblem.getVars()
-    quad_expr = gp.QuadExpr()
-    for i in range(self.num_items):
-        for j in range(self.num_items):
-            quad_expr.add(B_j[i] * B_j[j], Q_j_j[i, j])
 
-    subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)) + quad_expr)
+    subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)))
     subproblem.optimize()
 
     optimal_bundle = np.array(subproblem.x, dtype=bool)
-
+    
     mip_gap_tol = self.subproblem_settings.get("MIPGap_tol")
     if mip_gap_tol is not None:
         if subproblem.MIPGap > float(mip_gap_tol):

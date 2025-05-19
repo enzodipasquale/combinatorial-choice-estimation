@@ -3,5 +3,9 @@ num_items: 300
 num_features: 5
 num_simuls: 1
 
-subproblem: Greedy
+tol_certificate: 1e-3
+
+max_iters: 100
+
+subproblem: LinearKnap
 

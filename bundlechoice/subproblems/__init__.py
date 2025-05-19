@@ -10,6 +10,10 @@ def get_subproblem(name):
     elif name == "Greedy":
         from .greedy import solve_greedy
         return None, solve_greedy
+    
+    elif name == "LinearKnap":
+        from .linear_knapsack import init_KP, solve_KP
+        return init_KP, solve_KP
         
     else:
         raise ValueError(f"Unknown subproblem: {name}")

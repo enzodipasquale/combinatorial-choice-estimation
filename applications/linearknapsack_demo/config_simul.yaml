@@ -3,5 +3,5 @@ num_items: 300
 num_features: 5
 num_simuls: 1
 
-subproblem: Greedy
+subproblem: LinearKnap
 

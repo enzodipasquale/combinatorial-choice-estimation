@@ -14,3 +14,7 @@ greedy_simulate_data:
 
 run_greedy:
 	mpiexec -n 4 python3 -m applications.greedy_demo.run_estimation
+
+
+linearknap_simulate_data:
+	mpiexec -n 4 python3 -m applications.linearknapsack_demo.generate_simulated_data

@@ -6,7 +6,6 @@ num_simuls: 1
 tol_certificate: 1e-3
 
 max_iters: 100
-min_iters: null
 
 subproblem: Greedy
 
