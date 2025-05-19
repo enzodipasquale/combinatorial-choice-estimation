@@ -74,7 +74,7 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
             z_new = z_t + alpha * grad_i_j
 
         elif method == 'constant_over_sqrt_k':
-            z_new = z_t + alpha * grad_i_j / torch.sqrt(iter + 1)
+            z_new = z_t + alpha * grad_i_j / ((iter + 1)**(1/2))
 
         elif method == 'mirror_descent':
             z_new = z_t * torch.exp(alpha * grad_i_j / torch.norm(grad_i_j, dim= 1, keepdim= True) )
@@ -90,11 +90,14 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     # Take the best value
     z_star = z_best_i_j
     bundle_star = (z_star.round() > 0).bool()
+    
+
+
 
     # random_tensor = torch.rand_like(z_star)
     # bundle_star = (random_tensor < z_star).bool()
     violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
-    print('violations of rounding in SFM: ', violations_rounding.mean())
+    print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
     print(bundle_star.sum(1).cpu().numpy())
 
     return bundle_star
