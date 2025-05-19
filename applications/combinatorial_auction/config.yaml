@@ -1,7 +1,7 @@
 num_agents: 255
 num_items: 493
 num_features: 4
-num_simuls: 10
+num_simuls: 50
 
 item_fixed_effects: true
 
