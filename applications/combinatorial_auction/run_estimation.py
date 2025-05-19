@@ -17,12 +17,12 @@ BASE_DIR = os.path.dirname(__file__)
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro") 
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
+# Load configuration
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
-### Load data on rank 0
+# Load data on rank 0
 if rank == 0:  
-    # path = './input_data/'
     INPUT_DIR = os.path.join(BASE_DIR, "input_data")
     obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
 
@@ -48,7 +48,7 @@ if rank == 0:
 else:
     data = None
 
-### User-defined feature oracle
+# User-defined feature oracle
 def get_x_k(self, i_id, B_j):
     modular = self.agent_data["modular"][i_id]
     quadratic = self.item_data["quadratic"]
@@ -56,11 +56,11 @@ def get_x_k(self, i_id, B_j):
                             np.einsum('jk,j->k', modular, B_j),
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
-### Demand oracle
+# Demand oracle
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 
-### Run the estimation
+# Run the estimation
 combinatorial_auction = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 combinatorial_auction.scatter_data()
 combinatorial_auction.compute_estimator_row_gen()
