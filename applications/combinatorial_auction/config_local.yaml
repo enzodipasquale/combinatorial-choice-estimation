@@ -5,7 +5,7 @@ num_simuls: 1
 
 item_fixed_effects: true
 
-max_iters: 2
+max_iters: 100
 min_iters: null
 
 subproblem: QuadKnap
