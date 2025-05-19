@@ -27,9 +27,8 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     error_j = self.local_errors[local_id]
     modular_j_k = self.local_agent_data["modular"][local_id]
     quadratic_j_j_k = self.item_data["quadratic"]
-
-    # Define objective from data and master solution 
     num_mod = modular_j_k.shape[-1]
+    
     L_j =  error_j + modular_j_k @ lambda_k[:num_mod] 
     if p_j is not None:
         L_j -= p_j

@@ -46,7 +46,7 @@ results = greedy_demo.solve_pricing_offline(lambda_k_star)
 
 # Save results 
 if rank == 0:
-    obs_bundles = results[:, 1:].astype(bool)
+    obs_bundles = results.astype(bool)
     print("obs_bundles shape", obs_bundles.shape)
     input_data_path = os.path.join(BASE_DIR, "input_data")
     if not os.path.exists(input_data_path):

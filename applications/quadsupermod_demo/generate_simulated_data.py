@@ -56,8 +56,15 @@ quadsupermod_demo.local_data_to_torch()
 lambda_k_star = torch.ones(config["num_features"]) 
 results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
 
+# Save results 
 if rank == 0:
-    print(agent_data["modular"].sum())
-    print(item_data["quadratic"].sum())
-    print(data["errors"].sum())
-    print(results.shape)
+    obs_bundles = results.astype(bool)
+    print("obs_bundles shape", obs_bundles.shape)
+    input_data_path = os.path.join(BASE_DIR, "input_data")
+    if not os.path.exists(input_data_path):
+        os.makedirs(input_data_path)
+    np.save(os.path.join(input_data_path, "obs_bundles.npy"), obs_bundles)
+    np.save(os.path.join(input_data_path, "modular.npy"), agent_data["modular"])
+    np.save(os.path.join(input_data_path, "quadratic.npy"), item_data["quadratic"])
+    print("Results saved to", input_data_path)
+    print("aggregate demands:", obs_bundles.sum(1))
