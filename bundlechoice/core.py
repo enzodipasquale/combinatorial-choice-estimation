@@ -205,7 +205,7 @@ class BundleChoice:
     # Master problem methods
     def _init_master(self):
         if self.rank == 0:
-            master_pb = gp.Model('GMM_pb')
+            master_pb = gp.Model()
             master_pb.setParam('Method', 0)
             master_pb.setParam('LPWarmStart', 2)
 

@@ -26,8 +26,8 @@ def solve_greedy(self, _,local_id, lambda_k, p_j):
         items_left = items_left[items_left != best_item]
 
     optimal_bundle = B_j
-    x_hat_k = self.get_x_k(local_id, optimal_bundle, local =True)
-    value = x_hat_k @ lambda_k  + error_j[optimal_bundle].sum() - price_term(p_j, optimal_bundle)
+    value = (self.get_x_k(local_id, optimal_bundle, local =True) @ lambda_k  
+            + error_j[optimal_bundle].sum() - price_term(p_j, optimal_bundle))
     # results = np.concatenate((  [value],
     #                             [error_j[optimal_bundle].sum(0)],
     #                             x_hat_k,

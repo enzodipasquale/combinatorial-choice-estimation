@@ -58,3 +58,8 @@ quadsupermod_demo.local_data_to_torch()
 lambda_k_star = torch.ones(config["num_features"]) 
 results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
 
+if rank == 0:
+    print(agent_data["modular"].sum())
+    print(item_data["quadratic"].sum())
+    print(data["errors"].sum())
+    print(results.shape)
