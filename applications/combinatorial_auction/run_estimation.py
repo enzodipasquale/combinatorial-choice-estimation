@@ -56,7 +56,7 @@ def get_x_k(self, i_id, B_j):
                             np.einsum('jk,j->k', modular, B_j),
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
-# Demand oracle
+# Demand orable from library
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 

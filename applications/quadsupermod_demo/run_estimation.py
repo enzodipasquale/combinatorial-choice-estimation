@@ -53,10 +53,10 @@ def get_x_k(self, i_id, B_j, local= False):
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
         
-# Pricing subproblem from bundlechoice library
+# Demand orable from library
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
-
+# Run estimation
 quadsupermod_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 quadsupermod_demo.scatter_data()
 quadsupermod_demo.local_data_to_torch()

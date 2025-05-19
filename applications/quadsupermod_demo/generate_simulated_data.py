@@ -22,8 +22,8 @@ if rank == 0:
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
     num_mod = num_features - 1
-    agent_data = {"modular": - 5 * np.random.normal(0, 1, (num_agents, num_items, num_mod))**2}
-    item_data = {"quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2]) }
+    agent_data = {"modular": - 10 * np.random.normal(0, 1, (num_agents, num_items, num_mod)) ** 2}
+    item_data = {"quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2])}
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
 
@@ -53,7 +53,8 @@ quadsupermod_demo.scatter_data()
 quadsupermod_demo.local_data_to_torch()
 
 
-lambda_k_star = torch.ones(config["num_features"]) 
+lambda_k_star = np.ones(config["num_features"]) 
+# lambda_k_star = np.array([3.41268895 ,1.33776912, 0.47635377, 2.83031925, 0.98361723])
 results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
 
 # Save results 

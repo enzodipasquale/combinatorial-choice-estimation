@@ -1,6 +1,6 @@
 num_agents: 100
 num_items: 200
-num_features: 5
+num_features: 3
 num_simuls: 1
 
 subproblem: QuadSupermod

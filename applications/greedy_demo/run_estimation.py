@@ -43,7 +43,7 @@ def get_x_k(self, i_id, B_j, local= False):
     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
     return np.concatenate((modular[B_j].sum(0), [-B_j.sum() **(1.5)]))
 
-# Demand oracle
+# Demand orable from library
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 # Create the BundleChoice instance
