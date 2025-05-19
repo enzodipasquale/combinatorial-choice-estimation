@@ -1,6 +1,4 @@
 import os
-
-import numpy as np
 import numpy as np
 import yaml
 from mpi4py import MPI
@@ -26,13 +24,13 @@ if rank == 0:
     agent_data = {
         "modular": np.load(os.path.join(INPUT_DIR, "modular.npy"))
                 }
-    np.random.seed(34)
+    np.random.seed(42898)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
 
     data = {
-                "agent_data": agent_data,
-                "errors": errors,
-                "obs_bundle": obs_bundle
+            "agent_data": agent_data,
+            "errors": errors,
+            "obs_bundle": obs_bundle
             }
 else:
     data = None

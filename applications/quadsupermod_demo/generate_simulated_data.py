@@ -11,24 +11,19 @@ from bundlechoice.subproblems import get_subproblem
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Select pricing problem from config
+# Load configuration
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(BASE_DIR, "config_simul.yaml")
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
-init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
-### Load data on rank 0
+# Load data
 if rank == 0:  
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
     num_mod = num_features - 1
-    agent_data = {
-                 "modular": - 5 * np.random.normal(0, 1, (num_agents, num_items, num_mod))**2
-                }
-    item_data = {
-                 "quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2]) 
-                }
+    agent_data = {"modular": - 5 * np.random.normal(0, 1, (num_agents, num_items, num_mod))**2}
+    item_data = {"quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2]) }
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
 
@@ -40,7 +35,7 @@ if rank == 0:
 else:
     data = None
 
-### User-defined feature oracle
+# User-defined feature oracle
 def get_x_k(self, i_id, B_j, local= False):
     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
     quadratic = self.item_data["quadratic"]
@@ -49,6 +44,9 @@ def get_x_k(self, i_id, B_j, local= False):
                             np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
                             ))
         
+# Pricing subproblem from bundlechoice library
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
+
 
 quadsupermod_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 quadsupermod_demo.scatter_data()

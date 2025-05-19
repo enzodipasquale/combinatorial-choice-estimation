@@ -1,6 +1,5 @@
 import numpy as np
 import gurobipy as gp
-import sys
 
 def init_QKP(self, local_id):
 
@@ -14,7 +13,6 @@ def init_QKP(self, local_id):
     subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
     B_j = subproblem.addVars(self.num_items, vtype = gp.GRB.BINARY)
 
-    # Knapsack constraint
     weight_j = self.item_data["weights"]
     capacity = self.local_agent_data["capacity"][local_id]
     subproblem.addConstr(gp.quicksum(weight_j[j] * B_j[j] for j in range(self.num_items)) <= capacity)
@@ -51,15 +49,7 @@ def solve_QKP(self, subproblem, local_id, lambda_k, p_j):
     
     mip_gap_tol = self.subproblem_settings.get("MIPGap_tol")
     if mip_gap_tol is not None:
-        if subproblem.MIPGap > float(mip_gap_tol):
+        if subproblem.MIPGap/value > float(mip_gap_tol):
             print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {value}")
     
-    # Compute value, characteristics and error at optimal bundle
-    # results =   np.concatenate((    [value],
-    #                                 [error_j[optimal_bundle].sum(0)],
-    #                                 (modular_j_k[optimal_bundle]).sum(0), 
-    #                                 quadratic_j_j_k[optimal_bundle][:, optimal_bundle].sum((0, 1)),
-    #                                 subproblem.x
-    #                                 ))
-    # return results
-    return np.concatenate(( [value], optimal_bundle))
+    return optimal_bundle

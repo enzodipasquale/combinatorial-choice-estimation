@@ -3,6 +3,7 @@ import inspect
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Callable, Tuple, Optional
+from types import MethodType
 
 import numpy as np
 import gurobipy as gp
@@ -97,15 +98,12 @@ class BundleChoice:
         self.subproblem_settings = self.config.subproblem_settings
 
         # Initialize user-defined methods
-        self._get_x_k = get_x_k
-        self._init_pricing = init_pricing
-        self._solve_pricing = solve_pricing
+        self.get_x_k = MethodType(get_x_k, self)
+        self.solve_pricing = MethodType(solve_pricing, self)
+        self.init_pricing = MethodType(init_pricing, self) if init_pricing is not None else None
 
 
     # Features methods
-    def get_x_k(self, i_id, B_j, local = False):
-        return self._get_x_k(self, i_id, B_j, local)
-
     def get_x_i_k(self, B_i_j):
         return np.stack([self.get_x_k(i, B_i_j[i]) for i in range(self.num_agents)])
 
@@ -113,21 +111,15 @@ class BundleChoice:
         return np.stack([self.get_x_k(si % self.num_agents, B_si_j[si]) 
                         for si in range(self.num_simuls * self.num_agents)])
 
-
-    # Pricing problem methods
-    def init_pricing(self, local_id):
-        return self._init_pricing(self, local_id)
-
+    # Subproblem methods
     def init_local_pricing(self):
-        if self._init_pricing is not None:
+        if self.init_pricing is not None:
             with suppress_output():
                 local_pricing_pbs = [self.init_pricing(local_id) for local_id in range(self.num_local_agents)]
         else:
             local_pricing_pbs = self.local_indeces
         return local_pricing_pbs
 
-    def solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter):
-        return self._solve_pricing(self, pricing_pb, local_id, lambda_k_iter, p_j_iter)
 
     def solve_local_pricing(self, local_pricing_pbs, lambda_k_iter, p_j_iter):
         if self.subproblem_settings.get("parallel_local", False):
@@ -152,8 +144,6 @@ class BundleChoice:
             self.error_si_j = self.error_s_i_j.reshape(-1, self.num_items) if self.error_s_i_j is not None else None
             del self.error_s_i_j
             self.obs_bundle = self.data.get("obs_bundle", None)
-            # if self.obs_bundle is not None:
-            #     self.obs_bundle = self.obs_bundle.astype(bool)
         else:
             self.item_data = None
         self.item_data = self.comm.bcast(self.item_data, root=0)
@@ -270,13 +260,14 @@ class BundleChoice:
 
     def _master_iteration(self, master_pb, vars_tuple, pricing_results, slack_counter = None):
         if self.rank == 0:
-            pricing_results = np.concatenate(pricing_results)
+            B_star_si_j = np.concatenate(pricing_results).astype(bool)
             lambda_k, u_si, p_j = vars_tuple
-            u_si_star = pricing_results[:,0]
-            B_star_si_j = pricing_results[:,1:].astype(bool)
 
             eps_si_star = (self.error_si_j * B_star_si_j).sum(1)
             x_star_si_k = self.get_x_si_k(B_star_si_j)
+            u_si_star = x_star_si_k @ lambda_k.x + eps_si_star
+            if p_j is not None:
+                u_si_star -= B_star_si_j @ p_j.x
             
             u_si_master = u_si.x
             max_reduced_cost = np.max(u_si_star - u_si_master)
