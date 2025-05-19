@@ -11,21 +11,17 @@ import os
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Base directory of the current script
 BASE_DIR = os.path.dirname(__file__)
-INPUT_DIR = os.path.join(BASE_DIR, "input_data")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
 # Load configuration
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
-# Select pricing problem from config
-# init_pricing, solve_pricing = get_subproblem(config["subproblem"])
-init_pricing, solve_pricing = None, None
-
 # Load data on rank 0
 if rank == 0:  
+    INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+
     obs_bundle = np.load(os.path.join(INPUT_DIR, "obs_bundles.npy"))
 
     item_data = {

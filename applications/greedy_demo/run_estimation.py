@@ -9,21 +9,24 @@ from bundlechoice.subproblems import get_subproblem
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Select pricing problem from config
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
+# Load configuration
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
 
-
-### Load data on rank 0
+# Load data on rank 0
 if rank == 0:  
     INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+
     obs_bundle = np.load(os.path.join(INPUT_DIR, "obs_bundles.npy"))
+
     agent_data = {
         "modular": np.load(os.path.join(INPUT_DIR, "modular.npy"))
                 }
+                
     np.random.seed(42898)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
 
@@ -35,12 +38,12 @@ if rank == 0:
 else:
     data = None
 
-### User-defined feature oracle
+# User-defined feature oracle
 def get_x_k(self, i_id, B_j, local= False):  
     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
     return np.concatenate((modular[B_j].sum(0), [-B_j.sum() **(1.5)]))
 
-### Demand oracle
+# Demand oracle
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 # Create the BundleChoice instance
