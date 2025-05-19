@@ -40,7 +40,7 @@ def log_solution(master_pb, lambda_k_iter, rank):
 
 def log_init_master(self, x_hat_k):
     print("#"*80)
-    print("PROBLEM INFORMATION")
+    print("PROBLEM DETAILS")
     print("number of agents     :", self.num_agents)
     print("number of items      :", self.num_items)
     print("number of features   :", self.num_features)

@@ -8,6 +8,10 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     quadratic_i_j_j_k = self.torch_local_agent_data.get("quadratic", None)
 
     device = error_i_j.device
+    precision = error_i_j.dtype
+    lambda_k = torch.tensor(lambda_k, device=device, dtype=precision)
+    if p_j is not None:
+        p_j = torch.tensor(p_j, device=device, dtype=precision)
 
     z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
     z_best_i_j = torch.zeros_like(z_t)
@@ -17,6 +21,7 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     num_quad = quadratic_j_j_k.shape[2] if quadratic_j_j_k is not None else 0
     num_quad_agent = quadratic_i_j_j_k.shape[2] if quadratic_i_j_j_k is not None else 0
 
+    
     lambda_k_mod = lambda_k[:num_mod]
     lambda_k_quad = lambda_k[num_mod : num_mod + num_quad]
     lambda_k_quad_agent = lambda_k[num_mod + num_quad: num_mod + num_quad + num_quad_agent]
@@ -96,8 +101,8 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
 
     # random_tensor = torch.rand_like(z_star)
     # optimal_bundle = (random_tensor < z_star).bool()
-    # violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
-    # print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
-    # print(optimal_bundle.sum(1).cpu().numpy())
+    violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
+    print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
+    print(optimal_bundle.sum(1).cpu().numpy())
 
     return optimal_bundle

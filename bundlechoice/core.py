@@ -272,6 +272,8 @@ class BundleChoice:
             u_si_master = u_si.x
             max_reduced_cost = np.max(u_si_star - u_si_master)
             print('-'*80)
+            # print(u_si_star)
+            # print(u_si_master)
             print("Reduced cost:", max_reduced_cost)
             if max_reduced_cost < self.tol_certificate:
                 return True, lambda_k.x, p_j.x if p_j is not None else None
