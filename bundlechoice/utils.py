@@ -24,13 +24,11 @@ def suppress_output():
 
 
 def log_iteration(iteration, lambda_k, rank=0):
-    if rank != 0:
-        return
-    print("#" * 80)
-    print("#" * 80)
-    print(f"ITERATION: {iteration}")
-    print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    # print("Parameter:", np.array2string(lambda_k, precision=4, separator=', '))
+    if rank == 0:
+        print("#" * 80)
+        print("#" * 80)
+        print(f"ITERATION: {iteration}")
+        print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 def log_solution(master_pb, lambda_k_iter, rank):
     if rank == 0:

@@ -46,13 +46,14 @@ results = greedy_demo.solve_pricing_offline(lambda_k_star)
 
 # Save results 
 if rank == 0:
-    obs_bundles = results[:, -num_items:].astype(bool)
+    obs_bundles = results[:, 1:].astype(bool)
+    print("obs_bundles shape", obs_bundles.shape)
     input_data_path = os.path.join(BASE_DIR, "input_data")
     if not os.path.exists(input_data_path):
         os.makedirs(input_data_path)
     np.save(os.path.join(input_data_path, "obs_bundles.npy"), obs_bundles)
     np.save(os.path.join(input_data_path, "modular.npy"), agent_data["modular"])
     print("Results saved to", input_data_path)
-    print(obs_bundles.sum(1))
+    print("aggregate demands:", obs_bundles.sum(1))
 
 
