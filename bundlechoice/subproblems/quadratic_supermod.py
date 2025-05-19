@@ -96,8 +96,8 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
 
     # random_tensor = torch.rand_like(z_star)
     # optimal_bundle = (random_tensor < z_star).bool()
-    violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
-    print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
-    print(optimal_bundle.sum(1).cpu().numpy())
+    # violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
+    # print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
+    # print(optimal_bundle.sum(1).cpu().numpy())
 
     return optimal_bundle
