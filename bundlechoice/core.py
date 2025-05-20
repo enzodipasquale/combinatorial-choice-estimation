@@ -11,7 +11,7 @@ from mpi4py import MPI
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
-@dataclass(frozen=True)
+@dataclass()
 class BundleConfig:
     num_agents: int
     num_items: int
@@ -282,7 +282,6 @@ class BundleChoice:
             master_pb.optimize()
             print('-'*80)
             print("Parameter:", lambda_k.x)
-
             self.config.tol_row_generation *= self.config.row_generation_decay
 
             return False, lambda_k.x, p_j.x if p_j is not None else None
