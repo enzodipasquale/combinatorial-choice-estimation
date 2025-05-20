@@ -25,40 +25,36 @@ class BundleConfig:
     tol_row_generation: float = 0
     row_generation_decay: float = 0
     max_iters: int = np.inf
-    min_iters: Optional[float] = None
+    min_iters: Optional[int] = None
 
     subproblem: Optional[str] = None 
     subproblem_settings: dict = field(default_factory=dict)
 
     @staticmethod
-    def from_dict(cfg: dict) -> 'BundleConfig':
-        cfg = dict(cfg)  
-        cfg.setdefault("item_fixed_effects", False)
+    def from_dict(config_dict: dict) -> 'BundleConfig':
+        config_dict = dict(config_dict)  
+        config_dict.setdefault("item_fixed_effects", False)
 
-        cfg.setdefault("tol_certificate", 0.01)
-        cfg.setdefault("max_slack_counter", np.inf)
-        cfg.setdefault("tol_row_generation", 0)
-        cfg.setdefault("row_generation_decay", 0)
-        cfg.setdefault("max_iters", np.inf)
+        config_dict.setdefault("tol_certificate", 0.01)
+        config_dict.setdefault("max_slack_counter", np.inf)
+        config_dict.setdefault("tol_row_generation", 0)
+        config_dict.setdefault("row_generation_decay", 0)
+        config_dict.setdefault("max_iters", np.inf)
+        config_dict.setdefault("min_iters", 0)
 
-        cfg.setdefault("subproblem", None)
-        cfg.setdefault("subproblem_settings", {})
+        config_dict.setdefault("subproblem", None)
+        config_dict.setdefault("subproblem_settings", {})
         
-        cfg["tol_certificate"] = float(cfg["tol_certificate"])
-        cfg["tol_row_generation"] = float(cfg["tol_row_generation"])
-        cfg["row_generation_decay"] = float(cfg["row_generation_decay"])
+        config_dict["tol_certificate"] = float(config_dict["tol_certificate"])
+        config_dict["tol_row_generation"] = float(config_dict["tol_row_generation"])
+        config_dict["row_generation_decay"] = float(config_dict["row_generation_decay"])
 
-        # Compute min_iters 
-        if cfg.get("min_iters") is None:
-            tol_cert = cfg["tol_certificate"]
-            tol_row = cfg["tol_row_generation"]
-            decay = cfg["row_generation_decay"]
-            if tol_row == 0:
-                cfg["min_iters"] = 0
-            else:
-                cfg["min_iters"] = np.log(tol_cert / (tol_row - 1)) / np.log(decay)
+        if config_dict["tol_row_generation"] > 0:
+            config_dict["min_iters"] = (np.log(config_dict["tol_certificate"] 
+                                        /(config_dict["tol_row_generation"] + 1)) 
+                                        /np.log(config_dict["row_generation_decay"]))
 
-        return BundleConfig(**cfg)
+        return BundleConfig(**config_dict)
 
 class BundleChoice:
     def __init__(
@@ -85,16 +81,7 @@ class BundleChoice:
         self.num_features = self.config.num_features
         self.num_simuls = self.config.num_simuls
 
-        self.item_fixed_effects = self.config.item_fixed_effects
-        self.tol_certificate = self.config.tol_certificate
-        self.max_slack_counter = self.config.max_slack_counter
-        self.tol_row_generation = self.config.tol_row_generation
-        self.row_generation_decay = self.config.row_generation_decay
-
-        self.max_iters = self.config.max_iters
-        self.min_iters = self.config.min_iters
-
-        self.subproblem = self.config.subproblem
+        self.subproblem_name = self.config.subproblem
         self.subproblem_settings = self.config.subproblem_settings
 
         # Initialize user-defined methods
@@ -146,21 +133,25 @@ class BundleChoice:
             self.obs_bundle = self.data.get("obs_bundle", None)
         else:
             self.item_data = None
+
         self.item_data = self.comm.bcast(self.item_data, root=0)
 
         if self.rank == 0:
             i_chunks = np.array_split(np.tile(np.arange(self.num_agents), self.num_simuls), self.comm_size)
             si_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
 
-            data_chunks = [
-                            {"agent_indeces": i_chunks[r],
-                            "agent_data": {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
-                                            if self.agent_data is not None else None,
-                            "errors": self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
+            data_chunks =   [
+                            {
+                            "agent_indeces":    i_chunks[r],
+                            "agent_data":       {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
+                                                if self.agent_data is not None else None,
+                            "errors":           self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
                             }
-                            for r in range(self.comm_size)]
+                            for r in range(self.comm_size)
+                            ]
         else:
             data_chunks = None
+
         local_data = self.comm.scatter(data_chunks, root=0)
 
         self.local_indeces = local_data["agent_indeces"]
@@ -206,7 +197,7 @@ class BundleChoice:
             lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e9 , name='parameter')
             u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
 
-            if self.item_fixed_effects:
+            if self.config.item_fixed_effects:
                 p_j = master_pb.addMVar(self.num_items, obj = - self.num_simuls, name='price')
             else:
                 p_j = None
@@ -249,7 +240,7 @@ class BundleChoice:
             else:
                 slack_counter[constr_name] = 0
   
-            if slack_counter[constr_name] >= self.max_slack_counter:
+            if slack_counter[constr_name] >= self.config.max_slack_counter:
                 to_remove.append((constr_name, constr))
 
         for constr_name, constr in to_remove:
@@ -275,10 +266,10 @@ class BundleChoice:
             # print(u_si_star)
             # print(u_si_master)
             print("Reduced cost:", max_reduced_cost)
-            if max_reduced_cost < self.tol_certificate:
+            if max_reduced_cost < self.config.tol_certificate:
                 return True, lambda_k.x, p_j.x if p_j is not None else None
             
-            new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.tol_row_generation))[0]
+            new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.config.tol_row_generation))[0]
             print("New constraints:", len(new_constrs_id))
             master_pb.addConstrs((  
                                 u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
@@ -292,7 +283,7 @@ class BundleChoice:
             print('-'*80)
             print("Parameter:", lambda_k.x)
 
-            self.tol_row_generation *= self.row_generation_decay
+            self.config.tol_row_generation *= self.config.row_generation_decay
 
             return False, lambda_k.x, p_j.x if p_j is not None else None
         else:
@@ -307,7 +298,7 @@ class BundleChoice:
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 
         #=========== Main loop ===========#
-        for iteration in range(self.max_iters):
+        for iteration in range(self.config.max_iters):
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
@@ -315,7 +306,7 @@ class BundleChoice:
             stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
-            if stop and iteration >= self.min_iters:
+            if stop and iteration >= self.config.min_iters:
                 log_solution(master_pb, lambda_k_iter, self.rank)
                 break
         return lambda_k_iter, p_j_iter
