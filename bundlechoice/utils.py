@@ -54,5 +54,7 @@ def log_init_master(self, x_hat_k):
     print("row generation decay:", self.config.row_generation_decay)
     print("mininmum iterations :", self.config.min_iters)
     print("maximum iterations  :", self.config.max_iters)
+    print("SLURM")
+    print("comm size           :", self.comm_size)
     print("#"*80)
 

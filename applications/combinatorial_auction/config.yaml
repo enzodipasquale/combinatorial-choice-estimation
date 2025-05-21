@@ -13,5 +13,5 @@ max_iters: 100
 
 subproblem: QuadKnap
 subproblem_settings:
-    TimeLimit: 100
-    MIPGap_tol: 1e-2
+    TimeLimit: 180
+    MIPGap_tol: 1e-3
