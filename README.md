@@ -41,6 +41,15 @@ The demand oracle supports integration with **Mixed Integer Programming (MIP) so
 
 ---
 
+## Installation
+
+To set up the environment and install all dependencies, run the provided setup script:
+
+```bash
+./dev_setup.sh
+
+---
+
 ## Contributing
 
 Contributions are welcome! Please open issues or submit pull requests.
