@@ -173,11 +173,11 @@ class BundleChoice:
         def to_torch(x):
             return torch.tensor(x, device=device, dtype=dtype) if x is not None else None
 
-        self.torch_item_data = {
+        self.torch_item_data =  {
                                 k: to_torch(v) for k, v in self.item_data.items()
                                 } if self.item_data is not None else None
 
-        self.torch_local_agent_data = {
+        self.torch_local_agent_data =   {
                                         k: to_torch(v) for k, v in self.local_agent_data.items()
                                         } if self.local_agent_data is not None else None
 
