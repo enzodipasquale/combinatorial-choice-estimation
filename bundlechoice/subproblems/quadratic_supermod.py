@@ -1,8 +1,10 @@
 import torch
+import sys
 
 def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     
     error_i_j = self.torch_local_errors
+    modular_j_k = self.torch_item_data.get("modular", None)
     modular_i_j_k = self.torch_local_agent_data.get("modular", None)
     quadratic_j_j_k = self.torch_item_data.get("quadratic", None)
     quadratic_i_j_j_k = self.torch_local_agent_data.get("quadratic", None)
@@ -13,63 +15,72 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     if p_j is not None:
         p_j = torch.tensor(p_j, device=device, dtype=precision)
 
-    z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
-    z_best_i_j = torch.zeros_like(z_t)
-    val_best_i = torch.full((self.num_local_agents,),  -torch.inf)
+    num_mod = modular_j_k.shape[-1] if modular_j_k is not None else 0
+    num_mod_agent = modular_i_j_k.shape[-1] if modular_i_j_k is not None else 0
+    num_quad = quadratic_j_j_k.shape[-1] if quadratic_j_j_k is not None else 0
+    num_quad_agent = quadratic_i_j_j_k.shape[-1] if quadratic_i_j_j_k is not None else 0
 
-    num_mod = modular_i_j_k.shape[2] if modular_i_j_k is not None else 0
-    num_quad = quadratic_j_j_k.shape[2] if quadratic_j_j_k is not None else 0
-    num_quad_agent = quadratic_i_j_j_k.shape[2] if quadratic_i_j_j_k is not None else 0
+    offset = 0
+    lambda_mod = lambda_k[offset:offset + num_mod]; offset += num_mod
+    lambda_mod_agent = lambda_k[offset:offset + num_mod_agent]; offset += num_mod_agent
+    lambda_quad = lambda_k[offset:offset + num_quad]; offset += num_quad
+    lambda_quad_agent = lambda_k[offset:]
 
-    
-    lambda_k_mod = lambda_k[:num_mod]
-    lambda_k_quad = lambda_k[num_mod : num_mod + num_quad]
-    lambda_k_quad_agent = lambda_k[num_mod + num_quad: num_mod + num_quad + num_quad_agent]
+    P_i_j_j = torch.zeros((self.num_local_agents, self.num_items, self.num_items), device=device, dtype=precision)
 
-    zeros_i_j_j = torch.zeros((self.num_local_agents, self.num_items, self.num_items), device=device)
-    upper_triangular = torch.triu(torch.ones((self.num_items, self.num_items), device=device), diagonal=1)
+    diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2)
+    diag_i_j.copy_(diag_i_j + error_i_j)
+    if modular_j_k is not None:
+        diag_i_j.copy_(diag_i_j + modular_j_k @ lambda_mod)
+    if modular_i_j_k is not None:
+        diag_i_j.copy_(diag_i_j + modular_i_j_k @ lambda_mod_agent)
+    if p_j is not None:
+        diag_i_j.copy_(diag_i_j - p_j)
 
-    def _grad_lovatz_extension(z_i_j, lambda_k, p_j, error_i_j, modular_i_j_k, quadratic_i_j_j_k, quadratic_j_j_k):
+    if quadratic_j_j_k is not None:
+        P_i_j_j += (quadratic_j_j_k @ lambda_quad).unsqueeze(0)
+    if quadratic_i_j_j_k is not None:
+        P_i_j_j += quadratic_i_j_j_k @ lambda_quad_agent
+
+    # Symmetrize
+    diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2).clone() 
+    P_i_j_j = P_i_j_j + P_i_j_j.transpose(1, 2)    
+    P_i_j_j.diagonal(dim1=1, dim2=2).copy_(diag_i_j)
+
+
+    mask_i_j_j = torch.tril(torch.ones((self.num_items, self.num_items), device=device, dtype=precision)).bool().unsqueeze(0)
+
+    def _grad_lovatz_extension(z_i_j, P_i_j_j):
         # Sort z_i_j for each i
-        sorted_z_id_j = torch.argsort(z_i_j, dim=1, descending=True)
-        zeros_i_j_j = torch.zeros((self.num_local_agents, self.num_items, self.num_items), device=device)
+        sigma_i_j = torch.argsort(z_i_j, dim=1, descending=True)
 
-        zeros_i_j_j[torch.arange(self.num_local_agents).unsqueeze(1).unsqueeze(2) ,
-                        sorted_z_id_j.unsqueeze(1) ,
-                        sorted_z_id_j.unsqueeze(2)] = upper_triangular
+        P_sigma = torch.gather(P_i_j_j, 1, sigma_i_j.unsqueeze(2).expand(-1, -1, self.num_items))
+        P_sigma = torch.gather(P_sigma, 2, sigma_i_j.unsqueeze(1).expand(-1, self.num_items, -1))
+        grad_i_sigma = (P_sigma * mask_i_j_j).sum(2) 
 
-        mask = zeros_i_j_j.unsqueeze(-1)
-
-        # Compute gradient
-        grad_i_j = torch.zeros_like(z_i_j, device=device)
-
-        if modular_i_j_k is not None:
-            grad_i_j += modular_i_j_k @ lambda_k_mod
-         
-        if quadratic_j_j_k is not None:
-            grad_i_j += torch.matmul((quadratic_j_j_k.unsqueeze(0) * mask).sum(-2) , lambda_k_quad)
-
-        if quadratic_i_j_j_k is not None:
-            grad_i_j += torch.matmul((quadratic_i_j_j_k * mask).sum(-2) , lambda_k_quad_agent)
-
-        if error_i_j is not None:
-            grad_i_j += error_i_j
-
-        if p_j is not None:
-            grad_i_j += p_j[None, :]
+        # Compute the gradient
+        grad_i_j = torch.zeros_like(z_i_j, device=device, dtype=precision)
+        grad_i_j.scatter_(1, sigma_i_j, grad_i_sigma)
 
         # Compute the value of the Lovatz extension (assuming the value of the empty bundle is 0)
         fun_value_i = (z_i_j * grad_i_j).sum(1)
 
         return grad_i_j, fun_value_i
+
+
+    z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
+    z_best_i_j = torch.zeros_like(z_t)
+    val_best_i = torch.full((self.num_local_agents,),  -torch.inf)
     
-    num_iters_SGD = int(self.subproblem_settings["num_iters_SGD"])
+    # sys.exit()
+
+    num_iters_SGM = int(self.subproblem_settings["num_iters_SGM"])
     alpha = float(self.subproblem_settings["alpha"])
     method = self.subproblem_settings["method"]
 
-    for iter in range(num_iters_SGD):
+    for iter in range(num_iters_SGM):
         # Compute gradient
-        grad_i_j , val_i = _grad_lovatz_extension(z_t, lambda_k, p_j, error_i_j, modular_i_j_k, quadratic_i_j_j_k, quadratic_j_j_k)
+        grad_i_j , val_i = _grad_lovatz_extension(z_t, P_i_j_j)
      
         # Take step: z_t + α g_t
         if method == 'constant_step_lenght':
@@ -102,7 +113,8 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     # random_tensor = torch.rand_like(z_star)
     # optimal_bundle = (random_tensor < z_star).bool()
     violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
-    print(f"violations of rounding in SFM at rank {self.rank}: ", violations_rounding.mean())
-    print(optimal_bundle.sum(1).cpu().numpy())
+    print(  f"violations of rounding in SFM at rank {self.rank}: mean=", 
+            violations_rounding.mean(), "max=", violations_rounding.max())
+    # print(optimal_bundle.sum(1).cpu().numpy())
 
     return optimal_bundle
