@@ -1,6 +1,6 @@
-num_agents: 100
+num_agents: 300
 num_items: 200
-num_features: 3
+num_features: 5
 num_simuls: 1
 
 tol_certificate: 1e-3
@@ -9,8 +9,8 @@ max_iters: 100
 
 subproblem: QuadSupermod
 subproblem_settings:
-    num_iters_SGD: 5000
-    alpha: .1
+    num_iters_SGM: 6000
+    alpha: .05
     method: constant_over_sqrt_k
     parallel_local: true
 
