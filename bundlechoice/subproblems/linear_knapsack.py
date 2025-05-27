@@ -16,22 +16,26 @@ def init_KP(self, local_id):
     weight_j = self.item_data["weights"]
     capacity = self.local_agent_data["capacity"][local_id]
     subproblem.addConstr(gp.quicksum(weight_j[j] * B_j[j] for j in range(self.num_items)) <= capacity)
-    
+
     subproblem.update()
 
     return subproblem 
+
 
 
 def solve_KP(self, subproblem, local_id, lambda_k, p_j):
 
     error_j = self.local_errors[local_id]
     modular_j_k = self.local_agent_data["modular"][local_id]
-    
+
     L_j =  error_j + modular_j_k @ lambda_k
     if p_j is not None:
         L_j -= p_j
 
-    subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)))
+    B_j = subproblem.getVars()
+    for j in range(self.num_items):
+        B_j[j].Obj = L_j[j]
+    # subproblem.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)))
     subproblem.optimize()
 
     optimal_bundle = np.array(subproblem.x, dtype=bool)
@@ -42,3 +46,4 @@ def solve_KP(self, subproblem, local_id, lambda_k, p_j):
             print(f"WARNING: subproblem {local_id} in rank {self.rank} MIPGap: {subproblem.MIPGap}, value: {subproblem.objVal}")
     
     return optimal_bundle
+

@@ -202,12 +202,12 @@ class BundleChoice:
             else:
                 p_j = None
 
-            x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
-            master_pb.addConstrs((
-                    u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
-                    self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
-                    for si in range(self.num_simuls * self.num_agents)
-                                ))
+            # x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
+            # master_pb.addConstrs((
+            #         u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
+            #         self.error_si_j[si].sum() + x_i_k_all[si % self.num_agents, :] @ lambda_k
+            #         for si in range(self.num_simuls * self.num_agents)
+            #                     ))
 
             master_pb.addConstrs((
                                     u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
@@ -270,6 +270,8 @@ class BundleChoice:
                 return True, lambda_k.x, p_j.x if p_j is not None else None
             
             new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.config.tol_row_generation))[0]
+            
+            
             print("New constraints:", len(new_constrs_id))
             master_pb.addConstrs((  
                                 u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
@@ -305,10 +307,13 @@ class BundleChoice:
             stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
+
             if stop and iteration >= self.config.min_iters:
                 log_solution(master_pb, lambda_k_iter, self.rank)
                 break
+
         return lambda_k_iter, p_j_iter
+
 
 
 

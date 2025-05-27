@@ -1,11 +1,13 @@
-num_agents: 200
-num_items: 300
-num_features: 5
+num_agents: 2000
+num_items: 500
+num_features: 8
 num_simuls: 1
 
-tol_certificate: 1e-3
+tol_certificate: 1e-4
 
 max_iters: 100
 
 subproblem: LinearKnap
-
+subproblem_settings:
+    TimeLimit: 180
+    MIPGap_tol: 1e-3
