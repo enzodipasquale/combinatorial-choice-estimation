@@ -22,14 +22,14 @@ if rank == 0:
     INPUT_DIR = os.path.join(BASE_DIR, "input_data")
 
     obs_bundle = np.load(os.path.join(INPUT_DIR, "obs_bundles.npy"))
-       item_data = {
-                        "weights": np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
+    item_data =     {
+                    "weights": np.load(os.path.join(INPUT_DIR, "weights.npy"))
                     }
 
-    agent_data = {
-        "modular": np.load(os.path.join(INPUT_DIR, "modular.npy")),
-        "capacity": np.load(os.path.join(INPUT_DIR, "capacity.npy")),
-                }
+    agent_data =    {
+                    "modular": np.load(os.path.join(INPUT_DIR, "modular.npy")),
+                    "capacity": np.load(os.path.join(INPUT_DIR, "capacity.npy")),
+                    }
                 
     np.random.seed(42898)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
@@ -44,9 +44,13 @@ else:
     data = None
 
 # User-defined feature oracle
-def get_x_k(self, i_id, B_j, local= False):  
-    modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
-    return modular[B_j].sum(0)
+# def get_x_k(self, i_id, B_j, local= False):  
+#     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
+#     return modular[B_j].sum(0)
+def get_x_k(self, i_id, B_j):
+    modular = self.agent_data["modular"][i_id]
+    return np.einsum('jk,j->k', modular, B_j)
+                    
 
 # Demand orable from library
 init_pricing, solve_pricing = get_subproblem(config["subproblem"])
@@ -54,5 +58,9 @@ init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 # Create the BundleChoice instance
 knapsack_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 knapsack_demo.scatter_data()
-# knapsack_demo.compute_estimator_row_gen()
+lambda_k_iter, _ = knapsack_demo.compute_estimator_row_gen()
+
+
+
+
 
