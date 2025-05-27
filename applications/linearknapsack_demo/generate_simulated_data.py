@@ -16,9 +16,8 @@ BASE_DIR = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(BASE_DIR, "config_simul.yaml")
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
-init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
-### Load data on rank 0
+# Load data on rank 0
 if rank == 0:  
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
@@ -27,13 +26,13 @@ if rank == 0:
                 }
 
     agent_data = {
-                 "modular": np.random.normal(0, 1, (num_agents, num_items, num_features-1))**2,
-                "capacity": np.random.randint(1, 10, size= num_agents),
+                "modular": np.random.normal(0, 1, (num_agents, num_items, num_features)),
+                "capacity": np.random.randint(1, 100, size= num_agents),
                 }
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
 
-    data = {
+    data =  {
             "item_data": item_data,
             "agent_data": agent_data,
             "errors": errors
@@ -41,9 +40,17 @@ if rank == 0:
 else:
     data = None
 
-def get_x_k(self, i_id, B_j, local= False):  
-    modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
-    return modular[B_j].sum(0)
+# User-defined feature oracle
+# def get_x_k(self, i_id, B_j, local= False):  
+#     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
+#     return modular[B_j].sum(0)
+def get_x_k(self, i_id, B_j):
+    modular = self.agent_data["modular"][i_id]
+    return np.einsum('jk,j->k', modular, B_j)
+
+
+# Demand oracle from library
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 knapsack_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 knapsack_demo.scatter_data()
@@ -59,7 +66,10 @@ if rank == 0:
         os.makedirs(input_data_path)
     np.save(os.path.join(input_data_path, "obs_bundles.npy"), obs_bundles)
     np.save(os.path.join(input_data_path, "modular.npy"), agent_data["modular"])
+    np.save(os.path.join(input_data_path, "weights.npy"), item_data["weights"])
+    np.save(os.path.join(input_data_path, "capacity.npy"), agent_data["capacity"])
     print("Results saved to", input_data_path)
     print("aggregate demands:", obs_bundles.sum(1))
+
 
 
