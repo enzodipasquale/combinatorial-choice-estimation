@@ -183,7 +183,7 @@ class BundleChoice:
 
         self.torch_local_errors = to_torch(self.local_errors)
 
-    # Master problem methods
+    # Row generation 
     def _init_master(self):
         if self.rank == 0:
             master_pb = gp.Model()
@@ -290,7 +290,6 @@ class BundleChoice:
         else:
             return None, None, None
     
-    # Row generation 
     def compute_estimator_row_gen(self):
         #========== Initialization =========#
         local_pricing_pbs = self.init_local_pricing()
