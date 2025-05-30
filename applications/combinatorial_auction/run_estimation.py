@@ -36,7 +36,7 @@ if rank == 0:
         "capacity": np.load(os.path.join(INPUT_DIR, "capacity_i.npy")),
     }
 
-    np.random.seed(0)
+    np.random.seed(1995)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
 
     data = {
