@@ -33,7 +33,10 @@ def log_solution(master_pb, lambda_k_iter, rank):
     if rank == 0:
         print("-"*80)
         print("Solution found:", lambda_k_iter)
+        for k in range(len(lambda_k_iter)):
+            print(f"lambda_{k}:", lambda_k_iter[k])
         print("-"*80)
+
 
         os.makedirs("output", exist_ok=True)
         master_pb.write('output/master_pb.mps')

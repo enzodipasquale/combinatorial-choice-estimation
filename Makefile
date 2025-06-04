@@ -22,3 +22,6 @@ linearknap_simulate_data:
 
 run_linearknap:
 	mpiexec -n 6 python3 -m applications.linearknapsack_demo.run_estimation
+
+run_firms:
+	mpiexec -n 6 python3 -m applications.firms_export.run_estimation
