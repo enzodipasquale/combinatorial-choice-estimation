@@ -299,7 +299,7 @@ class BundleChoice:
                                     u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
                                     self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
                                     + x_hat_i_k[si % self.num_agents, :] @ lambda_k
-                                    for si in range(self.num_simuls * self.num_agents)
+                                    for si in range(self.num_simuls * self.num_agents)  if np.all(self.error_si_j[si] > float('-inf'))
                                 ))
 
 
@@ -340,9 +340,11 @@ class BundleChoice:
             B_star_si_j = np.concatenate(pricing_results).astype(bool)
             lambda_k, u_si, p_j = vars_tuple
 
-            eps_si_star = (self.error_si_j * B_star_si_j).sum(1)
+            # eps_si_star = (self.error_si_j * B_star_si_j).sum(1)
+            eps_si_star = np.where(B_star_si_j, self.error_si_j , 0).sum(1)
             x_star_si_k = self.get_x_si_k(B_star_si_j)
             u_si_star = x_star_si_k @ lambda_k.x + eps_si_star
+
             if p_j is not None:
                 u_si_star -= B_star_si_j @ p_j.x
             
