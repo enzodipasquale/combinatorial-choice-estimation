@@ -7,6 +7,9 @@ tol_certificate: 1e-4
 
 max_iters: 100
 
+master_settings:
+    OutputFlag: 0
+
 subproblem: LinearKnap
 subproblem_settings:
     TimeLimit: 180

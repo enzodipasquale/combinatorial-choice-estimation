@@ -8,6 +8,7 @@ import yaml
 from mpi4py import MPI
 import os
 
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
@@ -41,7 +42,11 @@ if rank == 0:
     p = 0.66
 
     random_vals = np.random.rand(*shape)
-    blocking_shocks = np.where(random_vals < p, 0.0,-1e20)
+
+    max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
+    print("max_val:", max_val)
+    blocking_shocks = np.where(random_vals < p, 0.0,- max_val*10)
+    # print(blocking_shocks[0])
     errors += blocking_shocks
 
     data = {
@@ -64,7 +69,7 @@ def get_x_k(self, i_id, B_j, local= False):
                             ))
         
 # Demand orable from library
-init_pricing, solve_pricing = get_subproblem(config["subproblem"])
+init_pricing, solve_pricing = get_subproblem(config["subproblem_name"])
 
 # Run estimation
 firms_export = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
@@ -72,12 +77,37 @@ firms_export.scatter_data()
 firms_export.local_data_to_torch()
 
 # print(firms_export.obs_bundle.shape)
-
+# print(type(firms_export.config.master_lbs))
 firms_export.compute_estimator_row_gen()
-# Solution found: [1.18849331e+02 0.00000000e+00 4.05564043e-02 2.21206752e-02
-#  9.22114324e-02]
-# lambda_0: 118.84933133551252
-# lambda_1: 0.0
-# lambda_2: 0.04055640432761665
-# lambda_3: 0.02212067523270796
-# lambda_4: 0.09221143236550569
+
+# lambda_k = np.array([0,0,0,100,100,100])
+
+
+# demand = firms_export.solve_pricing_offline(lambda_k)
+# print()
+
+
+# lambda_0: 108.3956782977882
+# lambda_1: 1.8386458429303394
+# lambda_2: 0.03642886984865967
+# lambda_3: 0.0
+# lambda_4: 0.06947921454381736
+
+#6480964.358992527
+
+# lambda_0: 0.10813884510743174
+# lambda_1: 1.8637208160398846
+# lambda_2: 28.63331169105193
+# lambda_3: 0.0
+# lambda_4: 0.0
+# lambda_5: 0.0683508825050682
+
+
+
+
+# lambda_1: 0.10788055145627266
+# lambda_2: 2.0155562382537693
+# lambda_3: 276.75949128468824
+# lambda_4: -254.15058343329505
+# lambda_5: 0.0
+# lambda_6: 0.06309655738394435

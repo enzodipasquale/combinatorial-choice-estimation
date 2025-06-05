@@ -7,10 +7,14 @@ tol_certificate: 1e-3
 
 max_iters: 100
 
+master_settings:
+    OutputFlag: 0
+
 subproblem: QuadSupermod
 subproblem_settings:
     num_iters_SGM: 6000
     alpha: .05
     method: constant_over_sqrt_k
     parallel_local: true
+
 
