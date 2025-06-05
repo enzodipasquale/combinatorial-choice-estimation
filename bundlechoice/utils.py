@@ -61,6 +61,8 @@ def log_init_master(self, x_hat_k):
         Row Gen. Decay      : {self.config.row_generation_decay}
         Min Iterations      : {self.config.min_iters}
         Max Iterations      : {self.config.max_iters}
+        Custom LBs          : {self.config.master_lbs}
+        Custom UBs          : {self.config.master_ubs}
 
         ========== MPI / SLURM Info ==========
         Comm Size      : {self.comm_size}

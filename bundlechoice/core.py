@@ -271,14 +271,16 @@ class BundleChoice:
                 pass
             else:
                 for k in range(self.num_features):
-                    lambda_k[k].ub = ubs[k]
+                    if ubs[k] is not None:
+                        lambda_k[k].ub = ubs[k]
 
             lbs = self.config.master_settings.get("lbs", None)
             if lbs is None:
                 pass
             else:
                 for k in range(self.num_features):
-                    lambda_k[k].lb = lbs[k]
+                    if lbs[k] is not None:
+                        lambda_k[k].lb = lbs[k]
             master_pb.update()
 
             if self.config.item_fixed_effects:
