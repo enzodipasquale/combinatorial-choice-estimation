@@ -39,15 +39,11 @@ if rank == 0:
     errors = np.random.normal(0, 1, size=shape)
 
 
-    p = 0.9
-
-    random_vals = np.random.rand(*shape)
-
+    # p = 0.9
+    # random_vals = np.random.rand(*shape)
     # max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
     # print("max_val:", max_val)
-    # blocking_shocks = np.where(random_vals < p, 0.0,- 1e6)
-    # print(blocking_shocks[0])
-    # errors += blocking_shocks
+    # errors = np.where(random_vals < p, errors, - float('inf'))
 
     data = {
                 "item_data": item_data,
@@ -98,3 +94,12 @@ firms_export.compute_estimator_row_gen()
 # lambda_4 = 1.4054155134027297
 # lambda_5 = -0.8163559299113364
 # lambda_6 = 0.5603739091099591
+
+#HPC
+# ========== Final Solution ==========
+# lambda_1 = 1.059610474320977
+# lambda_2 = 0.10969382797095822
+# lambda_3 = 0.10037003252260504
+# lambda_4 = 1.5651111150566515
+# lambda_5 = -0.8273214069366847
+# lambda_6 = 0.5552463235956646

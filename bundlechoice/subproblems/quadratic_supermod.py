@@ -46,7 +46,8 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2).clone() 
     P_i_j_j = P_i_j_j + P_i_j_j.transpose(1, 2)    
     P_i_j_j.diagonal(dim1=1, dim2=2).copy_(diag_i_j)
-
+    
+    constraint_i_j = error_i_j == - float('inf')
 
     mask_i_j_j = torch.tril(torch.ones((self.num_items, self.num_items), device=device, dtype=precision)).bool().unsqueeze(0)
 
@@ -69,6 +70,7 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
 
 
     z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
+    z_t[constraint_i_j] = 0  
     z_best_i_j = torch.zeros_like(z_t)
     val_best_i = torch.full((self.num_local_agents,),  -torch.inf)
     
@@ -81,7 +83,11 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     for iter in range(num_iters_SGM):
         # Compute gradient
         grad_i_j , val_i = _grad_lovatz_extension(z_t, P_i_j_j)
-     
+
+        grad_i_j = torch.where(constraint_i_j, 0, grad_i_j) 
+        val_i = (z_t * grad_i_j).sum(1)
+
+
         # Take step: z_t + α g_t
         if method == 'constant_step_lenght':
             z_new = z_t + alpha * grad_i_j / torch.norm(grad_i_j, dim= 1, keepdim= True)
@@ -96,6 +102,7 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
             z_new = z_t * torch.exp(alpha * grad_i_j / torch.norm(grad_i_j, dim= 1, keepdim= True) )
 
         # project on Hypercube(J)
+        z_t[constraint_i_j] = 0 
         z_t = torch.clamp(z_new, 0, 1)
 
         # Update best value
@@ -113,10 +120,16 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
 
     if verbose:
         violations_rounding = ((z_star > .1) & (z_star < .9)).sum(1).cpu().numpy()
-        print(  f"violations of rounding in SFM at rank {self.rank}: mean=", 
-                violations_rounding.mean(), "max=", violations_rounding.max())
         aggregate_demand = optimal_bundle.sum(1).cpu().numpy()
-        print(aggregate_demand.mean(),aggregate_demand.min(), aggregate_demand.max())
+        print(
+            f"violations of rounding in SFM at rank {self.rank}: "
+            f"mean={violations_rounding.mean()}, "
+            f"max={violations_rounding.max()}, "
+            f"demand: {aggregate_demand.mean()}, "
+            f"{aggregate_demand.min()}, "
+            f"{aggregate_demand.max()}"
+            )      
+
     # print(optimal_bundle.sum(1).cpu().numpy())
 
     return optimal_bundle
