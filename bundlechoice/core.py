@@ -1,9 +1,10 @@
 import os
 import inspect
 from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Callable, Tuple, Optional
+from dataclasses import dataclass, field, fields, MISSING
+from typing import Callable, Tuple, Optional, Union, get_origin, get_args
 from types import MethodType
+import sys
 
 import numpy as np
 import gurobipy as gp
@@ -11,50 +12,107 @@ from mpi4py import MPI
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
-@dataclass()
+import logging
+
+logger = logging.getLogger(__name__)
+if not logger.hasHandlers():  # Prevent duplicate handlers in notebooks or reloads
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+# Suppress Gurobi's license/banner logs routed through logging
+logging.getLogger('gurobipy').setLevel(logging.WARNING)
+
+@dataclass
 class BundleConfig:
+    # Required fields
     num_agents: int
     num_items: int
     num_features: int
     num_simuls: int
 
+    # Optional configuration with defaults
     item_fixed_effects: bool = False
 
     tol_certificate: float = 0.01
-    max_slack_counter: int = np.inf
-    tol_row_generation: float = 0
-    row_generation_decay: float = 0
-    max_iters: int = np.inf
-    min_iters: Optional[int] = None
+    max_slack_counter: int = None  
+    tol_row_generation: float = 0.0
+    row_generation_decay: float = 0.0
+    max_iters: int = None
+    min_iters: int = 0
 
-    subproblem: Optional[str] = None 
+    subproblem_name: Optional[str] = None
     subproblem_settings: dict = field(default_factory=dict)
 
+    master_settings: dict = field(default_factory=dict)
+    master_ubs: Optional[dict] = None
+    master_lbs: Optional[list] = None
+
     @staticmethod
-    def from_dict(config_dict: dict) -> 'BundleConfig':
-        config_dict = dict(config_dict)  
-        config_dict.setdefault("item_fixed_effects", False)
+    def from_dict(cfg: dict) -> 'BundleConfig':
+        config_fields = {}
 
-        config_dict.setdefault("tol_certificate", 0.01)
-        config_dict.setdefault("max_slack_counter", np.inf)
-        config_dict.setdefault("tol_row_generation", 0)
-        config_dict.setdefault("row_generation_decay", 0)
-        config_dict.setdefault("max_iters", np.inf)
-        config_dict.setdefault("min_iters", 0)
+        for f in fields(BundleConfig):
+            name = f.name
 
-        config_dict.setdefault("subproblem", None)
-        config_dict.setdefault("subproblem_settings", {})
+            # Determine the value to use
+            if name in cfg:
+                val = cfg[name]
+            elif f.default is not MISSING:
+                val = f.default
+            elif f.default_factory is not MISSING:
+                val = f.default_factory()
+            else:
+                continue  # Leave required fields missing; constructor will raise if needed
+
+            # Extract base type if Optional
+            typ = f.type
+            if get_origin(typ) is Union:
+                args = get_args(typ)
+                not_none = [t for t in args if t is not type(None)]
+                if not_none:
+                    typ = not_none[0]
+
+            # Coerce basic scalar types
+            if typ in {int, float, bool, str} and val is not None:
+                if typ is int and isinstance(val, float) and not np.isfinite(val):
+                    pass  # Avoid int(float('inf')) -> OverflowError
+                else:
+                    val = typ(val)
+
+            config_fields[name] = val
+
+        return BundleConfig(**config_fields)
+
+    # @staticmethod
+    # def from_dict(config_dict: dict) -> 'BundleConfig':
+    #     config_dict = dict(config_dict)  
+    #     config_dict.setdefault("item_fixed_effects", False)
+
+    #     config_dict.setdefault("tol_certificate", 0.01)
+    #     config_dict.setdefault("max_slack_counter", np.inf)
+    #     config_dict.setdefault("tol_row_generation", 0)
+    #     config_dict.setdefault("row_generation_decay", 0)
+    #     config_dict.setdefault("max_iters", np.inf)
+    #     config_dict.setdefault("min_iters", 0)
+    #     config_dict.setdefault("master_ubs", None)
+    #     config_dict.setdefault("master_lbs", None)
+
+    #     config_dict.setdefault("subproblem", None)
+    #     config_dict.setdefault("subproblem_settings", {})
         
-        config_dict["tol_certificate"] = float(config_dict["tol_certificate"])
-        config_dict["tol_row_generation"] = float(config_dict["tol_row_generation"])
-        config_dict["row_generation_decay"] = float(config_dict["row_generation_decay"])
+    #     config_dict["tol_certificate"] = float(config_dict["tol_certificate"])
+    #     config_dict["tol_row_generation"] = float(config_dict["tol_row_generation"])
+    #     config_dict["row_generation_decay"] = float(config_dict["row_generation_decay"])
 
-        if config_dict["tol_row_generation"] > 0:
-            config_dict["min_iters"] = (np.log(config_dict["tol_certificate"] 
-                                        /(config_dict["tol_row_generation"] + 1)) 
-                                        /np.log(config_dict["row_generation_decay"]))
 
-        return BundleConfig(**config_dict)
+    #     # if config_dict["tol_row_generation"] > 0:
+    #     #     config_dict["min_iters"] = (np.log(config_dict["tol_certificate"] 
+    #     #                                 /(config_dict["tol_row_generation"] + 1)) 
+    #     #                                 /np.log(config_dict["row_generation_decay"]))
+
+    #     return BundleConfig(**config_dict)
 
 class BundleChoice:
     def __init__(
@@ -75,13 +133,21 @@ class BundleChoice:
 
         # Parse config and unpack parameters
         self.config = BundleConfig.from_dict(config)
+        if self.config.tol_row_generation > 0:
+            self.config.min_iters = np.ceil(np.log(self.config.tol_certificate 
+                                        /(self.config.tol_row_generation + 1)) 
+                                        /np.log(self.config.row_generation_decay))
+        if self.config.max_slack_counter is None:
+            self.config.max_slack_counter = float('inf')
+        if self.config.max_iters is None:
+            self.config.max_iters = float('inf')
 
         self.num_agents = self.config.num_agents
         self.num_items = self.config.num_items
         self.num_features = self.config.num_features
         self.num_simuls = self.config.num_simuls
 
-        self.subproblem_name = self.config.subproblem
+        self.subproblem_name = self.config.subproblem_name
         self.subproblem_settings = self.config.subproblem_settings
 
         # Initialize user-defined methods
@@ -186,16 +252,33 @@ class BundleChoice:
     # Row generation 
     def _init_master(self):
         if self.rank == 0:
-            master_pb = gp.Model()
-            master_pb.setParam('Method', 0)
-            master_pb.setParam('LPWarmStart', 2)
-
+            with suppress_output():
+                master_pb = gp.Model()
+                master_pb.setParam('Method', 0)
+                master_pb.setParam('LPWarmStart', 2)
+                master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+                OutputFlag = self.config.master_settings.get("OutputFlag", None)
+                if OutputFlag is not None:
+                    master_pb.setParam('OutputFlag', OutputFlag) 
             x_hat_i_k = self.get_x_i_k(self.obs_bundle)
             x_hat_k = x_hat_i_k.sum(0)
 
-            master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e9 , name='parameter')
+            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 2* 1e2 , name='parameter')
             u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
+
+            ubs = self.config.master_settings.get("ubs", None)
+            if ubs is None:
+                pass
+            else:
+                for k in range(self.num_features):
+                    lambda_k[k].ub = ubs[k]
+
+            lbs = self.config.master_settings.get("lbs", None)
+            if lbs is None:
+                pass
+            else:
+                for k in range(self.num_features):
+                    lambda_k[k].lb = lbs[k]
 
             if self.config.item_fixed_effects:
                 p_j = master_pb.addMVar(self.num_items, obj = - self.num_simuls, name='price')
@@ -219,8 +302,8 @@ class BundleChoice:
 
             log_init_master(self, x_hat_k)
             master_pb.optimize()
-            print('-'*80)
-            print("Parameter:", lambda_k.x)
+            logger.info("Parameter: %s", lambda_k.x)
+
             return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
         else:
             return None, None, None, None
@@ -262,28 +345,23 @@ class BundleChoice:
             
             u_si_master = u_si.x
             max_reduced_cost = np.max(u_si_star - u_si_master)
-            print('-'*80)
-            # print(u_si_star)
-            # print(u_si_master)
-            print("Reduced cost:", max_reduced_cost)
+            logger.info("Reduced cost: %s", max_reduced_cost)
             if max_reduced_cost < self.config.tol_certificate:
                 return True, lambda_k.x, p_j.x if p_j is not None else None
             
             new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.config.tol_row_generation))[0]
             
             
-            print("New constraints:", len(new_constrs_id))
             master_pb.addConstrs((  
                                 u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
                                 for si in new_constrs_id
                                 ))
 
             slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
-            print("Removed constraints:", num_constrs_removed)
-            print('-'*80)
+            logger.info("New constraints: %d", len(new_constrs_id))
+            logger.info("Removed constraints: %d", num_constrs_removed)
             master_pb.optimize()
-            print('-'*80)
-            print("Parameter:", lambda_k.x)
+            logger.info("Parameter: %s", lambda_k.x)
             self.config.tol_row_generation *= self.config.row_generation_decay
 
             return False, lambda_k.x, p_j.x if p_j is not None else None
@@ -298,11 +376,11 @@ class BundleChoice:
         lambda_k_iter, p_j_iter = self.comm.bcast((lambda_k_iter, p_j_iter), root=0)
 
         #=========== Main loop ===========#
-        for iteration in range(self.config.max_iters):
+        for iteration in range(int(self.config.max_iters)):
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
-            log_iteration(iteration, lambda_k_iter, self.rank )                
+            log_iteration(iteration, self.rank)                
             stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
 
@@ -352,7 +430,7 @@ class BundleChoice:
     #         if np.any(c_k < 0):
     #             a_k = - ((c_k < 0) * 1)
     #             value = np.inf
-    #             # print('Non productive')
+    #             # logger.info('Non productive')
             
     #         else:
     #             # Solve pricing problems
