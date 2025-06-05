@@ -9,7 +9,7 @@ max_iters: 100
 
 master_settings:
     OutputFlag: 0
-    ubs: [10,10,10000,10000,10,10]
+    ubs: [10,10,10,10,10,10]
     lbs: [null,null,null,null,-1,null]
 
 subproblem_name: QuadSupermod
