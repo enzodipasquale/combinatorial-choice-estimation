@@ -288,6 +288,9 @@ class BundleChoice:
             else:
                 p_j = None
 
+            # Custom constraint
+            master_pb.addConstr( lambda_k[4] + 1.5 * lambda_k[5] >= 0)
+
             # x_i_k_all = self.get_x_i_k(np.ones_like(self.obs_bundle))
             # master_pb.addConstrs((
             #         u_si[si] + price_term(p_j, np.ones(self.num_items)) >= 
