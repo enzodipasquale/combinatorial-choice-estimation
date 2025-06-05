@@ -45,7 +45,7 @@ if rank == 0:
 
     max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
     print("max_val:", max_val)
-    blocking_shocks = np.where(random_vals < p, 0.0,- max_val*10)
+    blocking_shocks = np.where(random_vals < p, 0.0,- max_val*1e10)
     # print(blocking_shocks[0])
     errors += blocking_shocks
 
@@ -75,39 +75,9 @@ init_pricing, solve_pricing = get_subproblem(config["subproblem_name"])
 firms_export = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 firms_export.scatter_data()
 firms_export.local_data_to_torch()
-
-# print(firms_export.obs_bundle.shape)
-# print(type(firms_export.config.master_lbs))
 firms_export.compute_estimator_row_gen()
 
-# lambda_k = np.array([0,0,0,100,100,100])
 
 
-# demand = firms_export.solve_pricing_offline(lambda_k)
-# print()
-
-
-# lambda_0: 108.3956782977882
-# lambda_1: 1.8386458429303394
-# lambda_2: 0.03642886984865967
-# lambda_3: 0.0
-# lambda_4: 0.06947921454381736
-
-#6480964.358992527
-
-# lambda_0: 0.10813884510743174
-# lambda_1: 1.8637208160398846
-# lambda_2: 28.63331169105193
-# lambda_3: 0.0
-# lambda_4: 0.0
-# lambda_5: 0.0683508825050682
-
-
-
-
-# lambda_1: 0.10788055145627266
-# lambda_2: 2.0155562382537693
-# lambda_3: 276.75949128468824
-# lambda_4: -254.15058343329505
-# lambda_5: 0.0
-# lambda_6: 0.06309655738394435
+#  Parameter: [1.04393711e+05 0.00000000e+00 1.89468741e+02 3.53442946e+07
+#  4.26917893e+05 5.68459003e+05]

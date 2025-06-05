@@ -9,13 +9,13 @@ max_iters: 100
 
 master_settings:
     OutputFlag: 0
-    ubs: [10,10,1000,10,10,10]
-    lbs: [0,0,0,-1000,0,0]
+    # ubs: [10,1000,10000,10000,10,10]
+    lbs: [0,-100000,0,-1000,0,0]
 
 subproblem_name: QuadSupermod
 subproblem_settings:
     num_iters_SGM: 15000
     alpha: 1
-    method: constant_over_sqrt_k
+    method: constant_step_lenght
     parallel_local: true
 
