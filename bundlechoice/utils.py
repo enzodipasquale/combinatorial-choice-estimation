@@ -3,6 +3,10 @@ import os
 import contextlib
 from datetime import datetime
 import numpy as np
+import logging
+import textwrap
+
+logger = logging.getLogger(__name__)
 
 def price_term(p_j, bundle_j):
         if p_j is None:
@@ -22,44 +26,44 @@ def suppress_output():
         finally:
             sys.stdout, sys.stderr = old_stdout, old_stderr
 
+def log_iteration(iteration, rank=0):
+    if rank != 0:
+        return
+    logger.info("========== Iteration %d ==========", iteration)
 
-def log_iteration(iteration, lambda_k, rank=0):
-    if rank == 0:
-        print("#" * 100)
-        print(f"ITERATION: {iteration}")
-        print("Time:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 def log_solution(master_pb, lambda_k_iter, rank):
-    if rank == 0:
-        print("-"*80)
-        print("Solution found:", lambda_k_iter)
-        for k in range(len(lambda_k_iter)):
-            print(f"lambda_{k}:", lambda_k_iter[k])
-        print("-"*80)
+    if rank != 0:
+        return
 
+    lines = ["========== Final Solution =========="]
+    lines += [f"lambda_{k+1} = {val}" for k, val in enumerate(lambda_k_iter)]
+    logger.info("\n%s", "\n".join(lines))
 
-        os.makedirs("output", exist_ok=True)
-        master_pb.write('output/master_pb.mps')
-        master_pb.write('output/master_pb.bas')
-
+    # os.makedirs("output", exist_ok=True)
+    # master_pb.write("output/master_pb.mps")
+    # master_pb.write("output/master_pb.bas")
+    # logger.info("Model written to 'output/master_pb.mps' and 'output/master_pb.bas'")
 
 def log_init_master(self, x_hat_k):
-    print("#"*100)
-    print("PROBLEM DETAILS")
-    print("number of agents     :", self.num_agents)
-    print("number of items      :", self.num_items)
-    print("number of features   :", self.num_features)
-    print("number of simulations:", self.num_simuls)
-    print("first moments:", x_hat_k)
-    print('-'*100)
-    print("SETTINGS")
-    print("tol certificate     :", self.config.tol_certificate)
-    print("max slack_counter   : ", self.config.max_slack_counter)
-    print("tol row_generation  :", self.config.tol_row_generation)
-    print("row generation decay:", self.config.row_generation_decay)
-    print("mininmum iterations :", self.config.min_iters)
-    print("maximum iterations  :", self.config.max_iters)
-    print("SLURM")
-    print("comm size           :", self.comm_size)
-    print("#"*100)
+    log_msg = f"""
+        ========== Problem Details ==========
+        Agents         : {self.num_agents}
+        Items          : {self.num_items}
+        Features       : {self.num_features}
+        Simulations    : {self.num_simuls}
+        First moments  : {np.array2string(x_hat_k, precision=2, separator=', ')}
+
+        ========== Solver Settings ==========
+        Tol. Certificate    : {self.config.tol_certificate}
+        Max Slack Counter   : {self.config.max_slack_counter}
+        Tol. Row Generation : {self.config.tol_row_generation}
+        Row Gen. Decay      : {self.config.row_generation_decay}
+        Min Iterations      : {self.config.min_iters}
+        Max Iterations      : {self.config.max_iters}
+
+        ========== MPI / SLURM Info ==========
+        Comm Size      : {self.comm_size}
+    """
+    logger.info("\n%s", textwrap.dedent(log_msg).strip())
 
