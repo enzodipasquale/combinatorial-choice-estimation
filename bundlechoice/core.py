@@ -263,9 +263,9 @@ class BundleChoice:
             x_hat_i_k = self.get_x_i_k(self.obs_bundle)
             x_hat_k = x_hat_i_k.sum(0)
 
-            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 2* 1e2 , name='parameter')
+            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e16 , name='parameter')
             u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
-
+            
             ubs = self.config.master_settings.get("ubs", None)
             if ubs is None:
                 pass
@@ -279,6 +279,7 @@ class BundleChoice:
             else:
                 for k in range(self.num_features):
                     lambda_k[k].lb = lbs[k]
+            master_pb.update()
 
             if self.config.item_fixed_effects:
                 p_j = master_pb.addMVar(self.num_items, obj = - self.num_simuls, name='price')

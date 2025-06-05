@@ -29,3 +29,6 @@ __pycache__/
 
 # Other
 deprecated/
+applications/firms_export/datasets/
+applications/firms_export/clean_data/
+
