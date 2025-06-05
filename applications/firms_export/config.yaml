@@ -8,7 +8,7 @@ tol_certificate: 1e-3
 max_iters: 100
 
 master_settings:
-    OutputFlag: 0
+    OutputFlag: 1
     ubs: [10,10,10,10,10,10]
     lbs: [null,null,null,null,-1,null]
 
