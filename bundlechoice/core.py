@@ -9,6 +9,7 @@ import sys
 import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
+import psutil
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
@@ -255,6 +256,9 @@ class BundleChoice:
             with suppress_output():
                 master_pb = gp.Model()
                 master_pb.setParam('Method', 0)
+                # number of threads
+                assigned_threads = len(psutil.Process().cpu_affinity())
+                master_pb.setParam('Threads', assigned_threads)
                 master_pb.setParam('LPWarmStart', 2)
                 master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
                 OutputFlag = self.config.master_settings.get("OutputFlag", None)
@@ -305,7 +309,7 @@ class BundleChoice:
 
             log_init_master(self, x_hat_k)
             master_pb.optimize()
-            logger.info("Parameter: %s", lambda_k.x)
+            logger.info("Master Initialized. Parameter: %s", lambda_k.x)
 
             return master_pb, (lambda_k, u_si, p_j), lambda_k.x, p_j.x if p_j is not None else None
         else:
@@ -356,17 +360,16 @@ class BundleChoice:
             
             new_constrs_id = np.where(u_si_star > u_si_master * (1+ self.config.tol_row_generation))[0]
             
-            
+            logger.info("New constraints: %d", len(new_constrs_id))
             master_pb.addConstrs((  
                                 u_si[si] + price_term(p_j, B_star_si_j[si,:]) >= eps_si_star[si] + x_star_si_k[si] @ lambda_k 
                                 for si in new_constrs_id
                                 ))
 
             slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
-            logger.info("New constraints: %d", len(new_constrs_id))
             logger.info("Removed constraints: %d", num_constrs_removed)
             master_pb.optimize()
-            logger.info("Parameter: %s", lambda_k.x)
+            logger.info("Master Solved. Parameter: %s", lambda_k.x)
             self.config.tol_row_generation *= self.config.row_generation_decay
 
             return False, lambda_k.x, p_j.x if p_j is not None else None
