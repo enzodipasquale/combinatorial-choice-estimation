@@ -263,7 +263,7 @@ class BundleChoice:
             x_hat_i_k = self.get_x_i_k(self.obs_bundle)
             x_hat_k = x_hat_i_k.sum(0)
 
-            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e16 , name='parameter')
+            lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e6 , name='parameter')
             u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
             
             ubs = self.config.master_settings.get("ubs", None)

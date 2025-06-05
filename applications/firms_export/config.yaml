@@ -16,6 +16,6 @@ subproblem_name: QuadSupermod
 subproblem_settings:
     num_iters_SGM: 15000
     alpha: 1
-    method: constant_step_lenght
+    method: constant_over_sqrt_k
     parallel_local: true
 
