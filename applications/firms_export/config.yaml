@@ -1,4 +1,4 @@
-num_agents: 5000
+num_agents: 34334
 num_items: 20
 num_features: 6
 num_simuls: 1
@@ -18,4 +18,5 @@ subproblem_settings:
     alpha: 1
     method: constant_over_sqrt_k
     parallel_local: true
+    verbose: false
 
