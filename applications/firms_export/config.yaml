@@ -1,4 +1,4 @@
-num_agents: 34334
+num_agents: 5000
 num_items: 20
 num_features: 6
 num_simuls: 1
@@ -9,8 +9,7 @@ max_iters: 100
 
 master_settings:
     OutputFlag: 0
-    # ubs: [10,1000,10000,10000,10,10]
-    lbs: [0,-100000,0,-1000,0,0]
+    lbs: [null,null,null,null,-1,null]
 
 subproblem_name: QuadSupermod
 subproblem_settings:
