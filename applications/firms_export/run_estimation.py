@@ -39,14 +39,14 @@ if rank == 0:
     errors = np.random.normal(0, 1, size=shape)
 
 
-    p = 0.66
+    p = 0.9
 
     random_vals = np.random.rand(*shape)
 
     # max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
     # print("max_val:", max_val)
-    # blocking_shocks = np.where(random_vals < p, 0.0,- max_val*1e5)
-    # # print(blocking_shocks[0])
+    # blocking_shocks = np.where(random_vals < p, 0.0,- 1e6)
+    # print(blocking_shocks[0])
     # errors += blocking_shocks
 
     data = {
