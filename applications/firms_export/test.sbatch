@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=combinatorial_auction
+#SBATCH --job-name=test_firms_export
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=1
