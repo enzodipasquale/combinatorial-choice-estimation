@@ -1,5 +1,0 @@
-#!/bin/bash
-mpiexec -n 4 /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 "$@"
-
-
-# ./mpi_runner test.py
