@@ -14,3 +14,4 @@ subproblem: LinearKnap
 subproblem_settings:
     TimeLimit: 180
     MIPGap_tol: 1e-3
+    multithreading: true
