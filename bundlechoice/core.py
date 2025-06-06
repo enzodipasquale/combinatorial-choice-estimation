@@ -96,8 +96,7 @@ class BundleChoice:
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.comm_size = self.comm.Get_size()
-        self.num_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count()))
-
+        self.num_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() // self.comm_size))
 
         self.data = data
 
@@ -367,6 +366,7 @@ class BundleChoice:
     
     def compute_estimator_row_gen(self):
         #========== Initialization =========#
+        tic = datetime.now()
         local_pricing_pbs = self.init_local_pricing()
         master_pb, vars_tuple, lambda_k_iter, p_j_iter = self._init_master()     
         slack_counter = {}
@@ -385,7 +385,8 @@ class BundleChoice:
 
 
             if stop and iteration >= self.config.min_iters:
-                log_solution(master_pb, lambda_k_iter, self.rank)
+                time_elapsed = datetime.now() - tic
+                log_solution(master_pb, lambda_k_iter, self.rank, time_elapsed)
                 break
 
         return lambda_k_iter, p_j_iter
