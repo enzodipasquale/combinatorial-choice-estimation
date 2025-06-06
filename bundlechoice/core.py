@@ -162,7 +162,7 @@ class BundleChoice:
                 # Parallelize local pricing problems across CPUs using joblib
                 indices_chunks = np.array_split(np.arange(self.num_local_agents), self.local_thread_count)
 
-                results = Parallel(n_jobs=n_threads, backend="threading")(
+                results = Parallel(n_jobs=self.local_thread_count, backend="threading")(
                                         delayed(self.solve_pricing)(None, chunk, lambda_k, p_j) for chunk in indices_chunks
                                     )
 
