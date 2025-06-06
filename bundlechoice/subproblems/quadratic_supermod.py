@@ -1,8 +1,10 @@
 import torch
 import sys
 
-def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
-    
+def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
+    local_id = torch.arange(self.num_local_agents) if local_id is None else local_id
+    n_local_id = len(local_id)
+
     error_i_j = self.torch_local_errors
     modular_j_k = self.torch_item_data.get("modular", None)
     modular_i_j_k = self.torch_local_agent_data.get("modular", None)
@@ -26,21 +28,21 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
     lambda_quad = lambda_k[offset:offset + num_quad]; offset += num_quad
     lambda_quad_agent = lambda_k[offset:]
 
-    P_i_j_j = torch.zeros((self.num_local_agents, self.num_items, self.num_items), device=device, dtype=precision)
+    P_i_j_j = torch.zeros((n_local_id, self.num_items, self.num_items), device=device, dtype=precision)
 
     diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2)
     diag_i_j.copy_(diag_i_j + error_i_j)
     if modular_j_k is not None:
         diag_i_j.copy_(diag_i_j + modular_j_k @ lambda_mod)
     if modular_i_j_k is not None:
-        diag_i_j.copy_(diag_i_j + modular_i_j_k @ lambda_mod_agent)
+        diag_i_j.copy_(diag_i_j + modular_i_j_k[local_id] @ lambda_mod_agent)
     if p_j is not None:
         diag_i_j.copy_(diag_i_j - p_j)
 
     if quadratic_j_j_k is not None:
         P_i_j_j += (quadratic_j_j_k @ lambda_quad).unsqueeze(0)
     if quadratic_i_j_j_k is not None:
-        P_i_j_j += quadratic_i_j_j_k @ lambda_quad_agent
+        P_i_j_j += quadratic_i_j_j_k[local_id] @ lambda_quad_agent
 
     # Symmetrize
     diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2).clone() 
@@ -69,10 +71,10 @@ def solve_QS(self, _pricing_pb, _local_id, lambda_k, p_j):
         return grad_i_j, fun_value_i
 
 
-    z_t = torch.full((self.num_local_agents, self.num_items), 0.5, device= device)
+    z_t = torch.full((n_local_id, self.num_items), 0.5, device= device)
     z_t[constraint_i_j] = 0  
     z_best_i_j = torch.zeros_like(z_t)
-    val_best_i = torch.full((self.num_local_agents,),  -torch.inf)
+    val_best_i = torch.full((n_local_id,),  -torch.inf)
     
     # sys.exit()
 
