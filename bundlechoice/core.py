@@ -9,7 +9,7 @@ import sys
 import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
-import psutil
+from joblib import Parallel, delayed
 
 from .utils import price_term, suppress_output, log_iteration, log_solution, log_init_master
 
@@ -35,17 +35,14 @@ class BundleConfig:
 
     # Optional configuration with defaults
     item_fixed_effects: bool = False
-
     tol_certificate: float = 0.01
     max_slack_counter: int = None  
     tol_row_generation: float = 0.0
     row_generation_decay: float = 0.0
     max_iters: int = None
     min_iters: int = 0
-
     subproblem_name: Optional[str] = None
     subproblem_settings: dict = field(default_factory=dict)
-
     master_settings: dict = field(default_factory=dict)
     master_ubs: Optional[dict] = None
     master_lbs: Optional[list] = None
@@ -65,7 +62,7 @@ class BundleConfig:
             elif f.default_factory is not MISSING:
                 val = f.default_factory()
             else:
-                continue  # Leave required fields missing; constructor will raise if needed
+                continue 
 
             # Extract base type if Optional
             typ = f.type
@@ -86,35 +83,6 @@ class BundleConfig:
 
         return BundleConfig(**config_fields)
 
-    # @staticmethod
-    # def from_dict(config_dict: dict) -> 'BundleConfig':
-    #     config_dict = dict(config_dict)  
-    #     config_dict.setdefault("item_fixed_effects", False)
-
-    #     config_dict.setdefault("tol_certificate", 0.01)
-    #     config_dict.setdefault("max_slack_counter", np.inf)
-    #     config_dict.setdefault("tol_row_generation", 0)
-    #     config_dict.setdefault("row_generation_decay", 0)
-    #     config_dict.setdefault("max_iters", np.inf)
-    #     config_dict.setdefault("min_iters", 0)
-    #     config_dict.setdefault("master_ubs", None)
-    #     config_dict.setdefault("master_lbs", None)
-
-    #     config_dict.setdefault("subproblem", None)
-    #     config_dict.setdefault("subproblem_settings", {})
-        
-    #     config_dict["tol_certificate"] = float(config_dict["tol_certificate"])
-    #     config_dict["tol_row_generation"] = float(config_dict["tol_row_generation"])
-    #     config_dict["row_generation_decay"] = float(config_dict["row_generation_decay"])
-
-
-    #     # if config_dict["tol_row_generation"] > 0:
-    #     #     config_dict["min_iters"] = (np.log(config_dict["tol_certificate"] 
-    #     #                                 /(config_dict["tol_row_generation"] + 1)) 
-    #     #                                 /np.log(config_dict["row_generation_decay"]))
-
-    #     return BundleConfig(**config_dict)
-
 class BundleChoice:
     def __init__(
                     self,
@@ -124,15 +92,15 @@ class BundleChoice:
                     init_pricing: Callable,
                     solve_pricing: Callable,
                 ):
-        # Initialize MPI
+  
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.comm_size = self.comm.Get_size()
+        self.num_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count()))
 
-        # Load data
+
         self.data = data
 
-        # Parse config and unpack parameters
         self.config = BundleConfig.from_dict(config)
         if self.config.tol_row_generation > 0:
             self.config.min_iters = np.ceil(np.log(self.config.tol_certificate 
@@ -165,6 +133,19 @@ class BundleChoice:
         return np.stack([self.get_x_k(si % self.num_agents, B_si_j[si]) 
                         for si in range(self.num_simuls * self.num_agents)])
 
+    def get_x_si_k_MPI(self, B_local):
+        x_i_k_local = []
+        for local_id in range(self.num_local_agents):
+            x_local = self.get_x_k(local_id, B_local[local_id], local = True) 
+            x_i_k_local.append(x_local)
+        x_i_k_local = np.array(x_i_k_local) 
+        x_si_k = self.comm.gather(x_i_k_local, root=0)
+        if self.rank == 0:
+            return np.concatenate(x_si_k)
+        else:
+            return None
+
+
     # Subproblem methods
     def init_local_pricing(self):
         if self.init_pricing is not None:
@@ -175,12 +156,25 @@ class BundleChoice:
         return local_pricing_pbs
 
 
-    def solve_local_pricing(self, local_pricing_pbs, lambda_k_iter, p_j_iter):
+    def solve_local_pricing(self, local_pricing_pbs, lambda_k, p_j):
         if self.subproblem_settings.get("parallel_local", False):
-            return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k_iter, p_j_iter))
+            # One call handles all agent problems internally
+            return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k, p_j))
+
+        elif self.subproblem_settings.get("multithreading", False):
+            # Parallelize across CPUs using joblib
+            return np.array(
+                            Parallel(n_jobs=self.num_cores, backend="threading")(
+                                delayed(self.solve_pricing)(pb, local_id, lambda_k, p_j)
+                                for local_id, pb in enumerate(local_pricing_pbs)
+                                )
+                            )
         else:
-            return np.array([self.solve_pricing(pricing_pb, local_id, lambda_k_iter, p_j_iter) 
-                            for local_id, pricing_pb in enumerate(local_pricing_pbs)])
+            # Fallback: solve sequentially
+            return np.array([self.solve_pricing(pb, local_id, lambda_k, p_j)
+                                for local_id, pb in enumerate(local_pricing_pbs)
+                            ])
+
 
     def solve_pricing_offline(self, lambda_k, p_j = None):
         local_pricing_pbs = self.init_local_pricing()
@@ -192,33 +186,28 @@ class BundleChoice:
     # Data methods
     def scatter_data(self):
         if self.rank == 0:
-            self.item_data = self.data.get("item_data", None)
-            self.agent_data = self.data.get("agent_data", None)
-            self.error_s_i_j = self.data.get("errors", None)
-            self.error_si_j = self.error_s_i_j.reshape(-1, self.num_items) if self.error_s_i_j is not None else None
-            del self.error_s_i_j
-            self.obs_bundle = self.data.get("obs_bundle", None)
-        else:
-            self.item_data = None
-
-        self.item_data = self.comm.bcast(self.item_data, root=0)
-
-        if self.rank == 0:
-            i_chunks = np.array_split(np.tile(np.arange(self.num_agents), self.num_simuls), self.comm_size)
-            si_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
+            self.item_data = self.data.get("item_data")
+            self.agent_data = self.data.get("agent_data")
+            error_s_i_j = self.data.get("errors")
+            self.error_si_j = error_s_i_j.reshape(-1, self.num_items) if error_s_i_j is not None else None        
+            self.obs_bundle = self.data.get("obs_bundle")
+    
+            all_indices_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
 
             data_chunks =   [
-                            {
-                            "agent_indeces":    i_chunks[r],
-                            "agent_data":       {key : value[i_chunks[r]] for key, value in self.agent_data.items()} 
-                                                if self.agent_data is not None else None,
-                            "errors":           self.error_si_j[si_chunks[r],:] if self.error_si_j is not None else None
-                            }
-                            for r in range(self.comm_size)
-                            ]
+                    {
+                    "agent_indeces":    indices,
+                    "agent_data":       {key : value[indices % self.num_agents] for key, value in self.agent_data.items()} 
+                                        if self.agent_data is not None else None,
+                    "errors":           self.error_si_j[indices,:] if self.error_si_j is not None else None
+                    }
+                    for indices in all_indices_chunks
+                    ]
         else:
+            self.item_data = None
             data_chunks = None
 
+        self.item_data = self.comm.bcast(self.item_data, root=0)
         local_data = self.comm.scatter(data_chunks, root=0)
 
         self.local_indeces = local_data["agent_indeces"]
@@ -261,7 +250,7 @@ class BundleChoice:
                 # master_pb.setParam('Threads', assigned_threads)
                 master_pb.setParam('LPWarmStart', 2)
                 master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-                OutputFlag = self.config.master_settings.get("OutputFlag", None)
+                OutputFlag = self.config.master_settings.get("OutputFlag")
                 if OutputFlag is not None:
                     master_pb.setParam('OutputFlag', OutputFlag) 
             x_hat_i_k = self.get_x_i_k(self.obs_bundle)
@@ -270,7 +259,7 @@ class BundleChoice:
             lambda_k = master_pb.addMVar(self.num_features, obj =  self.num_simuls * x_hat_k, ub = 1e10 , name='parameter')
             u_si = master_pb.addMVar(self.num_simuls * self.num_agents, obj = - 1, name='utility')
             
-            ubs = self.config.master_settings.get("ubs", None)
+            ubs = self.config.master_settings.get("ubs")
             if ubs is None:
                 pass
             else:
@@ -278,7 +267,7 @@ class BundleChoice:
                     if ubs[k] is not None:
                         lambda_k[k].ub = ubs[k]
 
-            lbs = self.config.master_settings.get("lbs", None)
+            lbs = self.config.master_settings.get("lbs")
             if lbs is None:
                 pass
             else:
@@ -388,6 +377,8 @@ class BundleChoice:
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
+            # x_star_si_k = self.get_x_si_k_MPI(local_pricing_results) 
+    
             log_iteration(iteration, self.rank)                
             stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)

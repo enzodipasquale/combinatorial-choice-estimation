@@ -66,6 +66,7 @@ def log_init_master(self, x_hat_k):
 
         ========== MPI / SLURM Info ==========
         Comm Size      : {self.comm_size}
+        # Cores        : {self.num_cores}
     """
     logger.info("\n%s", textwrap.dedent(log_msg).strip())
 

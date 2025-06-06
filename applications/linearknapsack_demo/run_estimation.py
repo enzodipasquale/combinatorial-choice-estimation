@@ -47,8 +47,11 @@ else:
 # def get_x_k(self, i_id, B_j, local= False):  
 #     modular = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
 #     return modular[B_j].sum(0)
-def get_x_k(self, i_id, B_j):
-    modular = self.agent_data["modular"][i_id]
+def get_x_k(self, i_id, B_j, local=False):
+    if local:
+        modular = self.local_agent_data["modular"][i_id]
+    else:
+        modular = self.agent_data["modular"][i_id] 
     return np.einsum('jk,j->k', modular, B_j)
                     
 
