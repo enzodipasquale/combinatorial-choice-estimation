@@ -69,8 +69,8 @@ def log_init_master(self, x_hat_k):
         Custom UBs          : {self.config.master_ubs}
 
         ========== MPI / SLURM Info ==========
-        Comm Size           : {self.comm_size}
-        CPUs per MPI Process: {self.num_cores}
+        Comm Size              : {self.comm_size}
+        Threads per MPI Process: {self.local_thread_count}
     """
     logger.info("\n%s", textwrap.dedent(log_msg).strip())
 

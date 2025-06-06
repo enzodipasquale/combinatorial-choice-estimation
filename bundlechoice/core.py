@@ -96,7 +96,7 @@ class BundleChoice:
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.comm_size = self.comm.Get_size()
-        self.num_cores = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() // self.comm_size))
+        self.local_thread_count = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() // self.comm_size))
 
         self.data = data
 
@@ -157,13 +157,24 @@ class BundleChoice:
 
     def solve_local_pricing(self, local_pricing_pbs, lambda_k, p_j):
         if self.subproblem_settings.get("parallel_local", False):
-            # One call handles all agent problems internally
-            return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k, p_j))
+            
+            if self.subproblem_settings.get("multithreading", False):
+                # Parallelize local pricing problems across CPUs using joblib
+                indices_chunks = np.array_split(np.arange(self.num_local_agents), self.local_thread_count)
+
+                results = Parallel(n_jobs=n_threads, backend="threading")(
+                                        delayed(self.solve_pricing)(None, chunk, lambda_k, p_j) for chunk in indices_chunks
+                                    )
+
+                return np.concatenate(results)
+            else:
+                # Solve all local pricing problems in parallel
+                return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k, p_j))
 
         elif self.subproblem_settings.get("multithreading", False):
             # Parallelize across CPUs using joblib
             return np.array(
-                            Parallel(n_jobs=self.num_cores, backend="threading")(
+                            Parallel(n_jobs=self.local_thread_count, backend="threading")(
                                 delayed(self.solve_pricing)(pb, local_id, lambda_k, p_j)
                                 for local_id, pb in enumerate(local_pricing_pbs)
                                 )
@@ -244,9 +255,7 @@ class BundleChoice:
             with suppress_output():
                 master_pb = gp.Model()
                 master_pb.setParam('Method', 0)
-                # number of threads
-                # assigned_threads = len(psutil.Process().cpu_affinity())
-                master_pb.setParam('Threads', self.num_cores)
+                master_pb.setParam('Threads', self.local_thread_count)
                 master_pb.setParam('LPWarmStart', 2)
                 master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
                 OutputFlag = self.config.master_settings.get("OutputFlag")
