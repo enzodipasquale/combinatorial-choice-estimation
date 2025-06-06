@@ -156,21 +156,23 @@ class BundleChoice:
 
 
     def solve_local_pricing(self, local_pricing_pbs, lambda_k, p_j):
+        # If solve_subproblem method is parallelizable across local agents
         if self.subproblem_settings.get("parallel_local", False):
-            
             if self.subproblem_settings.get("multithreading", False):
-                # Parallelize local pricing problems across CPUs using joblib
+                # Parallelize across CPUs using joblib
                 indices_chunks = np.array_split(np.arange(self.num_local_agents), self.local_thread_count)
 
                 results = Parallel(n_jobs=self.local_thread_count, backend="threading")(
-                                        delayed(self.solve_pricing)(None, chunk, lambda_k, p_j) for chunk in indices_chunks
-                                    )
+                                        delayed(self.solve_pricing)(None, chunk, lambda_k, p_j) 
+                                        for chunk in indices_chunks
+                                        )
 
                 return np.concatenate(results)
             else:
                 # Solve all local pricing problems in parallel
                 return np.array(self.solve_pricing(local_pricing_pbs, None, lambda_k, p_j))
 
+        # If solve_subproblem method is serial across local agents
         elif self.subproblem_settings.get("multithreading", False):
             # Parallelize across CPUs using joblib
             return np.array(
@@ -366,7 +368,7 @@ class BundleChoice:
             slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
             logger.info("Removed constraints: %d", num_constrs_removed)
             master_pb.optimize()
-            logger.info("Master Solved. Parameter: %s", lambda_k.x)
+            logger.info("Parameter: %s", lambda_k.x)
             self.config.tol_row_generation *= self.config.row_generation_decay
 
             return False, lambda_k.x, p_j.x if p_j is not None else None
@@ -383,14 +385,20 @@ class BundleChoice:
 
         #=========== Main loop ===========#
         for iteration in range(int(self.config.max_iters)):
+            tic = datetime.now()
             local_pricing_results = self.solve_local_pricing(local_pricing_pbs, lambda_k_iter, p_j_iter)
             pricing_results = self.comm.gather(local_pricing_results, root= 0)
 
+            if self.rank == 0:
+                logger.info("Iteration %d: Pricing solved. Results gathered. Time elapsedL", datetime.now() - tic)
             # x_star_si_k = self.get_x_si_k_MPI(local_pricing_results) 
     
-            log_iteration(iteration, self.rank)                
+            log_iteration(iteration, self.rank)  
+            tic = datetime.now()
             stop, lambda_k_iter, p_j_iter = self._master_iteration(master_pb, vars_tuple, pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter) , root=0)
+            if self.rank == 0:
+                logger.info("Iteration %d: Master updated. Time elapsed: %s", iteration, datetime.now() - tic)
 
 
             if stop and iteration >= self.config.min_iters:
