@@ -31,7 +31,7 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
     P_i_j_j = torch.zeros((n_local_id, self.num_items, self.num_items), device=device, dtype=precision)
 
     diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2)
-    diag_i_j.copy_(diag_i_j + error_i_j)
+    diag_i_j.copy_(diag_i_j + error_i_j[local_id])
     if modular_j_k is not None:
         diag_i_j.copy_(diag_i_j + modular_j_k @ lambda_mod)
     if modular_i_j_k is not None:
@@ -49,7 +49,7 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
     P_i_j_j = P_i_j_j + P_i_j_j.transpose(1, 2)    
     P_i_j_j.diagonal(dim1=1, dim2=2).copy_(diag_i_j)
     
-    constraint_i_j = error_i_j == - float('inf')
+    constraint_i_j = error_i_j[local_id] == - float('inf')
 
     mask_i_j_j = torch.tril(torch.ones((self.num_items, self.num_items), device=device, dtype=precision)).bool().unsqueeze(0)
 

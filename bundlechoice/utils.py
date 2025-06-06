@@ -49,28 +49,63 @@ def log_solution(master_pb, lambda_k_iter, rank, time_elapsed):
     # master_pb.write("output/master_pb.bas")
     # logger.info("Model written to 'output/master_pb.mps' and 'output/master_pb.bas'")
 
+# def log_init_master(self, x_hat_k):
+#     log_msg = f"""
+#         ========== Problem Details ==========
+#         Agents         : {self.num_agents}
+#         Items          : {self.num_items}
+#         Features       : {self.num_features}
+#         Simulations    : {self.num_simuls}
+#         First moments  : {np.array2string(x_hat_k, precision=2, separator=', ')}
+
+#         ========== Solver Settings ==========
+#         Tol. Certificate    : {self.config.tol_certificate}
+#         Max Slack Counter   : {self.config.max_slack_counter}
+#         Tol. Row Generation : {self.config.tol_row_generation}
+#         Row Gen. Decay      : {self.config.row_generation_decay}
+#         Min Iterations      : {self.config.min_iters}
+#         Max Iterations      : {self.config.max_iters}
+#         Custom LBs          : {self.config.master_lbs}
+#         Custom UBs          : {self.config.master_ubs}
+
+#         ========== MPI / SLURM Info ==========
+#         Comm Size              : {self.comm_size}
+#         Threads per MPI Process: {self.local_thread_count}
+#     """
+#     logger.info("\n%s", textwrap.dedent(log_msg).strip())
+
+
 def log_init_master(self, x_hat_k):
-    log_msg = f"""
-        ========== Problem Details ==========
-        Agents         : {self.num_agents}
-        Items          : {self.num_items}
-        Features       : {self.num_features}
-        Simulations    : {self.num_simuls}
-        First moments  : {np.array2string(x_hat_k, precision=2, separator=', ')}
+    lines = [
+        "========== Problem Details ==========",
+        f"Agents         : {self.num_agents}",
+        f"Items          : {self.num_items}",
+        f"Features       : {self.num_features}",
+        f"Simulations    : {self.num_simuls}",
+        f"First moments  : {np.array2string(x_hat_k, precision=2, separator=', ')}",
+        "",
+        "========== Solver Settings ==========",
+        f"Tol. Certificate    : {self.config.tol_certificate}",
+        f"Max Slack Counter   : {self.config.max_slack_counter}",
+        f"Tol. Row Generation : {self.config.tol_row_generation}",
+        f"Row Gen. Decay      : {self.config.row_generation_decay}",
+        f"Min Iterations      : {self.config.min_iters}",
+        f"Max Iterations      : {self.config.max_iters}",
+        f"Custom LBs          : {self.config.master_lbs}",
+        f"Custom UBs          : {self.config.master_ubs}",
+    ]
 
-        ========== Solver Settings ==========
-        Tol. Certificate    : {self.config.tol_certificate}
-        Max Slack Counter   : {self.config.max_slack_counter}
-        Tol. Row Generation : {self.config.tol_row_generation}
-        Row Gen. Decay      : {self.config.row_generation_decay}
-        Min Iterations      : {self.config.min_iters}
-        Max Iterations      : {self.config.max_iters}
-        Custom LBs          : {self.config.master_lbs}
-        Custom UBs          : {self.config.master_ubs}
+    # Only include torch device line if the attribute exists
+    if hasattr(self, "torch_device"):
+        lines.append(f"Torch Device        : {self.torch_device}")
 
-        ========== MPI / SLURM Info ==========
-        Comm Size              : {self.comm_size}
-        Threads per MPI Process: {self.local_thread_count}
-    """
-    logger.info("\n%s", textwrap.dedent(log_msg).strip())
+    lines += [
+        "",
+        "========== MPI / SLURM Info ==========",
+        f"Comm Size              : {self.comm_size}",
+        f"Threads per MPI Process: {self.local_thread_count}"
+    ]
+
+    logger.info("\n%s", "\n".join(lines))
+
 
