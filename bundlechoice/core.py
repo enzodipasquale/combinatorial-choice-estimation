@@ -246,7 +246,7 @@ class BundleChoice:
                 master_pb.setParam('Method', 0)
                 # number of threads
                 # assigned_threads = len(psutil.Process().cpu_affinity())
-                # master_pb.setParam('Threads', assigned_threads)
+                master_pb.setParam('Threads', self.num_cores)
                 master_pb.setParam('LPWarmStart', 2)
                 master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
                 OutputFlag = self.config.master_settings.get("OutputFlag")
