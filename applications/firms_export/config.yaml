@@ -18,5 +18,6 @@ subproblem_settings:
     alpha: 1
     method: constant_over_sqrt_k
     parallel_local: true
+    multithreading: true
     verbose: false
 
