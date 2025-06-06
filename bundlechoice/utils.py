@@ -32,12 +32,16 @@ def log_iteration(iteration, rank=0):
     logger.info("========== Iteration %d ==========", iteration)
 
 
-def log_solution(master_pb, lambda_k_iter, rank):
+def log_solution(master_pb, lambda_k_iter, rank, time_elapsed):
     if rank != 0:
         return
 
     lines = ["========== Final Solution =========="]
     lines += [f"lambda_{k+1} = {val}" for k, val in enumerate(lambda_k_iter)]
+    lines += [ "-" * 40 ]
+    lines += [f"Objective value: {master_pb.objVal:.2f}"]
+    lines += [f"Time elapsed: {time_elapsed}"]
+    lines += [ "-" * 40 ]
     logger.info("\n%s", "\n".join(lines))
 
     # os.makedirs("output", exist_ok=True)
@@ -65,8 +69,8 @@ def log_init_master(self, x_hat_k):
         Custom UBs          : {self.config.master_ubs}
 
         ========== MPI / SLURM Info ==========
-        Comm Size      : {self.comm_size}
-        # Cores        : {self.num_cores}
+        Comm Size           : {self.comm_size}
+        CPUs per MPI Process: {self.num_cores}
     """
     logger.info("\n%s", textwrap.dedent(log_msg).strip())
 
