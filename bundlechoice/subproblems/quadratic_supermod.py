@@ -84,7 +84,7 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
 
     for iter in range(num_iters_SGM):
         # Compute gradient
-        grad_i_j , val_i = _grad_lovatz_extension(z_t, P_i_j_j)
+        grad_i_j , _ = _grad_lovatz_extension(z_t, P_i_j_j)
 
         grad_i_j = torch.where(constraint_i_j, 0, grad_i_j) 
         val_i = (z_t * grad_i_j).sum(1)
@@ -92,13 +92,19 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
 
         # Take step: z_t + α g_t
         if method == 'constant_step_lenght':
-            z_new = z_t + alpha * grad_i_j / torch.norm(grad_i_j, dim= 1, keepdim= True)
+            grad_norm = torch.norm(grad_i_j, dim= 1, keepdim= True)
+            z_new = z_t + alpha * grad_i_j / grad_norm
 
         elif method == 'constant_step_size':
             z_new = z_t + alpha * grad_i_j
 
         elif method == 'constant_over_sqrt_k':
-            z_new = z_t + alpha * grad_i_j / ((iter + 1)**(1/2))
+            grad_norm = torch.norm(grad_i_j, dim= 1, keepdim= True)
+            # print(f"grad_norm: {grad_norm.shape}")
+            # print(f"grad_i_j: {grad_i_j.shape}")
+            z_new = z_t + alpha * (grad_i_j/ grad_norm) / ((iter + 1)**(1/2))
+            # z_new = z_t + alpha * (grad_i_j) / ((iter + 1)**(1/2))
+
 
         elif method == 'mirror_descent':
             z_new = z_t * torch.exp(alpha * grad_i_j / torch.norm(grad_i_j, dim= 1, keepdim= True) )
