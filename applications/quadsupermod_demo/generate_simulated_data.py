@@ -22,13 +22,16 @@ if rank == 0:
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
     num_mod = num_features - 1
-    modular_i_j_k = - 25 * np.random.normal(0, 1, (num_agents, num_items, num_mod)) ** 2
+    modular_i_j_k = - 10 *  np.random.normal(0, 1, (num_agents, num_items, num_mod)) ** 2
     agent_data = {"modular": modular_i_j_k}
     # quadratic_j_j_k = np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2])
-    quadratic_j_j_k = np.random.normal(0, 1, size=(num_items, num_items, num_features - num_mod)) ** 2 
+    quadratic_j_j_k = np.exp( - np.random.normal(0, 2, size=(num_items, num_items, num_features - num_mod)) ** 2)
+    quadratic_j_j_k *= np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.5, 0.5])
     item_data = {"quadratic":  quadratic_j_j_k}
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    errors *= 10
+
 
     data = {
             "agent_data": agent_data,
@@ -72,3 +75,6 @@ if rank == 0:
     np.save(os.path.join(input_data_path, "quadratic.npy"), item_data["quadratic"])
     # print("Results saved to", input_data_path)
     print("aggregate demands:", obs_bundles.sum(1))
+
+
+    
