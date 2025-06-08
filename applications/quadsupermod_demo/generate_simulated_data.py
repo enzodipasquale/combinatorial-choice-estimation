@@ -22,10 +22,16 @@ if rank == 0:
     num_agents, num_items, num_features = config["num_agents"], config["num_items"], config["num_features"]
     np.random.seed(0)
     num_mod = num_features - 1
-    agent_data = {"modular": - 10 * np.random.normal(0, 1, (num_agents, num_items, num_mod)) ** 2}
-    item_data = {"quadratic":  np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2])}
+    modular_i_j_k = - 10 *  np.random.normal(0, 1, (num_agents, num_items, num_mod)) ** 2
+    agent_data = {"modular": modular_i_j_k}
+    # quadratic_j_j_k = np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.8, 0.2])
+    quadratic_j_j_k = np.exp( - np.random.normal(0, 2, size=(num_items, num_items, num_features - num_mod)) ** 2)
+    quadratic_j_j_k *= np.random.choice([0,1], size= (num_items, num_items, num_features - num_mod), p=[0.5, 0.5])
+    item_data = {"quadratic":  quadratic_j_j_k}
     num_simuls = config["num_simuls"]
     errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    errors *= 10
+
 
     data = {
             "agent_data": agent_data,
@@ -60,12 +66,15 @@ results = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
 # Save results 
 if rank == 0:
     obs_bundles = results.astype(bool)
-    print("obs_bundles shape", obs_bundles.shape)
+    # print("obs_bundles shape", obs_bundles.shape)
     input_data_path = os.path.join(BASE_DIR, "input_data")
     if not os.path.exists(input_data_path):
         os.makedirs(input_data_path)
     np.save(os.path.join(input_data_path, "obs_bundles.npy"), obs_bundles)
     np.save(os.path.join(input_data_path, "modular.npy"), agent_data["modular"])
     np.save(os.path.join(input_data_path, "quadratic.npy"), item_data["quadratic"])
-    print("Results saved to", input_data_path)
+    # print("Results saved to", input_data_path)
     print("aggregate demands:", obs_bundles.sum(1))
+
+
+    

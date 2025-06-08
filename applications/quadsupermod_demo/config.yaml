@@ -1,21 +1,21 @@
-num_agents: 300
+num_agents: 200
 num_items: 200
-num_features: 5
+num_features: 4
 num_simuls: 1
 
-tol_certificate: 1e-3
+tol_certificate: 1e-6
 
 max_iters: 100
 
 master_settings:
     OutputFlag: 0
 
-subproblem: QuadSupermod
+subproblem: QuadLovatz
 subproblem_settings:
-    num_iters_SGM: 6000
-    alpha: .05
+    num_iters_SGM: 15000
+    # alpha: 10
     method: constant_over_sqrt_k
     parallel_local: true
-    multithreading: true
+    # multithreading: true
 
 

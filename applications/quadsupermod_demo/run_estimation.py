@@ -34,6 +34,7 @@ if rank == 0:
 
     np.random.seed(34254)
     errors = np.random.normal(0, 1, size=(config["num_simuls"], config["num_agents"], config["num_items"]))
+    errors *= 10
 
     data = {
                 "item_data": item_data,
@@ -62,3 +63,17 @@ quadsupermod_demo.scatter_data()
 quadsupermod_demo.local_data_to_torch()
 
 quadsupermod_demo.compute_estimator_row_gen()
+
+
+# lambda_k_star = np.ones(config["num_features"]) 
+# # lambda_k_star = np.array([3.41268895 ,1.33776912, 0.47635377, 2.83031925, 0.98361723])
+# B_si_j = quadsupermod_demo.solve_pricing_offline(lambda_k_star)
+
+# if rank == 0:
+#     x_hat_i_k = quadsupermod_demo.get_x_i_k(quadsupermod_demo.obs_bundle)
+#     x_hat_k = x_hat_i_k.sum(0)
+#     objective = (
+#                 x_hat_k @ lambda_k_star -
+#                 quadsupermod_demo.get_x_si_k(B_si_j).sum(0) @ lambda_k_star - (quadsupermod_demo.error_si_j* B_si_j).sum()
+#                 )
+#     print("Objective value:", objective)

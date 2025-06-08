@@ -12,10 +12,10 @@ master_settings:
     ubs: [10,10,10,10,10,10]
     lbs: [null,null,null,null,-1,null]
 
-subproblem_name: QuadSupermod
+subproblem_name: QuadLovatz
 subproblem_settings:
     num_iters_SGM: 20000
-    alpha: 1
+    # alpha: 1
     method: constant_over_sqrt_k
     parallel_local: true
     # multithreading: true
