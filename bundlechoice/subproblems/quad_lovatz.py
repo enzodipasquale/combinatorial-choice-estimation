@@ -79,7 +79,8 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
     # sys.exit()
 
     num_iters_SGM = int(self.subproblem_settings["num_iters_SGM"])
-    alpha = float(self.subproblem_settings["alpha"])
+    alpha = float(self.subproblem_settings.get("alpha", (self.num_items) ** .5 ))
+    # print(f"alpha: {alpha}")
     method = self.subproblem_settings["method"]
 
     for iter in range(num_iters_SGM):
