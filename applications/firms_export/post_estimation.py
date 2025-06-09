@@ -38,22 +38,8 @@ if rank == 0:
     shape = (config["num_simuls"], config["num_agents"], config["num_items"])
     errors = np.random.normal(0, 1, size=shape)
 
-   
 
-    # Correlation structure
-    # rho_0 = .16
-    # rho_d = .82
-    # sigmasq = 18
-    # distance_j_j = np.load(os.path.join(INPUT_DIR, "distance_j_j.npy"))
-    # Covariance = sigmasq * rho_0 * np.exp(- rho_d * distance_j_j)
-    # from scipy.linalg import sqrtm
-    # cov_sqrt = sqrtm(Covariance)
-    # for s in range(config["num_simuls"]):
-    #     for i in range(config["num_agents"]):
-    #         errors[s, i] = cov_sqrt @ errors[s, i]
-
-    # Blocking shocks
-    # p = 0.66
+    # p = 0.9
     # random_vals = np.random.rand(*shape)
     # max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
     # print("max_val:", max_val)
@@ -85,15 +71,37 @@ init_pricing, solve_pricing = get_subproblem(config["subproblem_name"])
 firms_export = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
 firms_export.scatter_data()
 firms_export.local_data_to_torch()
-firms_export.compute_estimator_row_gen()
 
-
-
-#HPC
-# ========== Final Solution ==========
 # lambda_1 = 1.059610474320977
 # lambda_2 = 0.10969382797095822
 # lambda_3 = 0.10037003252260504
 # lambda_4 = 1.5651111150566515
 # lambda_5 = -0.8273214069366847
 # lambda_6 = 0.5552463235956646
+
+lambda_k_star = np.array([1.059610474320977, 0.10969382797095822, 0.10037003252260504,
+                            1.5651111150566515, -0.8273214069366847, 0.5552463235956646])
+
+results = firms_export.solve_pricing_offline(lambda_k_star)
+
+if rank == 0:
+
+    aggregate_demand_obs = obs_bundle.mean(0)
+    sorted_indices = np.argsort(aggregate_demand_obs)[::-1]
+    predicted_demand = results.mean(0)[sorted_indices]
+
+    # Plotting the results
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 6))
+    plt.plot(aggregate_demand_obs[sorted_indices], label='Observed Demand', marker='o')
+    plt.plot(predicted_demand, label='Predicted Demand', marker='x')
+    plt.title('Observed vs Predicted Demand')
+    plt.xlabel('Items (sorted by observed demand)')
+    plt.ylabel('Demand')
+    plt.legend()
+    plt.grid()
+    plt.savefig(os.path.join(BASE_DIR, "demand_comparison.png"))
+    plt.show()
+
+    
+
