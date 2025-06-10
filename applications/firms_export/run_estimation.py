@@ -38,8 +38,22 @@ if rank == 0:
     shape = (config["num_simuls"], config["num_agents"], config["num_items"])
     errors = np.random.normal(0, 1, size=shape)
 
+   
 
-    # p = 0.9
+    # Correlation structure
+    # rho_0 = .16
+    # rho_d = .82
+    # sigmasq = 18
+    # distance_j_j = np.load(os.path.join(INPUT_DIR, "distance_j_j.npy"))
+    # Covariance = sigmasq * rho_0 * np.exp(- rho_d * distance_j_j)
+    # from scipy.linalg import sqrtm
+    # cov_sqrt = sqrtm(Covariance)
+    # for s in range(config["num_simuls"]):
+    #     for i in range(config["num_agents"]):
+    #         errors[s, i] = cov_sqrt @ errors[s, i]
+
+    # Blocking shocks
+    # p = 0.66
     # random_vals = np.random.rand(*shape)
     # max_val = ((item_data["quadratic"] @ np.ones(2) * 200).sum() + 200* agent_data["modular"].sum((1,2))).max()
     # print("max_val:", max_val)
@@ -74,16 +88,6 @@ firms_export.local_data_to_torch()
 firms_export.compute_estimator_row_gen()
 
 
-
-#  Parameter: [1.04393711e+05 0.00000000e+00 1.89468741e+02 3.53442946e+07
-#  4.26917893e+05 5.68459003e+05]
-
-# lambda_1 = 1.0796580208276632
-# lambda_2 = 0.10708713263295207
-# lambda_3 = 0.16229060638128467
-# lambda_4 = 1.4054155134027297
-# lambda_5 = -0.8163559299113364
-# lambda_6 = 0.5603739091099591
 
 #HPC
 # ========== Final Solution ==========
