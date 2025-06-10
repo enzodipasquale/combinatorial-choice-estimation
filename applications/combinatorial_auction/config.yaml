@@ -9,10 +9,13 @@ tol_certificate: 1e-3
 # max_slack_counter: 6
 tol_row_generation: 10
 row_generation_decay: 0.5
-max_iters: 25
+max_iters: 100
+
+master_settings:
+    OutputFlag: 0
 
 subproblem: QuadKnap
 subproblem_settings:
-    TimeLimit: 10
+    TimeLimit: 60
     MIPGap_tol: 1e-3
     # multithreading: true
