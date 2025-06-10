@@ -11,6 +11,11 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
     quadratic_j_j_k = self.torch_item_data.get("quadratic", None)
     quadratic_i_j_j_k = self.torch_local_agent_data.get("quadratic", None)
 
+    if quadratic_j_j_k is not None:
+        assert torch.all(quadratic_j_j_k.diagonal(dim1 = 0, dim2 = 1) == 0)
+    if quadratic_i_j_j_k is not None:
+        assert torch.all(quadratic_i_j_j_k.diagonal(dim1 = 1, dim2 = 2) == 0)
+
     device = error_i_j.device
     precision = error_i_j.dtype
     lambda_k = torch.tensor(lambda_k, device=device, dtype=precision)
@@ -30,29 +35,42 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
 
     P_i_j_j = torch.zeros((n_local_id, self.num_items, self.num_items), device=device, dtype=precision)
 
-    diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2)
-    diag_i_j.copy_(diag_i_j + error_i_j[local_id])
-    if modular_j_k is not None:
-        diag_i_j.copy_(diag_i_j + modular_j_k @ lambda_mod)
-    if modular_i_j_k is not None:
-        diag_i_j.copy_(diag_i_j + modular_i_j_k[local_id] @ lambda_mod_agent)
-    if p_j is not None:
-        diag_i_j.copy_(diag_i_j - p_j)
+    # diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2)
+    # diag_i_j.copy_(diag_i_j + error_i_j[local_id])
+    
+    # if modular_j_k is not None:
+    #     diag_i_j.copy_(diag_i_j + modular_j_k @ lambda_mod)
+    # if modular_i_j_k is not None:
+    #     diag_i_j.copy_(diag_i_j + modular_i_j_k[local_id] @ lambda_mod_agent)
+    # if p_j is not None:
+    #     diag_i_j.copy_(diag_i_j - p_j)
+
 
     if quadratic_j_j_k is not None:
         P_i_j_j += (quadratic_j_j_k @ lambda_quad).unsqueeze(0)
     if quadratic_i_j_j_k is not None:
         P_i_j_j += quadratic_i_j_j_k[local_id] @ lambda_quad_agent
 
-    # Symmetrize
-    diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2).clone() 
-    P_i_j_j = P_i_j_j + P_i_j_j.transpose(1, 2)    
-    P_i_j_j.diagonal(dim1=1, dim2=2).copy_(diag_i_j)
+    # diag_i_j = P_i_j_j.diagonal(dim1=1, dim2=2).clone() 
+    P_i_j_j = (P_i_j_j + P_i_j_j.transpose(1, 2))
+    # P_i_j_j.diagonal(dim1=1, dim2=2).copy_(diag_i_j)
+
+
+    modular_components = error_i_j[local_id]
+    if modular_j_k is not None:
+        modular_components += modular_j_k @ lambda_mod
+    if modular_i_j_k is not None:
+        modular_components += modular_i_j_k[local_id] @ lambda_mod_agent
+    if p_j is not None:
+        modular_components -= p_j
     
+    P_i_j_j.diagonal(dim1=1, dim2=2).copy_(modular_components)
+ 
+
     constraint_i_j = error_i_j[local_id] == - float('inf')
 
     mask_i_j_j = torch.tril(torch.ones((self.num_items, self.num_items), device=device, dtype=precision)).bool().unsqueeze(0)
-
+    
     def _grad_lovatz_extension(z_i_j, P_i_j_j):
         # Sort z_i_j for each i
         sigma_i_j = torch.argsort(z_i_j, dim=1, descending=True)
@@ -75,12 +93,10 @@ def solve_QS(self, _pricing_pb, local_id, lambda_k, p_j):
     z_t[constraint_i_j] = 0  
     z_best_i_j = torch.zeros_like(z_t)
     val_best_i = torch.full((n_local_id,),  -torch.inf)
-    
-    # sys.exit()
+
 
     num_iters_SGM = int(self.subproblem_settings["num_iters_SGM"])
     alpha = float(self.subproblem_settings.get("alpha", (self.num_items) ** .5 ))
-    # print(f"alpha: {alpha}")
     method = self.subproblem_settings["method"]
 
     for iter in range(num_iters_SGM):

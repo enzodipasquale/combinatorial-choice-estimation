@@ -38,8 +38,6 @@ if rank == 0:
     shape = (config["num_simuls"], config["num_agents"], config["num_items"])
     errors = np.random.normal(0, 1, size=shape)
 
-   
-
     # Correlation structure
     # rho_0 = .16
     # rho_d = .82
