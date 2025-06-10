@@ -9,8 +9,11 @@ max_iters: 100
 
 master_settings:
     OutputFlag: 1
-    ubs: [10,10,10,10,10,10]
-    lbs: [null,null,null,null,-1,null]
+    ubs: [100,100,100,100,100,100]
+    lbs: [null,null,null,null,0,null]
+
+item_fixed_effects: true
+
 
 subproblem_name: QuadLovatz
 subproblem_settings:
