@@ -14,6 +14,9 @@ def get_subproblem(name):
     elif name == "LinearKnap":
         from .linear_knapsack import init_KP, solve_KP
         return init_KP, solve_KP
+    elif name == "QuadNetwork":
+        from .quad_network import solve_QSNetwork
+        return None, solve_QSNetwork
         
     else:
         raise ValueError(f"Unknown subproblem: {name}")
