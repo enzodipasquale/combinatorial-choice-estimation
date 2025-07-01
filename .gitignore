@@ -33,4 +33,5 @@ applications/firms_export/datasets/
 applications/firms_export/clean_data/
 singularity.txt
 SFM.ipynb
+*.png
 
