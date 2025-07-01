@@ -97,6 +97,7 @@ class BundleChoice:
         self.rank = self.comm.Get_rank()
         self.comm_size = self.comm.Get_size()
         self.local_thread_count = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() // self.comm_size))
+        self.master_threads = int(os.environ.get("SLURM_CPUS_PER_NODE", os.cpu_count() ))
 
         self.data = data
 
@@ -189,7 +190,7 @@ class BundleChoice:
                             ])
         self.comm.Barrier()  
         if self.rank == 0:
-            logger.info("Pricing solved. Time: %s", datetime.now() - tic)                 
+            logger.info("Pricing solved. Time elapsed: %s", datetime.now() - tic)                 
         return out
 
 
@@ -262,7 +263,7 @@ class BundleChoice:
             with suppress_output():
                 master_pb = gp.Model()
                 master_pb.setParam('Method', 0)
-                master_pb.setParam('Threads', self.local_thread_count)
+                master_pb.setParam('Threads', self.master_threads)
                 master_pb.setParam('LPWarmStart', 2)
                 master_pb.setAttr('ModelSense', gp.GRB.MAXIMIZE)
                 OutputFlag = self.config.master_settings.get("OutputFlag")
@@ -307,7 +308,8 @@ class BundleChoice:
                                     u_si[si] + price_term(p_j, self.obs_bundle[si % self.num_agents]) >= 
                                     self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] 
                                     + x_hat_i_k[si % self.num_agents, :] @ lambda_k
-                                    for si in range(self.num_simuls * self.num_agents)  if np.all(self.error_si_j[si] > float('-inf'))
+                                    for si in range(self.num_simuls * self.num_agents)  
+                                    if np.all(self.error_si_j[si] > float('-inf'))
                                 ))
 
 
@@ -328,8 +330,8 @@ class BundleChoice:
             if constr_name not in slack_counter:
                 slack_counter[constr_name] = 0
 
-            # if constr.Slack < 0:
-            if constr.CBasis == 0:
+            if constr.Slack < 0:
+            # if constr.CBasis == 0:
                 slack_counter[constr_name] += 1
             else:
                 slack_counter[constr_name] = 0
@@ -352,8 +354,11 @@ class BundleChoice:
 
             # eps_si_star = (self.error_si_j * B_star_si_j).sum(1)
             eps_si_star = np.where(B_star_si_j, self.error_si_j , 0).sum(1)
+            # assert that the values in eps_si_star are finite
+            assert np.all(np.isfinite(eps_si_star)), "WARNING: eps_si_star contains non-finite values." 
             x_star_si_k = self.get_x_si_k(B_star_si_j)
             u_si_star = x_star_si_k @ lambda_k.x + eps_si_star
+            assert np.all(np.isfinite(u_si_star)), "WARNING: u_si_star contains non-finite values."
 
             if p_j is not None:
                 u_si_star -= B_star_si_j @ p_j.x
@@ -375,7 +380,8 @@ class BundleChoice:
             slack_counter, num_constrs_removed = self._update_slack_counter(master_pb, slack_counter)
             logger.info("Removed constraints: %d", num_constrs_removed)
             master_pb.optimize()
-            logger.info(f"Master solved.    Time: {datetime.now() - tic}")
+            logger.info(f"Master solved.    Time elapsed: {datetime.now() - tic}")
+            logger.info(f"Objective value: {master_pb.objVal:.2f}")
 
             logger.info("Parameter: %s", lambda_k.x)
             self.config.tol_row_generation *= self.config.row_generation_decay
