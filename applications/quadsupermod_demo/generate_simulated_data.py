@@ -53,7 +53,7 @@ def get_x_k(self, i_id, B_j, local= False):
                             ))
         
 # Pricing subproblem from bundlechoice library
-init_pricing, solve_pricing = get_subproblem(config["subproblem_name"])
+init_pricing, solve_pricing = get_subproblem(config["subproblem"])
 
 
 quadsupermod_demo = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)

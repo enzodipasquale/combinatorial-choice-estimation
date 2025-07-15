@@ -3,7 +3,7 @@ num_items: 200
 num_features: 4
 num_simuls: 1
 
-subproblem_name: QuadNetwork
+subproblem: QuadNetwork
 # subproblem_name: QuadLovatz
 subproblem_settings:
     # num_iters_SGM: 15000

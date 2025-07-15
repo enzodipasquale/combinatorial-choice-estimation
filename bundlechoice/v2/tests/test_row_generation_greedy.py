@@ -1,0 +1,79 @@
+import numpy as np
+import pytest
+from mpi4py import MPI
+from bundlechoice.v2.core import BundleChoice
+from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
+
+def get_features(i_id, B_j, data):
+    """
+    Compute features for a given agent and bundle(s).
+    Supports both single (1D) and multiple (2D) bundles.
+    Returns array of shape (num_features,) for a single bundle,
+    or (num_features, m) for m bundles.
+    """
+    modular_agent = data["agent_data"]["modular"][i_id]
+    modular_item = data["item_data"]["modular"]
+
+    modular_agent = np.atleast_2d(modular_agent)
+    modular_item = np.atleast_2d(modular_item)
+
+    single_bundle = False
+    if B_j.ndim == 1:
+        B_j = B_j[:, None]
+        single_bundle = True
+
+    agent_sum = modular_agent.T @ B_j
+    item_sum = modular_item.T @ B_j
+    neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
+
+    features = np.vstack((agent_sum, item_sum, neg_sq))
+    if single_bundle:
+        return features[:, 0]  # Return as 1D array for a single bundle
+    return features
+
+def test_row_generation_greedy():
+    """Test RowGenerationSolver using obs_bundle generated from greedy subproblem manager."""
+    num_agents = 300
+    num_items = 50
+    num_modular_agent_features = 2
+    num_modular_item_features = 2
+    num_features = 5
+    num_simuls = 1
+    np.random.seed(42)
+    cfg = {
+        "dimensions": {
+            "num_agents": num_agents,
+            "num_items": num_items,
+            "num_features": num_features,
+            "num_simuls": num_simuls
+        },
+        "subproblem": {
+            "name": "Greedy",
+            "settings": {}
+        }
+    }
+    input_data = {
+        "item_data": {"modular": np.abs(np.random.normal(0, 1, (num_items, num_modular_item_features)))},
+        "agent_data": {"modular": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features)))},
+        "errors": np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
+    }
+    greedy_demo = BundleChoice()
+    greedy_demo.load_config(cfg)
+    greedy_demo.load_data(input_data, scatter=True)
+    greedy_demo.load_features(get_features)
+
+    lambda_k = np.ones(num_features)
+    lambda_k[-1] = 0.1
+    obs_bundle = greedy_demo.init_and_solve_subproblems(lambda_k)
+
+    input_data["obs_bundle"] = obs_bundle
+    input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
+    if greedy_demo.rank == 0 and input_data["obs_bundle"] is not None:
+        print(input_data["obs_bundle"].sum(1))
+    greedy_demo.load_data(input_data, scatter=True)
+
+    solver = RowGenerationSolver(greedy_demo)
+    lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+    if greedy_demo.rank == 0:
+        print(lambda_k_iter)
+        print(p_j_iter) 
