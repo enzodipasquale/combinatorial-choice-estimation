@@ -48,19 +48,9 @@ if rank == 0:
 else:
     data = None
 
-# User-defined feature oracle
-def get_x_k(self, i_id, B_j):
-    modular = self.agent_data["modular"][i_id]
-    quadratic = self.item_data["quadratic"]
-    return np.concatenate((
-                            np.einsum('jk,j->k', modular, B_j),
-                            np.einsum('jlk,j,l->k', quadratic, B_j, B_j)
-                            ))
-# Demand orable from library
-init_pricing, solve_pricing = get_subproblem(config["subproblem"])
-
-
 # Run the estimation
-combinatorial_auction = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
+combinatorial_auction = BundleChoice(config)
+combinatorial_auction.load_data(data)
+combinatorial_auction.build_feature_oracle_from_data()
 combinatorial_auction.scatter_data()
 combinatorial_auction.compute_estimator_row_gen()

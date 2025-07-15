@@ -25,3 +25,31 @@ run_linearknap:
 
 run_firms:
 	mpiexec -n 6 python3 -m applications.firms_export.run_estimation
+
+greedy_paper:
+	mpiexec -n 8 python3 -m experiments_paper.greedy.main
+
+supermod_paper:
+	mpiexec -n 8 python3 -m experiments_paper.quadsupermod.main
+
+
+greedy_demo_:
+	mpiexec -n 8 python3 -m experiments_paper.greedy_demo_.generate_simulated_data
+	mpiexec -n 8 python3 -m experiments_paper.greedy_demo_.run_estimation
+	wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/greedy.wl
+
+
+quadsupermod_demo_:
+	mpiexec -n 8 python3 -m experiments_paper.quadsupermod_demo_.generate_simulated_data
+	mpiexec -n 8 python3 -m experiments_paper.quadsupermod_demo_.run_estimation
+	wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/supermod/supermod.wl
+
+
+
+greedy_demo_25:
+	@for i in $(shell seq 1 25); do \
+		echo "—— Run $$i ——"; \
+		mpiexec -n 8 python3 -m experiments_paper.greedy_demo_.generate_simulated_data || exit 1; \
+		mpiexec -n 8 python3 -m experiments_paper.greedy_demo_.run_estimation         || exit 1; \
+		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/greedy.wl || exit 1; \
+	done
