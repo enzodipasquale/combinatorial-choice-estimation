@@ -1,7 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 import pytest
-from bundlechoice.v2.data_manager import DataManager
+from bundlechoice.data_manager import DataManager
 
 def test_scatter_data_input_validation():
     # Should raise ValueError if input_data, dimensions_cfg, or comm is missing

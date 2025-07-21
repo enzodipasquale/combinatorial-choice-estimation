@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 import time
 from mpi4py import MPI
-from bundlechoice.v2.core import BundleChoice
-from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
-from bundlechoice.v2.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
+from bundlechoice.core import BundleChoice
+from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
 
 
 def test_row_generation_plain_single_item():

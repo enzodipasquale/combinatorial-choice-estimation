@@ -2,7 +2,7 @@ import pytest
 import tempfile
 import os
 import yaml
-from bundlechoice.v2.config import (
+from bundlechoice.config import (
     DimensionsConfig, RowGenConfig, SubproblemConfig
 )
 from typing import Dict, Any

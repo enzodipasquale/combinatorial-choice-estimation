@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 from mpi4py import MPI
-from bundlechoice.v2.core import BundleChoice
-from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.core import BundleChoice
+from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
 
 def test_row_generation_linear_knapsack():
     """Test RowGenerationSolver using obs_bundle generated from linear knapsack subproblem manager."""

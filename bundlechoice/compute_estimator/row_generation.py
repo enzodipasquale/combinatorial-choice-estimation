@@ -9,8 +9,8 @@ from typing import Tuple, List, Optional, Any, Dict
 import logging
 import gurobipy as gp
 from gurobipy import GRB
-from bundlechoice.v2.utils import get_logger, suppress_output
-from bundlechoice.v2.subproblems.subproblem_manager import SubproblemManager
+from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
