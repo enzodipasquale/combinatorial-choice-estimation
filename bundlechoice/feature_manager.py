@@ -1,8 +1,8 @@
 import numpy as np
 from typing import Any, Callable, Optional
-from bundlechoice.v2.utils import get_logger
-from bundlechoice.v2.config import DimensionsConfig
-from bundlechoice.v2.data_manager import DataManager
+from bundlechoice.utils import get_logger
+from bundlechoice.config import DimensionsConfig
+from bundlechoice.data_manager import DataManager
 from mpi4py import MPI
 logger = get_logger(__name__)
 

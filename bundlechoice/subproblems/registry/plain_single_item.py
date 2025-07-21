@@ -1,4 +1,4 @@
-from bundlechoice.v2.subproblems.base import BatchSubproblemBase
+from bundlechoice.subproblems.base import BatchSubproblemBase
 import numpy as np
 from typing import Optional, Any
 

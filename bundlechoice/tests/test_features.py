@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from typing import cast
-from bundlechoice.v2.feature_manager import FeatureManager
+from bundlechoice.feature_manager import FeatureManager
 
 class DummyConfig:
     def __init__(self, num_agents, num_simuls):
