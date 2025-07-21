@@ -14,7 +14,7 @@ def test_row_generation_quadsupermodular():
     num_quadratic_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_agent_features + num_quadratic_item_features
     num_simuls = 1
-    np.random.seed(321)
+    # np.random.seed(321)
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -55,18 +55,16 @@ def test_row_generation_quadsupermodular():
     }
     quad_demo = BundleChoice()
     quad_demo.load_config(cfg)
-    quad_demo.load_data(input_data, scatter=True)
-    quad_demo.build_feature_oracle_from_data()
+    quad_demo.data.load_and_scatter(input_data)
+    quad_demo.features.build_from_data()
     lambda_k = np.ones(num_features)
-    obs_bundle = quad_demo.init_and_solve_subproblems(lambda_k)
+    obs_bundle = quad_demo.subproblems.init_and_solve(lambda_k)
     input_data["obs_bundle"] = obs_bundle
     if quad_demo.rank == 0 and input_data["obs_bundle"] is not None:
         total_demand = input_data["obs_bundle"].sum(1)
         print("Total demand")
         print(total_demand.min())
         print(total_demand.max())
-        
-
 
     num_simuls = 1
     cfg["dimensions"]["num_simuls"] = num_simuls
@@ -79,8 +77,8 @@ def test_row_generation_quadsupermodular():
     }
     cfg["rowgen"] = rowgen_cfg
     quad_demo.load_config(cfg)
-    quad_demo.load_data(input_data, scatter=True)
-    lambda_k_iter, p_j_iter = quad_demo.compute_estimator_row_gen()
+    quad_demo.data.load_and_scatter(input_data)
+    lambda_k_iter, p_j_iter = quad_demo.row_generation.solve()
     if quad_demo.rank == 0:
         print(lambda_k_iter)
         print(p_j_iter) 

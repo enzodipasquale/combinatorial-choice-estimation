@@ -1,9 +1,0 @@
-num_agents: 2000
-num_items: 500
-num_features: 8
-num_simuls: 1
-
-subproblem: LinearKnap
-subproblem_settings:
-    TimeLimit: 180
-    MIPGap_tol: 1e-3
