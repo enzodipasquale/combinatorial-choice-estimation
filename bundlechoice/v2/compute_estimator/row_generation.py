@@ -9,9 +9,8 @@ from typing import Tuple, List, Optional, Any, Dict
 import logging
 import gurobipy as gp
 from gurobipy import GRB
-
-from bundlechoice.v2.core import BundleChoice
 from bundlechoice.v2.utils import get_logger, suppress_output
+from bundlechoice.v2.subproblems.subproblem_manager import SubproblemManager
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
@@ -24,40 +23,50 @@ class RowGenerationSolver:
 
     This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
-    def __init__(self, bundlechoice):
+    def __init__(
+                self, 
+                comm, 
+                dimensions_cfg, 
+                rowgen_cfg, 
+                data_manager, 
+                feature_manager, 
+                subproblem_manager,
+                logger=None):
         """
         Initialize the RowGenerationSolver.
 
         Args:
-            bundlechoice (BundleChoice): The main problem object containing configuration, data, and managers.
+            comm: MPI communicator
+            dimensions_cfg: DimensionsConfig instance
+            rowgen_cfg: RowGenConfig instance
+            data_manager: DataManager instance
+            feature_manager: FeatureManager instance
+            subproblem_manager: SubproblemManager instance
         """
-        self.bundlechoice = bundlechoice
-        # Always force subproblem manager initialization
-        self.bundlechoice._try_init_subproblem_manager()
-        self.comm = self.bundlechoice.comm
-        self.dimensions_cfg = self.bundlechoice.dimensions_cfg
-        self.solver_config = self.bundlechoice.dimensions_cfg
-        self.data_manager = self.bundlechoice.data_manager
-        self.feature_manager = self.bundlechoice.feature_manager
-        self.subproblem_manager = self.bundlechoice.subproblem_manager
-        # Extract dimensions
-        self.rank = self.bundlechoice.rank
+        self.comm = comm
+        self.rank = comm.Get_rank()
+        self.dimensions_cfg = dimensions_cfg
+        self.rowgen_cfg = rowgen_cfg
+        self.data_manager = data_manager
+        self.feature_manager = feature_manager
+        self.subproblem_manager = subproblem_manager
+     
 
     @property
     def num_agents(self):
-        return self.bundlechoice.num_agents
+        return self.dimensions_cfg.num_agents
 
     @property
     def num_items(self):
-        return self.bundlechoice.num_items
+        return self.dimensions_cfg.num_items
 
     @property
     def num_features(self):
-        return self.bundlechoice.num_features
+        return self.dimensions_cfg.num_features
 
     @property
     def num_simuls(self):
-        return self.bundlechoice.num_simuls
+        return self.dimensions_cfg.num_simuls
 
     @property
     def input_data(self):
@@ -70,10 +79,6 @@ class RowGenerationSolver:
         if not self.data_manager or not hasattr(self.data_manager, "local_data"):
             raise AttributeError("Data manager or local_data is missing.")
         return self.data_manager.local_data
-
-    @property
-    def obs_bundle(self):
-        return self.input_data["obs_bundle"]
 
     @property
     def error_si_j(self):
@@ -93,35 +98,38 @@ class RowGenerationSolver:
         if self.rank == 0:
             with suppress_output():
                 self.master_model = gp.Model()
-                self.master_model.setParam('Method', 0)
-                # self.master_model.setParam('Threads', self.master_threads)
-                self.master_model.setParam('LPWarmStart', 2)
                 self.master_model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-                OutputFlag = getattr(self.solver_config, 'master_settings', {}).get("OutputFlag")
-                self.master_model.setParam('OutputFlag', 0)
+                Method = self.rowgen_cfg.master_settings.get("Method", 0)
+                self.master_model.setParam('Method', Method)
+                # self.master_model.setParam('Threads', self.master_threads)
+                LPWarmStart = self.rowgen_cfg.master_settings.get("LPWarmStart", 2)
+                self.master_model.setParam('LPWarmStart', LPWarmStart)
+                OutputFlag = self.rowgen_cfg.master_settings.get("OutputFlag", 0)
+                self.master_model.setParam('OutputFlag', OutputFlag)
             
             # Get observed bundle features
-            x_hat_i_k = self.feature_manager.get_all_agent_features(self.input_data["obs_bundle"])
+            obs_bundle = self.input_data["obs_bundle"]
+            x_hat_i_k = self.feature_manager.get_all_agent_features(obs_bundle)
             x_hat_k = x_hat_i_k.sum(0)
 
             lambda_k = self.master_model.addMVar(self.num_features, obj=self.num_simuls * x_hat_k, ub=1e4, name='parameter')
             u_si = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=-1, name='utility')
 
             # Add item fixed effects if enabled
-            if getattr(self.solver_config, 'item_fixed_effects', False):
+            if self.rowgen_cfg.item_fixed_effects:
                 p_j = self.master_model.addMVar(self.num_items, obj=-self.num_simuls, name='price')
             else:
                 p_j = None
 
             self.master_model.update()
 
+            # Revert to original, robust constraint addition
             self.master_model.addConstrs((
                 u_si[si] >=
-                self.error_si_j[si] @ self.obs_bundle[si % self.num_agents] +
+                self.error_si_j[si] @ obs_bundle[si % self.num_agents] +
                 x_hat_i_k[si % self.num_agents, :] @ lambda_k
                 for si in range(self.num_simuls * self.num_agents)
             ))
-
             self.master_model.optimize()
             logger.info("Master Initialized. Parameter: %s", lambda_k.X)
 
@@ -154,7 +162,7 @@ class RowGenerationSolver:
                 slack_counter[constr_name] += 1
             else:
                 slack_counter[constr_name] = 0
-            if slack_counter[constr_name] >= getattr(self.solver_config, 'max_slack_counter', float('inf')):
+            if slack_counter[constr_name] >= self.rowgen_cfg.max_slack_counter:
                 to_remove.append((constr_name, constr))
         for constr_name, constr in to_remove:
             master_model.remove(constr)
@@ -188,19 +196,20 @@ class RowGenerationSolver:
             u_si_master = u_si.X
             max_reduced_cost = np.max(u_si_star - u_si_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
-            if max_reduced_cost < getattr(self.solver_config, 'tol_certificate', 0.001):
+            if max_reduced_cost < self.rowgen_cfg.tol_certificate:
                 return True, lambda_k.X, p_j.X if p_j is not None else None
-            new_constrs_id = np.where(u_si_star > u_si_master * (1 + getattr(self.solver_config, 'tol_row_generation', 0.0)))[0]
-            logger.info("New constraints: %d", len(new_constrs_id))
+            rows_id = np.where(u_si_star > u_si_master * (1 + self.rowgen_cfg.tol_row_generation))[0]
+            logger.info("New constraints: %d", len(rows_id))
 
-            self.master_model.addConstrs((
-                u_si[si]  >= eps_si_star[si] + x_star_si_k[si] @ lambda_k
-                for si in new_constrs_id
-            ))
+            # self.master_model.addConstrs((
+            #     u_si[si]  >= eps_si_star[si] + x_star_si_k[si] @ lambda_k
+            #     for si in rows_id
+            # ))
+            self.master_model.addConstr(u_si[rows_id]  >= eps_si_star[rows_id] + x_star_si_k[rows_id] @ lambda_k)
+
             slack_counter, num_constrs_removed = self._update_slack_counter(self.master_model, slack_counter)
             self.master_model.optimize()
-            if hasattr(self.solver_config, 'tol_row_generation_decay'):
-                self.solver_config.tol_row_generation *= getattr(self.solver_config, 'tol_row_generation_decay', 1.0)
+            self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
             return False, lambda_k.X, p_j.X if p_j is not None else None
         else:
             # On non-root ranks, self.master_model and self.master_variables are None
@@ -227,8 +236,8 @@ class RowGenerationSolver:
         
         logger.info("Starting row generation loop.")
         # Main row generation loop
-        for iteration in range(int(getattr(self.solver_config, 'max_iters', 100))):
-            logger.info(f"Row generation iteration {iteration + 1}")
+        for iteration in range(int(self.rowgen_cfg.max_iters)):
+            logger.info(f"ITERATION {iteration + 1}")
             # Solve pricing problems
             local_pricing_results = self.subproblem_manager.solve_local_subproblems(lambda_k_iter)
             pricing_results = self.comm.gather(local_pricing_results, root=0)
@@ -237,7 +246,7 @@ class RowGenerationSolver:
             stop, lambda_k_iter, p_j_iter = self._master_iteration(pricing_results, slack_counter)
             stop, lambda_k_iter, p_j_iter = self.comm.bcast((stop, lambda_k_iter, p_j_iter), root=0)
             
-            if stop and iteration >= getattr(self.solver_config, 'min_iters', 0):
+            if stop and iteration >= self.rowgen_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
                 logger.info("Row generation completed after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                 break

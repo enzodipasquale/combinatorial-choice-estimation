@@ -2,6 +2,10 @@ from typing import Protocol, Any, cast, Optional, List, Union
 from .subproblem_registry import SUBPROBLEM_REGISTRY
 from .base import BatchSubproblemBase
 import numpy as np
+from bundlechoice.v2.config import DimensionsConfig, SubproblemConfig
+from bundlechoice.v2.data_manager import DataManager
+from bundlechoice.v2.feature_manager import FeatureManager
+from mpi4py import MPI
 
 class BatchSubproblemProtocol(Protocol):
     solve_all_local_problems: bool
@@ -27,31 +31,24 @@ class SubproblemManager:
     """
     def __init__(
         self,
-        data_manager: Any,
-        feature_manager: Any,
-        subproblem_cfg: Any,
-        dimensions_cfg: Optional[Any],
-        comm: Any
+        dimensions_cfg: DimensionsConfig,
+        comm: MPI.Comm,
+        data_manager: DataManager,
+        feature_manager: FeatureManager,
+        subproblem_cfg: SubproblemConfig
     ) -> None:
         """
         Initialize the SubproblemManager.
-        Args:
-            data_manager: DataManager instance providing agent/item data.
-            feature_manager: FeatureManager instance for feature extraction.
-            subproblem_cfg: Configuration for the subproblem.
-            dimensions_cfg: Configuration for problem dimensions (agents, items, features, simuls).
-            comm: MPI communicator.
         """
-        self.registry = SUBPROBLEM_REGISTRY
+        self.dimensions_cfg = dimensions_cfg
+        self.comm = comm
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
-        self.dimensions_cfg = dimensions_cfg if dimensions_cfg is not None else (
-            getattr(data_manager, 'dimensions_cfg', None) if data_manager is not None else None)
+        self.registry = SUBPROBLEM_REGISTRY
         self.subproblem: Optional[SubproblemType] = None
         self.local_subproblems: Optional[Any] = None
-        self.comm = comm
-        self.rank = comm.Get_rank() if comm is not None else 0
+        self.rank = comm.Get_rank() 
 
     def load(self, subproblem: Optional[Union[str, Any]] = None) -> SubproblemType:
         """
@@ -91,16 +88,14 @@ class SubproblemManager:
         """
         if self.subproblem is None:
             raise RuntimeError("Subproblem is not initialized.")
-        if not hasattr(self.subproblem, 'initialize') or not callable(getattr(self.subproblem, 'initialize')):
-            raise AttributeError("Subproblem does not have an 'initialize' method.")
         if isinstance(self.subproblem, BatchSubproblemBase):
             self.local_subproblems = None
             # Batch: initialize expects no arguments
-            getattr(self.subproblem, 'initialize')()
+            self.subproblem.initialize()
             return None
         else:
             # Serial: initialize expects local_id
-            self.local_subproblems = [getattr(self.subproblem, 'initialize')(local_id) for local_id in range(self.data_manager.num_local_agents)]
+            self.local_subproblems = [self.subproblem.initialize(local_id) for local_id in range(self.data_manager.num_local_agents)]
             return self.local_subproblems
 
     def solve_local_subproblems(self, lambda_k: Any) -> Any:
@@ -117,8 +112,7 @@ class SubproblemManager:
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents') or self.data_manager.num_local_agents is None:
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
-        if not hasattr(self.subproblem, 'solve') or not callable(getattr(self.subproblem, 'solve')):
-            raise AttributeError("Subproblem does not have a 'solve' method.")
+   
         if isinstance(self.subproblem, BatchSubproblemBase):
             return self.subproblem.solve(lambda_k)
         else:
@@ -140,14 +134,14 @@ class SubproblemManager:
             raise RuntimeError("MPI communicator (comm) is not set in SubproblemManager.")
         self.init_local_subproblems()
         local_results = self.solve_local_subproblems(lambda_k)
-        if len(local_results) > 0:
-            local_results_array = np.array(local_results)
-        else:
-            if self.num_items is not None:
-                local_results_array = np.array([], dtype=bool).reshape(0, self.num_items)
-            else:
-                local_results_array = np.array([], dtype=bool)
-        gathered = self.comm.gather(local_results_array, root=0)
+        # if len(local_results) > 0:
+        #     local_results_array = np.array(local_results)
+        # else:
+        #     if self.num_items is not None:
+        #         local_results_array = np.array([], dtype=bool).reshape(0, self.num_items)
+        #     else:
+        #         local_results_array = np.array([], dtype=bool)
+        gathered = self.comm.gather(local_results, root=0)
         if self.rank == 0:
             # non_empty_results = [result for result in gathered if result.size > 0]
             # if non_empty_results:

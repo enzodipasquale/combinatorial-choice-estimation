@@ -161,7 +161,7 @@ def main():
     bc._try_init_subproblem_manager()
     print("5. Running row generation solver...")
     from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
-    solver = RowGenerationSolver(bc)
+    solver = RowGenerationSolver(bc, bc.rowgen_cfg)
     lambda_k, p_j = solver.compute_estimator_row_gen()
     print("\n=== Results ===")
     if bc.rank == 0:

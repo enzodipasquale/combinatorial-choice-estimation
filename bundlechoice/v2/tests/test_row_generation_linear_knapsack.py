@@ -47,21 +47,16 @@ def test_row_generation_linear_knapsack():
     if knapsack_demo.rank == 0 and input_data["obs_bundle"] is not None:
         print(input_data["obs_bundle"].sum(1))
 
-
-
+    # Add rowgen config for the row generation solver
+    rowgen_cfg = {
+        "max_iters": 100,
+        "tol_certificate": 0.0001,
+    }
+    cfg["rowgen"] = rowgen_cfg
+    knapsack_demo.load_config(cfg)
     knapsack_demo.load_data(input_data, scatter=True)
-    solver = RowGenerationSolver(knapsack_demo)
-    lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+
+    lambda_k_iter, p_j_iter = knapsack_demo.compute_estimator_row_gen()
     if knapsack_demo.rank == 0:
         print(lambda_k_iter)
-        print(p_j_iter) 
-
-    # knapsack_estimation = BundleChoice()
-    # knapsack_estimation.load_config(cfg)
-    # knapsack_estimation.load_data(input_data, scatter=True)
-    # knapsack_estimation.build_feature_oracle_from_data()
-    # solver = RowGenerationSolver(knapsack_estimation)
-    # lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
-    # if knapsack_estimation.rank == 0:
-    #     print(lambda_k_iter)
-    #     print(p_j_iter) 
+        print(p_j_iter)

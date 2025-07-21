@@ -1,6 +1,8 @@
 import numpy as np
 from typing import Optional, Dict, Any, List
 from bundlechoice.v2.utils import get_logger
+from bundlechoice.v2.config import DimensionsConfig
+from mpi4py import MPI
 logger = get_logger(__name__)
 
 class DataManager:
@@ -23,21 +25,17 @@ class DataManager:
         }
     """
 
-    def __init__(self,  input_data: Optional[Dict[str, Any]] = None, 
-                        dimensions_cfg: Optional[Any] = None, 
-                        comm: Optional[Any] = None,
-                        ) -> None:
+    def __init__(self, 
+                 dimensions_cfg: DimensionsConfig,
+                 comm: MPI.Comm,
+                 input_data: Optional[Dict[str, Any]] = None
+                 ) -> None:
         """
         Initialize the DataManager.
-
-        Args:
-            input_data: Optional dictionary of input data.
-            dimensions_cfg: Configuration object with num_agents, num_items, num_simuls.
-            comm: MPI communicator. If provided, rank and comm_size are derived from it.
         """
-        self.input_data = input_data
         self.dimensions_cfg = dimensions_cfg
         self.comm = comm
+        self.input_data = input_data
         self.rank = comm.Get_rank() if comm is not None else None
         self.comm_size = comm.Get_size() if comm is not None else None
         self.local_data: Optional[Dict[str, Any]] = None
