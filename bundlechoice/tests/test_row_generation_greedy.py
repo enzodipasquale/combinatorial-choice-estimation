@@ -39,7 +39,7 @@ def test_row_generation_greedy():
     num_modular_item_features = 2
     num_features = 5
     num_simuls = 1
-    np.random.seed(42)
+    # np.random.seed(42)
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -61,12 +61,12 @@ def test_row_generation_greedy():
     # Generate obs_bundles
     greedy_demo = BundleChoice()
     greedy_demo.load_config(cfg)
-    greedy_demo.load_data(input_data, scatter=True)
-    greedy_demo.load_features_oracle(features_oracle)
+    greedy_demo.data.load_and_scatter(input_data)
+    greedy_demo.features.load(features_oracle)
 
     lambda_k = np.ones(num_features)
     lambda_k[-1] = 0.1
-    obs_bundle = greedy_demo.init_and_solve_subproblems(lambda_k)
+    obs_bundle = greedy_demo.subproblems.init_and_solve(lambda_k)
     if greedy_demo.rank == 0:
         print(obs_bundle.sum(1))
 
@@ -80,14 +80,9 @@ def test_row_generation_greedy():
     }
     cfg["rowgen"] = rowgen_cfg
     greedy_demo.load_config(cfg)
-    greedy_demo.load_data(input_data, scatter=True)
-    lambda_k_iter, p_j_iter = greedy_demo.compute_estimator_row_gen()
+    greedy_demo.data.load_and_scatter(input_data)
+    lambda_k_iter, p_j_iter = greedy_demo.row_generation.solve()
     if greedy_demo.rank == 0:
         print(lambda_k_iter)
         print(p_j_iter) 
 
-    # solver = RowGenerationSolver(greedy_demo, greedy_demo.rowgen_cfg)
-    # lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
-    # if greedy_demo.rank == 0:
-    #     print(lambda_k_iter)
-    #     print(p_j_iter) 

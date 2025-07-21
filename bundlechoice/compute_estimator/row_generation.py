@@ -11,13 +11,14 @@ import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
+from bundlechoice.base import HasDimensions, HasData
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGenerationSolver:
+class RowGenerationSolver(HasDimensions, HasData):
     """
     Implements the row generation algorithm for parameter estimation in modular bundle choice models.
 
@@ -30,8 +31,7 @@ class RowGenerationSolver:
                 rowgen_cfg, 
                 data_manager, 
                 feature_manager, 
-                subproblem_manager,
-                logger=None):
+                subproblem_manager):
         """
         Initialize the RowGenerationSolver.
 
@@ -51,34 +51,6 @@ class RowGenerationSolver:
         self.feature_manager = feature_manager
         self.subproblem_manager = subproblem_manager
      
-
-    @property
-    def num_agents(self):
-        return self.dimensions_cfg.num_agents
-
-    @property
-    def num_items(self):
-        return self.dimensions_cfg.num_items
-
-    @property
-    def num_features(self):
-        return self.dimensions_cfg.num_features
-
-    @property
-    def num_simuls(self):
-        return self.dimensions_cfg.num_simuls
-
-    @property
-    def input_data(self):
-        if not self.data_manager or not hasattr(self.data_manager, "input_data"):
-            raise AttributeError("Data manager or input_data is missing.")
-        return self.data_manager.input_data
-
-    @property
-    def local_data(self):
-        if not self.data_manager or not hasattr(self.data_manager, "local_data"):
-            raise AttributeError("Data manager or local_data is missing.")
-        return self.data_manager.local_data
 
     @property
     def error_si_j(self):
@@ -215,7 +187,7 @@ class RowGenerationSolver:
             # On non-root ranks, self.master_model and self.master_variables are None
             return None, None, None
 
-    def compute_estimator_row_gen(self):
+    def solve(self):
         """
         Run the row generation algorithm to estimate model parameters.
 
@@ -227,7 +199,7 @@ class RowGenerationSolver:
         tic = datetime.now()
         
         # Initialize local subproblems
-        self.subproblem_manager.init_local_subproblems()
+        self.subproblem_manager.initialize_local()
         
         # Initialize master problem
         lambda_k_iter, p_j_iter = self._initialize_master_problem()
@@ -239,7 +211,7 @@ class RowGenerationSolver:
         for iteration in range(int(self.rowgen_cfg.max_iters)):
             logger.info(f"ITERATION {iteration + 1}")
             # Solve pricing problems
-            local_pricing_results = self.subproblem_manager.solve_local_subproblems(lambda_k_iter)
+            local_pricing_results = self.subproblem_manager.solve_local(lambda_k_iter)
             pricing_results = self.comm.gather(local_pricing_results, root=0)
             
             # Update master problem

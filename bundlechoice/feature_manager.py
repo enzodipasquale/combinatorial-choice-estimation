@@ -4,9 +4,10 @@ from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.data_manager import DataManager
 from mpi4py import MPI
+from bundlechoice.base import HasDimensions, HasData, HasComm
 logger = get_logger(__name__)
 
-class FeatureManager:
+class FeatureManager(HasDimensions, HasComm, HasData):
     """
     Encapsulates feature extraction logic for the bundle choice model.
     User supplies get_features(i_id, B_j, data); this class provides get_x_i_k and get_features.
@@ -18,47 +19,24 @@ class FeatureManager:
         Initialize the FeatureManager.
 
         Args:
-            input_data: The input data dictionary.
-            dimensions_cfg: The configuration object with num_agents, num_items, num_features, num_simuls.
-            get_features: Optional user-supplied function (i_id, B_j, data) -> np.ndarray.
-            comm: Optional MPI communicator.
+            dimensions_cfg (DimensionsConfig): Configuration object with num_agents, num_items, num_features, num_simuls.
+            comm (MPI.Comm): MPI communicator.
+            data_manager (DataManager): DataManager instance.
         """
         self.dimensions_cfg = dimensions_cfg
         self.comm = comm
         self.data_manager = data_manager
         self.features_oracle = None
-        self.rank = comm.Get_rank() if comm is not None else 0
+        # self.rank and self.comm_size now provided by HasComm
 
-    # --- Properties ---
-    @property
-    def num_agents(self):
-        """Number of agents in the dataset."""
-        return self.dimensions_cfg.num_agents if self.dimensions_cfg else None
+    def load(self, features_oracle):
+        """
+        Load a user-supplied feature extraction function.
 
-    @property
-    def num_items(self):
-        """Number of items in the dataset."""
-        return self.dimensions_cfg.num_items if self.dimensions_cfg else None
-
-    @property
-    def num_features(self):
-        """Number of features in the dataset."""
-        return self.dimensions_cfg.num_features if self.dimensions_cfg else None
-
-    @property
-    def num_simuls(self):
-        """Number of simulations in the dataset."""
-        return self.dimensions_cfg.num_simuls if self.dimensions_cfg else None
-
-    @property
-    def input_data(self):
-        """Input data dictionary."""
-        return self.data_manager.input_data
-    
-    @property
-    def local_data(self):
-        """Local data dictionary."""
-        return self.data_manager.local_data
+        Args:
+            features_oracle (Callable): Function (i_id, B_j, data) -> np.ndarray.
+        """
+        self.features_oracle = features_oracle
 
     # --- Feature extraction methods ---
     def get_features(self, i_id, B_j, data_override=None):
@@ -67,22 +45,21 @@ class FeatureManager:
         By default, uses input_data from the FeatureManager. If data_override is provided, uses that instead (for local/MPI calls).
 
         Args:
-            i_id: Agent index
-            B_j: Bundle (array-like)
-            data_override: Optional data dictionary to override default input_data
+            i_id (int): Agent index.
+            B_j (array-like): Bundle.
+            data_override (dict, optional): Data dictionary to override default input_data.
         Returns:
-            np.ndarray: Feature vector for the agent/bundle
+            np.ndarray: Feature vector for the agent/bundle.
         Raises:
             RuntimeError: If features_oracle function is not set or data is missing required keys.
         """
         if self.features_oracle is None:
             raise RuntimeError("features_oracle function is not set.")
-        if data_override is not None:
-            data = data_override
-        else:
+        if data_override is None:
             data = self.input_data
-        if data is None or (data.get('agent_data') is None and data.get('item_data') is None):
-            raise RuntimeError("DataManager/input_data has neither agent_data nor item_data. If running under MPI, call scatter_data() before using features. If running locally, check input_data.")
+        else:
+            data = data_override
+       
         return self.features_oracle(i_id, B_j, data)
 
     def get_all_agent_features(self, B_i_j: Any) -> Optional[np.ndarray]:
@@ -90,9 +67,9 @@ class FeatureManager:
         Compute features for all agents. Only works on rank 0; returns None on other ranks.
 
         Args:
-            B_i_j: List/array of bundles for each agent
+            B_i_j (array-like): List/array of bundles for each agent.
         Returns:
-            np.ndarray: Features for all agents (on rank 0), None on other ranks
+            np.ndarray or None: Features for all agents (on rank 0), None on other ranks.
         Raises:
             ValueError: If num_agents is not set.
         """
@@ -107,9 +84,9 @@ class FeatureManager:
         Compute features for all simulated agents. Only works on rank 0; returns None on other ranks.
 
         Args:
-            B_si_j: List/array of bundles for all simulated agents
+            B_si_j (array-like): List/array of bundles for all simulated agents.
         Returns:
-            np.ndarray: Features for all simulated agents (on rank 0), None on other ranks
+            np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
         Raises:
             ValueError: If num_agents or num_simuls is not set.
         """
@@ -128,15 +105,14 @@ class FeatureManager:
         Compute features for all local agents (on this MPI rank only).
 
         Args:
-            B_local: List or array of bundles for local agents (length = num_local_agents)
+            B_local (array-like): List or array of bundles for local agents (length = num_local_agents).
         Returns:
-            np.ndarray: Features for all local agents on this rank (shape: num_local_agents x num_features)
+            np.ndarray: Features for all local agents on this rank (shape: num_local_agents x num_features).
         """
-        num_local_agents = self.data_manager.num_local_agents
-        assert num_local_agents == len(B_local), "num_local_agents and B_local must have the same length."
+        assert self.num_local_agents == len(B_local), "num_local_agents and B_local must have the same length."
         features_local = [
             self.get_features(local_id, B_local[local_id], data_override=self.local_data)
-            for local_id in range(num_local_agents)
+            for local_id in range(self.num_local_agents)
         ]
         features_local = np.array(features_local)
         return features_local
@@ -147,9 +123,9 @@ class FeatureManager:
         Gathers and concatenates all local results on rank 0.
 
         Args:
-            B_local: List or array of bundles for local agents (length = num_local_agents)
+            B_local (array-like): List or array of bundles for local agents (length = num_local_agents).
         Returns:
-            np.ndarray: Features for all simulated agents (on rank 0), None on other ranks
+            np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
         Raises:
             ValueError: If comm is not set.
         """
@@ -163,32 +139,40 @@ class FeatureManager:
             return None
 
     # --- Feature oracle builder ---
-    def build_feature_oracle_from_data(self):
+    def build_from_data(self):
         """
         Dynamically build and return a get_features function based on the structure of input_data.
         Inspects agent_data and item_data for 'modular' and 'quadratic' keys and builds an efficient function.
-        Sets self.user_get_features to the new function.
+        Sets self.features_oracle to the new function.
 
         Returns:
-            The new features_oracle function
+            Callable: The new features_oracle function.
         """
-        input_data = self.input_data
-        agent_data = input_data["agent_data"]
-        item_data = input_data["item_data"]
+        if self.rank == 0:
+            input_data = self.input_data
+            agent_data = input_data.get("agent_data")
+            item_data = input_data.get("item_data")
+        else:
+            agent_data = None
+            item_data = None
+        agent_data = self.comm.bcast(agent_data, root=0)
+        item_data = self.comm.bcast(item_data, root=0)
 
         code_lines = ["def get_features(i_id, B_j, data):", "    feats = []"]
-        if "modular" in agent_data:
-            code_lines.append("    modular = data['agent_data']['modular'][i_id]")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
-        if "quadratic" in agent_data:
-            code_lines.append("    quadratic = data['agent_data']['quadratic'][i_id]")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
-        if "modular" in item_data:
-            code_lines.append("    modular = data['item_data']['modular']")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
-        if "quadratic" in item_data:
-            code_lines.append("    quadratic = data['item_data']['quadratic']")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+        if agent_data is not None:
+            if "modular" in agent_data:
+                code_lines.append("    modular = data['agent_data']['modular'][i_id]")
+                code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+            if "quadratic" in agent_data:
+                code_lines.append("    quadratic = data['agent_data']['quadratic'][i_id]")
+                code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+        if item_data is not None:   
+            if "modular" in item_data:
+                code_lines.append("    modular = data['item_data']['modular']")
+                code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+            if "quadratic" in item_data:
+                code_lines.append("    quadratic = data['item_data']['quadratic']")
+                code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
         code_lines.append("    return np.concatenate(feats)")
         code_str = "\n".join(code_lines)
 
@@ -199,6 +183,12 @@ class FeatureManager:
         return features_oracle 
 
     def compute_features_obs_bundle(self):
+        """
+        Compute features for the observed bundle for all agents (on rank 0).
+
+        Returns:
+            np.ndarray or None: Features for all agents (on rank 0), None on other ranks.
+        """
         if self.rank == 0:
             return self.get_all_agent_features(self.input_data["obs_bundle"])
         else:
