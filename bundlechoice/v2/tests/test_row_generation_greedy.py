@@ -4,7 +4,7 @@ from mpi4py import MPI
 from bundlechoice.v2.core import BundleChoice
 from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
 
-def get_features(i_id, B_j, data):
+def features_oracle(i_id, B_j, data):
     """
     Compute features for a given agent and bundle(s).
     Supports both single (1D) and multiple (2D) bundles.
@@ -57,23 +57,37 @@ def test_row_generation_greedy():
         "agent_data": {"modular": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features)))},
         "errors": np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
     }
+
+    # Generate obs_bundles
     greedy_demo = BundleChoice()
     greedy_demo.load_config(cfg)
     greedy_demo.load_data(input_data, scatter=True)
-    greedy_demo.load_features(get_features)
+    greedy_demo.load_features_oracle(features_oracle)
 
     lambda_k = np.ones(num_features)
     lambda_k[-1] = 0.1
     obs_bundle = greedy_demo.init_and_solve_subproblems(lambda_k)
+    if greedy_demo.rank == 0:
+        print(obs_bundle.sum(1))
 
+    # Estimate parameters
     input_data["obs_bundle"] = obs_bundle
     input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
-    if greedy_demo.rank == 0 and input_data["obs_bundle"] is not None:
-        print(input_data["obs_bundle"].sum(1))
+    rowgen_cfg = {
+        "max_iters": 100,
+        "tol_certificate": 0.001,
+        "min_iters": 1
+    }
+    cfg["rowgen"] = rowgen_cfg
+    greedy_demo.load_config(cfg)
     greedy_demo.load_data(input_data, scatter=True)
-
-    solver = RowGenerationSolver(greedy_demo)
-    lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+    lambda_k_iter, p_j_iter = greedy_demo.compute_estimator_row_gen()
     if greedy_demo.rank == 0:
         print(lambda_k_iter)
         print(p_j_iter) 
+
+    # solver = RowGenerationSolver(greedy_demo, greedy_demo.rowgen_cfg)
+    # lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+    # if greedy_demo.rank == 0:
+    #     print(lambda_k_iter)
+    #     print(p_j_iter) 

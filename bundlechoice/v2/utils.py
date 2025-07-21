@@ -8,10 +8,16 @@ try:
 except ImportError:
     rank = 0  # fallback for non-MPI runs
 
+class MPIRankFilter(logging.Filter):
+    def filter(self, record):
+        return MPI.COMM_WORLD.Get_rank() == 0
+
+
 def get_logger(name=__name__):
     logger = logging.getLogger(name)
-    if rank != 0:
-        logger.disabled = True
+    # Add the rank 0 filter only once
+    if not any(isinstance(f, MPIRankFilter) for f in logger.filters):
+        logger.addFilter(MPIRankFilter())
     return logger
 
 @contextmanager

@@ -2,10 +2,11 @@ from .config import DimensionsConfig, RowGenConfig, SubproblemConfig, load_confi
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems import SUBPROBLEM_REGISTRY
-from .subproblems.manager import SubproblemManager, SubproblemProtocol
+from .subproblems.subproblem_manager import SubproblemManager, SubproblemProtocol
 from mpi4py import MPI
 from typing import Optional, Callable
 from bundlechoice.v2.utils import get_logger
+from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
 logger = get_logger(__name__)
 
 class BundleChoice:
@@ -88,18 +89,18 @@ class BundleChoice:
         self.data_manager.scatter_data()
 
     # --- Feature Management ---
-    def load_features(self, get_features):
+    def load_features_oracle(self, features_oracle):
         """
         Load a user-supplied feature extraction function.
 
         Args:
-            get_features: Callable (i_id, B_j, data) -> np.ndarray
+            features_oracle: Callable (i_id, B_j, data) -> np.ndarray
                 Function that extracts features for agent i_id with bundle B_j
         Returns:
             self for method chaining
         """
-        self.get_features = get_features
         self._try_init_feature_manager()
+        self.feature_manager.features_oracle = features_oracle
         return self
 
     def build_feature_oracle_from_data(self):
@@ -115,7 +116,7 @@ class BundleChoice:
         if self.input_data is None:
             raise RuntimeError("input_data must be set before calling build_feature_oracle_from_data().")
         self._try_init_feature_manager()
-        self.get_features = self.feature_manager.build_feature_oracle_from_data()
+        self.feature_manager.build_feature_oracle_from_data()
         return self
 
     # --- Subproblem Solving ---
@@ -183,9 +184,9 @@ class BundleChoice:
         """
         if self.dimensions_cfg is not None:
             self.data_manager = DataManager(
-                input_data=None,
                 dimensions_cfg=self.dimensions_cfg,
-                comm=self.comm
+                comm=self.comm,
+                input_data=None
             )
         else:
             self.data_manager = None
@@ -197,14 +198,12 @@ class BundleChoice:
         """
         if self.dimensions_cfg is not None:
             self.feature_manager = FeatureManager(
-                data_manager=self.data_manager,
                 dimensions_cfg=self.dimensions_cfg,
-                get_features=self.get_features,
-                comm=self.comm
+                comm=self.comm,
+                data_manager=self.data_manager
             )
         else:
             self.feature_manager = None
-
 
     def _try_init_subproblem_manager(self):
         """
@@ -215,11 +214,35 @@ class BundleChoice:
             raise RuntimeError("DataManager, FeatureManager, and SubproblemConfig must be set before initializing subproblem manager.")
             return
         self.subproblem_manager = SubproblemManager(
+            dimensions_cfg=self.dimensions_cfg,
+            comm=self.comm,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
-            subproblem_cfg=self.subproblem_cfg,
-            dimensions_cfg=self.dimensions_cfg,
-            comm=self.comm
+            subproblem_cfg=self.subproblem_cfg
         )
-        self.subproblem = self.subproblem_manager.load() 
+        self.subproblem = self.subproblem_manager.load()
+
+    def _try_init_rowgeneration_manager(self):
+        """
+        Initialize the RowGenerationSolver if not already present.
+        Returns a RowGenerationSolver instance using explicit dependencies.
+        """
+
+        self.rowgeneration_manager = RowGenerationSolver(
+            comm=self.comm,
+            dimensions_cfg=self.dimensions_cfg,
+            rowgen_cfg=self.rowgen_cfg,
+            data_manager=self.data_manager,
+            feature_manager=self.feature_manager,
+            subproblem_manager=self.subproblem_manager
+        )
+        return self.rowgeneration_manager
+
+    def compute_estimator_row_gen(self):
+        """
+        Compute the estimator using the RowGenerationSolver.
+        """
+        self._try_init_subproblem_manager()
+        self._try_init_rowgeneration_manager()
+        return self.rowgeneration_manager.compute_estimator_row_gen()   
 

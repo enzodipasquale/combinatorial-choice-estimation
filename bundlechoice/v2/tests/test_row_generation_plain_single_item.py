@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import time
 from mpi4py import MPI
 from bundlechoice.v2.core import BundleChoice
 from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
@@ -8,10 +9,10 @@ from bundlechoice.v2.subproblems.registry.plain_single_item import PlainSingleIt
 
 def test_row_generation_plain_single_item():
     """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 10000
-    num_items = 50
-    num_modular_agent_features = 5
-    num_modular_item_features = 5
+    num_agents = 2_000
+    num_items = 100
+    num_modular_agent_features = 4
+    num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
     np.random.seed(1234)
@@ -64,13 +65,21 @@ def test_row_generation_plain_single_item():
     cfg["dimensions"]["num_simuls"] = num_simuls
     input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
     input_data["obs_bundle"] = obs_bundle
+    # Add rowgen config for the row generation solver
+    rowgen_cfg = {
+        "max_iters": 100,
+        "tol_certificate": .0001,
+    }
+    cfg["rowgen"] = rowgen_cfg
     demo.load_config(cfg)
     demo.load_data(input_data, scatter=True)
-    solver = RowGenerationSolver(demo)
-    lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+    tic = time.time()
+    lambda_k_iter, p_j_iter = demo.compute_estimator_row_gen()
+    toc = time.time()
     if demo.rank == 0:
         print("lambda_k_iter (row generation result):\n", lambda_k_iter)
-        print("p_j_iter (row generation result):\n", p_j_iter)
+        print(f"Time taken: {toc - tic} seconds")
+        # print("p_j_iter (row generation result):\n", p_j_iter)
         assert lambda_k_iter.shape == (num_features,) 
     
     

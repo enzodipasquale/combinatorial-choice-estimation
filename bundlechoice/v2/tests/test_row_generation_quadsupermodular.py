@@ -6,12 +6,12 @@ from bundlechoice.v2.compute_estimator.row_generation import RowGenerationSolver
 
 def test_row_generation_quadsupermodular():
     """Test RowGenerationSolver using obs_bundle generated from quadsupermodular subproblem manager."""
-    num_agents = 2000
+    num_agents = 500
     num_items = 50
     num_modular_agent_features = 2
-    num_modular_item_features = 1
-    num_quadratic_agent_features = 2
-    num_quadratic_item_features = 1
+    num_modular_item_features = 2
+    num_quadratic_agent_features = 0
+    num_quadratic_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_agent_features + num_quadratic_item_features
     num_simuls = 1
     np.random.seed(321)
@@ -27,15 +27,16 @@ def test_row_generation_quadsupermodular():
             "settings": {}
         }
     }
-    agent_modular = -  np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features)))
-    agent_quadratic = .1 *  np.abs(np.random.normal(0, 1, (num_agents, num_items, num_items, num_quadratic_agent_features)))
-    for i in range(num_agents):
-        for k in range(num_quadratic_agent_features):
-            np.fill_diagonal(agent_quadratic[i, :, :, k], 0)
-            # Multiply by binary matrix with density .1
-            agent_quadratic[i, :, :, k] *= (np.random.rand(num_items, num_items) < .3)
-    item_modular = -  np.abs(np.random.normal(0, 1, (num_items, num_modular_item_features)))
-    item_quadratic = .1 * np.abs(np.random.normal(0, 1, (num_items, num_items, num_quadratic_item_features)))
+    agent_modular = -2*  np.abs(np.random.normal(2, 1, (num_agents, num_items, num_modular_agent_features)))
+    # # agent_quadratic = .5 * np.exp(-np.abs(np.random.normal(0, 1, (num_agents, num_items, num_items, num_quadratic_agent_features))))
+    # for i in range(num_agents):
+    #     for k in range(num_quadratic_agent_features):
+    #         np.fill_diagonal(agent_quadratic[i, :, :, k], 0)
+    #         # Multiply by binary matrix with density .1
+    #         agent_quadratic[i, :, :, k] *= (np.random.rand(num_items, num_items) < 1)
+
+    item_modular = - 2* np.abs(np.random.normal(2, 1, (num_items, num_modular_item_features)))
+    item_quadratic = 1* np.exp(-np.abs(np.random.normal(0, 1, (num_items, num_items, num_quadratic_item_features))))
     for k in range(num_quadratic_item_features):
         np.fill_diagonal(item_quadratic[:, :, k], 0)
         # Multiply by binary matrix with density .1
@@ -48,9 +49,9 @@ def test_row_generation_quadsupermodular():
         },
         "agent_data": {
             "modular": agent_modular,
-            "quadratic": agent_quadratic
+            # "quadratic": agent_quadratic
         },
-        "errors":  np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
+        "errors": 5 *  np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
     }
     quad_demo = BundleChoice()
     quad_demo.load_config(cfg)
@@ -69,24 +70,17 @@ def test_row_generation_quadsupermodular():
 
     num_simuls = 1
     cfg["dimensions"]["num_simuls"] = num_simuls
-    input_data["errors"] =  np.random.normal(0, 1, (num_simuls, num_agents, num_items))
+    input_data["errors"] = 5 *  np.random.normal(0, 1, (num_simuls, num_agents, num_items))
+    # Add rowgen config for the row generation solver
+    rowgen_cfg = {
+        "max_iters": 100,
+        "tol_certificate": 0.001,
+        "min_iters": 1
+    }
+    cfg["rowgen"] = rowgen_cfg
     quad_demo.load_config(cfg)
     quad_demo.load_data(input_data, scatter=True)
-    solver = RowGenerationSolver(quad_demo)
-    lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
+    lambda_k_iter, p_j_iter = quad_demo.compute_estimator_row_gen()
     if quad_demo.rank == 0:
         print(lambda_k_iter)
         print(p_j_iter) 
-
-
-
-
-    # estimation = BundleChoice()
-    # estimation.load_config(cfg)
-    # estimation.load_data(input_data, scatter=True)
-    # estimation.build_feature_oracle_from_data()
-    # solver = RowGenerationSolver(estimation)
-    # lambda_k_iter, p_j_iter = solver.compute_estimator_row_gen()
-    # if estimation.rank == 0:
-    #     print(lambda_k_iter)
-    #     print(p_j_iter) 

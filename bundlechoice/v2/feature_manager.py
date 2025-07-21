@@ -1,6 +1,9 @@
 import numpy as np
 from typing import Any, Callable, Optional
 from bundlechoice.v2.utils import get_logger
+from bundlechoice.v2.config import DimensionsConfig
+from bundlechoice.v2.data_manager import DataManager
+from mpi4py import MPI
 logger = get_logger(__name__)
 
 class FeatureManager:
@@ -10,7 +13,7 @@ class FeatureManager:
     Dynamically references num_agents and num_simuls from the provided config.
     """
 
-    def __init__(self, data_manager, dimensions_cfg, get_features=None, comm=None):
+    def __init__(self, dimensions_cfg: DimensionsConfig, comm: MPI.Comm, data_manager: DataManager):
         """
         Initialize the FeatureManager.
 
@@ -20,10 +23,10 @@ class FeatureManager:
             get_features: Optional user-supplied function (i_id, B_j, data) -> np.ndarray.
             comm: Optional MPI communicator.
         """
-        self.data_manager = data_manager
         self.dimensions_cfg = dimensions_cfg
-        self.user_get_features = get_features
         self.comm = comm
+        self.data_manager = data_manager
+        self.features_oracle = None
         self.rank = comm.Get_rank() if comm is not None else 0
 
     # --- Properties ---
@@ -70,17 +73,17 @@ class FeatureManager:
         Returns:
             np.ndarray: Feature vector for the agent/bundle
         Raises:
-            RuntimeError: If get_features function is not set or data is missing required keys.
+            RuntimeError: If features_oracle function is not set or data is missing required keys.
         """
-        if self.user_get_features is None:
-            raise RuntimeError("get_features function is not set.")
+        if self.features_oracle is None:
+            raise RuntimeError("features_oracle function is not set.")
         if data_override is not None:
             data = data_override
         else:
             data = self.input_data
         if data is None or (data.get('agent_data') is None and data.get('item_data') is None):
             raise RuntimeError("DataManager/input_data has neither agent_data nor item_data. If running under MPI, call scatter_data() before using features. If running locally, check input_data.")
-        return self.user_get_features(i_id, B_j, data)
+        return self.features_oracle(i_id, B_j, data)
 
     def get_all_agent_features(self, B_i_j: Any) -> Optional[np.ndarray]:
         """
@@ -167,7 +170,7 @@ class FeatureManager:
         Sets self.user_get_features to the new function.
 
         Returns:
-            The new get_features function
+            The new features_oracle function
         """
         input_data = self.input_data
         agent_data = input_data["agent_data"]
@@ -191,9 +194,9 @@ class FeatureManager:
 
         namespace = {}
         exec(code_str, {"np": np}, namespace)
-        get_features = namespace["get_features"]
-        self.user_get_features = get_features
-        return get_features 
+        features_oracle = namespace["get_features"]
+        self.features_oracle = features_oracle
+        return features_oracle 
 
     def compute_features_obs_bundle(self):
         if self.rank == 0:
