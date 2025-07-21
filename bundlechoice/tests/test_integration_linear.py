@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from bundlechoice.v2.core import BundleChoice
+from bundlechoice.core import BundleChoice
 
 def test_generate_data_linear():
     # Simulate config and data

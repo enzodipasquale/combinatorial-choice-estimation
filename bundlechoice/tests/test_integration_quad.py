@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
-from bundlechoice.v2.config import DimensionsConfig
-from bundlechoice.v2.core import BundleChoice
+from bundlechoice.config import DimensionsConfig
+from bundlechoice.core import BundleChoice
 from typing import Optional, Callable, cast
-from bundlechoice.v2.feature_manager import FeatureManager
+from bundlechoice.feature_manager import FeatureManager
 
 
 

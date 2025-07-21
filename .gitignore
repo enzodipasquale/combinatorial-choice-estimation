@@ -36,4 +36,5 @@ singularity.txt
 SFM.ipynb
 test.ipynb
 *.png
+_tests/
 

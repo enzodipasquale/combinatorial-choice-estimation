@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import time
-from bundlechoice.v2.core import BundleChoice
+from bundlechoice.core import BundleChoice
 
 def generate_test_data(num_agents, num_items, agent_modular_dim, item_modular_dim, num_simuls):
     """Generate test data for agents and items."""

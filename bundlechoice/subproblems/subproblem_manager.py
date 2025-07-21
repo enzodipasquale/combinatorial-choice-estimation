@@ -2,9 +2,9 @@ from typing import Protocol, Any, cast, Optional, List, Union
 from .subproblem_registry import SUBPROBLEM_REGISTRY
 from .base import BatchSubproblemBase
 import numpy as np
-from bundlechoice.v2.config import DimensionsConfig, SubproblemConfig
-from bundlechoice.v2.data_manager import DataManager
-from bundlechoice.v2.feature_manager import FeatureManager
+from bundlechoice.config import DimensionsConfig, SubproblemConfig
+from bundlechoice.data_manager import DataManager
+from bundlechoice.feature_manager import FeatureManager
 from mpi4py import MPI
 
 class BatchSubproblemProtocol(Protocol):

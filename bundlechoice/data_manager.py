@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Dict, Any, List
-from bundlechoice.v2.utils import get_logger
-from bundlechoice.v2.config import DimensionsConfig
+from bundlechoice.utils import get_logger
+from bundlechoice.config import DimensionsConfig
 from mpi4py import MPI
 logger = get_logger(__name__)
 
