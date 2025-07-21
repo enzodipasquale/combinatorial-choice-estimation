@@ -37,5 +37,6 @@ SFM.ipynb
 test.ipynb
 *.png
 _tests/
+bundlechoice/_core.py
 
 bundlechoice/_legacy/

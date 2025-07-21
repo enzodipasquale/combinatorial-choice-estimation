@@ -44,7 +44,7 @@ def test_data_manager_scatter_mpi():
         dimensions_cfg=DummyConfig(),
         comm=comm
     )
-    dm.load_input_data(input_data)
+    dm.load(input_data)
     dm.scatter_data()
     # All ranks should have these attributes set
     assert dm.local_data is not None

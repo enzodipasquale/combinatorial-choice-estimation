@@ -12,7 +12,7 @@ def test_row_generation_linear_knapsack():
     num_modular_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
-    np.random.seed(123)
+    # np.random.seed(123)
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -38,10 +38,10 @@ def test_row_generation_linear_knapsack():
     }
     knapsack_demo = BundleChoice()
     knapsack_demo.load_config(cfg)
-    knapsack_demo.load_data(input_data, scatter=True)
-    knapsack_demo.build_feature_oracle_from_data()
+    knapsack_demo.data.load_and_scatter(input_data)
+    knapsack_demo.features.build_from_data()
     lambda_k = np.ones(num_features)
-    obs_bundle = knapsack_demo.init_and_solve_subproblems(lambda_k)
+    obs_bundle = knapsack_demo.subproblems.init_and_solve(lambda_k)
     input_data["obs_bundle"] = obs_bundle
     input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
     if knapsack_demo.rank == 0 and input_data["obs_bundle"] is not None:
@@ -54,9 +54,9 @@ def test_row_generation_linear_knapsack():
     }
     cfg["rowgen"] = rowgen_cfg
     knapsack_demo.load_config(cfg)
-    knapsack_demo.load_data(input_data, scatter=True)
+    knapsack_demo.data.load_and_scatter(input_data)
 
-    lambda_k_iter, p_j_iter = knapsack_demo.compute_estimator_row_gen()
+    lambda_k_iter, p_j_iter = knapsack_demo.row_generation.solve()
     if knapsack_demo.rank == 0:
         print(lambda_k_iter)
         print(p_j_iter)

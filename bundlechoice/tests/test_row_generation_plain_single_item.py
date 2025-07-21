@@ -15,7 +15,7 @@ def test_row_generation_plain_single_item():
     num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
-    np.random.seed(1234)
+    # np.random.seed(1234)
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -35,10 +35,10 @@ def test_row_generation_plain_single_item():
     }
     demo = BundleChoice()
     demo.load_config(cfg)
-    demo.load_data(input_data, scatter=True)
-    demo.build_feature_oracle_from_data()
+    demo.data.load_and_scatter(input_data)
+    demo.features.build_from_data()
     lambda_k = np.ones(num_features)
-    obs_bundle = demo.init_and_solve_subproblems(lambda_k)
+    obs_bundle = demo.subproblems.init_and_solve(lambda_k)
     # Check that obs_bundle is not None
     if demo.rank == 0:
         assert obs_bundle is not None, "obs_bundle is None!"
@@ -72,9 +72,9 @@ def test_row_generation_plain_single_item():
     }
     cfg["rowgen"] = rowgen_cfg
     demo.load_config(cfg)
-    demo.load_data(input_data, scatter=True)
+    demo.data.load_and_scatter(input_data)
     tic = time.time()
-    lambda_k_iter, p_j_iter = demo.compute_estimator_row_gen()
+    lambda_k_iter, p_j_iter = demo.row_generation.solve()
     toc = time.time()
     if demo.rank == 0:
         print("lambda_k_iter (row generation result):\n", lambda_k_iter)
