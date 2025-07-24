@@ -70,7 +70,6 @@ class RowGenerationSolver(HasDimensions, HasData):
         if self.rank == 0:
             with suppress_output():
                 self.master_model = gp.Model()
-                self.master_model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
                 Method = self.rowgen_cfg.master_settings.get("Method", 0)
                 self.master_model.setParam('Method', Method)
                 # self.master_model.setParam('Threads', self.master_threads)
@@ -83,9 +82,10 @@ class RowGenerationSolver(HasDimensions, HasData):
             obs_bundle = self.input_data["obs_bundle"]
             x_hat_i_k = self.feature_manager.get_all_agent_features(obs_bundle)
             x_hat_k = x_hat_i_k.sum(0)
+            print("x_hat_k", x_hat_k)
 
-            lambda_k = self.master_model.addMVar(self.num_features, obj=self.num_simuls * x_hat_k, ub=1e4, name='parameter')
-            u_si = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=-1, name='utility')
+            lambda_k = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * x_hat_k, ub=1e4, name='parameter')
+            u_si = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
 
             # Add item fixed effects if enabled
             if self.rowgen_cfg.item_fixed_effects:
@@ -96,12 +96,12 @@ class RowGenerationSolver(HasDimensions, HasData):
             self.master_model.update()
 
             # Revert to original, robust constraint addition
-            self.master_model.addConstrs((
-                u_si[si] >=
-                self.error_si_j[si] @ obs_bundle[si % self.num_agents] +
-                x_hat_i_k[si % self.num_agents, :] @ lambda_k
-                for si in range(self.num_simuls * self.num_agents)
-            ))
+            # self.master_model.addConstrs((
+            #     u_si[si] >=
+            #     self.error_si_j[si] @ obs_bundle[si % self.num_agents] +
+            #     x_hat_i_k[si % self.num_agents, :] @ lambda_k
+            #     for si in range(self.num_simuls * self.num_agents)
+            # ))
             self.master_model.optimize()
             logger.info("Master Initialized. Parameter: %s", lambda_k.X)
 
@@ -157,30 +157,43 @@ class RowGenerationSolver(HasDimensions, HasData):
         """
         if self.rank == 0:
             tic = datetime.now()
-            B_star_si_j = np.concatenate(pricing_results).astype(bool)
+            B_sim = np.concatenate(pricing_results).astype(bool)
             lambda_k, u_si, p_j = self.master_variables
-            eps_si_star = np.where(B_star_si_j, self.error_si_j, 0).sum(1)
-            x_star_si_k = self.feature_manager.get_all_simulated_agent_features(B_star_si_j)
-            u_si_star = x_star_si_k @ lambda_k.X + eps_si_star
+            error_sim = np.where(B_sim, self.error_si_j, 0).sum(1)
+            x_sim = self.feature_manager.get_all_simulated_agent_features(B_sim)
+            u_sim = x_sim @ lambda_k.X + error_sim
 
             if p_j is not None:
-                u_si_star -= B_star_si_j @ p_j.X
-            u_si_master = u_si.X
-            max_reduced_cost = np.max(u_si_star - u_si_master)
+                u_sim -= B_sim @ p_j.X
+            u_master = u_si.X
+            max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
             if max_reduced_cost < self.rowgen_cfg.tol_certificate:
+                print(np.max(u_sim - u_si.X))
+                print(np.max(u_si.X - u_sim))
+                print(f"{(u_si.X - u_sim > 1e-6).sum()} out of {self.num_simuls * self.num_agents}")
+
+                for si in range(self.num_simuls * self.num_agents):
+                    if u_si.X[si] - u_sim[si] > 1e-6:
+                        print("Agent", si % self.num_agents)
+                        print(f"obs_bundle[si % self.num_agents]: {self.input_data['obs_bundle'][si % self.num_agents].sum()}")
+                        print(f"u_sim: {u_sim[si]}, u_si.X: {u_si.X[si]}")
+                print("ObjVal", self.master_model.ObjVal)
+                
                 return True, lambda_k.X, p_j.X if p_j is not None else None
-            rows_id = np.where(u_si_star > u_si_master * (1 + self.rowgen_cfg.tol_row_generation))[0]
+            
+            rows_id = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation))[0]
             logger.info("New constraints: %d", len(rows_id))
 
             # self.master_model.addConstrs((
-            #     u_si[si]  >= eps_si_star[si] + x_star_si_k[si] @ lambda_k
+            #     u_si[si]  >= error_sim[si] + x_sim[si] @ lambda_k
             #     for si in rows_id
             # ))
-            self.master_model.addConstr(u_si[rows_id]  >= eps_si_star[rows_id] + x_star_si_k[rows_id] @ lambda_k)
+            self.master_model.addConstr(u_si[rows_id]  >= error_sim[rows_id] + x_sim[rows_id] @ lambda_k)
 
             slack_counter, num_constrs_removed = self._update_slack_counter(self.master_model, slack_counter)
             self.master_model.optimize()
+           
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
             return False, lambda_k.X, p_j.X if p_j is not None else None
         else:
@@ -221,6 +234,26 @@ class RowGenerationSolver(HasDimensions, HasData):
             if stop and iteration >= self.rowgen_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
                 logger.info("Row generation completed after %d iterations in %.2f seconds.", iteration + 1, elapsed)
+                if self.rank == 0:
+                    logger.info(f"ObjVal from gurobi: {self.master_model.ObjVal}")
                 break
                 
         return lambda_k_iter, p_j_iter 
+
+    def ObjVal(self, lambda_k):
+        B_local_obs = self.local_data.get("obs_bundles")
+        features_obs = self.feature_manager.get_all_simulated_agent_features_MPI(B_local_obs)
+    
+        B_local_sim = self.subproblem_manager.solve_local(lambda_k)
+        features_sim = self.feature_manager.get_all_simulated_agent_features_MPI(B_local_sim)
+        B_sim = self.comm.gather(B_local_sim, root=0)
+        if self.rank == 0:
+            B_sim = np.concatenate(B_sim)
+            errors = self.data_manager.input_data.get("errors").reshape(-1, self.num_items)
+            errors_sim = (errors * B_sim).sum(1)
+            return  (features_sim @ lambda_k+ errors_sim).sum() - (features_obs @ lambda_k).sum()
+        else:
+            return None
+      
+
+

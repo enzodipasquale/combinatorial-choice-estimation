@@ -59,14 +59,11 @@ class QuadSupermodularSubproblem(BatchSubproblemBase):
         self.lambda_quad_item_slice = slice(offset, offset + self.num_quad_item); offset += self.num_quad_item
 
         # Precompute zeros matrix template and diagonal indices using self.num_items
-        self.P_i_j_j_template = np.zeros((self.num_local_agents, self.num_items, self.num_items))
         self.diag_indices = np.diag_indices(self.num_items)  # For advanced diagonal indexing
-
-        self.optimal_bundles = np.zeros((self.num_local_agents, self.num_items), dtype=bool)
 
     def solve(self, lambda_k: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
         P_i_j_j = self.build_quadratic_matrix(lambda_k)
-        optimal_bundles =  self.optimal_bundles.copy()
+        optimal_bundles =  np.zeros((self.num_local_agents, self.num_items), dtype=bool)
         for i in range(self.num_local_agents):
             solver = QuadSubmodularMinimization(-P_i_j_j[i], self.constraint_mask[i])
             optimal_bundle = solver.solve_QSM()
@@ -74,7 +71,7 @@ class QuadSupermodularSubproblem(BatchSubproblemBase):
         return optimal_bundles
 
     def build_quadratic_matrix(self, lambda_k: np.ndarray) -> np.ndarray:
-        P_i_j_j = self.P_i_j_j_template.copy()
+        P_i_j_j = np.zeros((self.num_local_agents, self.num_items, self.num_items))
 
         # Add quadratic agent/item terms if present
         if self.quadratic_agent is not None:
@@ -84,11 +81,9 @@ class QuadSupermodularSubproblem(BatchSubproblemBase):
         # Symmetrize each agent's matrix (i.e., ensure P_i_j_j is symmetric in last two dims)
         P_i_j_j = P_i_j_j + np.transpose(P_i_j_j, (0, 2, 1))
         assert np.all(P_i_j_j >= 0)
-        # Correct diagonal check for each agent
         diags = np.diagonal(P_i_j_j, axis1=1, axis2=2)
-        if not np.all(diags == 0):
-            raise ValueError("Nonzero diagonal detected in quadratic matrix after symmetrization.")
-
+        assert np.all(diags == 0)
+            
         # Add modular agent/item terms to diagonal
         if self.modular_agent is not None:
             P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += (self.modular_agent @ lambda_k[self.lambda_mod_agent_slice])
