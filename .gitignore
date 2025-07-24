@@ -28,16 +28,11 @@ __pycache__/
 .vscode/
 
 # Other
-deprecated/
-firms_export/datasets/
-firms_export/clean_data/
+applications/firms_export/clean_data/
 experiments_paper/
 singularity.txt
 SFM.ipynb
 test.ipynb
 *.png
 _tests/
-bundlechoice/_core.py
-
 bundlechoice/_legacy/
-firms_export/clean_data/datasets/MEX.dta
