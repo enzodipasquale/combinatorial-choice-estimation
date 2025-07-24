@@ -1,4 +1,4 @@
-from .config import DimensionsConfig, RowGenConfig, SubproblemConfig, load_config
+from .config import DimensionsConfig, RowGenConfig, SubproblemConfig, BundleChoiceConfig
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems import SUBPROBLEM_REGISTRY
@@ -25,8 +25,10 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         bc.build_feature_oracle_from_data()
         results = bc.init_and_solve_subproblems(lambda_k)
     """
+    config: Optional[BundleChoiceConfig]
     dimensions_cfg: Optional[DimensionsConfig]
     subproblem_cfg: Optional[SubproblemConfig]
+    rowgen_cfg: Optional[RowGenConfig]
     data_manager: Optional[DataManager]
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
@@ -40,8 +42,10 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         All configuration, data, and features must be loaded explicitly via the
         provided methods. MPI communicator is automatically initialized.
         """
+        self.config = None
         self.dimensions_cfg = None
         self.subproblem_cfg = None
+        self.rowgen_cfg = None
         self.comm = MPI.COMM_WORLD
         self.data_manager = None
         self.feature_manager = None
@@ -115,7 +119,19 @@ class BundleChoice(HasDimensions, HasComm, HasData):
             RuntimeError: If required managers are not set.
         """
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None:
-            raise RuntimeError("DataManager, FeatureManager, and SubproblemManager must be set before initializing row generation manager.")
+            # raise error with missing managers
+            missing_managers = []
+            if self.data_manager is None:
+                missing_managers.append("DataManager")
+            if self.feature_manager is None:
+                missing_managers.append("FeatureManager")
+            if self.subproblem_manager is None:
+                missing_managers.append("SubproblemManager")
+            raise RuntimeError(
+                "DataManager, FeatureManager, and SubproblemManager must be set "
+                "before initializing row generation manager. Missing managers: "
+                f"{', '.join(missing_managers)}"
+            )
             return None
 
         self.row_generation_manager = RowGenerationSolver(
@@ -128,7 +144,7 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         )
         return self.row_generation_manager
 
-    # Properties
+    # --- Properties ---
     @property
     def data(self):
         if self.data_manager is None:
@@ -153,17 +169,27 @@ class BundleChoice(HasDimensions, HasComm, HasData):
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
-    def load_config(self, cfg: dict):
+    def load_config(self, cfg):
         """
-        Load configuration dictionaries for dimensions, row generation, and subproblem.
-
+        Load configuration from a dictionary or YAML file.
         Args:
-            cfg (dict): Dictionary with keys 'dimensions', 'rowgen', and 'subproblem'.
-                - 'dimensions': Specifies num_agents, num_items, num_features, num_simuls
-                - 'subproblem': Specifies subproblem type and solver settings
-                - 'rowgen': (Optional) Row generation settings
+            cfg (dict or str): Dictionary or YAML path with keys 'dimensions', 'rowgen', and 'subproblem'.
         Returns:
             BundleChoice: self for method chaining.
         """
-        load_config(self, cfg)
+        if isinstance(cfg, str):
+            self.config = BundleChoiceConfig.from_yaml(cfg)
+        elif isinstance(cfg, dict):
+            self.config = BundleChoiceConfig.from_dict(cfg)
+        else:
+            raise ValueError("cfg must be a dictionary or a YAML path.")
+        self.dimensions_cfg = self.config.dimensions
+        self.rowgen_cfg = self.config.rowgen
+        self.subproblem_cfg = self.config.subproblem
+
+        self.data_manager = None
+        self.feature_manager = None
+        self.subproblem_manager = None
+        self.row_generation_manager = None
+
         return self

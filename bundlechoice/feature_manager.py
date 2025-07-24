@@ -14,7 +14,11 @@ class FeatureManager(HasDimensions, HasComm, HasData):
     Dynamically references num_agents and num_simuls from the provided config.
     """
 
-    def __init__(self, dimensions_cfg: DimensionsConfig, comm: MPI.Comm, data_manager: DataManager):
+    def __init__(   self, 
+                    dimensions_cfg: DimensionsConfig, 
+                    comm: MPI.Comm, 
+                    data_manager: DataManager
+                    ):
         """
         Initialize the FeatureManager.
 
@@ -148,31 +152,38 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Returns:
             Callable: The new features_oracle function.
         """
+        self.data_manager.validate_standard_inputdata()
         if self.rank == 0:
             input_data = self.input_data
             agent_data = input_data.get("agent_data")
             item_data = input_data.get("item_data")
+            has_modular_agent = "modular" in agent_data
+            has_quadratic_agent = "quadratic" in agent_data
+            has_modular_item = "modular" in item_data
+            has_quadratic_item = "quadratic" in item_data
         else:
-            agent_data = None
-            item_data = None
-        agent_data = self.comm.bcast(agent_data, root=0)
-        item_data = self.comm.bcast(item_data, root=0)
+            has_modular_agent = None
+            has_quadratic_agent = None
+            has_modular_item = None
+            has_quadratic_item = None
+        has_modular_agent = self.comm.bcast(has_modular_agent, root=0)
+        has_quadratic_agent = self.comm.bcast(has_quadratic_agent, root=0)
+        has_modular_item = self.comm.bcast(has_modular_item, root=0)
+        has_quadratic_item = self.comm.bcast(has_quadratic_item, root=0)
 
         code_lines = ["def get_features(i_id, B_j, data):", "    feats = []"]
-        if agent_data is not None:
-            if "modular" in agent_data:
-                code_lines.append("    modular = data['agent_data']['modular'][i_id]")
-                code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
-            if "quadratic" in agent_data:
-                code_lines.append("    quadratic = data['agent_data']['quadratic'][i_id]")
-                code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
-        if item_data is not None:   
-            if "modular" in item_data:
-                code_lines.append("    modular = data['item_data']['modular']")
-                code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
-            if "quadratic" in item_data:
-                code_lines.append("    quadratic = data['item_data']['quadratic']")
-                code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+        if has_modular_agent:
+            code_lines.append("    modular = data['agent_data']['modular'][i_id]")
+            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+        if has_quadratic_agent:
+            code_lines.append("    quadratic = data['agent_data']['quadratic'][i_id]")
+            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+        if has_modular_item:
+            code_lines.append("    modular = data['item_data']['modular']")
+            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+        if has_quadratic_item:
+            code_lines.append("    quadratic = data['item_data']['quadratic']")
+            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
         code_lines.append("    return np.concatenate(feats)")
         code_str = "\n".join(code_lines)
 
@@ -181,15 +192,5 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         features_oracle = namespace["get_features"]
         self.features_oracle = features_oracle
         return features_oracle 
+            
 
-    def compute_features_obs_bundle(self):
-        """
-        Compute features for the observed bundle for all agents (on rank 0).
-
-        Returns:
-            np.ndarray or None: Features for all agents (on rank 0), None on other ranks.
-        """
-        if self.rank == 0:
-            return self.get_all_agent_features(self.input_data["obs_bundle"])
-        else:
-            return None

@@ -11,14 +11,7 @@ class DimensionsConfig:
     num_agents: Optional[int] = None
     num_items: Optional[int] = None
     num_features: Optional[int] = None
-    num_simuls: Optional[int] = None
-    
-    def __post_init__(self):
-        """
-        Set default values after initialization.
-        """
-        if self.num_simuls is None:
-            self.num_simuls = 1
+    num_simuls: int = 1
 
 @dataclass
 class SubproblemConfig:
@@ -35,47 +28,55 @@ class RowGenConfig:
     """
     item_fixed_effects: bool = False
     tol_certificate: float = 0.01
-    max_slack_counter: int = None  # Will be set to float('inf') if None
+    max_slack_counter: float = float('inf')
     tol_row_generation: float = 0.0
     row_generation_decay: float = 0.0
-    max_iters: int = None  # Will be set to float('inf') if None
-    min_iters: int = 0  
+    max_iters: float = float('inf')
+    min_iters: int = 0
     master_settings: dict = field(default_factory=dict)
     master_ubs: dict = None
     master_lbs: list = None
 
-    def __post_init__(self):
-        if self.max_slack_counter is None:
-            self.max_slack_counter = float('inf')
-        if self.max_iters is None:
-            self.max_iters = float('inf')
-        if self.min_iters is None:
-            self.min_iters = 0
-        if self.tol_certificate is None:
-            self.tol_certificate = 1e-6
-        if self.tol_row_generation is None:
-            self.tol_row_generation = 0.0
-        if self.row_generation_decay is None:
-            self.row_generation_decay = 0.0
-        if self.master_settings is None:
-            self.master_settings = {}
+@dataclass
+class BundleChoiceConfig:
+    """
+    Unified configuration for BundleChoice, containing all sub-configs.
+    """
+    dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
+    subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
+    rowgen: RowGenConfig = field(default_factory=RowGenConfig)
 
-def load_config(bundle_choice, cfg: dict):
-    """
-    Loads configuration from a YAML file or dictionary.
-    """
-    # Accept YAML path or dict
-    if isinstance(cfg, str):
-        with open(cfg, "r") as f:
+    @classmethod
+    def from_dict(cls, cfg: dict):
+        return cls(
+            dimensions=DimensionsConfig(**cfg.get("dimensions", {})),
+            subproblem=SubproblemConfig(**cfg.get("subproblem", {})),
+            rowgen=RowGenConfig(**cfg.get("rowgen", {})),
+        )
+
+    @classmethod
+    def from_yaml(cls, path: str):
+        with open(path, "r") as f:
             cfg = yaml.safe_load(f)
-    dimensions_cfg = DimensionsConfig(**cfg.get("dimensions", {}))
-    rowgen_cfg = RowGenConfig(**cfg.get("rowgen", {}))
-    subproblem_cfg = SubproblemConfig(**cfg.get("subproblem", {}))
+        return cls.from_dict(cfg) 
 
-    bundle_choice.dimensions_cfg = dimensions_cfg
-    bundle_choice.rowgen_cfg = rowgen_cfg
-    bundle_choice.subproblem_cfg = subproblem_cfg
+    @classmethod
+    def load(cls, cfg):
+        """
+        Load configuration from a YAML file path or a dictionary.
 
-    return bundle_choice 
+        Args:
+            cfg (str or dict): Path to YAML file or configuration dictionary.
+
+        Returns:
+            BundleChoiceConfig: Loaded configuration object.
+        """
+        from pathlib import Path
+        if isinstance(cfg, (str, Path)):
+             cls.from_yaml(str(cfg))
+        elif isinstance(cfg, dict):
+            return cls.from_dict(cfg)
+        else:
+            raise ValueError("cfg must be a string, Path, or a dictionary.") 
 
 
