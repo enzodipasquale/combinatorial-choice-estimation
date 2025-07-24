@@ -29,8 +29,8 @@ __pycache__/
 
 # Other
 deprecated/
-applications/firms_export/datasets/
-applications/firms_export/clean_data/
+firms_export/datasets/
+firms_export/clean_data/
 experiments_paper/
 singularity.txt
 SFM.ipynb
@@ -40,3 +40,4 @@ _tests/
 bundlechoice/_core.py
 
 bundlechoice/_legacy/
+firms_export/clean_data/datasets/MEX.dta
