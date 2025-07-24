@@ -10,7 +10,7 @@ from bundlechoice.feature_manager import FeatureManager
 def test_quad_vs_bruteforce():
     """Test that quadratic solver finds the same optimal bundles as brute force."""
     # Simulate config and data with non-negative quadratic terms
-    num_agents, num_items, num_simuls = 3, 4, 1  # Small problem for brute force efficiency
+    num_agents, num_items, num_simuls = 100, 13, 1  # Small problem for brute force efficiency
     agent_modular_dim = 1
     agent_quadratic_dim = 1
     item_modular_dim = 1
@@ -58,8 +58,8 @@ def test_quad_vs_bruteforce():
     
     bc = BundleChoice()
     bc.load_config(cfg)
-    bc.load_data(input_data, scatter=True)
-    bc.build_feature_oracle_from_data()
+    bc.data.load_and_scatter(input_data)
+    bc.features.build_from_data()
 
     # Test with different lambda_k values (all non-negative for quadratic terms)
     test_lambdas = [
@@ -73,11 +73,11 @@ def test_quad_vs_bruteforce():
             print(f"\nTesting lambda_k {i+1}: {lambda_k}")
         
         # Get quadratic solver results
-        quad_results = bc.init_and_solve_subproblems(lambda_k)
+        quad_results = bc.subproblems.init_and_solve(lambda_k)
         
         # Get brute force results
         assert bc.subproblem_manager is not None, "Subproblem manager should be initialized"
-        bruteforce_results = bc.subproblem_manager.find_max_bundle_bruteforce(lambda_k)
+        bruteforce_results = bc.subproblem_manager.brute_force(lambda_k)
         
         if bc.rank == 0:
             assert quad_results is not None, "Quadratic results should not be None at rank 0"

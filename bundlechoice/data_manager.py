@@ -71,7 +71,7 @@ class DataManager(HasDimensions, HasComm):
         return self.local_data
 
     # --- Data scattering ---
-   
+
     def scatter(self) -> None:
         """
         Distribute input data across MPI ranks.
@@ -86,8 +86,10 @@ class DataManager(HasDimensions, HasComm):
         if self.rank == 0:
             agent_data = self.input_data.get("agent_data")
             errors = self._prepare_errors(self.input_data.get("errors"))
-            agent_data_chunks = self._create_simulated_agent_chunks(agent_data, errors)
+            obs_bundles = self.input_data.get("obs_bundle")
+            agent_data_chunks = self._create_simulated_agent_chunks(agent_data, errors, obs_bundles)
             item_data = self.input_data.get("item_data")
+            
         else:
             agent_data_chunks = None
             item_data = None
@@ -108,7 +110,8 @@ class DataManager(HasDimensions, HasComm):
             raise ValueError(f"errors has shape {errors.shape}, while num_simuls is {self.num_simuls} and num_agents is {self.num_agents}")
 
     def _create_simulated_agent_chunks(self, agent_data: Optional[Dict], 
-                                     errors: Optional[np.ndarray]) -> Optional[List[Dict]]:
+                                     errors: Optional[np.ndarray],
+                                     obs_bundles: Optional[np.ndarray]) -> Optional[List[Dict]]:
         """
         Create chunks for simulated agent data distribution.
 
@@ -124,6 +127,7 @@ class DataManager(HasDimensions, HasComm):
                 "num_local_agents": len(idx),
                 "agent_data": {k: v[idx % self.num_agents] for k, v in agent_data.items()} if agent_data else None,
                 "errors": errors[idx, :],
+                "obs_bundles": obs_bundles[idx % self.num_agents, :] if obs_bundles is not None else None,
                 }
                 for idx in idx_chunks
                 ]
@@ -142,6 +146,7 @@ class DataManager(HasDimensions, HasComm):
                 "item_data": item_data,
                 "agent_data": local_chunk.get("agent_data"),
                 "errors": local_chunk.get("errors"),
+                "obs_bundles": local_chunk.get("obs_bundles"),
                 }
 
     def _validate_input_data(self, input_data: Dict[str, Any]) -> None:
@@ -154,7 +159,7 @@ class DataManager(HasDimensions, HasComm):
         Raises:
             ValueError: If input_data structure or dimensions don't match expectations.
         """ 
-        if input_data is not None:
+        if self.rank == 0:
             agent_data = input_data.get("agent_data")
             if agent_data is not None:
                 for key, value in agent_data.items():
@@ -193,6 +198,57 @@ class DataManager(HasDimensions, HasComm):
                 expected_shape = (self.num_agents, self.num_items)
                 if obs_bundle.shape != expected_shape:
                     raise ValueError(f"obs_bundle has shape {obs_bundle.shape}, expected {expected_shape}")
+
+    def validate_standard_inputdata(self):
+        """
+        Validates that the shapes of modular and quadratic data match the expected dimensions.
+        Checks:
+        - modular item data shape matches (num_items, num_modular_item_features)
+        - modular agent data shape matches (num_agents, num_items, num_modular_agent_features)
+        - num_features equals the sum of all feature dimensions
+        Raises ValueError if any check fails.
+        """
+        input_data = self.input_data
+        if self.rank == 0:
+            dimensions_cfg = self.dimensions_cfg
+            agent_data = input_data.get("agent_data", {})
+            item_data = input_data.get("item_data", {})
+            num_agents = dimensions_cfg.num_agents
+            num_items = dimensions_cfg.num_items
+            num_features = dimensions_cfg.num_features
+            # Modular agent features
+            modular_agent = agent_data.get("modular")
+            num_modular_agent_features = 0
+            if modular_agent is not None:
+                if modular_agent.shape[0] != num_agents or modular_agent.shape[1] != num_items:
+                    raise ValueError(f"modular agent data shape {modular_agent.shape} does not match (num_agents, num_items, ...)")
+                num_modular_agent_features = modular_agent.shape[2] if modular_agent.ndim == 3 else 0
+            # Modular item features
+            modular_item = item_data.get("modular")
+            num_modular_item_features = 0
+            if modular_item is not None:
+                if modular_item.shape[0] != num_items:
+                    raise ValueError(f"modular item data shape {modular_item.shape} does not match (num_items, ...)")
+                num_modular_item_features = modular_item.shape[1] if modular_item.ndim == 2 else 0
+            # Quadratic item features
+            quadratic_item = item_data.get("quadratic")
+            num_quadratic_item_features = 0
+            if quadratic_item is not None:
+                if quadratic_item.shape[0] != num_items or quadratic_item.shape[1] != num_items:
+                    raise ValueError(f"quadratic item data shape {quadratic_item.shape} does not match (num_items, num_items, ...)")
+                num_quadratic_item_features = quadratic_item.shape[2] if quadratic_item.ndim == 3 else 0
+            # Quadratic agent features
+            quadratic_agent = agent_data.get("quadratic")
+            num_quadratic_agent_features = 0
+            if quadratic_agent is not None:
+                if quadratic_agent.shape[0] != num_agents or quadratic_agent.shape[1] != num_items or quadratic_agent.shape[2] != num_items:
+                    raise ValueError(f"quadratic agent data shape {quadratic_agent.shape} does not match (num_agents, num_items, num_items, ...)")
+                num_quadratic_agent_features = quadratic_agent.shape[3] if quadratic_agent.ndim == 4 else 0
+            # Check num_features
+            total_features = num_modular_agent_features + num_modular_item_features + num_quadratic_agent_features + num_quadratic_item_features
+            if num_features != total_features:
+                raise ValueError(f"num_features ({num_features}) does not match the sum of all feature dimensions ({total_features})")
+            return True
 
 
 
