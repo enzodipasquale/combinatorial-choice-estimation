@@ -6,7 +6,7 @@ Handles common initialization and matrix building logic shared by different solv
 """
 import numpy as np
 from typing import Any, Optional
-from ..base import BatchSubproblemBase
+from ...base import BatchSubproblemBase
 
 def assert_zero_diagonal(arr: np.ndarray, axis1: int, axis2: int, context: str = ""):
     """Utility to assert that the diagonal along given axes is zero for all slices."""

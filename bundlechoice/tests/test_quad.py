@@ -90,5 +90,5 @@ def test_quad_vs_bruteforce():
 
         else:
             assert quad_results is None, "Quadratic results should be None at non-root ranks"
-            assert bruteforce_results is None, "Brute force results should be None at non-root ranks"
+            assert bruteforce_results == (None, None), "Brute force results should be (None, None) at non-root ranks"
 
