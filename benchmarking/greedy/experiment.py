@@ -120,8 +120,8 @@ greedy_experiment.subproblems.load()
 tic = datetime.now()
 lambda_k_iter = greedy_experiment.row_generation.solve()
 elapsed = (datetime.now() - tic).total_seconds()
-obj_at_estimate = greedy_experiment.row_generation.ObjVal(lambda_k_iter)
-obj_at_star = greedy_experiment.row_generation.ObjVal(beta_star)
+obj_at_estimate = greedy_experiment.row_generation.objective(lambda_k_iter)
+obj_at_star = greedy_experiment.row_generation.objective(beta_star)
 # Save estimation results as CSV
 if rank == 0:
     print(f"estimation results:{lambda_k_iter}")

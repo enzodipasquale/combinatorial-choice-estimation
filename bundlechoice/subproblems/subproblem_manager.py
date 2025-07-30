@@ -31,7 +31,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
-        self.subproblem_solver: Optional[SubproblemType] = None
+        self.demand_oracle: Optional[SubproblemType] = None
 
     def load(self, subproblem: Optional[Union[str, Any]] = None) -> SubproblemType:
         """
@@ -60,8 +60,8 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             subproblem_cfg=self.subproblem_cfg,
             dimensions_cfg=self.dimensions_cfg
         )
-        self.subproblem_solver = cast(SubproblemType, subproblem_instance)
-        return self.subproblem_solver
+        self.demand_oracle = cast(SubproblemType, subproblem_instance)
+        return self.demand_oracle
 
     def initialize_local(self) -> Any:
         """
@@ -72,16 +72,15 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If subproblem is not initialized or missing methods.
         """
-        if self.subproblem_solver is None:
+        if self.demand_oracle is None:
             raise RuntimeError("Subproblem is not initialized.")
-        if isinstance(self.subproblem_solver, BatchSubproblemBase):
+        if isinstance(self.demand_oracle, BatchSubproblemBase):
             # Batch: initialize expects no arguments
-            self.subproblem_solver.initialize()
+            self.demand_oracle.initialize()
             return None
-        elif isinstance(self.subproblem_solver, SerialSubproblemBase):
+        elif isinstance(self.demand_oracle, SerialSubproblemBase):
             # Serial: initialize expects local_id
-            self.local_subproblems = [self.subproblem_solver.initialize(local_id)   
-                                        for local_id in range(self.num_local_agents)]
+            self.local_subproblems = [self.demand_oracle.initialize(id) for id in range(self.num_local_agents)]
 
 
     def solve_local(self, lambda_k: Any) -> Any:
@@ -95,17 +94,17 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If subproblem or local subproblems are not initialized.
         """
-        if self.subproblem_solver is None:
+        if self.demand_oracle is None:
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
    
-        if isinstance(self.subproblem_solver, BatchSubproblemBase):
-            return self.subproblem_solver.solve(lambda_k)
-        elif isinstance(self.subproblem_solver, SerialSubproblemBase):
+        if isinstance(self.demand_oracle, BatchSubproblemBase):
+            return self.demand_oracle.solve(lambda_k)
+        elif isinstance(self.demand_oracle, SerialSubproblemBase):
             if self.local_subproblems is None:
                 raise RuntimeError("local_subproblems is not initialized for serial subproblem.")
-            return self.subproblem_solver.solve_all(lambda_k, self.local_subproblems)
+            return self.demand_oracle.solve_all(lambda_k, self.local_subproblems)
 
     def init_and_solve(self, lambda_k: Any, return_values: bool = False) -> Optional[Any]:
         """

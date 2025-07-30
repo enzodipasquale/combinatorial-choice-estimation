@@ -46,7 +46,7 @@ def test_row_generation_linear_knapsack():
             },
             "agent_data": {
                 "modular": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))),
-                "capacity": np.random.randint(1, 100, size=num_agents) 
+                "capacity": np.random.randint(1, 100, size=num_agents)
             },
             "errors": np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
         }
@@ -71,6 +71,7 @@ def test_row_generation_linear_knapsack():
     knapsack_demo.load_config(cfg)
     knapsack_demo.data.load_and_scatter(input_data)
     knapsack_demo.features.build_from_data()
+    knapsack_demo.subproblems.load()
 
     lambda_k_iter = knapsack_demo.row_generation.solve()
     

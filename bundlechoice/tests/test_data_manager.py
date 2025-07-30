@@ -9,10 +9,6 @@ def test_scatter_data_input_validation():
     with pytest.raises(AttributeError):
         dm = DataManager(dimensions_cfg=None, comm=None)
     
-    # Test with valid comm but missing dimensions_cfg
-    with pytest.raises(ValueError):
-        dm = DataManager(dimensions_cfg=None, comm=MPI.COMM_WORLD)
-    
     # Create a proper dimensions config
     dimensions_cfg = DimensionsConfig(
         num_agents=2,

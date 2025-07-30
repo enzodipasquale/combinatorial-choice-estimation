@@ -101,8 +101,8 @@ quadsupermod_experiment.subproblems.load()
 tic = datetime.now()
 theta_hat = quadsupermod_experiment.row_generation.solve()
 elapsed = (datetime.now() - tic).total_seconds()
-obj_at_estimate = quadsupermod_experiment.row_generation.ObjVal(theta_hat)
-obj_at_star = quadsupermod_experiment.row_generation.ObjVal(theta_0)  
+obj_at_estimate = quadsupermod_experiment.row_generation.objective(theta_hat)
+obj_at_star = quadsupermod_experiment.row_generation.objective(theta_0)  
 
 # Save estimation results as CSV
 if rank == 0:

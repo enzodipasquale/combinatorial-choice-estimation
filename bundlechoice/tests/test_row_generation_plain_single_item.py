@@ -87,6 +87,7 @@ def test_row_generation_plain_single_item():
     demo.load_config(cfg)
     demo.data.load_and_scatter(input_data)
     demo.features.build_from_data()
+    demo.subproblems.load()
     
     tic = time.time()
     lambda_k_iter = demo.row_generation.solve()

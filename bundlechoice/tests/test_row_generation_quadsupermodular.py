@@ -84,6 +84,7 @@ def test_row_generation_quadsupermodular():
     quad_demo.load_config(cfg)
     quad_demo.data.load_and_scatter(input_data)
     quad_demo.features.build_from_data()
+    quad_demo.subproblems.load()
     
     lambda_k_iter = quad_demo.row_generation.solve()
     
