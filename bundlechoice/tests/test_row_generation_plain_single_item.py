@@ -15,7 +15,7 @@ def test_row_generation_plain_single_item():
     num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
-    # np.random.seed(1234)
+    
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -26,21 +26,40 @@ def test_row_generation_plain_single_item():
         "subproblem": {
             "name": "PlainSingleItem",
             "settings": {}
+        },
+        "rowgen": {
+            "max_iters": 100,
+            "tol_certificate": .0001,
+            "min_iters": 1,
+            "master_settings": {
+                "OutputFlag": 0
+            }
         }
     }
-    input_data = {
-        "item_data": {"modular": np.random.normal(0, 1, (num_items, num_modular_item_features))},
-        "agent_data": {"modular": np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))},
-        "errors": np.random.normal(0, 0.1, (num_simuls, num_agents, num_items)),
-    }
+    
+    # Generate data on rank 0
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    
+    if rank == 0:
+        input_data = {
+            "item_data": {"modular": np.random.normal(0, 1, (num_items, num_modular_item_features))},
+            "agent_data": {"modular": np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))},
+            "errors": np.random.normal(0, 0.1, (num_simuls, num_agents, num_items)),
+        }
+    else:
+        input_data = None
+        
     demo = BundleChoice()
     demo.load_config(cfg)
     demo.data.load_and_scatter(input_data)
     demo.features.build_from_data()
+    
     lambda_k = np.ones(num_features)
     obs_bundle = demo.subproblems.init_and_solve(lambda_k)
+    
     # Check that obs_bundle is not None
-    if demo.rank == 0:
+    if rank == 0:
         assert obs_bundle is not None, "obs_bundle is None!"
         assert input_data["errors"] is not None, "input_data['errors'] is None!"
         assert obs_bundle.shape == (num_agents, num_items)
@@ -60,26 +79,23 @@ def test_row_generation_plain_single_item():
             else:
                 assert np.all(total_util[i, :] <= 0), f"Agent {i} made no selection, but has positive utility: {total_util[i, :]}"
         print("lambda_k:\n", lambda_k)
+        input_data["obs_bundle"] = obs_bundle
+        input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
+    else:
+        input_data = None
 
-    num_simuls = 1
-    cfg["dimensions"]["num_simuls"] = num_simuls
-    input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
-    input_data["obs_bundle"] = obs_bundle
-    # Add rowgen config for the row generation solver
-    rowgen_cfg = {
-        "max_iters": 100,
-        "tol_certificate": .0001,
-    }
-    cfg["rowgen"] = rowgen_cfg
     demo.load_config(cfg)
     demo.data.load_and_scatter(input_data)
+    demo.features.build_from_data()
+    
     tic = time.time()
-    lambda_k_iter, p_j_iter = demo.row_generation.solve()
+    lambda_k_iter = demo.row_generation.solve()
     toc = time.time()
-    if demo.rank == 0:
+    
+    if rank == 0:
         print("lambda_k_iter (row generation result):\n", lambda_k_iter)
         print(f"Time taken: {toc - tic} seconds")
-        # print("p_j_iter (row generation result):\n", p_j_iter)
-        assert lambda_k_iter.shape == (num_features,) 
+        assert lambda_k_iter.shape == (num_features,)
+        assert not np.any(np.isnan(lambda_k_iter)) 
     
     

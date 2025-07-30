@@ -11,10 +11,11 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
-num_agents = 500
+num_agents = 200
 num_items = 100
-num_features = 3
+num_features = 5
 num_simuls = 1
+sigma = 1
 
 # Define configuration as a dictionary
 cfg = {
@@ -32,7 +33,7 @@ cfg = {
         "tol_certificate": 0.001,
         "min_iters": 1,
         "master_settings": {
-            "OutputFlag": 1
+            "OutputFlag": 0
         }
     }
 }
@@ -44,8 +45,9 @@ greedy_experiment.load_config(cfg)
 # Generate data on rank 0
 if rank == 0:
     # modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
-    modular = np.random.normal(0, 1, (num_agents, num_items, num_features-1))
-    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items)) 
+    modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
+    errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
+    estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
     agent_data = {"modular": modular}
     data = {"agent_data": agent_data, 
             "errors": errors}
@@ -73,8 +75,8 @@ def features_oracle(i_id, B_j, data):
     if B_j.ndim == 1:
         B_j = B_j[:, None]
         single_bundle = True
-
-    agent_sum = modular_agent.T @ B_j
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        agent_sum = modular_agent.T @ B_j
     # item_sum = modular_item.T @ B_j
     neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
 
@@ -97,11 +99,7 @@ def features_oracle(i_id, B_j, data):
 #     return features
 
 greedy_experiment.features.load(features_oracle)
-
-
-# Simulate beta_star and generate obs_bundles
 beta_star = np.ones(num_features)
-# beta_star[-1] = 0
 obs_bundles = greedy_experiment.subproblems.init_and_solve(beta_star)
 
 # Estimate parameters using row generation
@@ -109,7 +107,7 @@ if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
     print(f"aggregate: {obs_bundles.sum()}")
     data["obs_bundle"] = obs_bundles
-    data["errors"] = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    data["errors"] = estimation_errors
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)
     pd.DataFrame(agent_data["modular"].reshape(-1, num_features-1)).to_csv(os.path.join(SAVE_PATH, "modular.csv"), index=False, header=False)
 else:
@@ -120,7 +118,7 @@ greedy_experiment.data.load_and_scatter(data)
 greedy_experiment.features.load(features_oracle)
 greedy_experiment.subproblems.load()
 tic = datetime.now()
-lambda_k_iter, p_j_iter = greedy_experiment.row_generation.solve()
+lambda_k_iter = greedy_experiment.row_generation.solve()
 elapsed = (datetime.now() - tic).total_seconds()
 obj_at_estimate = greedy_experiment.row_generation.ObjVal(lambda_k_iter)
 obj_at_star = greedy_experiment.row_generation.ObjVal(beta_star)
