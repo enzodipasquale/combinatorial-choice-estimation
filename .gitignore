@@ -28,7 +28,7 @@ __pycache__/
 .vscode/
 
 # Other
-applications/firms_export/clean_data/
+applications/
 experiments_paper/
 singularity.txt
 SFM.ipynb

@@ -55,8 +55,8 @@ class RowGenerationSolver(HasDimensions, HasData):
         self.master_variables = None
         self.parameter_iter = None
 
-
-        self.errors = self.input_data["errors"].reshape(self.num_simuls * self.num_agents, self.num_items) if self.input_data is not None else None
+        self.errors = self.input_data["errors"].reshape(-1, self.num_items) if self.input_data is not None else None
+        self.obs_features = self.get_obs_features()
 
     def _setup_gurobi_model_params(self):
         """
@@ -83,13 +83,12 @@ class RowGenerationSolver(HasDimensions, HasData):
         Returns:
             tuple: (master_model, master_variables, parameter_iter)
         """
+
         if self.rank == 0:
-            self.master_model = self._setup_gurobi_model_params()
-            # Get observed bundle features
-            obs_bundle = self.input_data["obs_bundle"]
-            agents_obs_features = self.feature_manager.get_all_agent_features(obs_bundle)
-            obs_features = agents_obs_features.sum(0)
-            theta = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * obs_features, ub=1e4, name='parameter')
+            self.master_model = self._setup_gurobi_model_params()          
+            # agents_obs_features = self.feature_manager.get_agents_0(self.input_data["obs_bundle"])
+            # obs_features = agents_obs_features.sum(0)
+            theta = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * self.obs_features, ub=1e4, name='parameter')
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # self.master_model.addConstrs((
@@ -107,7 +106,7 @@ class RowGenerationSolver(HasDimensions, HasData):
         
 
 
-    def _master_iteration(self, pricing_results):
+    def _master_iteration(self, local_pricing_results):
         """
         Perform one iteration of the master problem in the row generation algorithm.
 
@@ -117,13 +116,15 @@ class RowGenerationSolver(HasDimensions, HasData):
         Returns:
             bool: Whether the stopping criterion is met.
         """
+        x_sim = self.feature_manager.get_all_distributed(local_pricing_results)
+        pricing_results = self.comm.gather(local_pricing_results, root=0)
         stop = False
         if self.rank == 0:
             tic = datetime.now()
             B_sim = np.concatenate(pricing_results).astype(bool)
             theta, u = self.master_variables
             error_sim = np.where(B_sim, self.errors, 0).sum(1)
-            x_sim = self.feature_manager.get_all_simulated_agent_features(B_sim)
+            x_sim = self.feature_manager.get_all_0(B_sim)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + error_sim
             u_master = u.X
@@ -172,8 +173,7 @@ class RowGenerationSolver(HasDimensions, HasData):
         for iteration in range(int(self.rowgen_cfg.max_iters)):
             logger.info(f"ITERATION {iteration + 1}")
             local_pricing_results = self.subproblem_manager.solve_local(self.parameter_iter)
-            pricing_results = self.comm.gather(local_pricing_results, root=0)
-            stop = self._master_iteration(pricing_results) 
+            stop = self._master_iteration(local_pricing_results) 
             if stop and iteration >= self.rowgen_cfg.min_iters:
                 if self.rank == 0:
                     elapsed = (datetime.now() - tic).total_seconds()
@@ -184,19 +184,35 @@ class RowGenerationSolver(HasDimensions, HasData):
 
 
     # Helper functions
-    def ObjVal(self, theta):
-        B_local_obs = self.local_data.get("obs_bundles")
-        features_obs = self.feature_manager.get_all_simulated_agent_features_MPI(B_local_obs)
-    
+    def get_obs_features(self):
+        local_bundles = self.local_data.get("obs_bundles")
+        agents_obs_features = self.feature_manager.get_all_distributed(local_bundles)
+        if self.rank == 0:
+            obs_features = agents_obs_features.sum(0) / self.num_simuls
+            return obs_features
+        else:
+            return None
+
+    def objective(self, theta):
         B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.get_all_simulated_agent_features_MPI(B_local_sim)
+        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
         B_sim = self.comm.gather(B_local_sim, root=0)
         if self.rank == 0:
             B_sim = np.concatenate(B_sim)
-            errors = self.data_manager.input_data.get("errors").reshape(-1, self.num_items)
-            errors_sim = (errors * B_sim).sum(1)
+            errors_sim = (self.errors * B_sim).sum(1)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                return  (features_sim @ theta+ errors_sim).sum() - (features_obs @ theta).sum()
+                return  (features_sim @ theta + errors_sim).sum() - (self.obs_features @ theta).sum()
+        else:
+            return None
+    
+    def obj_gradient(self, theta):
+        B_local_sim = self.subproblem_manager.solve_local(theta)
+        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
+        B_sim = self.comm.gather(B_local_sim, root=0)
+        if self.rank == 0:
+            B_sim = np.concatenate(B_sim)
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                return  features_sim.sum(0) - self.obs_features 
         else:
             return None
 
