@@ -157,10 +157,18 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             input_data = self.input_data
             agent_data = input_data.get("agent_data")
             item_data = input_data.get("item_data")
-            has_modular_agent = "modular" in agent_data
-            has_quadratic_agent = "quadratic" in agent_data
-            has_modular_item = "modular" in item_data
-            has_quadratic_item = "quadratic" in item_data
+            if agent_data is not None:
+                has_modular_agent = "modular" in agent_data
+                has_quadratic_agent = "quadratic" in agent_data
+            else:
+                has_modular_agent = None
+                has_quadratic_agent = None
+            if item_data is not None:
+                has_modular_item = "modular" in item_data
+                has_quadratic_item = "quadratic" in item_data
+            else:
+                has_modular_item = None
+                has_quadratic_item = None
         else:
             has_modular_agent = None
             has_quadratic_agent = None

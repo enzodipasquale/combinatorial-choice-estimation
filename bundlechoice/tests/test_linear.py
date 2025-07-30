@@ -45,12 +45,12 @@ def test_generate_data_linear():
 
     bc = BundleChoice()
     bc.load_config(cfg)
-    bc.load_data(input_data, scatter=True)
-    bc.build_feature_oracle_from_data()
+    bc.data.load_and_scatter(input_data)
+    bc.features.build_from_data()
 
     # Solve pricing
     lambda_k = np.ones(num_features)
-    results = bc.init_and_solve_subproblems(lambda_k)
+    results = bc.subproblems.init_and_solve(lambda_k)
 
     if bc.rank == 0:
         assert isinstance(results, np.ndarray)

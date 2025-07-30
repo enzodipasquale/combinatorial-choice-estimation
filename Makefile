@@ -13,15 +13,26 @@ knap_test:
 	mpirun -n 2 pytest -s --log-cli-level=INFO bundlechoice/tests/test_row_generation_linear_knapsack.py | cat 
 
 greedy:
-	mpirun -n 8 python experiments/greedy/experiment.py
+	mpirun -n 8 python benchmarking/greedy/experiment.py
 
 supermod:
-	mpirun -n 8 python experiments/quadsupermod/experiment.py
+	mpirun -n 9 python benchmarking/quadsupermod/experiment.py
 
 
 greedy_benchmark:
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
-		mpirun -n 8 python experiments/greedy/experiment.py || exit 1; \
+		mpirun -n 10 python benchmarking/greedy/experiment.py || exit 1; \
 		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/greedy.wl || exit 1; \
 	done
+
+supermod_benchmark:
+	@for i in $(shell seq 1 100); do \
+		echo "—— Run $$i ——"; \
+		mpirun -n 10 python benchmarking/quadsupermod/experiment.py || exit 1; \
+		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/supermod/supermod.wl || exit 1; \
+	done
+
+all_benchmarks: greedy_benchmark supermod_benchmark
+
+
