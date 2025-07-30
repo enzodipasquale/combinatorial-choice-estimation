@@ -66,8 +66,8 @@ def test_greedy_vs_bruteforce():
 
     bc = BundleChoice()
     bc.load_config(cfg)
-    bc.load_data(input_data, scatter=True)
-    bc.load_features(get_features)
+    bc.data.load_and_scatter(input_data)
+    bc.features.load(get_features)
 
     test_lambdas = [
         np.ones(dimensions_cfg["num_features"]),
@@ -82,7 +82,7 @@ def test_greedy_vs_bruteforce():
         if bc.rank == 0:
             print(f"\nTesting lambda_k {idx+1}: {lambda_k}")
         t0 = time.time()
-        greedy_bundles = bc.init_and_solve_subproblems(lambda_k)
+        greedy_bundles = bc.subproblems.init_and_solve(lambda_k)
         t1 = time.time()
         assert bc.subproblem_manager is not None, "Subproblem manager should be initialized"
         result = bc.subproblem_manager.find_max_bundle_bruteforce(lambda_k)

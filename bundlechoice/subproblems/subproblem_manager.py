@@ -107,7 +107,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
                 raise RuntimeError("local_subproblems is not initialized for serial subproblem.")
             return self.subproblem_solver.solve_all(lambda_k, self.local_subproblems)
 
-    def init_and_solve(self, lambda_k: Any) -> Optional[Any]:
+    def init_and_solve(self, lambda_k: Any, return_values: bool = False) -> Optional[Any]:
         """
         Initialize and solve local subproblems, then gather results at rank 0.
 
@@ -123,10 +123,86 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.initialize_local()
         local_results = self.solve_local(lambda_k)
         gathered = self.comm.gather(local_results, root=0)
+        if return_values:
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                features = self.feature_manager.get_local_agents_features(local_results)
+                errors = (self.data_manager.local_data["errors"]* local_results).sum(1)
+                utilities = features @ lambda_k + errors
+                utilities = self.comm.gather(utilities, root=0)
+            if self.rank == 0:
+                return np.concatenate(gathered), np.concatenate(utilities)
+            else:
+                return None, None
         if self.rank == 0:
             return np.concatenate(gathered)
         else:
             return None
+
+    def validate_and_scatter_lambda_k(self, lambda_k: Any) -> Any:
+        """
+        Validate that lambda_k is not None on any rank and scatter from rank 0 if needed.
+        
+        Args:
+            lambda_k (Any): Parameter vector to validate and potentially scatter.
+        Returns:
+            Any: The validated lambda_k vector (scattered from rank 0 if needed).
+        Raises:
+            RuntimeError: If lambda_k is None on rank 0 when other ranks need it.
+        """
+        # Check if any rank has None lambda_k
+        has_none = lambda_k is None
+        any_has_none = self.comm.allreduce(has_none, op=MPI.LOR)
+        
+        if any_has_none:
+            if self.rank == 0:
+                if lambda_k is None:
+                    raise RuntimeError("lambda_k is None on rank 0 but other ranks need it")
+                # Broadcast lambda_k from rank 0 to all ranks
+                lambda_k = self.comm.bcast(lambda_k, root=0)
+        return lambda_k
+
+    def brute_force_at_0(self, lambda_k: Any) -> Optional[Any]:
+        """
+        Find the maximum bundle value for each agent using brute force, only at rank 0.
+        Uses global input data without MPI parallelism.
+
+        Args:
+            lambda_k (Any): Parameter vector for computing bundle values.
+        Returns:
+            tuple or None: At rank 0, tuple (max_values, best_bundles). At other ranks, None.
+        Raises:
+            RuntimeError: If num_items is not set or data_manager is not available.
+        """
+        if self.rank != 0:
+            return None, None
+        from itertools import product
+        num_agents = self.num_agents
+        num_items = self.num_items
+        if num_items is None:
+            raise RuntimeError("num_items is not set in dimensions_cfg.")
+        if self.data_manager is None or self.data_manager.input_data is None:
+            raise RuntimeError("data_manager or input_data is not available.")
+            
+        input_data = self.data_manager.input_data
+        max_values = np.zeros(num_agents)
+        best_bundles = np.zeros((num_agents, num_items), dtype=bool)
+        all_bundles = list(product([0, 1], repeat=num_items))
+        
+        for agent_id in range(num_agents):
+            max_value = float('-inf')
+            best_bundle = None
+            for bundle_tuple in all_bundles:
+                bundle = np.array(bundle_tuple, dtype=bool)
+                features = self.feature_manager.get_features(agent_id, bundle, input_data)
+                error = input_data["errors"][agent_id] @ bundle
+                bundle_value = features @ lambda_k + error
+                if bundle_value > max_value:
+                    max_value = bundle_value
+                    best_bundle = bundle.copy()
+            max_values[agent_id] = max_value
+            best_bundles[agent_id] = best_bundle
+            
+        return best_bundles, max_values
 
     def brute_force(self, lambda_k: Any) -> Optional[Any]:
         """
@@ -141,6 +217,9 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If num_items is not set.
         """
+        # Validate and scatter lambda_k if needed
+        lambda_k = self.validate_and_scatter_lambda_k(lambda_k)
+        
         from itertools import product
         num_local_agents = self.num_local_agents
         num_items = self.num_items
@@ -167,7 +246,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if self.rank == 0:
             all_max_values = np.concatenate(gathered_max_values)
             all_best_bundles = np.concatenate(gathered_best_bundles)
-            return all_max_values, all_best_bundles
+            return all_best_bundles, all_max_values
         else:
             return None, None
 
