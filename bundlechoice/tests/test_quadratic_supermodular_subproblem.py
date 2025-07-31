@@ -61,23 +61,23 @@ def test_quad_vs_bruteforce():
     bc.data.load_and_scatter(input_data)
     bc.features.build_from_data()
 
-    # Test with different lambda_k values (all non-negative for quadratic terms)
+    # Test with different theta values (all non-negative for quadratic terms)
     test_lambdas = [
         np.ones(num_features),  # All ones
         np.abs(np.random.normal(0, 1, num_features)),  # Random non-negative (absolute values)
         np.array([1] * (num_features - 1) + [0.1]),  # All ones except last is 0.1
     ]
 
-    for i, lambda_k in enumerate(test_lambdas):
+    for i, theta in enumerate(test_lambdas):
         if bc.rank == 0:        
-            print(f"\nTesting lambda_k {i+1}: {lambda_k}")
+            print(f"\nTesting theta {i+1}: {theta}")
         
         # Get quadratic solver results
-        quad_results = bc.subproblems.init_and_solve(lambda_k)
+        quad_results = bc.subproblems.init_and_solve(theta)
         
         # Get brute force results
         assert bc.subproblem_manager is not None, "Subproblem manager should be initialized"
-        bruteforce_results = bc.subproblem_manager.brute_force(lambda_k)
+        bruteforce_results = bc.subproblem_manager.brute_force(theta)
         
         if bc.rank == 0:
             assert quad_results is not None, "Quadratic results should not be None at rank 0"

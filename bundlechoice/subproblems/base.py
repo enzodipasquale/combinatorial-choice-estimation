@@ -23,7 +23,7 @@ class BatchSubproblemBase(BaseSubproblem, ABC):
         pass
 
     @abstractmethod
-    def solve(self, lambda_k: Any) -> Any:
+    def solve(self, theta: Any) -> Any:
         pass
 
 class SerialSubproblemBase(BaseSubproblem, ABC):
@@ -35,9 +35,9 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         pass
 
     @abstractmethod
-    def solve(self, id: int, lambda_k: Any, pb: Any = None) -> Any:
+    def solve(self, id: int, theta: Any, pb: Any = None) -> Any:
         pass
     
-    def solve_all(self, lambda_k: Any, problems: list[Any]) -> Any:
-        return [self.solve(id, lambda_k, pb) for id, pb in enumerate(problems)]
+    def solve_all(self, theta: Any, problems: list[Any]) -> Any:
+        return [self.solve(id, theta, pb) for id, pb in enumerate(problems)]
         

@@ -3,7 +3,7 @@ import pytest
 import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
 
 
@@ -55,8 +55,8 @@ def test_row_generation_plain_single_item():
     demo.data.load_and_scatter(input_data)
     demo.features.build_from_data()
     
-    lambda_k = np.ones(num_features)
-    obs_bundle = demo.subproblems.init_and_solve(lambda_k)
+    theta = np.ones(num_features)
+    obs_bundle = demo.subproblems.init_and_solve(theta)
     
     # Check that obs_bundle is not None
     if rank == 0:
@@ -69,8 +69,8 @@ def test_row_generation_plain_single_item():
         modular_agent = input_data["agent_data"]["modular"]
         modular_item = input_data["item_data"]["modular"]
         errors = input_data["errors"][0]
-        agent_util = np.einsum('aij,j->ai', modular_agent, lambda_k[:num_modular_agent_features])
-        item_util = np.dot(modular_item, lambda_k[num_modular_agent_features:])
+        agent_util = np.einsum('aij,j->ai', modular_agent, theta[:num_modular_agent_features])
+        item_util = np.dot(modular_item, theta[num_modular_agent_features:])
         total_util = agent_util + item_util + errors
         j_star = np.argmax(total_util, axis=1)
         for i in range(num_agents):
@@ -78,7 +78,7 @@ def test_row_generation_plain_single_item():
                 assert obs_bundle[i, j_star[i]] == 1, f"Agent {i} did not select the max utility item."
             else:
                 assert np.all(total_util[i, :] <= 0), f"Agent {i} made no selection, but has positive utility: {total_util[i, :]}"
-        print("lambda_k:\n", lambda_k)
+        print("theta:\n", theta)
         input_data["obs_bundle"] = obs_bundle
         input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
     else:
@@ -90,13 +90,13 @@ def test_row_generation_plain_single_item():
     demo.subproblems.load()
     
     tic = time.time()
-    lambda_k_iter = demo.row_generation.solve()
+    theta_hat = demo.row_generation.solve()
     toc = time.time()
     
     if rank == 0:
-        print("lambda_k_iter (row generation result):\n", lambda_k_iter)
+        print("theta_hat (row generation result):\n", theta_hat)
         print(f"Time taken: {toc - tic} seconds")
-        assert lambda_k_iter.shape == (num_features,)
-        assert not np.any(np.isnan(lambda_k_iter)) 
+        assert theta_hat.shape == (num_features,)
+        assert not np.any(np.isnan(theta_hat)) 
     
     

@@ -28,13 +28,13 @@ class GreedySubproblem(SerialSubproblemBase):
         self._check_vectorized_feature_support(local_id)
         return None
     
-    def solve(self, local_id: int, lambda_k: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
+    def solve(self, local_id: int, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
         """
         Solve the greedy subproblem for the given agent and parameters.
         
         Args:
             local_id: Local agent ID
-            lambda_k: Parameter vector
+            theta: Parameter vector
             pb: Problem state from initialize() (ignored for greedy algorithm)
             
         Returns:
@@ -50,7 +50,7 @@ class GreedySubproblem(SerialSubproblemBase):
         
         # Greedy algorithm: iteratively add best item
         while len(items_left) > 0:
-            best_item, best_val = self._find_best_item(local_id, B_j, items_left, lambda_k, error_j)
+            best_item, best_val = self._find_best_item(local_id, B_j, items_left, theta, error_j)
             
             # If no positive marginal value, stop
             if best_val <= 0:
@@ -115,7 +115,7 @@ class GreedySubproblem(SerialSubproblemBase):
         local_id: int, 
         B_j: np.ndarray, 
         items_left: np.ndarray, 
-        lambda_k: np.ndarray, 
+        theta: np.ndarray, 
         error_j: np.ndarray
     ) -> tuple[int, float]:
         """
@@ -125,23 +125,23 @@ class GreedySubproblem(SerialSubproblemBase):
             local_id: Local agent ID
             B_j: Current bundle (boolean array)
             items_left: Array of remaining item indices
-            lambda_k: Parameter vector
+            theta: Parameter vector
             error_j: Error values for current agent
             
         Returns:
             Tuple of (best_item_index, best_marginal_value)
         """
         if self._supports_vectorized_features and len(items_left) > 1:
-            return self._find_best_item_vectorized(local_id, B_j, items_left, lambda_k, error_j)
+            return self._find_best_item_vectorized(local_id, B_j, items_left, theta, error_j)
         else:
-            return self._find_best_item_standard(local_id, B_j, items_left, lambda_k, error_j)
+            return self._find_best_item_standard(local_id, B_j, items_left, theta, error_j)
     
     def _find_best_item_standard(
         self, 
         local_id: int, 
         B_j: np.ndarray, 
         items_left: np.ndarray, 
-        lambda_k: np.ndarray, 
+        theta: np.ndarray, 
         error_j: np.ndarray
     ) -> tuple[int, float]:
         """
@@ -161,7 +161,7 @@ class GreedySubproblem(SerialSubproblemBase):
             # Calculate marginal value
             marginal_j = float(error_j[j])
             if base_x_k is not None and new_x_k is not None:
-                marginal_j += float((new_x_k - base_x_k) @ lambda_k)
+                marginal_j += float((new_x_k - base_x_k) @ theta)
             
             # Remove item j for next iteration
             B_j[j] = False
@@ -177,7 +177,7 @@ class GreedySubproblem(SerialSubproblemBase):
             local_id: int, 
             B_j: np.ndarray, 
             items_left: np.ndarray, 
-            lambda_k: np.ndarray, 
+            theta: np.ndarray, 
             error_j: np.ndarray
         ) -> tuple[int, float]:
         """
@@ -194,7 +194,7 @@ class GreedySubproblem(SerialSubproblemBase):
         
         # Add feature-based marginal values
         feature_diffs = vectorized_features - base_x_k.reshape(-1, 1)
-        marginal_values += (feature_diffs.T @ lambda_k).flatten()
+        marginal_values += (feature_diffs.T @ theta).flatten()
         
         # Find best item
         best_idx = np.argmax(marginal_values)

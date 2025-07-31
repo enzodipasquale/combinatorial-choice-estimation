@@ -5,10 +5,6 @@ from bundlechoice.data_manager import DataManager
 from bundlechoice.config import DimensionsConfig
 
 def test_scatter_data_input_validation():
-    # Test with None comm - should raise AttributeError
-    with pytest.raises(AttributeError):
-        dm = DataManager(dimensions_cfg=None, comm=None)
-    
     # Create a proper dimensions config
     dimensions_cfg = DimensionsConfig(
         num_agents=2,

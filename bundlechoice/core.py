@@ -6,7 +6,7 @@ from .subproblems.subproblem_manager import SubproblemManager, SubproblemProtoco
 from mpi4py import MPI
 from typing import Optional, Callable
 from bundlechoice.utils import get_logger
-from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.base import HasDimensions, HasData, HasComm
 logger = get_logger(__name__)
 
@@ -23,7 +23,7 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         bc.load_config(cfg)
         bc.load_data(data, scatter=True)
         bc.build_feature_oracle_from_data()
-        results = bc.init_and_solve_subproblems(lambda_k)
+        results = bc.init_and_solve_subproblems(theta)
     """
     config: Optional[BundleChoiceConfig]
     dimensions_cfg: Optional[DimensionsConfig]
