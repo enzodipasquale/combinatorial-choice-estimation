@@ -16,7 +16,9 @@ greedy:
 	mpirun -n 8 python benchmarking/greedy/experiment.py
 
 supermod:
-	mpirun -n 9 python benchmarking/quadsupermod/experiment.py
+	mpirun -n 9 python benchmarking/supermod/experiment.py
+knapsack:
+	mpirun -n 9 python benchmarking/knapsack/experiment.py
 
 
 greedy_benchmark:
@@ -29,7 +31,7 @@ greedy_benchmark:
 supermod_benchmark:
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
-		mpirun -n 10 python benchmarking/quadsupermod/experiment.py || exit 1; \
+		mpirun -n 10 python benchmarking/supermod/experiment.py || exit 1; \
 		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/supermod/supermod.wl || exit 1; \
 	done
 

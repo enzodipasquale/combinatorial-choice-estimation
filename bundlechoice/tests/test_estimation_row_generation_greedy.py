@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 
 def features_oracle(i_id, B_j, data):
     """
@@ -91,10 +91,10 @@ def test_row_generation_greedy():
     greedy_demo.features.load(features_oracle)
     greedy_demo.subproblems.load()
     
-    lambda_k_iter = greedy_demo.row_generation.solve()
+    theta_hat = greedy_demo.row_generation.solve()
     
     if rank == 0:
-        print("lambda_k_iter:", lambda_k_iter)
-        assert lambda_k_iter.shape == (num_features,)
-        assert not np.any(np.isnan(lambda_k_iter)) 
+        print("theta_hat:", theta_hat)
+        assert theta_hat.shape == (num_features,)
+        assert not np.any(np.isnan(theta_hat)) 
 
