@@ -25,8 +25,8 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         subproblem.update()
         return subproblem
 
-    def solve(self, local_id, lambda_k, pb: Any):
-        L_j = self._build_L_j(local_id, lambda_k)
+    def solve(self, local_id, theta, pb: Any):
+        L_j = self._build_L_j(local_id, theta)
         # print(L_j)
         B_j = pb.getVars()
         for j in range(len(B_j)):
@@ -36,7 +36,7 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         self._check_mip_gap(pb, local_id)
         return optimal_bundle
 
-    def _build_L_j(self, local_id, lambda_k):
+    def _build_L_j(self, local_id, theta):
         error_j = self.local_data["errors"][local_id]
         # Agent modular
         agent_modular = self.local_data["agent_data"].get("modular", None)
@@ -44,9 +44,9 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         # Item modular
         item_modular_k = self.local_data["item_data"].get("modular", None)
         item_modular_dim = item_modular_k.shape[-1] if item_modular_k is not None else 0
-        # Slicing lambda_k
-        lambda_agent = lambda_k[:agent_modular_dim] if agent_modular_dim > 0 else None
-        lambda_item = lambda_k[agent_modular_dim:agent_modular_dim+item_modular_dim] if item_modular_dim > 0 else None
+        # Slicing theta
+        lambda_agent = theta[:agent_modular_dim] if agent_modular_dim > 0 else None
+        lambda_item = theta[agent_modular_dim:agent_modular_dim+item_modular_dim] if item_modular_dim > 0 else None
         # Build L_j
         L_j = error_j.copy()
         if agent_modular_dim > 0:

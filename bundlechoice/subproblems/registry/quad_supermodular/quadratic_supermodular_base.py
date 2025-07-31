@@ -70,11 +70,11 @@ class QuadraticSupermodular(BatchSubproblemBase):
         # Precompute zeros matrix template and diagonal indices using self.num_items
         self.diag_indices = np.diag_indices(self.num_items)  # For advanced diagonal indexing
 
-    def build_quadratic_matrix(self, lambda_k: np.ndarray) -> np.ndarray:
+    def build_quadratic_matrix(self, theta: np.ndarray) -> np.ndarray:
         """
         Build the quadratic matrix for all agents.
         Args:
-            lambda_k: Parameter vector
+            theta: Parameter vector
         Returns:
             P_i_j_j: Upper Triangular Quadratic matrices for all agents (num_local_agents, num_items, num_items)
         """
@@ -82,18 +82,18 @@ class QuadraticSupermodular(BatchSubproblemBase):
 
         # Add quadratic agent/item terms if present
         if self.quadratic_agent is not None:
-            P_i_j_j += (self.quadratic_agent @ lambda_k[self.lambda_quad_agent_slice])
+            P_i_j_j += (self.quadratic_agent @ theta[self.lambda_quad_agent_slice])
         if self.quadratic_item is not None:
-            P_i_j_j += (self.quadratic_item @ lambda_k[self.lambda_quad_item_slice])
+            P_i_j_j += (self.quadratic_item @ theta[self.lambda_quad_item_slice])
         
         # Symmetrize each agent's matrix (i.e., ensure P_i_j_j is symmetric in last two dims)
         P_i_j_j = P_i_j_j + np.transpose(P_i_j_j, (0, 2, 1))
         
         # Add modular agent/item terms to diagonal
         if self.modular_agent is not None:
-            P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += (self.modular_agent @ lambda_k[self.lambda_mod_agent_slice])
+            P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += (self.modular_agent @ theta[self.lambda_mod_agent_slice])
         if self.modular_item is not None:
-            P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += (self.modular_item @ lambda_k[self.lambda_mod_item_slice])
+            P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += (self.modular_item @ theta[self.lambda_mod_item_slice])
 
         # Add errors to diagonal if present
         if self.errors is not None:

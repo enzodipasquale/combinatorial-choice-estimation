@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_quadsupermodular():
     """Test RowGenerationSolver using obs_bundle generated from quadsupermodular subproblem manager."""
@@ -68,14 +68,12 @@ def test_row_generation_quadsupermodular():
     quad_demo.data.load_and_scatter(input_data)
     quad_demo.features.build_from_data()
     
-    lambda_k = np.ones(num_features)
-    obs_bundle = quad_demo.subproblems.init_and_solve(lambda_k)
+    theta = np.ones(num_features)
+    obs_bundle = quad_demo.subproblems.init_and_solve(theta)
     
     if rank == 0 and obs_bundle is not None:
         total_demand = obs_bundle.sum(1)
-        print("Total demand")
-        print(total_demand.min())
-        print(total_demand.max())
+        print("Demand range:", total_demand.min(), total_demand.max())
         input_data["obs_bundle"] = obs_bundle
         input_data["errors"] = 5 * np.random.normal(0, 1, (num_simuls, num_agents, num_items))
     else:
@@ -86,9 +84,9 @@ def test_row_generation_quadsupermodular():
     quad_demo.features.build_from_data()
     quad_demo.subproblems.load()
     
-    lambda_k_iter = quad_demo.row_generation.solve()
+    theta_hat = quad_demo.row_generation.solve()
     
     if rank == 0:
-        print("lambda_k_iter:", lambda_k_iter)
-        assert lambda_k_iter.shape == (num_features,)
-        assert not np.any(np.isnan(lambda_k_iter)) 
+        print("theta_hat:", theta_hat)
+        assert theta_hat.shape == (num_features,)
+        assert not np.any(np.isnan(theta_hat)) 

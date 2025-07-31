@@ -49,8 +49,8 @@ def test_generate_data_linear():
     bc.features.build_from_data()
 
     # Solve pricing
-    lambda_k = np.ones(num_features)
-    results = bc.subproblems.init_and_solve(lambda_k)
+    theta = np.ones(num_features)
+    results = bc.subproblems.init_and_solve(theta)
 
     if bc.rank == 0:
         assert isinstance(results, np.ndarray)

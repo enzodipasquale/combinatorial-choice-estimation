@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.compute_estimator.row_generation import RowGenerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_linear_knapsack():
     """Test RowGenerationSolver using obs_bundle generated from linear knapsack subproblem manager."""
@@ -58,8 +58,8 @@ def test_row_generation_linear_knapsack():
     knapsack_demo.data.load_and_scatter(input_data)
     knapsack_demo.features.build_from_data()
     
-    lambda_k = np.ones(num_features)
-    obs_bundle = knapsack_demo.subproblems.init_and_solve(lambda_k)
+    theta = np.ones(num_features)
+    obs_bundle = knapsack_demo.subproblems.init_and_solve(theta)
     
     if rank == 0 and obs_bundle is not None:
         print("Total demand:", obs_bundle.sum(1).min(), obs_bundle.sum(1).max())
@@ -73,9 +73,9 @@ def test_row_generation_linear_knapsack():
     knapsack_demo.features.build_from_data()
     knapsack_demo.subproblems.load()
 
-    lambda_k_iter = knapsack_demo.row_generation.solve()
+    theta_hat = knapsack_demo.row_generation.solve()
     
     if rank == 0:
-        print("lambda_k_iter:", lambda_k_iter)
-        assert lambda_k_iter.shape == (num_features,)
-        assert not np.any(np.isnan(lambda_k_iter))
+        print("theta_hat:", theta_hat)
+        assert theta_hat.shape == (num_features,)
+        assert not np.any(np.isnan(theta_hat))

@@ -16,8 +16,8 @@ class QuadraticSOptNetwork(QuadraticSupermodular):
     Subproblem for quadratic supermodular minimization via min-cut reduction.
     Handles modular/quadratic agent/item features, missing data, and batch MPI solving.
     """
-    def solve(self, lambda_k: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
-        P_i_j_j = self.build_quadratic_matrix(lambda_k)
+    def solve(self, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
+        P_i_j_j = self.build_quadratic_matrix(theta)
         optimal_bundles =  np.zeros((self.num_local_agents, self.num_items), dtype=bool)
         for i in range(self.num_local_agents):
             solver = MinCutSubmodularSolver(-P_i_j_j[i], self.constraint_mask[i])

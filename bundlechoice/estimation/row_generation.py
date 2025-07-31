@@ -11,14 +11,14 @@ from ..utils import suppress_output
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
-from bundlechoice.base import HasDimensions, HasData
+from .base import BaseEstimationSolver
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGenerationSolver(HasDimensions, HasData):
+class RowGenerationSolver(BaseEstimationSolver):
     """
     Implements the row generation algorithm for parameter estimation in modular bundle choice models.
 
@@ -43,20 +43,18 @@ class RowGenerationSolver(HasDimensions, HasData):
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
         """
-        self.comm = comm
-        self.rank = comm.Get_rank()
-        self.dimensions_cfg = dimensions_cfg
+        super().__init__(
+            comm=comm,
+            dimensions_cfg=dimensions_cfg,
+            data_manager=data_manager,
+            feature_manager=feature_manager,
+            subproblem_manager=subproblem_manager
+        )
+        
         self.rowgen_cfg = rowgen_cfg
-        self.data_manager = data_manager
-        self.feature_manager = feature_manager
-        self.subproblem_manager = subproblem_manager
-
         self.master_model = None
         self.master_variables = None
         self.parameter_iter = None
-
-        self.errors = self.input_data["errors"].reshape(-1, self.num_items) if self.input_data is not None else None
-        self.obs_features = self.get_obs_features()
 
     def _setup_gurobi_model_params(self):
         """
@@ -183,38 +181,7 @@ class RowGenerationSolver(HasDimensions, HasData):
         return self.parameter_iter
 
 
-    # Helper functions
-    def get_obs_features(self):
-        local_bundles = self.local_data.get("obs_bundles")
-        agents_obs_features = self.feature_manager.get_all_distributed(local_bundles)
-        if self.rank == 0:
-            obs_features = agents_obs_features.sum(0) / self.num_simuls
-            return obs_features
-        else:
-            return None
 
-    def objective(self, theta):
-        B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
-        B_sim = self.comm.gather(B_local_sim, root=0)
-        if self.rank == 0:
-            B_sim = np.concatenate(B_sim)
-            errors_sim = (self.errors * B_sim).sum(1)
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                return  (features_sim @ theta + errors_sim).sum() - (self.obs_features @ theta).sum()
-        else:
-            return None
-    
-    def obj_gradient(self, theta):
-        B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
-        B_sim = self.comm.gather(B_local_sim, root=0)
-        if self.rank == 0:
-            B_sim = np.concatenate(B_sim)
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                return  features_sim.sum(0) - self.obs_features 
-        else:
-            return None
 
     def _update_slack_counter(self, master_model, slack_counter):
         """

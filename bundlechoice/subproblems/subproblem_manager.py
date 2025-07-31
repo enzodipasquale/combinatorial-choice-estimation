@@ -11,12 +11,12 @@ from bundlechoice.base import HasDimensions, HasData, HasComm
 class BatchSubproblemProtocol(Protocol):
     solve_all_local_problems: bool
     def initialize(self) -> Any: ...
-    def solve(self, lambda_k: Any) -> Any: ...
+    def solve(self, theta: Any) -> Any: ...
 
 class SerialSubproblemProtocol(Protocol):
     solve_all_local_problems: bool
     def initialize(self, local_id: int) -> Any: ...
-    def solve(self, local_id: int, lambda_k: Any, pb: Any = None) -> Any: ...
+    def solve(self, local_id: int, theta: Any, pb: Any = None) -> Any: ...
 
 SubproblemType = Union[BatchSubproblemProtocol, SerialSubproblemProtocol]
 
@@ -83,12 +83,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             self.local_subproblems = [self.demand_oracle.initialize(id) for id in range(self.num_local_agents)]
 
 
-    def solve_local(self, lambda_k: Any) -> Any:
+    def solve_local(self, theta: Any) -> Any:
         """
         Solve all local subproblems for the current rank.
 
         Args:
-            lambda_k (Any): Parameter vector for subproblem solving.
+            theta (Any): Parameter vector for subproblem solving.
         Returns:
             list or batch result: List of results (serial) or batch result (batch).
         Raises:
@@ -100,18 +100,18 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
    
         if isinstance(self.demand_oracle, BatchSubproblemBase):
-            return self.demand_oracle.solve(lambda_k)
+            return self.demand_oracle.solve(theta)
         elif isinstance(self.demand_oracle, SerialSubproblemBase):
             if self.local_subproblems is None:
                 raise RuntimeError("local_subproblems is not initialized for serial subproblem.")
-            return self.demand_oracle.solve_all(lambda_k, self.local_subproblems)
+            return self.demand_oracle.solve_all(theta, self.local_subproblems)
 
-    def init_and_solve(self, lambda_k: Any, return_values: bool = False) -> Optional[Any]:
+    def init_and_solve(self, theta: Any, return_values: bool = False) -> Optional[Any]:
         """
         Initialize and solve local subproblems, then gather results at rank 0.
 
         Args:
-            lambda_k (Any): Parameters for subproblem solving.
+            theta (Any): Parameters for subproblem solving.
         Returns:
             np.ndarray or None: Gathered results at rank 0, None at other ranks.
         Raises:
@@ -120,13 +120,13 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if self.comm is None:
             raise RuntimeError("MPI communicator (comm) is not set in SubproblemManager.")
         self.initialize_local()
-        local_results = self.solve_local(lambda_k)
+        local_results = self.solve_local(theta)
         gathered = self.comm.gather(local_results, root=0)
         if return_values:
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 features = self.feature_manager.get_local_agents_features(local_results)
                 errors = (self.data_manager.local_data["errors"]* local_results).sum(1)
-                utilities = features @ lambda_k + errors
+                utilities = features @ theta + errors
                 utilities = self.comm.gather(utilities, root=0)
             if self.rank == 0:
                 return np.concatenate(gathered), np.concatenate(utilities)
@@ -137,36 +137,36 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         else:
             return None
 
-    def validate_and_scatter_lambda_k(self, lambda_k: Any) -> Any:
+    def validate_and_scatter_theta(self, theta: Any) -> Any:
         """
-        Validate that lambda_k is not None on any rank and scatter from rank 0 if needed.
+        Validate that theta is not None on any rank and scatter from rank 0 if needed.
         
         Args:
-            lambda_k (Any): Parameter vector to validate and potentially scatter.
+            theta (Any): Parameter vector to validate and potentially scatter.
         Returns:
-            Any: The validated lambda_k vector (scattered from rank 0 if needed).
+            Any: The validated theta vector (scattered from rank 0 if needed).
         Raises:
-            RuntimeError: If lambda_k is None on rank 0 when other ranks need it.
+            RuntimeError: If theta is None on rank 0 when other ranks need it.
         """
-        # Check if any rank has None lambda_k
-        has_none = lambda_k is None
+        # Check if any rank has None theta
+        has_none = theta is None
         any_has_none = self.comm.allreduce(has_none, op=MPI.LOR)
         
         if any_has_none:
             if self.rank == 0:
-                if lambda_k is None:
-                    raise RuntimeError("lambda_k is None on rank 0 but other ranks need it")
-                # Broadcast lambda_k from rank 0 to all ranks
-                lambda_k = self.comm.bcast(lambda_k, root=0)
-        return lambda_k
+                if theta is None:
+                    raise RuntimeError("theta is None on rank 0 but other ranks need it")
+                # Broadcast theta from rank 0 to all ranks
+                theta = self.comm.bcast(theta, root=0)
+        return theta
 
-    def brute_force_at_0(self, lambda_k: Any) -> Optional[Any]:
+    def brute_force_at_0(self, theta: Any) -> Optional[Any]:
         """
         Find the maximum bundle value for each agent using brute force, only at rank 0.
         Uses global input data without MPI parallelism.
 
         Args:
-            lambda_k (Any): Parameter vector for computing bundle values.
+            theta (Any): Parameter vector for computing bundle values.
         Returns:
             tuple or None: At rank 0, tuple (max_values, best_bundles). At other ranks, None.
         Raises:
@@ -194,7 +194,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
                 bundle = np.array(bundle_tuple, dtype=bool)
                 features = self.feature_manager.get_features(agent_id, bundle, input_data)
                 error = input_data["errors"][agent_id] @ bundle
-                bundle_value = features @ lambda_k + error
+                bundle_value = features @ theta + error
                 if bundle_value > max_value:
                     max_value = bundle_value
                     best_bundle = bundle.copy()
@@ -203,21 +203,21 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             
         return best_bundles, max_values
 
-    def brute_force(self, lambda_k: Any) -> Optional[Any]:
+    def brute_force(self, theta: Any) -> Optional[Any]:
         """
         Find the maximum bundle value for each local agent using brute force.
         Iterates over all possible bundles (2^num_items combinations) for each local agent.
         Gathers results at rank 0.
 
         Args:
-            lambda_k (Any): Parameter vector for computing bundle values.
+            theta (Any): Parameter vector for computing bundle values.
         Returns:
             tuple or None: At rank 0, tuple (max_values, best_bundles). At other ranks, (None, None).
         Raises:
             RuntimeError: If num_items is not set.
         """
-        # Validate and scatter lambda_k if needed
-        lambda_k = self.validate_and_scatter_lambda_k(lambda_k)
+        # Validate and scatter theta if needed
+        theta = self.validate_and_scatter_theta(theta)
         
         from itertools import product
         num_local_agents = self.num_local_agents
@@ -234,7 +234,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
                 bundle = np.array(bundle_tuple, dtype=bool)
                 features = self.feature_manager.get_features(local_id, bundle, self.local_data)
                 error = self.local_data["errors"][local_id] @ bundle
-                bundle_value = features @ lambda_k + error
+                bundle_value = features @ theta + error
                 if bundle_value > max_value:
                     max_value = bundle_value
                     best_bundle = bundle.copy()

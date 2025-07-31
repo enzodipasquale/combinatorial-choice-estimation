@@ -39,7 +39,7 @@ class DataManager(HasDimensions, HasComm):
         self.input_data = None
         self.local_data: Optional[Dict[str, Any]] = None
         self.num_local_agents: Optional[int] = None
-        # self.rank and self.comm_size now provided by HasComm
+        
 
     # --- Data loading ---
     def load(self, input_data: Dict[str, Any]) -> None:
