@@ -58,8 +58,7 @@ class BundleChoice(HasComm, HasConfig):
         COMM_WORLD.
         """
         self.config = None
-        self.comm = MPI.COMM_WORLD
-        self.comm_manager = CommManager(self.comm)
+        self.comm_manager = CommManager(MPI.COMM_WORLD)
         self.data_manager = None
         self.feature_manager = None
         self.subproblem_manager = None
@@ -190,7 +189,6 @@ class BundleChoice(HasComm, HasConfig):
             RuntimeError: If required managers are not set
         """
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
-            # raise error with missing managers
             missing_managers = []
             if self.data_manager is None:
                 missing_managers.append("DataManager")
@@ -226,7 +224,12 @@ class BundleChoice(HasComm, HasConfig):
             DataManager: The data manager instance
         """
         if self.data_manager is None:
+            # if self.comm_manager.is_root():
+            #     print("*"*100)
+            #     print("Initializing data manager")
+            #     print("*"*100)
             self._try_init_data_manager()
+
         return self.data_manager
 
     @property
@@ -238,6 +241,10 @@ class BundleChoice(HasComm, HasConfig):
             FeatureManager: The feature manager instance
         """
         if self.feature_manager is None:
+            # if self.comm_manager.is_root():
+            #     print("*"*100)
+            #     print("Initializing feature manager")
+            #     print("*"*100)
             self._try_init_feature_manager()
         return self.feature_manager
 
@@ -250,6 +257,10 @@ class BundleChoice(HasComm, HasConfig):
             SubproblemManager: The subproblem manager instance
         """
         if self.subproblem_manager is None:
+            # if self.comm_manager.is_root():
+            #     print("*"*100)
+            #     print("Initializing subproblem manager")
+            #     print("*"*100)
             self._try_init_subproblem_manager()
         return self.subproblem_manager
 

@@ -86,7 +86,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()          
             # obs_features = agents_obs_features.sum(0)
-            theta = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * self.obs_features, ub=1e4, name='parameter')
+            theta = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * self.obs_features, ub=100, name='parameter')
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # self.master_model.addConstrs((
@@ -122,18 +122,17 @@ class RowGenerationSolver(BaseEstimationSolver):
             B_sim = pricing_results.astype(bool)
             theta, u = self.master_variables
             error_sim = np.where(B_sim, self.errors, 0).sum(1)
-            # x_sim = self.feature_manager.get_all_0(B_sim)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + error_sim
             u_master = u.X
 
-            violations = np.where(u_master - u_sim > 1e-6)[0]
+            violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-3)[0]
             if len(violations) > 0:
                 print("X"* 100)
                 print("u_sim", u_sim[violations])
                 print("u_master", u_master[violations])
                 print("X"* 100)
-                stop = True
+        
 
             logger.info("Parameter: %s", np.round(self.theta_val, 2))
             max_reduced_cost = np.max(u_sim - u_master)

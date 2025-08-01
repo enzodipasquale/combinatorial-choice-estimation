@@ -56,10 +56,15 @@ def suppress_output():
     with open(os.devnull, 'w') as devnull:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
+        # Also suppress logging output
+        old_logging_level = logging.getLogger().level
         try:
             sys.stdout = devnull
             sys.stderr = devnull
+            # Temporarily set logging to ERROR level to suppress INFO messages
+            logging.getLogger().setLevel(logging.ERROR)
             yield
         finally:
             sys.stdout = old_stdout
-            sys.stderr = old_stderr 
+            sys.stderr = old_stderr
+            logging.getLogger().setLevel(old_logging_level) 
