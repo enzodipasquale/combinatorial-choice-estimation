@@ -71,7 +71,7 @@ def test_ellipsoid_greedy():
     greedy_demo = BundleChoice()
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.load(features_oracle)
+    greedy_demo.features.set_oracle(features_oracle)
 
     # Simulate beta_star and generate obs_bundles
     beta_star = np.ones(num_features)
@@ -88,7 +88,7 @@ def test_ellipsoid_greedy():
 
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.load(features_oracle)
+    greedy_demo.features.set_oracle(features_oracle)
     greedy_demo.subproblems.load()
     
     theta_hat = greedy_demo.ellipsoid.solve()

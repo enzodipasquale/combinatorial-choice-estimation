@@ -129,59 +129,13 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         bundles = self.comm_manager.concatenate_at_root(local_bundles, root=0)
         if return_values:
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                features_local = self.feature_manager.get_local_agents_features(local_bundles)
+                features_local = self.feature_manager.compute_rank_features(local_bundles)
                 errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
                 utilities_local = features_local @ theta + errors_local
                 utilities = self.comm_manager.concatenate_at_root(utilities_local, root=0)
             return bundles, utilities
         else:
             return bundles
-
-
-
-
-    def brute_force_at_0(self, theta: Any) -> Optional[Any]:
-        """
-        Find the maximum bundle value for each agent using brute force, only at rank 0.
-        Uses global input data without MPI parallelism.
-
-        Args:
-            theta (Any): Parameter vector for computing bundle values.
-        Returns:
-            tuple or None: At rank 0, tuple (max_values, best_bundles). At other ranks, None.
-        Raises:
-            RuntimeError: If num_items is not set or data_manager is not available.
-        """
-        if not self.is_root():
-            return None, None
-        from itertools import product
-        num_agents = self.num_agents
-        num_items = self.num_items
-        if num_items is None:
-            raise RuntimeError("num_items is not set in dimensions_cfg.")
-        if self.data_manager is None or self.data_manager.input_data is None:
-            raise RuntimeError("data_manager or input_data is not available.")
-            
-        input_data = self.data_manager.input_data
-        max_values = np.zeros(num_agents)
-        best_bundles = np.zeros((num_agents, num_items), dtype=bool)
-        all_bundles = list(product([0, 1], repeat=num_items))
-        
-        for agent_id in range(num_agents):
-            max_value = float('-inf')
-            best_bundle = None
-            for bundle_tuple in all_bundles:
-                bundle = np.array(bundle_tuple, dtype=bool)
-                features = self.feature_manager.get_features(agent_id, bundle, input_data)
-                error = input_data["errors"][agent_id] @ bundle
-                bundle_value = features @ theta + error
-                if bundle_value > max_value:
-                    max_value = bundle_value
-                    best_bundle = bundle.copy()
-            max_values[agent_id] = max_value
-            best_bundles[agent_id] = best_bundle
-            
-        return best_bundles, max_values
 
     def brute_force(self, theta: Any) -> Optional[Any]:
         """
@@ -215,7 +169,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             best_bundle = None
             for bundle_tuple in all_bundles:
                 bundle = np.array(bundle_tuple, dtype=bool)
-                features = self.feature_manager.get_features(local_id, bundle, self.local_data)
+                features = self.feature_manager.compute_features(local_id, bundle, self.local_data)
                 error = self.local_data["errors"][local_id] @ bundle
                 bundle_value = features @ theta + error
                 if bundle_value > max_value:

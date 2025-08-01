@@ -98,7 +98,7 @@ def features_oracle(i_id, B_j, data):
     
 #     return features
 
-greedy_experiment.features.load(features_oracle)
+greedy_experiment.features.set_oracle(features_oracle)
 beta_star = np.ones(num_features)
 obs_bundles = greedy_experiment.subproblems.init_and_solve(beta_star)
 
@@ -116,7 +116,7 @@ else:
 
 greedy_experiment.load_config(cfg)
 greedy_experiment.data.load_and_scatter(data)
-greedy_experiment.features.load(features_oracle)
+greedy_experiment.features.set_oracle(features_oracle)
 greedy_experiment.subproblems.load()
 tic = datetime.now()
 lambda_k_iter = greedy_experiment.row_generation.solve()

@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 class FeatureManager(HasDimensions, HasComm, HasData):
     """
     Encapsulates feature extraction logic for the bundle choice model.
-    User supplies get_features(id, B_j, data); this class provides get_x_i_k and get_features.
+    User supplies compute_features(agent_id, bundle, data); this class provides compute_features and related methods.
     Dynamically references num_agents and num_simuls from the provided config.
     """
 
@@ -34,24 +34,24 @@ class FeatureManager(HasDimensions, HasComm, HasData):
 
         self.num_global_agents = self.num_simuls * self.num_agents
 
-    def load(self, features_oracle):
+    def set_oracle(self, features_oracle):
         """
         Load a user-supplied feature extraction function.
 
         Args:
-            features_oracle (Callable): Function (id, B_j, data) -> np.ndarray.
+            features_oracle (Callable): Function (agent_id, bundle, data) -> np.ndarray.
         """
         self.features_oracle = features_oracle
 
     # --- Feature extraction methods ---
-    def get_features(self, id, B_j, data_override=None):
+    def compute_features(self, agent_id, bundle, data_override=None):
         """
         Compute features for a single agent/bundle using the user-supplied function.
         By default, uses input_data from the FeatureManager. If data_override is provided, uses that instead (for local/MPI calls).
 
         Args:
-            id (int): Agent index.
-            B_j (array-like): Bundle.
+            agent_id (int): Agent index.
+            bundle (array-like): Bundle.
             data_override (dict, optional): Data dictionary to override default input_data.
         Returns:
             np.ndarray: Feature vector for the agent/bundle.
@@ -65,24 +65,9 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         else:
             data = data_override
        
-        return self.features_oracle(id, B_j, data)
+        return self.features_oracle(agent_id, bundle, data)
 
-    def get_agents_0(self, bundles: Any) -> Optional[np.ndarray]:
-        """
-        Compute features for all agents. Only works on rank 0; returns None on other ranks.
-
-        Args:
-            bundles (array-like): List/array of bundles for each agent.
-        Returns:
-            np.ndarray or None: Features for all agents (on rank 0), None on other ranks.
-        Raises:
-            ValueError: If num_agents is not set.
-        """
-        if not self.is_root():
-            return None
-        return np.stack([self.get_features(i, bundles[i]) for i in range(self.num_agents)])
-
-    def get_local_agents_features(self, local_bundles):
+    def compute_rank_features(self, local_bundles):
         """
         Compute features for all local agents (on this MPI rank only).
 
@@ -93,27 +78,27 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         """
         assert self.num_local_agents == len(local_bundles), "num_local_agents and local_bundles must have the same length."
         data = self.local_data
-        return np.stack([self.get_features(i, local_bundles[i], data) for i in range(self.num_local_agents)])
+        return np.stack([self.compute_features(i, local_bundles[i], data) for i in range(self.num_local_agents)])
 
 
-    def get_all_0(self, bundles: Any) -> Optional[np.ndarray]:
-        """
-        Compute features for all simulated agents. Only works on rank 0; returns None on other ranks.
+    # def get_all_0(self, bundles: Any) -> Optional[np.ndarray]:
+    #     """
+    #     Compute features for all simulated agents. Only works on rank 0; returns None on other ranks.
 
-        Args:
-            bundles (array-like): List/array of bundles for all simulated agents.
-        Returns:
-            np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
-        Raises:
-            ValueError: If num_agents or num_simuls is not set.
-        """
-        if not self.is_root():
-            return None
-        assert self.num_global_agents == len(bundles), "num_global_agents and bundles must have the same length."
-        return np.stack([self.get_features(id % self.num_agents, bundles[id]) for id in range(self.num_global_agents)])
+    #     Args:
+    #         bundles (array-like): List/array of bundles for all simulated agents.
+    #     Returns:
+    #         np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
+    #     Raises:
+    #         ValueError: If num_agents or num_simuls is not set.
+    #     """
+    #     if not self.is_root():
+    #         return None
+    #     assert self.num_global_agents == len(bundles), "num_global_agents and bundles must have the same length."
+    #     return np.stack([self.compute_features(id % self.num_agents, bundles[id]) for id in range(self.num_global_agents)])
 
 
-    def get_all_distributed(self, local_bundles):
+    def compute_gathered_features(self, local_bundles):
         """
         Compute features for all simulated agents in parallel using MPI.
         Gathers and concatenates all local results on rank 0.
@@ -123,7 +108,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Returns:
             np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
         """
-        features_local = self.get_local_agents_features(local_bundles)
+        features_local = self.compute_rank_features(local_bundles)
         return self.comm_manager.concatenate_at_root(features_local, root=0)
 
     # --- Feature oracle builder ---
@@ -163,19 +148,19 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         has_modular_item = self.comm_manager.broadcast_from_root(has_modular_item, root=0)
         has_quadratic_item = self.comm_manager.broadcast_from_root(has_quadratic_item, root=0)
 
-        code_lines = ["def get_features(id, B_j, data):", "    feats = []"]
+        code_lines = ["def get_features(agent_id, bundle, data):", "    feats = []"]
         if has_modular_agent:
-            code_lines.append("    modular = data['agent_data']['modular'][id]")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+            code_lines.append("    modular = data['agent_data']['modular'][agent_id]")
+            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, bundle))")
         if has_quadratic_agent:
-            code_lines.append("    quadratic = data['agent_data']['quadratic'][id]")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+            code_lines.append("    quadratic = data['agent_data']['quadratic'][agent_id]")
+            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))")
         if has_modular_item:
             code_lines.append("    modular = data['item_data']['modular']")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, B_j))")
+            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, bundle))")
         if has_quadratic_item:
             code_lines.append("    quadratic = data['item_data']['quadratic']")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, B_j, B_j))")
+            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))")
         code_lines.append("    return np.concatenate(feats)")
         code_str = "\n".join(code_lines)
 

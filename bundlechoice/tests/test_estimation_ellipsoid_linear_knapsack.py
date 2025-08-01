@@ -75,7 +75,7 @@ def test_ellipsoid_linear_knapsack():
     knapsack_demo = BundleChoice()
     knapsack_demo.load_config(cfg)
     knapsack_demo.data.load_and_scatter(input_data)
-    knapsack_demo.features.load(features_oracle)
+    knapsack_demo.features.set_oracle(features_oracle)
 
     # Simulate beta_star and generate obs_bundles
     beta_star = np.ones(num_features)
@@ -92,7 +92,7 @@ def test_ellipsoid_linear_knapsack():
 
     knapsack_demo.load_config(cfg)
     knapsack_demo.data.load_and_scatter(input_data)
-    knapsack_demo.features.load(features_oracle)
+    knapsack_demo.features.set_oracle(features_oracle)
     knapsack_demo.subproblems.load()
     
     theta_hat = knapsack_demo.ellipsoid.solve()

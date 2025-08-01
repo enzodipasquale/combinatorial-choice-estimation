@@ -26,7 +26,7 @@ def dummy_get_x_k(i, B, data):
     # Simple feature: sum of bundle times agent index
     return np.array([i * np.sum(B)])
 
-def test_get_agents_0():
+def test_compute_rank_features():
     num_agents = 30
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
@@ -42,22 +42,19 @@ def test_get_agents_0():
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.load(dummy_get_x_k)
-    # Create bundles for all 30 agents
-    B_i_j = [np.array([1, 2]) for _ in range(30)]
-    x_i_k = features.get_agents_0(B_i_j)
-    # Should be shape (30, 1) on rank 0, None on other ranks
-    if features.comm_manager.is_root():
-        assert x_i_k is not None
-        assert x_i_k.shape == (30, 1)
-        # Check first few values
-        expected_first = np.array([[0], [3], [6]])  # 0*3, 1*3, 2*3
-        assert np.allclose(x_i_k[:3], expected_first)
-    else:
-        assert x_i_k is None
+    features.set_oracle(dummy_get_x_k)
+    # Create bundles for local agents
+    local_bundles = [np.array([1, 2]) for _ in range(data_manager.num_local_agents)]
+    x_i_k = features.compute_rank_features(local_bundles)
+    # Should be shape (num_local_agents, 1)
+    assert x_i_k is not None
+    assert x_i_k.shape == (data_manager.num_local_agents, 1)
+    # Check first few values
+    expected_first = np.array([[0], [3]])  # 0*3, 1*3 for 2 local agents
+    assert np.allclose(x_i_k[:2], expected_first)
 
-def test_get_all_0():
-    num_agents = 30
+def test_compute_gathered_features():
+    num_agents = 2  # 2 agents per rank
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,
@@ -72,22 +69,24 @@ def test_get_all_0():
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.load(dummy_get_x_k)
-    # Create bundles for all 60 simulated agents (30 agents × 2 simuls)
-    B_si_j = [np.array([1, 1]) for _ in range(60)]
-    x_si_k = features.get_all_0(B_si_j)
-    # Should be shape (60, 1) on rank 0, None on other ranks
+    features.set_oracle(dummy_get_x_k)
+    # Create bundles for local agents
+    local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]
+    x_si_k = features.compute_gathered_features(local_bundles)
+    # Should be shape (num_global_agents, 1) on rank 0, None on other ranks
     if features.comm_manager.is_root():
         assert x_si_k is not None
-        assert x_si_k.shape == (60, 1)
+        # With 10 ranks, each with 2 agents, total is 20 agents
+        expected_total_agents = comm_manager.size * num_agents
+        assert x_si_k.shape == (expected_total_agents, 1)
         # Check first few values
-        expected_first = np.array([[0], [2], [4]])  # 0*2, 1*2, 2*2
-        assert np.allclose(x_si_k[:3], expected_first)
+        expected_first = np.array([[0], [2]])  # 0*2, 1*2 for 2 agents
+        assert np.allclose(x_si_k[:2], expected_first)
     else:
         assert x_si_k is None
 
-def test_get_all_simulated_agent_features_vs_parallel():
-    num_agents = 30
+def test_compute_gathered_features_consistency():
+    num_agents = 2  # 2 agents per rank
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,
@@ -102,16 +101,18 @@ def test_get_all_simulated_agent_features_vs_parallel():
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.load(dummy_get_x_k)
-    # Simulate B_si_j and B_local for local agents
-    B_si_j = [np.array([1, 1]) for _ in range(60)]  # 60 simulated agents
-    num_local_agents = getattr(data_manager, 'num_local_agents', 2)
-    B_local = B_si_j[:num_local_agents]
-    x_si_k = features.get_all_0(B_si_j)
-    x_si_k_MPI = features.get_all_distributed(B_local)
-    # Only compare on rank 0
-    if features.comm_manager.rank == 0:
-        if x_si_k is not None and x_si_k_MPI is not None:
-            # The distributed version returns results for all agents, not just local ones
-            # So we need to compare the local portion
-            assert np.allclose(x_si_k[:num_local_agents], x_si_k_MPI[:num_local_agents]) 
+    features.set_oracle(dummy_get_x_k)
+    # Create bundles for local agents
+    local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]
+    x_si_k_MPI = features.compute_gathered_features(local_bundles)
+    # Test that the gathered features are consistent
+    if features.comm_manager.is_root():
+        assert x_si_k_MPI is not None
+        # With 10 ranks, each with 2 agents, total is 20 agents
+        expected_total_agents = comm_manager.size * num_agents
+        assert x_si_k_MPI.shape == (expected_total_agents, 1)
+        # Check that the first local agent features match what we expect
+        expected_first = np.array([[0], [2]])  # 0*2, 1*2 for 2 local agents
+        assert np.allclose(x_si_k_MPI[:2], expected_first)
+    else:
+        assert x_si_k_MPI is None 

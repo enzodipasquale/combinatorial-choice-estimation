@@ -67,7 +67,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             np.ndarray or None: Average observed features (rank 0) or None (other ranks)
         """
         local_bundles = self.local_data.get("obs_bundles")
-        agents_obs_features = self.feature_manager.get_all_distributed(local_bundles)
+        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
         if self.is_root():
             obs_features = agents_obs_features.sum(0) / self.num_simuls
             return obs_features
@@ -88,7 +88,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             float or None: Objective function value (rank 0) or None (other ranks)
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
+        features_sim = self.feature_manager.compute_gathered_features(B_local_sim)
         B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
         if self.is_root():
             errors_sim = (self.errors * B_sim).sum(1)
@@ -110,7 +110,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             np.ndarray or None: Gradient vector (rank 0) or None (other ranks)
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.get_all_distributed(B_local_sim)
+        features_sim = self.feature_manager.compute_gathered_features(B_local_sim)
         B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
         if self.is_root():
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
