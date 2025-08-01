@@ -1,95 +1,69 @@
-import numpy as np
 import pytest
-from mpi4py import MPI
-from bundlechoice.core import BundleChoice
+import numpy as np
 from bundlechoice.base import HasConfig, HasDimensions
 from bundlechoice.config import BundleChoiceConfig, DimensionsConfig, SubproblemConfig, EllipsoidConfig
+from bundlechoice.core import BundleChoice
 
 class TestConfigurableClass(HasConfig, HasDimensions):
     """Test class that uses both HasConfig and HasDimensions mixins."""
     
-    def __init__(self):
+    def __init__(self, config: BundleChoiceConfig):
+        self.config = config
+        # Set dimensions_cfg for HasDimensions mixin
+        self.dimensions_cfg = config.dimensions
         super().__init__()
-        self.config = None
-        self.dimensions_cfg = None
-    
-    def test_config_access(self):
-        """Test that config access works correctly."""
-        # Test that properties work when config is None
-        assert self.dimensions_cfg is None
-        assert self.subproblem_cfg is None
-        assert self.ellipsoid_cfg is None
-        assert self.num_agents is None
-        
-        # Test with actual config
-        cfg = {
-            "dimensions": {
-                "num_agents": 100,
-                "num_items": 20,
-                "num_features": 6,
-                "num_simuls": 1,
-            },
-            "subproblem": {
-                "name": "Greedy",
-            },
-            "ellipsoid": {
-                "max_iterations": 50,
-                "tolerance": 1e-6,
-            }
-        }
-        
-        self.config = BundleChoiceConfig.from_dict(cfg)
-        self.dimensions_cfg = self.config.dimensions
-        
-        # Test that properties now return correct values
-        assert self.dimensions_cfg is not None
-        assert self.dimensions_cfg.num_agents == 100
-        assert self.dimensions_cfg.num_items == 20
-        assert self.num_agents == 100
-        assert self.num_items == 20
-        assert self.num_features == 6
-        
-        assert self.subproblem_cfg is not None
-        assert self.subproblem_cfg.name == "Greedy"
-        
-        assert self.ellipsoid_cfg is not None
-        assert self.ellipsoid_cfg.max_iterations == 50
-        assert self.ellipsoid_cfg.tolerance == 1e-6
 
 def test_has_config_mixin():
-    """Test the HasConfig mixin functionality."""
-    test_obj = TestConfigurableClass()
-    test_obj.test_config_access()
+    """Test that HasConfig mixin provides correct config access."""
+    # Create a test configuration
+    cfg = BundleChoiceConfig(
+        dimensions=DimensionsConfig(num_agents=10, num_items=5, num_features=3),
+        subproblem=SubproblemConfig(name="Greedy"),
+        ellipsoid=EllipsoidConfig(max_iterations=25)
+    )
+    
+    # Create test object
+    test_obj = TestConfigurableClass(cfg)
+    
+    # Test config access through mixin properties
+    assert test_obj.subproblem_cfg is not None
+    assert test_obj.subproblem_cfg.name == "Greedy"
+    
+    assert test_obj.row_generation_cfg is not None
+    assert test_obj.row_generation_cfg.tol_certificate == 0.01
+    
+    assert test_obj.ellipsoid_cfg is not None
+    assert test_obj.ellipsoid_cfg.max_iterations == 25
+    
+    # Test dimension access through HasDimensions
+    assert test_obj.num_agents == 10
+    assert test_obj.num_items == 5
+    assert test_obj.num_features == 3
 
 def test_bundlechoice_config_integration():
-    """Test that BundleChoice works correctly with the new config system."""
-    num_agents = 50
-    num_items = 10
-    num_features = 4
+    """Test that BundleChoice correctly integrates with the simplified config system."""
+    # Create configuration
+    num_agents = 10
+    num_items = 5
+    num_features = 3
     
-    cfg = {
+    cfg_dict = {
         "dimensions": {
             "num_agents": num_agents,
             "num_items": num_items,
-            "num_features": num_features,
-            "num_simuls": 1,
+            "num_features": num_features
         },
         "subproblem": {
-            "name": "Greedy",
+            "name": "Greedy"
         },
         "ellipsoid": {
-            "max_iterations": 25,
-            "tolerance": 1e-5,
-            "initial_radius": 1.0,
-            "decay_factor": 0.9,
-            "min_volume": 1e-10,
-            "verbose": False
+            "max_iterations": 25
         }
     }
     
-    # Test BundleChoice with new config system
+    # Create BundleChoice instance
     bc = BundleChoice()
-    bc.load_config(cfg)
+    bc.load_config(cfg_dict)
     
     # Test that config access works through the mixin
     assert bc.config is not None
@@ -103,86 +77,9 @@ def test_bundlechoice_config_integration():
     
     assert bc.ellipsoid_cfg is not None
     assert bc.ellipsoid_cfg.max_iterations == 25
-    assert bc.ellipsoid_cfg.tolerance == 1e-5
-    assert bc.ellipsoid_cfg.initial_radius == 1.0
-    assert bc.ellipsoid_cfg.decay_factor == 0.9
-    assert bc.ellipsoid_cfg.min_volume == 1e-10
-    assert bc.ellipsoid_cfg.verbose == False
-
-def test_config_registry():
-    """Test the ConfigRegistry functionality."""
-    from bundlechoice.config import ConfigRegistry, DimensionsConfig, SubproblemConfig
     
-    registry = ConfigRegistry()
-    
-    # Register configurations
-    dim_cfg = DimensionsConfig(num_agents=100, num_items=20)
-    sub_cfg = SubproblemConfig(name="Greedy")
-    
-    registry.register("dimensions", dim_cfg)
-    registry.register("subproblem", sub_cfg)
-    
-    # Test retrieval
-    retrieved_dim = registry.get("dimensions")
-    assert retrieved_dim is not None
-    assert retrieved_dim.num_agents == 100
-    
-    retrieved_sub = registry.get("subproblem")
-    assert retrieved_sub is not None
-    assert retrieved_sub.name == "Greedy"
-    
-    # Test typed retrieval
-    typed_dim = registry.get_typed("dimensions", DimensionsConfig)
-    assert typed_dim is not None
-    assert isinstance(typed_dim, DimensionsConfig)
-    
-    # Test attribute access
-    assert registry.dimensions is not None
-    assert registry.subproblem is not None
-    
-    # Test missing config
-    assert registry.get("nonexistent") is None
-    with pytest.raises(AttributeError):
-        _ = registry.nonexistent
-
-def test_bundlechoice_config_registry():
-    """Test that BundleChoiceConfig registry works correctly."""
-    cfg = {
-        "dimensions": {
-            "num_agents": 75,
-            "num_items": 15,
-            "num_features": 5,
-        },
-        "subproblem": {
-            "name": "LinearKnapsack",
-        },
-        "ellipsoid": {
-            "max_iterations": 30,
-        }
-    }
-    
-    config = BundleChoiceConfig.from_dict(cfg)
-    
-    # Test registry access
-    dim_cfg = config.get_config("dimensions")
-    assert dim_cfg is not None
-    assert dim_cfg.num_agents == 75
-    
-    sub_cfg = config.get_config("subproblem")
-    assert sub_cfg is not None
-    assert sub_cfg.name == "LinearKnapsack"
-    
-    ellipsoid_cfg = config.get_config("ellipsoid")
-    assert ellipsoid_cfg is not None
-    assert ellipsoid_cfg.max_iterations == 30
-    
-    # Test typed access
-    typed_dim = config.get_typed_config("dimensions", DimensionsConfig)
-    assert typed_dim is not None
-    assert isinstance(typed_dim, DimensionsConfig)
-    
-    # Test validation
-    validation_results = config.validate_configs()
-    assert validation_results["dimensions"] is True
-    assert validation_results["subproblem"] is True
-    assert validation_results["ellipsoid"] is True 
+    # Test that managers can be initialized with explicit config injection
+    # This tests the core principle: BundleChoice takes config and injects relevant parts
+    assert bc.data_manager is None  # Not initialized yet
+    bc._try_init_data_manager()
+    assert bc.data_manager is not None  # Now initialized with explicit config injection 
