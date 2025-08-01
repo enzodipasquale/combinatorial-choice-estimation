@@ -125,20 +125,18 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         else:
             theta = self.comm_manager.broadcast_from_root(None, root=0)
         self.initialize_local()
-        local_results = self.solve_local(theta)
-        gathered = self.comm_manager.concatenate_at_root(local_results, root=0)
-        
+        local_bundles = self.solve_local(theta)
+        bundles = self.comm_manager.concatenate_at_root(local_bundles, root=0)
         if return_values:
-            if self.is_root():
-                with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                    features = self.feature_manager.get_local_agents_features(local_results)
-                    errors = (self.data_manager.local_data["errors"]* local_results).sum(1)
-                    utilities = features @ theta + errors
-                    utilities = self.comm_manager.concatenate_at_root(utilities, root=0)
-            else:
-                utilities = None
-            return gathered, utilities
-        return gathered
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                features_local = self.feature_manager.get_local_agents_features(local_bundles)
+                errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
+                utilities_local = features_local @ theta + errors_local
+                utilities = self.comm_manager.concatenate_at_root(utilities_local, root=0)
+            return bundles, utilities
+        else:
+            return bundles
+
 
 
 
