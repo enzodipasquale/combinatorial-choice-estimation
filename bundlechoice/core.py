@@ -8,10 +8,10 @@ from typing import Optional, Callable
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
-from bundlechoice.base import HasDimensions, HasComm
+from bundlechoice.base import HasDimensions, HasComm, HasConfig
 logger = get_logger(__name__)
 
-class BundleChoice(HasDimensions, HasComm, HasData):
+class BundleChoice(HasDimensions, HasComm, HasConfig):
     """
     Main orchestrator for modular bundle choice estimation.
     
@@ -30,11 +30,7 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         results = bc.init_and_solve_subproblems(theta)
         
     Attributes:
-        config: Main configuration object
-        dimensions_cfg: Problem dimensions configuration
-        subproblem_cfg: Subproblem algorithm configuration
-        row_generation_cfg: Row generation solver configuration
-        ellipsoid_cfg: Ellipsoid method solver configuration
+        config: Main configuration object containing all components
         data_manager: Data management component
         feature_manager: Feature extraction component
         subproblem_manager: Subproblem solving component
@@ -43,10 +39,6 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         comm: MPI communicator
     """
     config: Optional[BundleChoiceConfig]
-    dimensions_cfg: Optional[DimensionsConfig]
-    subproblem_cfg: Optional[SubproblemConfig]
-    row_generation_cfg: Optional[RowGenerationConfig]
-    ellipsoid_cfg: Optional[EllipsoidConfig]
     data_manager: Optional[DataManager]
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
@@ -63,10 +55,6 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         COMM_WORLD.
         """
         self.config = None
-        self.dimensions_cfg = None
-        self.subproblem_cfg = None
-        self.row_generation_cfg = None
-        self.ellipsoid_cfg = None
         self.comm = MPI.COMM_WORLD
         self.data_manager = None
         self.feature_manager = None
@@ -88,10 +76,10 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         Raises:
             ValueError: If dimensions_cfg is not set
         """
-        if self.dimensions_cfg is None:
-            raise ValueError("dimensions_cfg must be set before initializing data manager.")
+        if self.config is None or self.config.dimensions is None:
+            raise ValueError("dimensions_cfg must be set in config before initializing data manager.")
         self.data_manager = DataManager(
-            dimensions_cfg=self.dimensions_cfg,
+            dimensions_cfg=self.config.dimensions,
             comm=self.comm
         )
         return self.data_manager
@@ -109,10 +97,10 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         Raises:
             ValueError: If dimensions_cfg is not set
         """
-        if self.dimensions_cfg is None:
-            logger.error("dimensions_cfg must be set before initializing feature manager.")
+        if self.config is None or self.config.dimensions is None:
+            logger.error("dimensions_cfg must be set in config before initializing feature manager.")
         self.feature_manager = FeatureManager(
-            dimensions_cfg=self.dimensions_cfg,
+            dimensions_cfg=self.config.dimensions,
             comm=self.comm,
             data_manager=self.data_manager
         )
@@ -131,15 +119,15 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If required managers or configs are not set
         """
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_cfg is None:
-            raise RuntimeError("DataManager, FeatureManager, and SubproblemConfig must be set before initializing subproblem manager.")
+        if self.data_manager is None or self.feature_manager is None or self.config is None or self.config.subproblem is None:
+            raise RuntimeError("DataManager, FeatureManager, and SubproblemConfig must be set in config before initializing subproblem manager.")
 
         self.subproblem_manager = SubproblemManager(
-            dimensions_cfg=self.dimensions_cfg,
+            dimensions_cfg=self.config.dimensions,
             comm=self.comm,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
-            subproblem_cfg=self.subproblem_cfg
+            subproblem_cfg=self.config.subproblem
         )
         self.subproblem_manager.load()
         return self.subproblem_manager
@@ -157,7 +145,7 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If required managers are not set
         """
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None:
+        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
             # raise error with missing managers
             missing_managers = []
             if self.data_manager is None:
@@ -166,16 +154,18 @@ class BundleChoice(HasDimensions, HasComm, HasData):
                 missing_managers.append("FeatureManager")
             if self.subproblem_manager is None:
                 missing_managers.append("SubproblemManager")
+            if self.config is None or self.config.row_generation is None:
+                missing_managers.append("RowGenerationConfig")
             raise RuntimeError(
-                "DataManager, FeatureManager, and SubproblemManager must be set "
+                "DataManager, FeatureManager, SubproblemManager, and RowGenerationConfig must be set in config "
                 "before initializing row generation manager. Missing managers: "
                 f"{', '.join(missing_managers)}"
             )
 
         self.row_generation_manager = RowGenerationSolver(
             comm=self.comm,
-            dimensions_cfg=self.dimensions_cfg,
-            rowgen_cfg=self.row_generation_cfg,
+            dimensions_cfg=self.config.dimensions,
+            rowgen_cfg=self.config.row_generation,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
             subproblem_manager=self.subproblem_manager
@@ -195,7 +185,7 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If required managers are not set
         """
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None:
+        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
             # raise error with missing managers
             missing_managers = []
             if self.data_manager is None:
@@ -204,16 +194,18 @@ class BundleChoice(HasDimensions, HasComm, HasData):
                 missing_managers.append("FeatureManager")
             if self.subproblem_manager is None:
                 missing_managers.append("SubproblemManager")
+            if self.config is None or self.config.ellipsoid is None:
+                missing_managers.append("EllipsoidConfig")
             raise RuntimeError(
-                "DataManager, FeatureManager, and SubproblemManager must be set "
+                "DataManager, FeatureManager, SubproblemManager, and EllipsoidConfig must be set in config "
                 "before initializing ellipsoid manager. Missing managers: "
                 f"{', '.join(missing_managers)}"
             )
 
         self.ellipsoid_manager = EllipsoidSolver(
             comm=self.comm,
-            dimensions_cfg=self.dimensions_cfg,
-            ellipsoid_cfg=self.ellipsoid_cfg,
+            dimensions_cfg=self.config.dimensions,
+            ellipsoid_cfg=self.config.ellipsoid,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
             subproblem_manager=self.subproblem_manager
@@ -303,11 +295,8 @@ class BundleChoice(HasDimensions, HasComm, HasData):
             self.config = BundleChoiceConfig.from_dict(cfg)
         else:
             raise ValueError("cfg must be a dictionary or a YAML path.")
-        self.dimensions_cfg = self.config.dimensions
-        self.row_generation_cfg = self.config.row_generation
-        self.subproblem_cfg = self.config.subproblem
-        self.ellipsoid_cfg = self.config.ellipsoid
 
+        # Reset all managers to ensure consistency with new configuration
         self.data_manager = None
         self.feature_manager = None
         self.subproblem_manager = None

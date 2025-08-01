@@ -55,6 +55,59 @@ class HasDimensions:
         """Number of simulation runs."""
         return self.dimensions_cfg.num_simuls if self.dimensions_cfg else None
 
+class HasConfig:
+    """
+    Mixin for classes that provide access to configuration components.
+    
+    This mixin provides convenient properties for accessing configuration
+    components from a `config` attribute. Classes using this mixin must define
+    a `config` attribute of type `BundleChoiceConfig`.
+    
+    Attributes:
+        config: Main configuration object containing all components
+    """
+    config: 'BundleChoiceConfig'  # type: ignore
+
+    @property
+    def dimensions_cfg(self):
+        """Problem dimensions configuration."""
+        return self.config.dimensions if self.config else None
+
+    @property
+    def subproblem_cfg(self):
+        """Subproblem algorithm configuration."""
+        return self.config.subproblem if self.config else None
+
+    @property
+    def row_generation_cfg(self):
+        """Row generation solver configuration."""
+        return self.config.row_generation if self.config else None
+
+    @property
+    def ellipsoid_cfg(self):
+        """Ellipsoid method solver configuration."""
+        return self.config.ellipsoid if self.config else None
+
+    @property
+    def num_agents(self):
+        """Number of agents in the problem."""
+        return self.dimensions_cfg.num_agents if self.dimensions_cfg else None
+
+    @property
+    def num_items(self):
+        """Number of items available for choice."""
+        return self.dimensions_cfg.num_items if self.dimensions_cfg else None
+
+    @property
+    def num_features(self):
+        """Number of features per agent-item combination."""
+        return self.dimensions_cfg.num_features if self.dimensions_cfg else None
+
+    @property
+    def num_simuls(self):
+        """Number of simulation runs."""
+        return self.dimensions_cfg.num_simuls if self.dimensions_cfg else None
+
 class HasData:
     """
     Mixin for classes that provide access to data management.
