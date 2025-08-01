@@ -5,22 +5,26 @@ class HasComm:
     Mixin for classes that provide an MPI communicator.
     
     This mixin provides convenient access to MPI rank and communicator size.
-    Classes using this mixin must define a `comm` attribute of type `MPI.Comm`.
+    Classes using this mixin must define a `comm_manager` attribute of type `CommManager`.
     
     Attributes:
-        comm: MPI communicator instance
+        comm_manager: Communication manager instance
     """
-    comm: 'MPI.Comm'  # type: ignore
+    comm_manager: 'CommManager'  # type: ignore
 
     @property
     def rank(self):
         """MPI rank of this process."""
-        return self.comm.Get_rank() if self.comm is not None else None
+        return self.comm_manager.rank if self.comm_manager is not None else None
 
     @property
     def comm_size(self):
         """Total number of MPI processes in the communicator."""
-        return self.comm.Get_size() if self.comm is not None else None
+        return self.comm_manager.size if self.comm_manager is not None else None
+    
+    def is_root(self) -> bool:
+        """Check if the current rank is the root rank (rank 0)."""
+        return self.comm_manager.is_root() if self.comm_manager is not None else False
 
 class HasDimensions:
     """

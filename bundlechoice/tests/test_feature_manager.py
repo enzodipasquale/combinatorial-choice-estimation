@@ -4,6 +4,7 @@ from typing import cast
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.config import DimensionsConfig
 from mpi4py import MPI
+from bundlechoice.comm_manager import CommManager
 
 class DummyDataManager:
     def __init__(self, num_agents, num_simuls):
@@ -35,9 +36,10 @@ def test_get_agents_0():
         num_simuls=num_simuls
     )
     data_manager = DummyDataManager(num_agents, num_simuls)
+    comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,
-        comm=MPI.COMM_WORLD,
+        comm_manager=comm_manager,
         data_manager=data_manager
     )
     features.load(dummy_get_x_k)
@@ -45,7 +47,7 @@ def test_get_agents_0():
     B_i_j = [np.array([1, 2]) for _ in range(30)]
     x_i_k = features.get_agents_0(B_i_j)
     # Should be shape (30, 1) on rank 0, None on other ranks
-    if features.rank == 0:
+    if features.comm_manager.is_root():
         assert x_i_k is not None
         assert x_i_k.shape == (30, 1)
         # Check first few values
@@ -64,9 +66,10 @@ def test_get_all_0():
         num_simuls=num_simuls
     )
     data_manager = DummyDataManager(num_agents, num_simuls)
+    comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,
-        comm=MPI.COMM_WORLD,
+        comm_manager=comm_manager,
         data_manager=data_manager
     )
     features.load(dummy_get_x_k)
@@ -74,7 +77,7 @@ def test_get_all_0():
     B_si_j = [np.array([1, 1]) for _ in range(60)]
     x_si_k = features.get_all_0(B_si_j)
     # Should be shape (60, 1) on rank 0, None on other ranks
-    if features.rank == 0:
+    if features.comm_manager.is_root():
         assert x_si_k is not None
         assert x_si_k.shape == (60, 1)
         # Check first few values
@@ -93,9 +96,10 @@ def test_get_all_simulated_agent_features_vs_parallel():
         num_simuls=num_simuls
     )
     data_manager = DummyDataManager(num_agents, num_simuls)
+    comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,
-        comm=MPI.COMM_WORLD,
+        comm_manager=comm_manager,
         data_manager=data_manager
     )
     features.load(dummy_get_x_k)
@@ -106,7 +110,7 @@ def test_get_all_simulated_agent_features_vs_parallel():
     x_si_k = features.get_all_0(B_si_j)
     x_si_k_MPI = features.get_all_distributed(B_local)
     # Only compare on rank 0
-    if features.rank == 0:
+    if features.comm_manager.rank == 0:
         if x_si_k is not None and x_si_k_MPI is not None:
             # The distributed version returns results for all agents, not just local ones
             # So we need to compare the local portion
