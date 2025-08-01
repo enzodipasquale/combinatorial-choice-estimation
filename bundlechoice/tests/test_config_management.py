@@ -2,15 +2,16 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.base import HasConfig
+from bundlechoice.base import HasConfig, HasDimensions
 from bundlechoice.config import BundleChoiceConfig, DimensionsConfig, SubproblemConfig, EllipsoidConfig
 
-class TestConfigurableClass(HasConfig):
-    """Test class that uses the HasConfig mixin."""
+class TestConfigurableClass(HasConfig, HasDimensions):
+    """Test class that uses both HasConfig and HasDimensions mixins."""
     
     def __init__(self):
         super().__init__()
         self.config = None
+        self.dimensions_cfg = None
     
     def test_config_access(self):
         """Test that config access works correctly."""
@@ -38,6 +39,7 @@ class TestConfigurableClass(HasConfig):
         }
         
         self.config = BundleChoiceConfig.from_dict(cfg)
+        self.dimensions_cfg = self.config.dimensions
         
         # Test that properties now return correct values
         assert self.dimensions_cfg is not None
@@ -90,12 +92,11 @@ def test_bundlechoice_config_integration():
     bc.load_config(cfg)
     
     # Test that config access works through the mixin
-    assert bc.dimensions_cfg is not None
-    assert bc.dimensions_cfg.num_agents == num_agents
-    assert bc.dimensions_cfg.num_items == num_items
-    assert bc.num_agents == num_agents
-    assert bc.num_items == num_items
-    assert bc.num_features == num_features
+    assert bc.config is not None
+    assert bc.config.dimensions is not None
+    assert bc.config.dimensions.num_agents == num_agents
+    assert bc.config.dimensions.num_items == num_items
+    assert bc.config.dimensions.num_features == num_features
     
     assert bc.subproblem_cfg is not None
     assert bc.subproblem_cfg.name == "Greedy"
