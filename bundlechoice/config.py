@@ -1,7 +1,61 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Type, TypeVar
 import numpy as np
 import yaml
+
+T = TypeVar('T')
+
+class ConfigRegistry:
+    """
+    Registry for configuration components that provides dynamic access and validation.
+    
+    This class allows for flexible configuration management where components
+    can register their configuration types and access them dynamically.
+    """
+    
+    def __init__(self):
+        self._configs: Dict[str, Any] = {}
+        self._validators: Dict[str, callable] = {}
+    
+    def register(self, name: str, config: Any, validator: Optional[callable] = None):
+        """Register a configuration component."""
+        self._configs[name] = config
+        if validator:
+            self._validators[name] = validator
+    
+    def get(self, name: str, default=None):
+        """Get a configuration component by name."""
+        return self._configs.get(name, default)
+    
+    def get_typed(self, name: str, config_type: Type[T]) -> Optional[T]:
+        """Get a configuration component with type checking."""
+        config = self.get(name)
+        if config is not None and isinstance(config, config_type):
+            return config
+        return None
+    
+    def validate(self, name: str):
+        """Validate a configuration component."""
+        if name in self._validators:
+            return self._validators[name](self._configs.get(name))
+        return True
+    
+    def validate_all(self):
+        """Validate all registered configurations."""
+        results = {}
+        for name in self._configs:
+            results[name] = self.validate(name)
+        return results
+    
+    def __getattr__(self, name: str):
+        """Allow attribute-style access to configurations."""
+        if name in self._configs:
+            return self._configs[name]
+        raise AttributeError(f"Configuration '{name}' not found")
+    
+    def __contains__(self, name: str):
+        """Check if a configuration exists."""
+        return name in self._configs
 
 @dataclass
 class DimensionsConfig:
@@ -92,17 +146,45 @@ class BundleChoiceConfig:
     
     This class contains all configuration components needed for bundle choice
     estimation, including dimensions, subproblem settings, and solver parameters.
+    Uses a registry pattern for flexible configuration management.
     
     Attributes:
+        registry: Configuration registry containing all components
         dimensions: Problem dimensions configuration
         subproblem: Subproblem algorithm configuration
         row_generation: Row generation solver configuration
         ellipsoid: Ellipsoid method solver configuration
     """
+    registry: ConfigRegistry = field(default_factory=ConfigRegistry)
     dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
     subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
     row_generation: RowGenerationConfig = field(default_factory=RowGenerationConfig)
     ellipsoid: EllipsoidConfig = field(default_factory=EllipsoidConfig)
+
+    def __post_init__(self):
+        """Initialize the registry with all configuration components."""
+        self.registry.register("dimensions", self.dimensions)
+        self.registry.register("subproblem", self.subproblem)
+        self.registry.register("row_generation", self.row_generation)
+        self.registry.register("ellipsoid", self.ellipsoid)
+
+    def get_config(self, name: str, default=None):
+        """Get a configuration component by name."""
+        return self.registry.get(name, default)
+
+    def get_typed_config(self, name: str, config_type: Type[T]) -> Optional[T]:
+        """Get a configuration component with type checking."""
+        return self.registry.get_typed(name, config_type)
+
+    def register_config(self, name: str, config: Any, validator: Optional[callable] = None):
+        """Register a new configuration component."""
+        self.registry.register(name, config, validator)
+        # Also set as attribute for backward compatibility
+        setattr(self, name, config)
+
+    def validate_configs(self):
+        """Validate all configuration components."""
+        return self.registry.validate_all()
 
     @classmethod
     def from_dict(cls, cfg: dict):
