@@ -6,10 +6,8 @@ Handles modular and quadratic agent/item features, supports missing data, and is
 """
 import numpy as np
 import networkx as nx
-import matplotlib.pyplot as plt
 from typing import Any, Optional
 from .quadratic_supermodular_base import QuadraticSupermodular
-import numpy as np
 
 class QuadraticSOptNetwork(QuadraticSupermodular):
     """

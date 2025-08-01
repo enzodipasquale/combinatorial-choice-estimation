@@ -3,7 +3,6 @@ from typing import Any, Callable, Optional
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.data_manager import DataManager
-from mpi4py import MPI
 from bundlechoice.base import HasDimensions, HasData, HasComm
 logger = get_logger(__name__)
 

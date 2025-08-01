@@ -1,9 +1,7 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Type, TypeVar
+from typing import Optional, Dict, Any
 import numpy as np
 import yaml
-
-T = TypeVar('T')
 
 @dataclass
 class DimensionsConfig:
