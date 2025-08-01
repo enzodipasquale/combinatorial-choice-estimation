@@ -1,4 +1,4 @@
-from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig
+from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems import SUBPROBLEM_REGISTRY
@@ -7,7 +7,8 @@ from mpi4py import MPI
 from typing import Optional, Callable
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
-from bundlechoice.base import HasDimensions, HasData, HasComm
+from bundlechoice.estimation.ellipsoid import EllipsoidSolver
+from bundlechoice.base import HasDimensions, HasComm
 logger = get_logger(__name__)
 
 class BundleChoice(HasDimensions, HasComm, HasData):
@@ -33,20 +34,24 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         dimensions_cfg: Problem dimensions configuration
         subproblem_cfg: Subproblem algorithm configuration
         row_generation_cfg: Row generation solver configuration
+        ellipsoid_cfg: Ellipsoid method solver configuration
         data_manager: Data management component
         feature_manager: Feature extraction component
         subproblem_manager: Subproblem solving component
         row_generation_manager: Row generation estimation component
+        ellipsoid_manager: Ellipsoid method estimation component
         comm: MPI communicator
     """
     config: Optional[BundleChoiceConfig]
     dimensions_cfg: Optional[DimensionsConfig]
     subproblem_cfg: Optional[SubproblemConfig]
     row_generation_cfg: Optional[RowGenerationConfig]
+    ellipsoid_cfg: Optional[EllipsoidConfig]
     data_manager: Optional[DataManager]
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
     row_generation_manager: Optional[RowGenerationSolver]
+    ellipsoid_manager: Optional[EllipsoidSolver]
     comm: MPI.Comm
 
     def __init__(self):
@@ -61,11 +66,13 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         self.dimensions_cfg = None
         self.subproblem_cfg = None
         self.row_generation_cfg = None
+        self.ellipsoid_cfg = None
         self.comm = MPI.COMM_WORLD
         self.data_manager = None
         self.feature_manager = None
         self.subproblem_manager = None
         self.row_generation_manager = None
+        self.ellipsoid_manager = None
 
     # --- Initialization ---
     def _try_init_data_manager(self):
@@ -175,6 +182,44 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         )
         return self.row_generation_manager
 
+    def _try_init_ellipsoid_manager(self):
+        """
+        Initialize the EllipsoidSolver if not already present.
+        
+        This method creates a new EllipsoidSolver instance using the current
+        configuration and manager components.
+        
+        Returns:
+            EllipsoidSolver: The initialized EllipsoidSolver instance
+            
+        Raises:
+            RuntimeError: If required managers are not set
+        """
+        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None:
+            # raise error with missing managers
+            missing_managers = []
+            if self.data_manager is None:
+                missing_managers.append("DataManager")
+            if self.feature_manager is None:
+                missing_managers.append("FeatureManager")
+            if self.subproblem_manager is None:
+                missing_managers.append("SubproblemManager")
+            raise RuntimeError(
+                "DataManager, FeatureManager, and SubproblemManager must be set "
+                "before initializing ellipsoid manager. Missing managers: "
+                f"{', '.join(missing_managers)}"
+            )
+
+        self.ellipsoid_manager = EllipsoidSolver(
+            comm=self.comm,
+            dimensions_cfg=self.dimensions_cfg,
+            ellipsoid_cfg=self.ellipsoid_cfg,
+            data_manager=self.data_manager,
+            feature_manager=self.feature_manager,
+            subproblem_manager=self.subproblem_manager
+        )
+        return self.ellipsoid_manager
+
     # --- Properties ---
     @property
     def data(self):
@@ -224,6 +269,18 @@ class BundleChoice(HasDimensions, HasComm, HasData):
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
+    @property
+    def ellipsoid(self):
+        """
+        Access the ellipsoid manager component.
+        
+        Returns:
+            EllipsoidSolver: The ellipsoid solver instance
+        """
+        if self.ellipsoid_manager is None:
+            self._try_init_ellipsoid_manager()
+        return self.ellipsoid_manager
+        
     def load_config(self, cfg):
         """
         Load configuration from a dictionary or YAML file.
@@ -249,10 +306,12 @@ class BundleChoice(HasDimensions, HasComm, HasData):
         self.dimensions_cfg = self.config.dimensions
         self.row_generation_cfg = self.config.row_generation
         self.subproblem_cfg = self.config.subproblem
+        self.ellipsoid_cfg = self.config.ellipsoid
 
         self.data_manager = None
         self.feature_manager = None
         self.subproblem_manager = None
         self.row_generation_manager = None
+        self.ellipsoid_manager = None
 
         return self
