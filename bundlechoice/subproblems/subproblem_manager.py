@@ -119,6 +119,11 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         """
         if self.comm_manager is None:
             raise RuntimeError("Communication manager is not set in SubproblemManager.")
+        # Broadcast theta from rank 0 to all ranks if available
+        if self.is_root() and theta is not None:
+            theta = self.comm_manager.broadcast_from_root(theta, root=0)
+        else:
+            theta = self.comm_manager.broadcast_from_root(None, root=0)
         self.initialize_local()
         local_results = self.solve_local(theta)
         gathered = self.comm_manager.concatenate_at_root(local_results, root=0)
@@ -135,28 +140,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             return gathered, utilities
         return gathered
 
-    def validate_and_scatter_theta(self, theta: Any) -> Any:
-        """
-        Validate that theta is not None on any rank and scatter from rank 0 if needed.
-        
-        Args:
-            theta (Any): Parameter vector to validate and potentially scatter.
-        Returns:
-            Any: The validated theta vector (scattered from rank 0 if needed).
-        Raises:
-            RuntimeError: If theta is None on rank 0 when other ranks need it.
-        """
-        # Check if any rank has None theta
-        has_none = theta is None
-        any_has_none = self.comm_manager.all_reduce(has_none, op=MPI.LOR)
-        
-        if any_has_none:
-            if self.is_root():
-                if theta is None:
-                    raise RuntimeError("theta is None on rank 0 but other ranks need it")
-                # Broadcast theta from rank 0 to all ranks
-                theta = self.comm_manager.broadcast_from_root(theta, root=0)
-        return theta
+
 
     def brute_force_at_0(self, theta: Any) -> Optional[Any]:
         """
@@ -214,8 +198,11 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If num_items is not set.
         """
-        # Validate and scatter theta if needed
-        theta = self.validate_and_scatter_theta(theta)
+        # Broadcast theta from rank 0 to all ranks if available
+        if self.is_root() and theta is not None:
+            theta = self.comm_manager.broadcast_from_root(theta, root=0)
+        else:
+            theta = self.comm_manager.broadcast_from_root(None, root=0)
         
         from itertools import product
         num_local_agents = self.num_local_agents
