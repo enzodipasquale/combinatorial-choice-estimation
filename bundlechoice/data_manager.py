@@ -2,7 +2,6 @@ import numpy as np
 from typing import Optional, Dict, Any, List
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
-from mpi4py import MPI
 from bundlechoice.base import HasDimensions, HasComm
 logger = get_logger(__name__)
 

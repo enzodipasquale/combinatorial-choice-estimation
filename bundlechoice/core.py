@@ -1,7 +1,6 @@
 from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
-from .subproblems import SUBPROBLEM_REGISTRY
 from .subproblems.subproblem_manager import SubproblemManager
 from mpi4py import MPI
 from typing import Optional, Callable, Any
@@ -81,6 +80,7 @@ class BundleChoice(HasComm, HasConfig):
         """
         if self.config is None or self.config.dimensions is None:
             raise ValueError("dimensions_cfg must be set in config before initializing data manager.")
+        
         self.data_manager = DataManager(
             dimensions_cfg=self.config.dimensions,
             comm_manager=self.comm_manager
@@ -102,6 +102,7 @@ class BundleChoice(HasComm, HasConfig):
         """
         if self.config is None or self.config.dimensions is None:
             logger.error("dimensions_cfg must be set in config before initializing feature manager.")
+        
         self.feature_manager = FeatureManager(
             dimensions_cfg=self.config.dimensions,
             comm_manager=self.comm_manager,
@@ -318,4 +319,5 @@ class BundleChoice(HasComm, HasConfig):
         self.row_generation_manager = None
         self.ellipsoid_manager = None
 
+        logger.info(f"BundleChoice configured: {self.config.dimensions.num_agents} agents, {self.config.dimensions.num_items} items, {self.config.subproblem.name} algorithm")
         return self
