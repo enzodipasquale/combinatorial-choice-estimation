@@ -5,7 +5,6 @@ import numpy as np
 from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
-from mpi4py import MPI
 from bundlechoice.base import HasDimensions, HasData, HasComm
 
 class BatchSubproblemProtocol(Protocol):

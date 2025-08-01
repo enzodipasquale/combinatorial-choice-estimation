@@ -4,9 +4,8 @@ import sys
 from contextlib import contextmanager
 try:
     from mpi4py import MPI
-    rank = MPI.COMM_WORLD.Get_rank()
 except ImportError:
-    rank = 0  # fallback for non-MPI runs
+    pass
 
 class MPIRankFilter(logging.Filter):
     """

@@ -7,7 +7,6 @@ import numpy as np
 from datetime import datetime
 from typing import Tuple, List, Optional, Any, Dict
 import logging
-from ..utils import suppress_output
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output

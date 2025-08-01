@@ -5,7 +5,7 @@ This module provides a clean interface for MPI communication operations,
 wrapping the underlying MPI functionality to improve readability and scalability.
 """
 
-from typing import Any, Optional, Union
+from typing import Any, Optional
 import numpy as np
 from mpi4py import MPI
 
