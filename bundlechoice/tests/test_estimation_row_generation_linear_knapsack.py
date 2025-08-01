@@ -6,7 +6,7 @@ from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_linear_knapsack():
     """Test RowGenerationSolver using obs_bundle generated from linear knapsack subproblem manager."""
-    num_agents = 500
+    num_agents = 250
     num_items = 20
     num_modular_agent_features = 2
     num_modular_item_features = 2
@@ -24,7 +24,7 @@ def test_row_generation_linear_knapsack():
             "name": "LinearKnapsack",
             "settings": {"TimeLimit": 10, "MIPGap_tol": 0.01}
         },
-        "rowgen": {
+        "row_generation": {
             "max_iters": 100,
             "tol_certificate": 0.0001,
             "min_iters": 1,

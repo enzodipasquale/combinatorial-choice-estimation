@@ -4,7 +4,7 @@ from bundlechoice.core import BundleChoice
 
 def test_generate_data_linear():
     # Simulate config and data
-    num_agents, num_items, num_simuls = 3, 6, 1
+    num_agents, num_items, num_simuls = 32, 6, 1
     agent_modular_dim = 3
     item_modular_dim = 2
     np.random.seed(123)

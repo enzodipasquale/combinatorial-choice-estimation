@@ -23,7 +23,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         self,
         comm,
         dimensions_cfg,
-        ellipsoid_cfg,  # Configuration specific to ellipsoid method
+        ellipsoid_cfg,  
         data_manager,
         feature_manager,
         subproblem_manager
@@ -101,19 +101,6 @@ class EllipsoidSolver(BaseEstimationSolver):
         # - Consider other ellipsoid-specific convergence criteria
         pass
 
-    def _log_iteration_info(self, iteration: int, theta: np.ndarray, gradient_norm: float):
-        """
-        Log information about the current iteration.
-        
-        Args:
-            iteration: Current iteration number
-            theta: Current parameter vector
-            gradient_norm: Norm of the current gradient
-        """
-        if self.rank == 0:
-            logger.info(f"Iteration {iteration}: Parameter norm = {np.linalg.norm(theta):.6f}, "
-                       f"Gradient norm = {gradient_norm:.6f}")
-
     def solve(self) -> np.ndarray:
         """
         Run the ellipsoid method to estimate model parameters.
@@ -159,24 +146,3 @@ class EllipsoidSolver(BaseEstimationSolver):
                 break
         
         return self.current_parameter
-
-    def get_current_parameter(self) -> np.ndarray:
-        """
-        Get the current parameter estimate.
-        
-        Returns:
-            np.ndarray: Current parameter vector
-        """
-        return self.current_parameter
-
-    def get_ellipsoid_matrix(self) -> Optional[np.ndarray]:
-        """
-        Get the current ellipsoid matrix.
-        
-        Returns:
-            np.ndarray or None: Current ellipsoid matrix (rank 0) or None (other ranks)
-        """
-        if self.rank == 0:
-            return self.ellipsoid_matrix
-        else:
-            return None 
