@@ -30,6 +30,10 @@ class HasDimensions:
     from a `dimensions_cfg` attribute. Classes using this mixin must define
     a `dimensions_cfg` attribute of type `DimensionsConfig`.
     
+    Use this mixin for classes that only have access to dimensions configuration
+    but not the full BundleChoiceConfig. For classes that have access to the
+    full config object, use HasConfig instead.
+    
     Attributes:
         dimensions_cfg: Configuration object containing problem dimensions
     """
@@ -63,15 +67,13 @@ class HasConfig:
     components from a `config` attribute. Classes using this mixin must define
     a `config` attribute of type `BundleChoiceConfig`.
     
+    Note: This mixin does NOT provide dimension properties (num_agents, etc.).
+    Use HasDimensions for dimension access, or implement both mixins together.
+    
     Attributes:
         config: Main configuration object containing all components
     """
     config: 'BundleChoiceConfig'  # type: ignore
-
-    @property
-    def dimensions_cfg(self):
-        """Problem dimensions configuration."""
-        return self.config.dimensions if self.config else None
 
     @property
     def subproblem_cfg(self):
@@ -87,26 +89,6 @@ class HasConfig:
     def ellipsoid_cfg(self):
         """Ellipsoid method solver configuration."""
         return self.config.ellipsoid if self.config else None
-
-    @property
-    def num_agents(self):
-        """Number of agents in the problem."""
-        return self.dimensions_cfg.num_agents if self.dimensions_cfg else None
-
-    @property
-    def num_items(self):
-        """Number of items available for choice."""
-        return self.dimensions_cfg.num_items if self.dimensions_cfg else None
-
-    @property
-    def num_features(self):
-        """Number of features per agent-item combination."""
-        return self.dimensions_cfg.num_features if self.dimensions_cfg else None
-
-    @property
-    def num_simuls(self):
-        """Number of simulation runs."""
-        return self.dimensions_cfg.num_simuls if self.dimensions_cfg else None
 
 class HasData:
     """

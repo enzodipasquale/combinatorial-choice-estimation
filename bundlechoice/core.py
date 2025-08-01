@@ -8,10 +8,10 @@ from typing import Optional, Callable
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
-from bundlechoice.base import HasDimensions, HasComm, HasConfig
+from bundlechoice.base import HasComm, HasConfig
 logger = get_logger(__name__)
 
-class BundleChoice(HasDimensions, HasComm, HasConfig):
+class BundleChoice(HasComm, HasConfig):
     """
     Main orchestrator for modular bundle choice estimation.
     
