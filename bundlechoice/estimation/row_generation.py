@@ -114,7 +114,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             bool: Whether the stopping criterion is met.
         """
-        x_sim = self.feature_manager.get_all_distributed(local_pricing_results)
+        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
         pricing_results = self.comm_manager.concatenate_at_root(local_pricing_results, root=0)
         stop = False
         if self.is_root():
@@ -122,7 +122,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             B_sim = pricing_results.astype(bool)
             theta, u = self.master_variables
             error_sim = np.where(B_sim, self.errors, 0).sum(1)
-            x_sim = self.feature_manager.get_all_0(B_sim)
+            # x_sim = self.feature_manager.get_all_0(B_sim)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + error_sim
             u_master = u.X

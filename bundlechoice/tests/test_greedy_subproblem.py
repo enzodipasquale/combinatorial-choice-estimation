@@ -67,7 +67,7 @@ def test_greedy_vs_bruteforce():
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.load(get_features)
+    bc.features.set_oracle(get_features)
 
     test_lambdas = [
         np.ones(dimensions_cfg["num_features"]),
