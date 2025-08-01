@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
-num_agents = 300
+num_agents = 1500
 num_items = 100
 num_features = 10
 num_simuls = 1

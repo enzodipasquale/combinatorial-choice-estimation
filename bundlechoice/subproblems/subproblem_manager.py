@@ -127,11 +127,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         local_bundles = self.solve_local(theta)
         bundles = self.comm_manager.concatenate_at_root(local_bundles, root=0)
         if return_values:
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                features_local = self.feature_manager.compute_rank_features(local_bundles)
-                errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
-                utilities_local = features_local @ theta + errors_local
-                utilities = self.comm_manager.concatenate_at_root(utilities_local, root=0)
+            utilities = self.feature_manager.compute_gathered_utilities(local_bundles, theta)
             return bundles, utilities
         else:
             return bundles

@@ -100,7 +100,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.master_variables = (theta, u)
             self.theta_val = theta.X
         self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
-        
+    
 
 
     def _master_iteration(self, local_pricing_results):
@@ -114,18 +114,15 @@ class RowGenerationSolver(BaseEstimationSolver):
             bool: Whether the stopping criterion is met.
         """
         x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
-        pricing_results = self.comm_manager.concatenate_at_root(local_pricing_results, root=0)
+        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
         stop = False
         if self.is_root():
-            tic = datetime.now()
-            B_sim = pricing_results.astype(bool)
             theta, u = self.master_variables
-            error_sim = np.where(B_sim, self.errors, 0).sum(1)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                u_sim = x_sim @ theta.X + error_sim
+                u_sim = x_sim @ theta.X + errors_sim
             u_master = u.X
 
-            violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-3)[0]
+            violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-6)[0]
             if len(violations) > 0:
                 print("X"* 100)
                 print("u_sim", u_sim[violations])
@@ -140,15 +137,13 @@ class RowGenerationSolver(BaseEstimationSolver):
                 stop = True
             rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tol_certificate)[0]
             logger.info("New constraints: %d", len(rows_to_add))
-            self.master_model.addConstr(u[rows_to_add]  >= error_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
+            self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
             self.master_model.optimize()
             theta_val = theta.X
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
         else:
             theta_val = None
-        # self.comm_manager.barrier()
-        theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
-        self.theta_val = theta_val
+        self.theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 

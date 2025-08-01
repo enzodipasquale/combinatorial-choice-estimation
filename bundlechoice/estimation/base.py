@@ -88,12 +88,9 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             float or None: Objective function value (rank 0) or None (other ranks)
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.compute_gathered_features(B_local_sim)
-        B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
+        utilities = self.feature_manager.compute_gathered_utilities(B_local_sim, theta)
         if self.is_root():
-            errors_sim = (self.errors * B_sim).sum(1)
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                return (features_sim @ theta + errors_sim).sum() - (self.obs_features @ theta).sum()
+            return utilities.sum() - (self.obs_features @ theta).sum()
         else:
             return None
     
@@ -111,10 +108,8 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
         features_sim = self.feature_manager.compute_gathered_features(B_local_sim)
-        B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
         if self.is_root():
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                return features_sim.sum(0) - self.obs_features 
+            return features_sim.sum(0) - self.obs_features 
         else:
             return None
 
