@@ -143,7 +143,6 @@ class RowGenerationSolver(BaseEstimationSolver):
             rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tol_certificate)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             self.master_model.addConstr(u[rows_to_add]  >= error_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
-            # self.master_model.addConstr(u  >= error_sim + x_sim @ theta)
             self.master_model.optimize()
             theta_val = theta.X
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
@@ -168,7 +167,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         self._initialize_master_problem()        
 
         logger.info("Starting row generation loop.")
-        for iteration in range(int(self.rowgen_cfg.max_iters)):
+        iteration = 0
+        while iteration < self.rowgen_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             stop = self._master_iteration(local_pricing_results) 
@@ -178,6 +178,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
                 break
+            iteration += 1
         self.theta_hat = self.theta_val
         return self.theta_hat
 
