@@ -25,9 +25,9 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
     Manages subproblem initialization and solving for both batch (vectorized) and serial (per-agent) solvers.
     Provides a unified interface for initializing and solving subproblems across MPI ranks.
     """
-    def __init__(self, dimensions_cfg: DimensionsConfig, comm: MPI.Comm, data_manager: DataManager, feature_manager: FeatureManager, subproblem_cfg: SubproblemConfig):
+    def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager, data_manager: DataManager, feature_manager: FeatureManager, subproblem_cfg: SubproblemConfig):
         self.dimensions_cfg = dimensions_cfg
-        self.comm = comm
+        self.comm_manager = comm_manager
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
@@ -117,25 +117,23 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If MPI communicator is not set.
         """
-        if self.comm is None:
-            raise RuntimeError("MPI communicator (comm) is not set in SubproblemManager.")
+        if self.comm_manager is None:
+            raise RuntimeError("Communication manager is not set in SubproblemManager.")
         self.initialize_local()
         local_results = self.solve_local(theta)
-        gathered = self.comm.gather(local_results, root=0)
+        gathered = self.comm_manager.concatenate_at_root(local_results, root=0)
+        
         if return_values:
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                features = self.feature_manager.get_local_agents_features(local_results)
-                errors = (self.data_manager.local_data["errors"]* local_results).sum(1)
-                utilities = features @ theta + errors
-                utilities = self.comm.gather(utilities, root=0)
-            if self.rank == 0:
-                return np.concatenate(gathered), np.concatenate(utilities)
+            if self.is_root():
+                with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                    features = self.feature_manager.get_local_agents_features(local_results)
+                    errors = (self.data_manager.local_data["errors"]* local_results).sum(1)
+                    utilities = features @ theta + errors
+                    utilities = self.comm_manager.concatenate_at_root(utilities, root=0)
             else:
-                return None, None
-        if self.rank == 0:
-            return np.concatenate(gathered)
-        else:
-            return None
+                utilities = None
+            return gathered, utilities
+        return gathered
 
     def validate_and_scatter_theta(self, theta: Any) -> Any:
         """
@@ -150,14 +148,14 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         """
         # Check if any rank has None theta
         has_none = theta is None
-        any_has_none = self.comm.allreduce(has_none, op=MPI.LOR)
+        any_has_none = self.comm_manager.all_reduce(has_none, op=MPI.LOR)
         
         if any_has_none:
-            if self.rank == 0:
+            if self.is_root():
                 if theta is None:
                     raise RuntimeError("theta is None on rank 0 but other ranks need it")
                 # Broadcast theta from rank 0 to all ranks
-                theta = self.comm.bcast(theta, root=0)
+                theta = self.comm_manager.broadcast_from_root(theta, root=0)
         return theta
 
     def brute_force_at_0(self, theta: Any) -> Optional[Any]:
@@ -172,7 +170,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If num_items is not set or data_manager is not available.
         """
-        if self.rank != 0:
+        if not self.is_root():
             return None, None
         from itertools import product
         num_agents = self.num_agents
@@ -240,13 +238,8 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
                     best_bundle = bundle.copy()
             max_values[local_id] = max_value
             best_bundles[local_id] = best_bundle
-        gathered_max_values = self.comm.gather(max_values, root=0)
-        gathered_best_bundles = self.comm.gather(best_bundles, root=0)
-        if self.rank == 0:
-            all_max_values = np.concatenate(gathered_max_values)
-            all_best_bundles = np.concatenate(gathered_best_bundles)
-            return all_best_bundles, all_max_values
-        else:
-            return None, None
+        all_max_values = self.comm_manager.concatenate_at_root(max_values, root=0)
+        all_best_bundles = self.comm_manager.concatenate_at_root(best_bundles, root=0)
+        return all_best_bundles, all_max_values
 
 SubproblemProtocol = SubproblemType 

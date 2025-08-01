@@ -26,7 +26,7 @@ class RowGenerationSolver(BaseEstimationSolver):
     """
     def __init__(
                 self, 
-                comm, 
+                comm_manager, 
                 dimensions_cfg, 
                 rowgen_cfg, 
                 data_manager, 
@@ -36,7 +36,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         Initialize the RowGenerationSolver.
 
         Args:
-            comm: MPI communicator
+            comm_manager: Communication manager for MPI operations
             dimensions_cfg: DimensionsConfig instance
             rowgen_cfg: RowGenerationConfig instance
             data_manager: DataManager instance
@@ -44,7 +44,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             subproblem_manager: SubproblemManager instance
         """
         super().__init__(
-            comm=comm,
+            comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
             feature_manager=feature_manager,
@@ -55,6 +55,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.master_model = None
         self.master_variables = None
         self.theta_val = None
+        self.theta_hat = None
 
     def _setup_gurobi_model_params(self):
         """
@@ -82,9 +83,8 @@ class RowGenerationSolver(BaseEstimationSolver):
             tuple: (master_model, master_variables, theta_val)
         """
 
-        if self.rank == 0:
+        if self.is_root():
             self.master_model = self._setup_gurobi_model_params()          
-            # agents_obs_features = self.feature_manager.get_agents_0(self.input_data["obs_bundle"])
             # obs_features = agents_obs_features.sum(0)
             theta = self.master_model.addMVar(self.num_features, obj= - self.num_simuls * self.obs_features, ub=1e4, name='parameter')
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
@@ -100,7 +100,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             
             self.master_variables = (theta, u)
             self.theta_val = theta.X
-        self.theta_val = self.comm.bcast(self.theta_val, root=0)
+        self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
         
 
 
@@ -115,11 +115,11 @@ class RowGenerationSolver(BaseEstimationSolver):
             bool: Whether the stopping criterion is met.
         """
         x_sim = self.feature_manager.get_all_distributed(local_pricing_results)
-        pricing_results = self.comm.gather(local_pricing_results, root=0)
+        pricing_results = self.comm_manager.concatenate_at_root(local_pricing_results, root=0)
         stop = False
-        if self.rank == 0:
+        if self.is_root():
             tic = datetime.now()
-            B_sim = np.concatenate(pricing_results).astype(bool)
+            B_sim = pricing_results.astype(bool)
             theta, u = self.master_variables
             error_sim = np.where(B_sim, self.errors, 0).sum(1)
             x_sim = self.feature_manager.get_all_0(B_sim)
@@ -149,10 +149,10 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
         else:
             theta_val = None
-        # self.comm.Barrier()
-        theta_val = self.comm.bcast(theta_val, root=0)
+        # self.comm_manager.barrier()
+        theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
         self.theta_val = theta_val
-        stop = self.comm.bcast(stop, root=0)
+        stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
     def solve(self):
@@ -173,12 +173,13 @@ class RowGenerationSolver(BaseEstimationSolver):
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             stop = self._master_iteration(local_pricing_results) 
             if stop and iteration >= self.rowgen_cfg.min_iters:
-                if self.rank == 0:
+                if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
                 break
-        return self.theta_val
+        self.theta_hat = self.theta_val
+        return self.theta_hat
 
 
 

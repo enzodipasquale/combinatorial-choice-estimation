@@ -3,6 +3,7 @@ from mpi4py import MPI
 import pytest
 from bundlechoice.data_manager import DataManager
 from bundlechoice.config import DimensionsConfig
+from bundlechoice.comm_manager import CommManager
 
 def test_data_manager_basic():
     """Simple test that just creates a DataManager and checks basic functionality."""
@@ -14,14 +15,15 @@ def test_data_manager_basic():
     )
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    
+    comm_manager = CommManager(comm)
+
     # Just create the data manager - no scatter
-    dm = DataManager(dimensions_cfg=dimensions_cfg, comm=comm)
+    dm = DataManager(dimensions_cfg=dimensions_cfg, comm_manager=comm_manager)
     
     # Check basic attributes
     assert dm.dimensions_cfg == dimensions_cfg
-    assert dm.comm == comm
-    assert dm.rank == rank
+    assert dm.comm_manager == comm_manager
+    assert dm.comm_manager.rank == rank
     assert dm.num_agents == 40
     assert dm.num_items == 3
     assert dm.num_features == 1
@@ -53,8 +55,9 @@ def test_data_manager_load_only():
     }
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    
-    dm = DataManager(dimensions_cfg=dimensions_cfg, comm=comm)
+    comm_manager = CommManager(comm)
+
+    dm = DataManager(dimensions_cfg=dimensions_cfg, comm_manager=comm_manager)
     
     # Only rank 0 loads data
     if rank == 0:

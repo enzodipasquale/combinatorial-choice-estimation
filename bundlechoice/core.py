@@ -2,14 +2,16 @@ from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, Bun
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems import SUBPROBLEM_REGISTRY
-from .subproblems.subproblem_manager import SubproblemManager, SubproblemProtocol
+from .subproblems.subproblem_manager import SubproblemManager
 from mpi4py import MPI
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.base import HasComm, HasConfig
+from .comm_manager import CommManager
 logger = get_logger(__name__)
+
 
 class BundleChoice(HasComm, HasConfig):
     """
@@ -45,6 +47,7 @@ class BundleChoice(HasComm, HasConfig):
     row_generation_manager: Optional[RowGenerationSolver]
     ellipsoid_manager: Optional[EllipsoidSolver]
     comm: MPI.Comm
+    comm_manager: Optional[CommManager]
 
     def __init__(self):
         """
@@ -56,6 +59,7 @@ class BundleChoice(HasComm, HasConfig):
         """
         self.config = None
         self.comm = MPI.COMM_WORLD
+        self.comm_manager = CommManager(self.comm)
         self.data_manager = None
         self.feature_manager = None
         self.subproblem_manager = None
@@ -80,7 +84,7 @@ class BundleChoice(HasComm, HasConfig):
             raise ValueError("dimensions_cfg must be set in config before initializing data manager.")
         self.data_manager = DataManager(
             dimensions_cfg=self.config.dimensions,
-            comm=self.comm
+            comm_manager=self.comm_manager
         )
         return self.data_manager
         
@@ -101,7 +105,7 @@ class BundleChoice(HasComm, HasConfig):
             logger.error("dimensions_cfg must be set in config before initializing feature manager.")
         self.feature_manager = FeatureManager(
             dimensions_cfg=self.config.dimensions,
-            comm=self.comm,
+            comm_manager=self.comm_manager,
             data_manager=self.data_manager
         )
         return self.feature_manager
@@ -124,7 +128,7 @@ class BundleChoice(HasComm, HasConfig):
 
         self.subproblem_manager = SubproblemManager(
             dimensions_cfg=self.config.dimensions,
-            comm=self.comm,
+            comm_manager=self.comm_manager,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
             subproblem_cfg=self.config.subproblem
@@ -163,7 +167,7 @@ class BundleChoice(HasComm, HasConfig):
             )
 
         self.row_generation_manager = RowGenerationSolver(
-            comm=self.comm,
+            comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             rowgen_cfg=self.config.row_generation,
             data_manager=self.data_manager,
@@ -203,7 +207,7 @@ class BundleChoice(HasComm, HasConfig):
             )
 
         self.ellipsoid_manager = EllipsoidSolver(
-            comm=self.comm,
+            comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             ellipsoid_cfg=self.config.ellipsoid,
             data_manager=self.data_manager,
