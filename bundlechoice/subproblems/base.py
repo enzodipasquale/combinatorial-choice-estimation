@@ -39,5 +39,5 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         pass
     
     def solve_all(self, theta: Any, problems: list[Any]) -> Any:
-        return [self.solve(id, theta, pb) for id, pb in enumerate(problems)]
+        return np.array([self.solve(id, theta, pb) for id, pb in enumerate(problems)])
         

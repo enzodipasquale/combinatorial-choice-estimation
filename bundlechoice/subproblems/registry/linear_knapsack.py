@@ -3,6 +3,7 @@ import gurobipy as gp
 from ..base import SerialSubproblemBase
 import logging
 from typing import Any
+from bundlechoice.utils import suppress_output
 
 logger = logging.getLogger(__name__)
 
@@ -11,18 +12,19 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         super().__init__(*args, **kwargs)
     
     def initialize(self, local_id):
-        subproblem = gp.Model()
-        subproblem.setParam('OutputFlag', 0)
-        subproblem.setParam('Threads', 1)
-        time_limit = self.config.settings.get("TimeLimit")
-        if time_limit is not None:
-            subproblem.setParam("TimeLimit", time_limit)
-        subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-        B_j = subproblem.addVars(self.num_items, vtype=gp.GRB.BINARY)
-        weights = self.local_data["item_data"]["weights"]
-        capacity = self.local_data["agent_data"]["capacity"][local_id]
-        subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.num_items)) <= capacity)
-        subproblem.update()
+        with suppress_output():
+            subproblem = gp.Model()
+            subproblem.setParam('OutputFlag', 0)
+            subproblem.setParam('Threads', 1)
+            time_limit = self.config.settings.get("TimeLimit")
+            if time_limit is not None:
+                subproblem.setParam("TimeLimit", time_limit)
+            subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+            B_j = subproblem.addVars(self.num_items, vtype=gp.GRB.BINARY)
+            weights = self.local_data["item_data"]["weights"]
+            capacity = self.local_data["agent_data"]["capacity"][local_id]
+            subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.num_items)) <= capacity)
+            subproblem.update()
         return subproblem
 
     def solve(self, local_id, theta, pb: Any):

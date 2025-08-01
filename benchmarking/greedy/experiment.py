@@ -13,9 +13,9 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 # Define dimensions
 num_agents = 2000
 num_items = 100
-num_features = 5
+num_features = 3
 num_simuls = 1
-sigma = 5
+sigma = 2
 
 # Define configuration as a dictionary
 cfg = {
@@ -101,6 +101,7 @@ def features_oracle(i_id, B_j, data):
 greedy_experiment.features.load(features_oracle)
 beta_star = np.ones(num_features)
 obs_bundles = greedy_experiment.subproblems.init_and_solve(beta_star)
+
 
 # Estimate parameters using row generation
 if rank == 0:
