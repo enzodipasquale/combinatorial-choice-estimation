@@ -4,7 +4,7 @@ from bundlechoice.base import HasConfig, HasDimensions
 from bundlechoice.config import BundleChoiceConfig, DimensionsConfig, SubproblemConfig, EllipsoidConfig
 from bundlechoice.core import BundleChoice
 
-class TestConfigurableClass(HasConfig, HasDimensions):
+class ConfigurableClass(HasConfig, HasDimensions):
     """Test class that uses both HasConfig and HasDimensions mixins."""
     
     def __init__(self, config: BundleChoiceConfig):
@@ -23,7 +23,7 @@ def test_has_config_mixin():
     )
     
     # Create test object
-    test_obj = TestConfigurableClass(cfg)
+    test_obj = ConfigurableClass(cfg)
     
     # Test config access through mixin properties
     assert test_obj.subproblem_cfg is not None
