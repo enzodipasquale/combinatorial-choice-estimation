@@ -21,7 +21,7 @@ class EllipsoidSolver(BaseEstimationSolver):
     
     def __init__(
         self,
-        comm,
+        comm_manager,
         dimensions_cfg,
         ellipsoid_cfg,  
         data_manager,
@@ -32,7 +32,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         Initialize the EllipsoidSolver.
 
         Args:
-            comm: MPI communicator
+            comm_manager: Communication manager for MPI operations
             dimensions_cfg: DimensionsConfig instance
             ellipsoid_cfg: EllipsoidConfig instance with method-specific parameters
             data_manager: DataManager instance
@@ -40,7 +40,7 @@ class EllipsoidSolver(BaseEstimationSolver):
             subproblem_manager: SubproblemManager instance
         """
         super().__init__(
-            comm=comm,
+            comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
             feature_manager=feature_manager,

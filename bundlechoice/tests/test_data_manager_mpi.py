@@ -3,6 +3,7 @@ from mpi4py import MPI
 import pytest
 from bundlechoice.data_manager import DataManager
 from bundlechoice.config import DimensionsConfig
+from bundlechoice.comm_manager import CommManager
 
 
 def test_data_manager_scatter_mpi():
@@ -14,6 +15,7 @@ def test_data_manager_scatter_mpi():
     )
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
+    comm_manager = CommManager(comm)
     if rank == 0:
         input_data = {
             'item_data': {'a': np.array([1, 2, 3])},
@@ -27,7 +29,7 @@ def test_data_manager_scatter_mpi():
     
     dm = DataManager(
         dimensions_cfg=dimensions_cfg,
-        comm=comm
+        comm_manager=comm_manager
     )
     # Only rank 0 loads and scatters the data
     # print(f"Rank {rank}: input_data = {input_data}")

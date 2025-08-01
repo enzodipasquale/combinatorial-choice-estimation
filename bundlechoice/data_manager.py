@@ -26,16 +26,16 @@ class DataManager(HasDimensions, HasComm):
         }
     """
 
-    def __init__(self, dimensions_cfg: DimensionsConfig, comm: MPI.Comm) -> None:
+    def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager) -> None:
         """
         Initialize the DataManager.
 
         Args:
             dimensions_cfg (DimensionsConfig): Configuration for problem dimensions.
-            comm (MPI.Comm): MPI communicator.
+            comm_manager: Communication manager for MPI operations.
         """
         self.dimensions_cfg = dimensions_cfg
-        self.comm = comm
+        self.comm_manager = comm_manager
         self.input_data = None
         self.local_data: Optional[Dict[str, Any]] = None
         self.num_local_agents: Optional[int] = None
@@ -52,7 +52,7 @@ class DataManager(HasDimensions, HasComm):
         """
         logger.info("Loading input data.")
         self._validate_input_data(input_data)
-        if self.rank == 0:
+        if self.is_root():
             self.input_data = input_data
         else:
             self.input_data = None
@@ -83,7 +83,7 @@ class DataManager(HasDimensions, HasComm):
             ValueError: If dimensions_cfg is not set, or if input_data is not set on rank 0.
             RuntimeError: If no data chunk is received after scatter.
         """
-        if self.rank == 0:
+        if self.is_root():
             agent_data = self.input_data.get("agent_data")
             errors = self._prepare_errors(self.input_data.get("errors"))
             obs_bundles = self.input_data.get("obs_bundle")
@@ -94,8 +94,8 @@ class DataManager(HasDimensions, HasComm):
             agent_data_chunks = None
             item_data = None
 
-        local_chunk = self.comm.scatter(agent_data_chunks, root=0)
-        item_data = self.comm.bcast(item_data, root=0)
+        local_chunk = self.comm_manager.scatter_from_root(agent_data_chunks, root=0)
+        item_data = self.comm_manager.broadcast_from_root(item_data, root=0)
      
         self.local_data = self._build_local_data(local_chunk, item_data)
         self.num_local_agents = local_chunk["num_local_agents"] 
@@ -159,7 +159,7 @@ class DataManager(HasDimensions, HasComm):
         Raises:
             ValueError: If input_data structure or dimensions don't match expectations.
         """ 
-        if self.rank == 0:
+        if self.is_root():
             agent_data = input_data.get("agent_data")
             if agent_data is not None:
                 for key, value in agent_data.items():
@@ -209,7 +209,7 @@ class DataManager(HasDimensions, HasComm):
         Raises ValueError if any check fails.
         """
         input_data = self.input_data
-        if self.rank == 0:
+        if self.is_root():
             dimensions_cfg = self.dimensions_cfg
             agent_data = input_data.get("agent_data", {})
             item_data = input_data.get("item_data", {})

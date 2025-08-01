@@ -16,7 +16,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
 
     def __init__(   self, 
                     dimensions_cfg: DimensionsConfig, 
-                    comm: MPI.Comm, 
+                    comm_manager, 
                     data_manager: DataManager
                     ):
         """
@@ -24,11 +24,11 @@ class FeatureManager(HasDimensions, HasComm, HasData):
 
         Args:
             dimensions_cfg (DimensionsConfig): Configuration object with num_agents, num_items, num_features, num_simuls.
-            comm (MPI.Comm): MPI communicator.
+            comm_manager: Communication manager for MPI operations.
             data_manager (DataManager): DataManager instance.
         """
         self.dimensions_cfg = dimensions_cfg
-        self.comm = comm
+        self.comm_manager = comm_manager
         self.data_manager = data_manager
         self.features_oracle = None
 
@@ -78,7 +78,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Raises:
             ValueError: If num_agents is not set.
         """
-        if self.rank != 0:
+        if not self.is_root():
             return None
         return np.stack([self.get_features(i, bundles[i]) for i in range(self.num_agents)])
 
@@ -107,7 +107,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Raises:
             ValueError: If num_agents or num_simuls is not set.
         """
-        if self.rank != 0:
+        if not self.is_root():
             return None
         assert self.num_global_agents == len(bundles), "num_global_agents and bundles must have the same length."
         return np.stack([self.get_features(id % self.num_agents, bundles[id]) for id in range(self.num_global_agents)])
@@ -124,11 +124,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
         """
         features_local = self.get_local_agents_features(local_bundles)
-        features = self.comm.gather(features_local, root=0)
-        if self.rank == 0:
-            return np.concatenate(features)
-        else:
-            return None
+        return self.comm_manager.concatenate_at_root(features_local, root=0)
 
     # --- Feature oracle builder ---
     def build_from_data(self):
@@ -141,7 +137,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             Callable: The new features_oracle function.
         """
         self.data_manager.validate_standard_inputdata()
-        if self.rank == 0:
+        if self.is_root():
             input_data = self.input_data
             agent_data = input_data.get("agent_data")
             item_data = input_data.get("item_data")
@@ -162,10 +158,10 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             has_quadratic_agent = None
             has_modular_item = None
             has_quadratic_item = None
-        has_modular_agent = self.comm.bcast(has_modular_agent, root=0)
-        has_quadratic_agent = self.comm.bcast(has_quadratic_agent, root=0)
-        has_modular_item = self.comm.bcast(has_modular_item, root=0)
-        has_quadratic_item = self.comm.bcast(has_quadratic_item, root=0)
+        has_modular_agent = self.comm_manager.broadcast_from_root(has_modular_agent, root=0)
+        has_quadratic_agent = self.comm_manager.broadcast_from_root(has_quadratic_agent, root=0)
+        has_modular_item = self.comm_manager.broadcast_from_root(has_modular_item, root=0)
+        has_quadratic_item = self.comm_manager.broadcast_from_root(has_quadratic_item, root=0)
 
         code_lines = ["def get_features(id, B_j, data):", "    feats = []"]
         if has_modular_agent:

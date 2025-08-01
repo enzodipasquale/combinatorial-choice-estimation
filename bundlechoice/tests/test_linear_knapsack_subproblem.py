@@ -52,7 +52,7 @@ def test_generate_data_linear():
     theta = np.ones(num_features)
     results = bc.subproblems.init_and_solve(theta)
 
-    if bc.rank == 0:
+    if bc.is_root():
         assert isinstance(results, np.ndarray)
         assert results.dtype == bool
         assert results.shape == (num_agents * cfg["dimensions"]["num_simuls"], num_items)

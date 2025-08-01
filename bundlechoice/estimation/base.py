@@ -4,13 +4,13 @@ This module provides a base class with common functionality for different estima
 """
 import numpy as np
 from typing import Optional, Any
-from bundlechoice.base import HasDimensions, HasData
+from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-class BaseEstimationSolver(HasDimensions, HasData):
+class BaseEstimationSolver(HasDimensions, HasData, HasComm):
     """
     Base class for estimation solvers in modular bundle choice models.
     
@@ -30,7 +30,7 @@ class BaseEstimationSolver(HasDimensions, HasData):
     
     def __init__(
         self,
-        comm,
+        comm_manager,
         dimensions_cfg,
         data_manager,
         feature_manager,
@@ -40,14 +40,13 @@ class BaseEstimationSolver(HasDimensions, HasData):
         Initialize the BaseEstimationSolver.
 
         Args:
-            comm: MPI communicator
+            comm_manager: Communication manager for MPI operations
             dimensions_cfg: DimensionsConfig instance
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
         """
-        self.comm = comm
-        self.rank = comm.Get_rank()
+        self.comm_manager = comm_manager
         self.dimensions_cfg = dimensions_cfg
         self.data_manager = data_manager
         self.feature_manager = feature_manager
@@ -69,7 +68,7 @@ class BaseEstimationSolver(HasDimensions, HasData):
         """
         local_bundles = self.local_data.get("obs_bundles")
         agents_obs_features = self.feature_manager.get_all_distributed(local_bundles)
-        if self.rank == 0:
+        if self.is_root():
             obs_features = agents_obs_features.sum(0) / self.num_simuls
             return obs_features
         else:
@@ -90,9 +89,8 @@ class BaseEstimationSolver(HasDimensions, HasData):
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
         features_sim = self.feature_manager.get_all_distributed(B_local_sim)
-        B_sim = self.comm.gather(B_local_sim, root=0)
-        if self.rank == 0:
-            B_sim = np.concatenate(B_sim)
+        B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
+        if self.is_root():
             errors_sim = (self.errors * B_sim).sum(1)
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 return (features_sim @ theta + errors_sim).sum() - (self.obs_features @ theta).sum()
@@ -113,9 +111,8 @@ class BaseEstimationSolver(HasDimensions, HasData):
         """
         B_local_sim = self.subproblem_manager.solve_local(theta)
         features_sim = self.feature_manager.get_all_distributed(B_local_sim)
-        B_sim = self.comm.gather(B_local_sim, root=0)
-        if self.rank == 0:
-            B_sim = np.concatenate(B_sim)
+        B_sim = self.comm_manager.concatenate_at_root(B_local_sim, root=0)
+        if self.is_root():
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 return features_sim.sum(0) - self.obs_features 
         else:
