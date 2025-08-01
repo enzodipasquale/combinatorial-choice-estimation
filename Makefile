@@ -13,12 +13,12 @@ knap_test:
 	mpirun -n 2 pytest -s --log-cli-level=INFO bundlechoice/tests/test_row_generation_linear_knapsack.py | cat 
 
 greedy:
-	mpirun -n 8 python benchmarking/greedy/experiment.py
+	mpirun -n 10 python benchmarking/greedy/experiment.py
 
 supermod:
-	mpirun -n 9 python benchmarking/supermod/experiment.py
+	mpirun -n 10 python benchmarking/supermod/experiment.py
 knapsack:
-	mpirun -n 9 python benchmarking/knapsack/experiment.py
+	mpirun -n 10 python benchmarking/knapsack/experiment.py
 
 
 greedy_benchmark:

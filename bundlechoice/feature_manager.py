@@ -110,6 +110,28 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         features_local = self.compute_rank_features(local_bundles)
         return self.comm_manager.concatenate_at_root(features_local, root=0)
 
+
+    def compute_gathered_utilities(self, local_bundles, theta):
+        """
+        Compute utilities for all simulated agents in parallel using MPI.
+        Gathers and concatenates all local results on rank 0.
+        """
+        features_local = self.compute_rank_features(local_bundles)
+        errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            utilities_local = features_local @ theta + errors_local
+        return self.comm_manager.concatenate_at_root(utilities_local, root=0)
+    
+
+    def compute_gathered_errors(self, local_bundles):
+        """
+        Compute errors for all simulated agents in parallel using MPI.
+        Gathers and concatenates all local results on rank 0.
+        """
+        errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
+        return self.comm_manager.concatenate_at_root(errors_local, root=0)
+
+
     # --- Feature oracle builder ---
     def build_from_data(self):
         """
