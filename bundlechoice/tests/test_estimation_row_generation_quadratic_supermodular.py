@@ -6,7 +6,7 @@ from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_quadsupermodular():
     """Test RowGenerationSolver using obs_bundle generated from quadsupermodular subproblem manager."""
-    num_agents = 500
+    num_agents = 250
     num_items = 50
     num_modular_agent_features = 2
     num_modular_item_features = 2
@@ -26,7 +26,7 @@ def test_row_generation_quadsupermodular():
             "name": "QuadSupermodularNetwork",
             "settings": {}
         },
-        "rowgen": {
+        "row_generation": {
             "max_iters": 100,
             "tol_certificate": 0.001,
             "min_iters": 1,

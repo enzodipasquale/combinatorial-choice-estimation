@@ -3,14 +3,14 @@ import tempfile
 import os
 import yaml
 from bundlechoice.config import (
-    DimensionsConfig, RowGenConfig, SubproblemConfig
+    DimensionsConfig, RowGenerationConfig, SubproblemConfig
 )
 from typing import Dict, Any
 
 def load_configs_from_dict(config_dict: Dict[str, Any]):
     """Helper function to load configs from dict without requiring a bundle_choice instance."""
     dimensions_cfg = DimensionsConfig(**config_dict.get("dimensions", {}))
-    rowgen_cfg = RowGenConfig(**config_dict.get("rowgen", {}))
+    rowgen_cfg = RowGenerationConfig(**config_dict.get("row_generation", {}))
     subproblem_cfg = SubproblemConfig(**config_dict.get("subproblem", {}))
     return dimensions_cfg, rowgen_cfg, subproblem_cfg
 
@@ -34,7 +34,7 @@ def test_load_configs_from_dict_partial():
         }
     }
     dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
-    assert rowgen_cfg.item_fixed_effects is False  # default
+    assert rowgen_cfg.tol_certificate == 0.01  # default
 
 def test_load_configs_from_dict_full():
     config_dict = {
@@ -44,8 +44,7 @@ def test_load_configs_from_dict_full():
             'num_features': 3,
             'num_simuls': 2,
         },
-        'rowgen': {
-            'item_fixed_effects': True,
+        'row_generation': {
             'tol_certificate': 0.05,
             'max_iters': 50,
         },
@@ -55,7 +54,7 @@ def test_load_configs_from_dict_full():
         }
     }
     dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
-    assert rowgen_cfg.item_fixed_effects is True
+    assert rowgen_cfg.tol_certificate == 0.05
 
 def test_load_configs_from_yaml():
     yaml_content = '''
@@ -64,8 +63,7 @@ dimensions:
   num_items: 12
   num_features: 4
   num_simuls: 3
-rowgen:
-  item_fixed_effects: false
+row_generation:
   tol_certificate: 0.02
   max_iters: 100
 subproblem:
@@ -83,7 +81,7 @@ subproblem:
         assert dimensions_cfg.num_items == 12
         assert dimensions_cfg.num_features == 4
         assert dimensions_cfg.num_simuls == 3
-        assert rowgen_cfg.item_fixed_effects is False
+        assert rowgen_cfg.tol_certificate == 0.02
         assert rowgen_cfg.tol_certificate == 0.02
         assert rowgen_cfg.max_iters == 100
         assert subproblem_cfg.name == 'greedy'
@@ -94,8 +92,8 @@ subproblem:
 def load_dimensions_cfg(cfg: Dict[str, Any]) -> DimensionsConfig:
     return DimensionsConfig(**cfg.get("dimensions", {}))
 
-def load_rowgen_config(cfg: Dict[str, Any]) -> RowGenConfig:
-    return RowGenConfig(**cfg.get("rowgen", {}))
+def load_rowgen_config(cfg: Dict[str, Any]) -> RowGenerationConfig:
+    return RowGenerationConfig(**cfg.get("row_generation", {}))
 
 def load_subproblem_config(cfg: Dict[str, Any]) -> SubproblemConfig:
     return SubproblemConfig(**cfg.get("subproblem", {}))

@@ -38,7 +38,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         Args:
             comm: MPI communicator
             dimensions_cfg: DimensionsConfig instance
-            rowgen_cfg: RowGenConfig instance
+            rowgen_cfg: RowGenerationConfig instance
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
@@ -54,7 +54,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.rowgen_cfg = rowgen_cfg
         self.master_model = None
         self.master_variables = None
-        self.parameter_iter = None
+        self.theta_val = None
 
     def _setup_gurobi_model_params(self):
         """
@@ -79,7 +79,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         Create and configure the master problem (Gurobi model).
         
         Returns:
-            tuple: (master_model, master_variables, parameter_iter)
+            tuple: (master_model, master_variables, theta_val)
         """
 
         if self.rank == 0:
@@ -99,8 +99,8 @@ class RowGenerationSolver(BaseEstimationSolver):
             logger.info("Master Initialized. Parameter: %s", theta.X)
             
             self.master_variables = (theta, u)
-            self.parameter_iter = theta.X
-        self.parameter_iter = self.comm.bcast(self.parameter_iter, root=0)
+            self.theta_val = theta.X
+        self.theta_val = self.comm.bcast(self.theta_val, root=0)
         
 
 
@@ -135,7 +135,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                 print("X"* 100)
                 stop = True
 
-            logger.info("Parameter: %s", np.round(self.parameter_iter, 2))
+            logger.info("Parameter: %s", np.round(self.theta_val, 2))
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
             if max_reduced_cost < self.rowgen_cfg.tol_certificate:
@@ -145,13 +145,13 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.master_model.addConstr(u[rows_to_add]  >= error_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
             # self.master_model.addConstr(u  >= error_sim + x_sim @ theta)
             self.master_model.optimize()
-            parameter_iter = theta.X
+            theta_val = theta.X
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
         else:
-            parameter_iter = None
+            theta_val = None
         # self.comm.Barrier()
-        parameter_iter = self.comm.bcast(parameter_iter, root=0)
-        self.parameter_iter = parameter_iter
+        theta_val = self.comm.bcast(theta_val, root=0)
+        self.theta_val = theta_val
         stop = self.comm.bcast(stop, root=0)
         return stop
 
@@ -160,8 +160,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         Run the row generation algorithm to estimate model parameters.
 
         Returns:
-            tuple: (parameter_iter)
-                - parameter_iter (np.ndarray): Estimated parameter vector.
+            tuple: (theta_val)
+                - theta_val (np.ndarray): Estimated parameter vector.
         """
         tic = datetime.now()
         self.subproblem_manager.initialize_local()
@@ -170,7 +170,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         logger.info("Starting row generation loop.")
         for iteration in range(int(self.rowgen_cfg.max_iters)):
             logger.info(f"ITERATION {iteration + 1}")
-            local_pricing_results = self.subproblem_manager.solve_local(self.parameter_iter)
+            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             stop = self._master_iteration(local_pricing_results) 
             if stop and iteration >= self.rowgen_cfg.min_iters:
                 if self.rank == 0:
@@ -178,7 +178,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
                 break
-        return self.parameter_iter
+        return self.theta_val
 
 
 

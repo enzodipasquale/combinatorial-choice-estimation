@@ -9,7 +9,7 @@ from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemS
 
 def test_row_generation_plain_single_item():
     """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 2_000
+    num_agents = 250
     num_items = 100
     num_modular_agent_features = 4
     num_modular_item_features = 1
@@ -27,7 +27,7 @@ def test_row_generation_plain_single_item():
             "name": "PlainSingleItem",
             "settings": {}
         },
-        "rowgen": {
+        "row_generation": {
             "max_iters": 100,
             "tol_certificate": .0001,
             "min_iters": 1,

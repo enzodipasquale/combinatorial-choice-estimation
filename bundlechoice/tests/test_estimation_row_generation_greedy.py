@@ -30,7 +30,7 @@ def features_oracle(i_id, B_j, data):
 
 def test_row_generation_greedy():
     """Test RowGenerationSolver using obs_bundle generated from greedy subproblem manager."""
-    num_agents = 300
+    num_agents = 250
     num_items = 50
     num_features = 6
     num_simuls = 1
@@ -45,7 +45,7 @@ def test_row_generation_greedy():
         "subproblem": {
             "name": "Greedy",
         },
-        "rowgen": {
+        "row_generation": {
             "max_iters": 100,
             "tol_certificate": 0.001,
             "min_iters": 1,

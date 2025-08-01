@@ -3,8 +3,12 @@ import mpi4py.MPI as MPI
 class HasComm:
     """
     Mixin for classes that provide an MPI communicator.
-    Expects the subclass to define self.comm (of type MPI.Comm).
-    Provides convenient properties for rank and comm_size.
+    
+    This mixin provides convenient access to MPI rank and communicator size.
+    Classes using this mixin must define a `comm` attribute of type `MPI.Comm`.
+    
+    Attributes:
+        comm: MPI communicator instance
     """
     comm: 'MPI.Comm'  # type: ignore
 
@@ -15,56 +19,66 @@ class HasComm:
 
     @property
     def comm_size(self):
-        """Total number of MPI processes."""
+        """Total number of MPI processes in the communicator."""
         return self.comm.Get_size() if self.comm is not None else None
 
 class HasDimensions:
     """
-    Mixin for classes that provide a dimensions_cfg attribute.
-    Expects the subclass to define self.dimensions_cfg (of type DimensionsConfig).
-    Provides convenient properties for num_agents, num_items, num_features, and num_simuls.
+    Mixin for classes that provide access to problem dimensions.
+    
+    This mixin provides convenient properties for accessing problem dimensions
+    from a `dimensions_cfg` attribute. Classes using this mixin must define
+    a `dimensions_cfg` attribute of type `DimensionsConfig`.
+    
+    Attributes:
+        dimensions_cfg: Configuration object containing problem dimensions
     """
     dimensions_cfg: 'DimensionsConfig'  # type: ignore
 
     @property
     def num_agents(self):
-        """Number of agents (from dimensions_cfg)."""
+        """Number of agents in the problem."""
         return self.dimensions_cfg.num_agents if self.dimensions_cfg else None
 
     @property
     def num_items(self):
-        """Number of items (from dimensions_cfg)."""
+        """Number of items available for choice."""
         return self.dimensions_cfg.num_items if self.dimensions_cfg else None
 
     @property
     def num_features(self):
-        """Number of features (from dimensions_cfg)."""
+        """Number of features per agent-item combination."""
         return self.dimensions_cfg.num_features if self.dimensions_cfg else None
 
     @property
     def num_simuls(self):
-        """Number of simulations (from dimensions_cfg)."""
+        """Number of simulation runs."""
         return self.dimensions_cfg.num_simuls if self.dimensions_cfg else None
 
 class HasData:
     """
-    Mixin for classes that provide a data_manager attribute.
-    Expects the subclass to define self.data_manager (of type DataManager).
-    Provides convenient properties for input_data, local_data, and num_local_agents.
+    Mixin for classes that provide access to data management.
+    
+    This mixin provides convenient properties for accessing data from a
+    `data_manager` attribute. Classes using this mixin must define a
+    `data_manager` attribute of type `DataManager`.
+    
+    Attributes:
+        data_manager: Data manager instance
     """
     data_manager: 'DataManager'  # type: ignore
 
     @property
     def input_data(self):
-        """Input data dictionary (from data_manager)."""
+        """Input data dictionary containing all problem data."""
         return self.data_manager.input_data
 
     @property
     def local_data(self):
-        """Local data dictionary for this rank (from data_manager)."""
+        """Local data dictionary for this MPI rank."""
         return self.data_manager.local_data
 
     @property
     def num_local_agents(self):
-        """Number of local agents for this rank (from data_manager)."""
+        """Number of agents assigned to this MPI rank."""
         return self.data_manager.num_local_agents

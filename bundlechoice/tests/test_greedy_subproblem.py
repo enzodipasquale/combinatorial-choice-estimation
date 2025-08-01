@@ -90,7 +90,7 @@ def test_greedy_vs_bruteforce():
         if bc.rank == 0:
             assert greedy_bundles is not None, "Greedy results should not be None at rank 0"
             assert result is not None, "Brute force results should not be None at rank 0"
-            brute_vals, brute_bundles = result
+            brute_bundles, brute_vals = result
             print(f"Greedy time: {t1-t0:.3f}s | Brute force: {t2-t1:.3f}s | Speedup: {(t2-t1)/(t1-t0):.1f}x")
             # Print bundle sizes for greedy and brute force
             # print("Greedy bundle sizes:", [int(np.sum(bundle)) for bundle in greedy_bundles])

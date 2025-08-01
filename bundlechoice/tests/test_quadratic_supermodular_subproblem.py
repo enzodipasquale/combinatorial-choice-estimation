@@ -84,7 +84,7 @@ def test_quad_vs_bruteforce():
             assert bruteforce_results is not None, "Brute force results should not be None at rank 0"
             
             quad_bundles = quad_results
-            bruteforce_max_values, bruteforce_bundles = bruteforce_results
+            bruteforce_bundles, bruteforce_max_values = bruteforce_results
             
             assert np.array_equal(quad_bundles, bruteforce_bundles)
 
