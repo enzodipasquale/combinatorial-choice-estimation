@@ -4,7 +4,6 @@ Row Generation Greedy Experiment
 This script runs an experiment using the RowGenerationSolver with greedy subproblem manager.
 It's based on the test but adapted for standalone execution and experimentation.
 """
-
 import numpy as np
 import time
 from mpi4py import MPI
@@ -37,8 +36,8 @@ def features_oracle(i_id, B_j, data):
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agents = 100
-    num_items = 50
+    num_agents = 10
+    num_items = 70
     num_features = num_items + 1
     num_simuls = 1
     sigma = 1
@@ -49,7 +48,6 @@ def run_row_generation_greedy_experiment():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls,
         },
         "subproblem": {
             "name": "Greedy",
@@ -57,7 +55,8 @@ def run_row_generation_greedy_experiment():
         "row_generation": {
             "max_iters": 100,
             "tol_certificate": 0.001,
-            "min_iters": 1,
+            "min_iters": 10,
+            "max_slack_counter": 2,
             "master_settings": {
                 "OutputFlag": 0
             }
@@ -111,6 +110,7 @@ def run_row_generation_greedy_experiment():
         
         input_data["obs_bundle"] = obs_bundles
         input_data["errors"] = sigma * estimation_errors
+        cfg["dimensions"]["num_simuls"] = num_simuls
     else:
         input_data = None
 

@@ -55,6 +55,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.master_variables = None
         self.theta_val = None
         self.theta_hat = None
+        self.slack_counter = None
 
     def _setup_gurobi_model_params(self):
         """
@@ -124,12 +125,10 @@ class RowGenerationSolver(BaseEstimationSolver):
 
             violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-6)[0]
             if len(violations) > 0:
-                print("X"* 100)
-                print("u_sim", u_sim[violations])
-                print("u_master", u_master[violations])
-                print("X"* 100)
-        
-
+                logger.warning("Possible failure of demand oracle: %d", len(violations))
+                logger.warning("u_sim", u_sim[violations])
+                logger.warning("u_master", u_master[violations])
+             
             logger.info("Parameter: %s", np.round(self.theta_val, 2))
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
@@ -139,6 +138,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tol_certificate)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
+            num_removed = self._enforce_slack_counter()
+            logger.info("Removed constraints: %d", num_removed)
+            logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             self.master_model.optimize()
             theta_val = theta.X
             self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
@@ -159,7 +161,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         tic = datetime.now()
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()        
-
+        self.slack_counter = {}
         logger.info("Starting row generation loop.")
         iteration = 0
         while iteration < self.rowgen_cfg.max_iters:
@@ -179,31 +181,26 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
 
-    def _update_slack_counter(self, master_model, slack_counter):
+    def _enforce_slack_counter(self):
         """
         Update the slack counter for master problem constraints and remove those that have been slack for too long.
 
-        Args:
-            master_model (gurobipy.Model): The master Gurobi model.
-            slack_counter (dict): Dictionary mapping constraint names to their slack count.
-
         Returns:
-            tuple: (updated slack_counter, int)
-                - slack_counter (dict): Updated slack counter.
-                - int: Number of constraints removed.
+            int: Number of constraints removed.
         """
         to_remove = []
-        for constr in master_model.getConstrs():
-            constr_name = constr.ConstrName
-            if constr_name not in slack_counter:
-                slack_counter[constr_name] = 0
-            if constr.Slack < 0:
-                slack_counter[constr_name] += 1
-            else:
-                slack_counter[constr_name] = 0
-            if slack_counter[constr_name] >= self.rowgen_cfg.max_slack_counter:
-                to_remove.append((constr_name, constr))
-        for constr_name, constr in to_remove:
-            master_model.remove(constr)
-            slack_counter.pop(constr_name, None)
-        return slack_counter, len(to_remove)
+        for constr in self.master_model.getConstrs():
+            if constr.Slack > 0:
+                # Only add to counter when constraint is actually slack
+                if constr not in self.slack_counter:
+                    self.slack_counter[constr] = 0
+                self.slack_counter[constr] += 1
+                if self.slack_counter[constr] >= self.rowgen_cfg.max_slack_counter:
+                    to_remove.append(constr)
+        
+        # Remove all constraints that exceeded the slack counter limit
+        for constr in to_remove:
+            self.master_model.remove(constr)
+            self.slack_counter.pop(constr, None)
+        
+        return len(to_remove)

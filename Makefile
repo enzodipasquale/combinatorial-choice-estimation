@@ -1,11 +1,6 @@
-all_rowgen_tests: supermod_test greedy_test single_test knap_test
-
-
-
-
 
 greedy_experiment:
-	mpirun -n 10 python experiments/row_generation_greedy_experiment.py
+	mpirun -np 10 python3 experiments/row_generation_greedy_experiment.py
 
 
 greedy:

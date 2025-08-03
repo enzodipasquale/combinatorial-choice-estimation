@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Any, Optional
 from ..base import SerialSubproblemBase
+# import time
 
 class GreedySubproblem(SerialSubproblemBase):
     """
@@ -46,11 +47,10 @@ class GreedySubproblem(SerialSubproblemBase):
         # Initialize empty bundle
         bundle = np.zeros(num_items, dtype=bool)
         items_left = np.arange(num_items)
-        
         # Greedy algorithm: iteratively add best item
+        # tic = time.time()
         while len(items_left) > 0:
             best_item, best_val = self._find_best_item(local_id, bundle, items_left, theta, error_j)
-            
             # If no positive marginal value, stop
             if best_val <= 0:
                 break
@@ -58,7 +58,8 @@ class GreedySubproblem(SerialSubproblemBase):
             # Add best item to bundle
             bundle[best_item] = True
             items_left = items_left[items_left != best_item]
-
+        # toc = time.time() - tic
+        # print(f"Done with local id {local_id} time {toc}")
         return bundle
 
     def _check_vectorized_feature_support(self, local_id: int) -> None:
@@ -156,7 +157,8 @@ class GreedySubproblem(SerialSubproblemBase):
         vectorized_features = self._get_vectorized_features(local_id, bundle, items_left)
         
         # Calculate marginal values
-        marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
         
         # Find best item
         best_idx = np.argmax(marginal_values)
