@@ -36,8 +36,8 @@ def features_oracle(i_id, B_j, data):
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agents = 10
-    num_items = 70
+    num_agents = 500
+    num_items = 100
     num_features = num_items + 1
     num_simuls = 1
     sigma = 1
@@ -56,7 +56,7 @@ def run_row_generation_greedy_experiment():
             "max_iters": 100,
             "tol_certificate": 0.001,
             "min_iters": 10,
-            "max_slack_counter": 2,
+            # "max_slack_counter": 2, 
             "master_settings": {
                 "OutputFlag": 0
             }

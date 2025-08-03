@@ -1,6 +1,6 @@
 
 greedy_experiment:
-	mpirun -np 10 python3 experiments/row_generation_greedy_experiment.py
+	mpirun -np 1 python3 experiments/row_generation_greedy_experiment.py
 
 
 greedy:
