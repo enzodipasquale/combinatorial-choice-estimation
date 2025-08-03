@@ -188,19 +188,23 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             int: Number of constraints removed.
         """
-        to_remove = []
-        for constr in self.master_model.getConstrs():
-            if constr.Slack > 0:
-                # Only add to counter when constraint is actually slack
-                if constr not in self.slack_counter:
-                    self.slack_counter[constr] = 0
-                self.slack_counter[constr] += 1
-                if self.slack_counter[constr] >= self.rowgen_cfg.max_slack_counter:
-                    to_remove.append(constr)
-        
-        # Remove all constraints that exceeded the slack counter limit
-        for constr in to_remove:
-            self.master_model.remove(constr)
-            self.slack_counter.pop(constr, None)
-        
-        return len(to_remove)
+        if self.rowgen_cfg.max_slack_counter < float('inf'):
+            to_remove = []
+            for constr in self.master_model.getConstrs():
+                if constr.Slack < -1e-6:
+                    # Only add to counter when constraint is actually slack
+                    if constr not in self.slack_counter:
+                        self.slack_counter[constr] = 0
+                    self.slack_counter[constr] += 1
+                    if self.slack_counter[constr] >= self.rowgen_cfg.max_slack_counter:
+                        to_remove.append(constr)
+                if constr.Pi > 1e-6:
+                    self.slack_counter.pop(constr, None)
+            # Remove all constraints that exceeded the slack counter limit
+            for constr in to_remove:
+                self.master_model.remove(constr)
+                self.slack_counter.pop(constr, None)
+            
+            return len(to_remove)
+        else:
+            return 0

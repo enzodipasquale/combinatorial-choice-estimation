@@ -98,18 +98,10 @@ class GreedySubproblem(SerialSubproblemBase):
         Returns:
             Array of shape (num_features, num_items) with features for each item
         """
-        # # Create multiple bundles: each column is a bundle with one additional item
-        # num_items_to_add = len(items_to_add)
-        # bundles = np.tile(base_bundle, (num_items_to_add, 1)).T  # Shape: (num_items, num_items_to_add)
+        bundles = np.repeat(base_bundle[:, None], len(items_to_add), axis=1)
+        bundles[items_to_add, np.arange(len(items_to_add))] = True
         
-        # # Add each item to its corresponding bundle
-        # for i, item in enumerate(items_to_add):
-        #     bundles[item, i] = True
-
-        
-        bundles = (np.arange(self.num_items)[:, None] == items_to_add[None, :]) + base_bundle[:, None]
-        # assert np.all(bundles == bundles_2)
-        # Get vectorized features
+        # bundles = (np.arange(self.num_items)[:, None] == items_to_add[None, :]) + base_bundle[:, None]
         return self.get_features(local_id, bundles, self.local_data)
 
     def _find_best_item(
