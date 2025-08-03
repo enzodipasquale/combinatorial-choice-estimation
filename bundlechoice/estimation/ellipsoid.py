@@ -50,56 +50,18 @@ class EllipsoidSolver(BaseEstimationSolver):
         self.ellipsoid_cfg = ellipsoid_cfg
         
         # Initialize ellipsoid-specific attributes
-        self.current_parameter = None
-        self.ellipsoid_matrix = None
+        self.theta_iter = None
+        self.B_iter = None
         self.iteration_count = 0
         
-        # Initialize the ellipsoid
-        self._initialize_ellipsoid()
+        # Ellipsoid update coefficients
+        n = self.num_features
+        self.n = n
+        self.alpha = (n**2 / (n**2 - 1))**(1/4)
+        self.gamma = self.alpha * ((n-1)/(n+1))**(1/2)
 
-    def _initialize_ellipsoid(self):
-        """
-        Initialize the ellipsoid with starting parameters and matrix.
-        
-        This method should set up the initial parameter vector and ellipsoid matrix.
-        """
-        # TODO: Implement ellipsoid initialization
-        # - Set initial parameter vector (e.g., zeros or some reasonable starting point)
-        # - Initialize ellipsoid matrix (e.g., identity matrix scaled by some factor)
-        # - Set any other ellipsoid-specific parameters
-        pass
-
-    def _update_ellipsoid(self, gradient: np.ndarray):
-        """
-        Update the ellipsoid based on the computed gradient.
-        
-        This method should implement the ellipsoid update rule using the gradient
-        to refine the parameter estimate and update the ellipsoid matrix.
-        
-        Args:
-            gradient: Gradient vector for updating the ellipsoid
-        """
-        # TODO: Implement ellipsoid update
-        # - Update parameter vector using ellipsoid method update rule
-        # - Update ellipsoid matrix using the gradient information
-        # - Apply any necessary scaling or normalization
-        pass
-
-    def _check_convergence(self) -> bool:
-        """
-        Check if the ellipsoid method has converged.
-        
-        This method should implement convergence criteria specific to the ellipsoid method.
-        
-        Returns:
-            bool: True if converged, False otherwise
-        """
-        # TODO: Implement convergence checking
-        # - Check if ellipsoid volume is small enough
-        # - Check if parameter changes are small enough
-        # - Check if maximum iterations reached
-        # - Consider other ellipsoid-specific convergence criteria
-        pass
+        self.gamma_1 = (n**2 / (n**2 - 1))**(1/2)
+        self.gamma_2 = self.gamma_1 * ((2 / (n + 1)))
 
     def solve(self) -> np.ndarray:
         """
@@ -108,41 +70,83 @@ class EllipsoidSolver(BaseEstimationSolver):
         Returns:
             np.ndarray: Estimated parameter vector.
         """
-        # TODO: Implement the main ellipsoid algorithm loop
-        # - Initialize timing
-        # - Set up iteration loop
-        # - Compute gradient
-        # - Update ellipsoid
-        # - Check convergence
-        # - Log progress
-        # - Return final parameter estimate
-        
         tic = datetime.now()
         
         # Initialize subproblem manager
         self.subproblem_manager.initialize_local()
         
-        logger.info("Starting ellipsoid method.")
+        # Initialize ellipsoid
+        self._initialize_ellipsoid()
         
-        # Main ellipsoid iteration loop
-        for iteration in range(self.ellipsoid_cfg.max_iterations):
-            logger.info(f"ELLIPSOID ITERATION {iteration + 1}")
+        # Main iteration loop
+        iteration = 0
+        vals = []
+        centers = []
+
+        while iteration < self.ellipsoid_cfg.num_iters:
+            iteration += 1
+            logger.info(f"ELLIPSOID ITERATION {iteration}")
+            logger.info(f"THETA: {np.round(self.theta_iter, 4)}")
             
-            # TODO: Implement the core ellipsoid iteration:
-            # 1. Compute gradient (or subgradient) at current parameter
-            # 2. Update ellipsoid using the gradient
-            # 3. Check convergence criteria
-            # 4. Log iteration information
+            # Check for constraint violations (non-negativity)
+            violated = np.where(self.theta_iter < 0.0)[0]
+
+            direction = None
+            if violated.size > 0:
+                # Handle constraint violation: use negative gradient of violated constraint
+                direction = np.zeros_like(self.theta_iter)
+                direction[violated[0]] = -1.0
+                obj_value = np.inf
+            else:
+                # Use objective gradient for productive update
+                obj_value, gradient = self.compute_obj_and_gradient(self.theta_iter)
+                direction = gradient
+                vals.append(obj_value)
+                centers.append(self.theta_iter)
+                # logger.info(f"Objective: {obj_value:.4f}, Gradient norm: {np.linalg.norm(direction):.4f}")
+
+            # Update ellipsoid
+            self._update_ellipsoid(direction)
+            self.theta_iter = self.comm_manager.broadcast_from_root(self.theta_iter, root=0)
             
-            # Placeholder for the actual implementation
-            pass
-            
-            # Check convergence
-            if self._check_convergence():
-                if self.rank == 0:
-                    elapsed = (datetime.now() - tic).total_seconds()
-                    logger.info("Ellipsoid method converged after %d iterations in %.2f seconds.", 
-                               iteration + 1, elapsed)
-                break
+
+
+        elapsed = (datetime.now() - tic).total_seconds()
+        logger.info("Ellipsoid method completed %d iterations in %.2f seconds.", 
+                   self.ellipsoid_cfg.num_iters, elapsed)
+        if self.is_root():
+            best_theta = np.array(centers)[np.argmin(vals)]
+            best_obj = np.min(vals)
+            # logger.info(f"Best theta: {best_theta}, Best objective: {best_obj}")
+        return self.theta_iter
+
+    def _initialize_ellipsoid(self):
+        """Initialize the ellipsoid with starting parameters and matrix."""
+        self.theta_iter = 0.1 * np.ones(self.n)
+        self.B_iter = self.ellipsoid_cfg.initial_radius * np.eye(self.n)
+
+    def _update_ellipsoid(self, d: np.ndarray):
+        """
+        Update the ellipsoid using the gradient.
         
-        return self.current_parameter
+        Args:
+            e: direction of update
+        """
+        if self.is_root():
+                # print("direction", d)
+            # BTd = self.B_iter.T @ d
+            # dTBBTd = d.T @ self.B_iter @  BTd
+            # logger.info(f"dTBBTd: {dTBBTd}")
+            # p = BTd / np.sqrt(dTBBTd)
+            # logger.info(f"p: {p}")
+            # # print("update",-(1/(self.n+1)) * self.B_iter @ p)
+            # self.theta_iter = self.theta_iter - (1/(self.n+1)) * self.B_iter @ p
+            # self.B_iter = self.alpha * self.B_iter - self.gamma * (self.B_iter @ np.outer(p, p))
+
+            b = (self.B_iter @ d) / np.sqrt(d.T @ self.B_iter @ d)
+            self.theta_iter = self.theta_iter - (1/(self.n+1)) * b
+            self.B_iter = self.gamma_1 * self.B_iter - self.gamma_2 *  np.outer(b, b)
+
+
+
+   

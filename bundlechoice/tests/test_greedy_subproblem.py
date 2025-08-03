@@ -78,14 +78,14 @@ def test_greedy_vs_bruteforce():
         if test_lambdas[i][-1] <= 0:
             test_lambdas[i][-1] = abs(test_lambdas[i][-1]) + 0.1
 
-    for idx, theta in enumerate(test_lambdas):
+    for idx, theta_0 in enumerate(test_lambdas):
         if bc.rank == 0:
-            print(f"\nTesting theta {idx+1}: {theta}")
+            print(f"\nTesting theta_0 {idx+1}: {theta_0}")
         t0 = time.time()
-        greedy_bundles = bc.subproblems.init_and_solve(theta)
+        greedy_bundles = bc.subproblems.init_and_solve(theta_0)
         t1 = time.time()
         assert bc.subproblem_manager is not None, "Subproblem manager should be initialized"
-        result = bc.subproblem_manager.brute_force(theta)
+        result = bc.subproblem_manager.brute_force(theta_0)
         t2 = time.time()
         if bc.rank == 0:
             assert greedy_bundles is not None, "Greedy results should not be None at rank 0"
@@ -95,7 +95,7 @@ def test_greedy_vs_bruteforce():
             # Print bundle sizes for greedy and brute force
             # print("Greedy bundle sizes:", [int(np.sum(bundle)) for bundle in greedy_bundles])
             # print("Brute force bundle sizes:", [int(np.sum(bundle)) for bundle in brute_bundles])
-            assert np.array_equal(greedy_bundles, brute_bundles), f"Mismatch for theta {idx+1}"
+            assert np.array_equal(greedy_bundles, brute_bundles), f"Mismatch for theta_0 {idx+1}"
             print(f"✅ Test {idx+1} passed: Greedy and brute force results match")
         else:
             assert greedy_bundles is None, "Greedy results should be None at non-root ranks"
