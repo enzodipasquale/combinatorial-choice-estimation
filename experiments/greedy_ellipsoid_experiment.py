@@ -39,7 +39,7 @@ def features_oracle(i_id, B_j, data):
 def run_greedy_ellipsoid_experiment():
     """Run the greedy ellipsoid experiment."""
     # Experiment parameters
-    num_agents = 300
+    num_agents = 2000
     num_items = 100
     num_features = num_items + 1
     num_simuls = 1
