@@ -6,7 +6,10 @@ from bundlechoice.config import DimensionsConfig
 from mpi4py import MPI
 from bundlechoice.comm_manager import CommManager
 
+
 class DummyDataManager:
+    """Mock data manager for testing feature computation."""
+    
     def __init__(self, num_agents, num_simuls):
         self.agent_data = {"dummy": np.array([[1, 2], [3, 4]])}
         self.item_data = {"dummy": np.array([0])}
@@ -18,15 +21,18 @@ class DummyDataManager:
             "agent_data": {"dummy": np.array([[1, 2], [3, 4]])},
             "item_data": {"dummy": np.array([0])},
             "errors": np.array([[0, 0], [0, 0]]),
-            "obs_bundle": None
+            "observed_bundles": None
         }
         self.num_local_agents = 2
 
+
 def dummy_get_x_k(i, B, data):
-    # Simple feature: sum of bundle times agent index
+    """Simple feature: sum of bundle times agent index."""
     return np.array([i * np.sum(B)])
 
+
 def test_compute_rank_features():
+    """Test feature computation for local rank."""
     num_agents = 30
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
@@ -43,17 +49,22 @@ def test_compute_rank_features():
         data_manager=data_manager
     )
     features.set_oracle(dummy_get_x_k)
+    
     # Create bundles for local agents
     local_bundles = [np.array([1, 2]) for _ in range(data_manager.num_local_agents)]
     x_i_k = features.compute_rank_features(local_bundles)
-    # Should be shape (num_local_agents, 1)
+    
+    # Verify shape and values
     assert x_i_k is not None
     assert x_i_k.shape == (data_manager.num_local_agents, 1)
-    # Check first few values
-    expected_first = np.array([[0], [3]])  # 0*3, 1*3 for 2 local agents
+    
+    # Check first few values: 0*3, 1*3 for 2 local agents
+    expected_first = np.array([[0], [3]])
     assert np.allclose(x_i_k[:2], expected_first)
 
+
 def test_compute_gathered_features():
+    """Test feature computation with MPI gathering."""
     num_agents = 2  # 2 agents per rank
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
@@ -70,22 +81,26 @@ def test_compute_gathered_features():
         data_manager=data_manager
     )
     features.set_oracle(dummy_get_x_k)
+    
     # Create bundles for local agents
     local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]
     x_si_k = features.compute_gathered_features(local_bundles)
-    # Should be shape (num_global_agents, 1) on rank 0, None on other ranks
+    
+    # Verify results on root rank
     if features.comm_manager.is_root():
         assert x_si_k is not None
-        # With 10 ranks, each with 2 agents, total is 20 agents
         expected_total_agents = comm_manager.size * num_agents
         assert x_si_k.shape == (expected_total_agents, 1)
-        # Check first few values
-        expected_first = np.array([[0], [2]])  # 0*2, 1*2 for 2 agents
+        
+        # Check first few values: 0*2, 1*2 for 2 agents
+        expected_first = np.array([[0], [2]])
         assert np.allclose(x_si_k[:2], expected_first)
     else:
         assert x_si_k is None
 
+
 def test_compute_gathered_features_consistency():
+    """Test consistency of gathered features across MPI ranks."""
     num_agents = 2  # 2 agents per rank
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
@@ -102,17 +117,19 @@ def test_compute_gathered_features_consistency():
         data_manager=data_manager
     )
     features.set_oracle(dummy_get_x_k)
+    
     # Create bundles for local agents
     local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]
-    x_si_k_MPI = features.compute_gathered_features(local_bundles)
-    # Test that the gathered features are consistent
+    x_si_k_mpi = features.compute_gathered_features(local_bundles)
+    
+    # Verify consistency on root rank
     if features.comm_manager.is_root():
-        assert x_si_k_MPI is not None
-        # With 10 ranks, each with 2 agents, total is 20 agents
+        assert x_si_k_mpi is not None
         expected_total_agents = comm_manager.size * num_agents
-        assert x_si_k_MPI.shape == (expected_total_agents, 1)
-        # Check that the first local agent features match what we expect
+        assert x_si_k_mpi.shape == (expected_total_agents, 1)
+        
+        # Check that the first local agent features match expected values
         expected_first = np.array([[0], [2]])  # 0*2, 1*2 for 2 local agents
-        assert np.allclose(x_si_k_MPI[:2], expected_first)
+        assert np.allclose(x_si_k_mpi[:2], expected_first)
     else:
-        assert x_si_k_MPI is None 
+        assert x_si_k_mpi is None 

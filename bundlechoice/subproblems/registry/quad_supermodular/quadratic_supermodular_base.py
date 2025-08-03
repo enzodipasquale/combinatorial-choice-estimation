@@ -79,7 +79,7 @@ class QuadraticSupermodular(BatchSubproblemBase):
             P_i_j_j: Upper Triangular Quadratic matrices for all agents (num_local_agents, num_items, num_items)
         """
         P_i_j_j = np.zeros((self.num_local_agents, self.num_items, self.num_items))
-
+        
         # Add quadratic agent/item terms if present
         if self.quadratic_agent is not None:
             P_i_j_j += (self.quadratic_agent @ theta[self.lambda_quad_agent_slice])
@@ -99,6 +99,9 @@ class QuadraticSupermodular(BatchSubproblemBase):
         if self.errors is not None:
             P_i_j_j[:, self.diag_indices[0], self.diag_indices[1]] += self.errors
         
-        P_i_j_j *= np.triu(np.ones((self.num_items, self.num_items)))[None, :, :]
-
+        P_i_j_j = np.triu(P_i_j_j, k = 0)
+        
+        # if any of the entry of P is nan give error
+        if np.any(np.isnan(P_i_j_j)):
+            raise ValueError(f"P_i_j_j contains nan, theta: {theta}")
         return P_i_j_j 

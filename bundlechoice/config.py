@@ -72,6 +72,7 @@ class EllipsoidConfig:
     
     Attributes:
         max_iterations: Maximum number of iterations
+        num_iters: Number of iterations to run (overrides convergence)
         tolerance: Convergence tolerance
         initial_radius: Initial radius of the ellipsoid
         decay_factor: Factor for radius decay
@@ -79,6 +80,7 @@ class EllipsoidConfig:
         verbose: Whether to print progress information
     """
     max_iterations: int = 1000
+    num_iters: Optional[int] = None
     tolerance: float = 1e-6
     initial_radius: float = 1.0
     decay_factor: float = 0.95

@@ -75,7 +75,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Returns:
             np.ndarray: Features for all local agents on this rank (shape: num_local_agents x num_features).
         """
-        assert self.num_local_agents == len(local_bundles), "num_local_agents and local_bundles must have the same length."
+        assert self.num_local_agents == len(local_bundles), f"num_local_agents and local_bundles must have the same length. Bundle shape: {local_bundles.shape} while num_local_agents: {self.num_local_agents}"
         data = self.local_data
         return np.stack([self.compute_features(i, local_bundles[i], data) for i in range(self.num_local_agents)])
 

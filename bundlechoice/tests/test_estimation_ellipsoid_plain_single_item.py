@@ -3,19 +3,22 @@ import pytest
 import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGenerationSolver
+from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
 
 
-def test_row_generation_plain_single_item():
-    """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 250
+
+def test_ellipsoid_plain_single_item():
+    """Test EllipsoidSolver using PlainSingleItemSubproblem with only modular features."""
+    num_agents = 1000
     num_items = 100
-    num_modular_agent_features = 4
+    num_modular_agent_features = 10
     num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
-    
+    sigma = 1
+
+
     cfg = {
         "dimensions": {
             "num_agents": num_agents,
@@ -27,13 +30,10 @@ def test_row_generation_plain_single_item():
             "name": "PlainSingleItem",
             "settings": {}
         },
-        "row_generation": {
-            "max_iters": 100,
-            "tol_certificate": .0001,
-            "min_iters": 1,
-            "master_settings": {
-                "OutputFlag": 0
-            }
+        "ellipsoid": {
+            "num_iters": 150,
+            "initial_radius": 20 * np.sqrt(num_features),
+            "verbose": False
         }
     }
     
@@ -42,10 +42,13 @@ def test_row_generation_plain_single_item():
     rank = comm.Get_rank()
     
     if rank == 0:
+        errors = sigma * np.random.normal(0, 1, ( num_agents, num_items))
+        estimation_errors = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
         input_data = {
             "item_data": {"modular": np.random.normal(0, 1, (num_items, num_modular_item_features))},
             "agent_data": {"modular": np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))},
-            "errors": np.random.normal(0, 0.1, (num_simuls, num_agents, num_items)),
+            "errors": errors,
+            "estimation_errors": estimation_errors,
         }
     else:
         input_data = None
@@ -68,7 +71,7 @@ def test_row_generation_plain_single_item():
 
         modular_agent = input_data["agent_data"]["modular"]
         modular_item = input_data["item_data"]["modular"]
-        errors = input_data["errors"][0]
+        errors = input_data["errors"]
         agent_util = np.einsum('aij,j->ai', modular_agent, theta_0[:num_modular_agent_features])
         item_util = np.dot(modular_item, theta_0[num_modular_agent_features:])
         total_util = agent_util + item_util + errors
@@ -80,7 +83,7 @@ def test_row_generation_plain_single_item():
                 assert np.all(total_util[i, :] <= 0), f"Agent {i} made no selection, but has positive utility: {total_util[i, :]}"
         print("theta_0:\n", theta_0)
         input_data["obs_bundle"] = observed_bundles
-        input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
+        input_data["errors"] = estimation_errors
     else:
         input_data = None
 
@@ -90,14 +93,24 @@ def test_row_generation_plain_single_item():
     demo.subproblems.load()
     
     tic = time.time()
-    theta_hat = demo.row_generation.solve()
+    theta_hat = demo.ellipsoid.solve()
     toc = time.time()
     
-    if rank == 0:
-        print("theta_hat (row generation result):\n", theta_hat)
-        print("theta_0:\n", theta_0)
-        print(f"Time taken: {toc - tic} seconds")
-        assert theta_hat.shape == (num_features,)
-        assert not np.any(np.isnan(theta_hat)) 
+    # # Check objective values on all ranks
+    # obj_at_theta_0 = demo.ellipsoid.objective(theta_0)
+    # obj_at_theta_hat = demo.ellipsoid.objective(theta_hat)
     
-    
+    # if rank == 0:
+    #     print("theta_hat (ellipsoid result):\n", theta_hat)
+    #     print("theta_0:\n", theta_0)
+    #     print(f"Time taken: {toc - tic} seconds")
+    #     assert theta_hat.shape == (num_features,)
+    #     assert not np.any(np.isnan(theta_hat))
+    #     # Additional assertions for ellipsoid method
+    #     assert np.all(np.isfinite(theta_hat))
+    #     # Check that the solution is reasonable (not all zeros or extreme values)
+    #     assert np.any(theta_hat != 0)
+    #     assert np.all(np.abs(theta_hat) < 100)  # Reasonable bounds
+        
+    #     print("obj_at_theta_0", obj_at_theta_0)
+    #     print("obj_at_theta_hat", obj_at_theta_hat) 

@@ -3,7 +3,7 @@ Base estimation solver for modular bundle choice estimation (v2).
 This module provides a base class with common functionality for different estimation algorithms.
 """
 import numpy as np
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
 from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
 
@@ -53,7 +53,6 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         self.subproblem_manager = subproblem_manager
 
         # Initialize common attributes
-        self.errors = self.input_data["errors"].reshape(-1, self.num_items) if self.input_data is not None else None
         self.obs_features = self.get_obs_features()
 
     def get_obs_features(self) -> Optional[np.ndarray]:
@@ -69,10 +68,39 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         local_bundles = self.local_data.get("obs_bundles")
         agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
         if self.is_root():
-            obs_features = agents_obs_features.sum(0) / self.num_simuls
+            obs_features = agents_obs_features.sum(0) 
             return obs_features
         else:
             return None
+
+    def compute_obj_and_gradient(self, theta: np.ndarray) -> Optional[Tuple[float, np.ndarray]]:
+        """
+        Compute both objective function value and gradient efficiently.
+        
+        This method computes both values in one call to avoid duplicate
+        expensive computations like subproblem solving and feature computation.
+        
+        Args:
+            theta: Parameter vector
+            
+        Returns:
+            Tuple[float, np.ndarray] or None: (objective_value, gradient) (rank 0) or None (other ranks)
+        """
+        # Solve subproblem and compute features (expensive operation)
+        B_local = self.subproblem_manager.solve_local(theta)
+        agents_features = self.feature_manager.compute_gathered_features(B_local)
+        utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
+        
+        if self.is_root():
+            # Compute utilities for objective
+            obj_value = utilities.sum() - (self.obs_features @ theta).sum()
+            
+            # Compute (normalized) gradient
+            gradient = (agents_features.sum(0) - self.obs_features) / self.num_agents
+            
+            return obj_value, gradient
+        else:
+            return None, None
 
     def objective(self, theta: np.ndarray) -> Optional[float]:
         """
@@ -87,8 +115,8 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         Returns:
             float or None: Objective function value (rank 0) or None (other ranks)
         """
-        B_local_sim = self.subproblem_manager.solve_local(theta)
-        utilities = self.feature_manager.compute_gathered_utilities(B_local_sim, theta)
+        B_local = self.subproblem_manager.solve_local(theta)
+        utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
         if self.is_root():
             return utilities.sum() - (self.obs_features @ theta).sum()
         else:
@@ -106,10 +134,13 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         Returns:
             np.ndarray or None: Gradient vector (rank 0) or None (other ranks)
         """
-        B_local_sim = self.subproblem_manager.solve_local(theta)
-        features_sim = self.feature_manager.compute_gathered_features(B_local_sim)
+        self.subproblem_manager.initialize_local()
+        B_local = self.subproblem_manager.solve_local(theta)
+        agents_features = self.feature_manager.compute_gathered_features(B_local)
         if self.is_root():
-            return features_sim.sum(0) - self.obs_features 
+            # print("agents_features", agents_features.sum(0))
+            # print("obs_features", self.obs_features)
+            return (agents_features.sum(0) - self.obs_features) / self.num_agents
         else:
             return None
 

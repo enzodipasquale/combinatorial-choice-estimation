@@ -119,10 +119,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if self.comm_manager is None:
             raise RuntimeError("Communication manager is not set in SubproblemManager.")
         # Broadcast theta from rank 0 to all ranks if available
-        if self.is_root() and theta is not None:
-            theta = self.comm_manager.broadcast_from_root(theta, root=0)
-        else:
-            theta = self.comm_manager.broadcast_from_root(None, root=0)
+        theta = self.comm_manager.broadcast_from_root(theta, root=0)
         self.initialize_local()
         local_bundles = self.solve_local(theta)
         bundles = self.comm_manager.concatenate_at_root(local_bundles, root=0)

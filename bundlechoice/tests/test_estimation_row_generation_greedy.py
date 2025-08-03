@@ -29,7 +29,7 @@ def features_oracle(i_id, B_j, data):
     return features
 
 def test_row_generation_greedy():
-    """Test RowGenerationSolver using obs_bundle generated from greedy subproblem manager."""
+    """Test RowGenerationSolver using observed bundles generated from greedy subproblem manager."""
     num_agents = 250
     num_items = 50
     num_features = 6
@@ -73,15 +73,15 @@ def test_row_generation_greedy():
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
 
-    # Simulate beta_star and generate obs_bundles
-    beta_star = np.ones(num_features)
-    obs_bundles = greedy_demo.subproblems.init_and_solve(beta_star)
+    # Simulate theta_0 and generate observed bundles
+    theta_0 = np.ones(num_features)
+    observed_bundles = greedy_demo.subproblems.init_and_solve(theta_0)
 
     # Estimate parameters using row generation
     if rank == 0:
-        print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
-        print(f"aggregate: {obs_bundles.sum()}")
-        input_data["obs_bundle"] = obs_bundles
+        print(f"aggregate demands: {observed_bundles.sum(1).min()}, {observed_bundles.sum(1).max()}")
+        print(f"aggregate: {observed_bundles.sum()}")
+        input_data["obs_bundle"] = observed_bundles
         input_data["errors"] = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
     else:
         input_data = None
@@ -95,6 +95,7 @@ def test_row_generation_greedy():
     
     if rank == 0:
         print("theta_hat:", theta_hat)
+        print("theta_0:", theta_0)
         assert theta_hat.shape == (num_features,)
         assert not np.any(np.isnan(theta_hat)) 
 

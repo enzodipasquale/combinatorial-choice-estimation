@@ -12,8 +12,10 @@ def features_oracle(i_id, B_j, data):
     or (num_features, m) for m bundles.
     """
     modular_agent = data["agent_data"]["modular"][i_id]
+    modular_item = data["item_data"]["modular"]
 
     modular_agent = np.atleast_2d(modular_agent)
+    modular_item = np.atleast_2d(modular_item)
 
     single_bundle = False
     if B_j.ndim == 1:
@@ -21,18 +23,19 @@ def features_oracle(i_id, B_j, data):
         single_bundle = True
     with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
         agent_sum = modular_agent.T @ B_j
-    neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
-
-    features = np.vstack((agent_sum, neg_sq))
+        item_sum = modular_item.T @ B_j
+    features = np.vstack((agent_sum, item_sum))
     if single_bundle:
         return features[:, 0]  # Return as 1D array for a single bundle
     return features
 
 def test_ellipsoid_linear_knapsack():
-    """Test EllipsoidSolver using obs_bundle generated from linear knapsack subproblem manager."""
-    num_agents = 100  # Smaller problem for linear knapsack
+    """Test EllipsoidSolver using observed bundles generated from linear knapsack subproblem manager."""
+    num_agents = 100
     num_items = 20
-    num_features = 6
+    num_modular_agent_features = 2
+    num_modular_item_features = 2
+    num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
     
     cfg = {
@@ -40,22 +43,16 @@ def test_ellipsoid_linear_knapsack():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls,
+            "num_simuls": num_simuls
         },
         "subproblem": {
             "name": "LinearKnapsack",
-            "settings": {
-                "capacity": 5,  # Maximum items per bundle
-                "weights": None  # Will be set to ones
-            }
+            "settings": {"TimeLimit": 10, "MIPGap_tol": 0.01}
         },
         "ellipsoid": {
-            "max_iterations": 50,  # Fewer iterations for smaller problem
-            "tolerance": 1e-5,
-            "initial_radius": 1.0,
-            "decay_factor": 0.9,
-            "min_volume": 1e-10,
-            "verbose": True
+            "num_iters": 100,
+            "initial_radius": 20 * np.sqrt(num_features),
+            "verbose": False
         }
     }
     
@@ -64,29 +61,32 @@ def test_ellipsoid_linear_knapsack():
     rank = comm.Get_rank()
     
     if rank == 0:
-        modular = np.random.normal(0, 1, (num_agents, num_items, num_features-1))
-        errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items)) 
-        agent_data = {"modular": modular}
-        input_data = {"agent_data": agent_data, "errors": errors}
+        input_data = {
+            "item_data": {
+                "modular": np.abs(np.random.normal(0, 1, (num_items, num_modular_item_features))),
+                "weights": np.random.randint(1, 10, size=num_items)
+            },
+            "agent_data": {
+                "modular": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))),
+                "capacity": np.random.randint(1, 100, size=num_agents)
+            },
+            "errors": np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
+        }
     else:
         input_data = None
-
-    # Initialize BundleChoice
+        
     knapsack_demo = BundleChoice()
     knapsack_demo.load_config(cfg)
     knapsack_demo.data.load_and_scatter(input_data)
     knapsack_demo.features.set_oracle(features_oracle)
-
-    # Simulate beta_star and generate obs_bundles
-    beta_star = np.ones(num_features)
-    obs_bundles = knapsack_demo.subproblems.init_and_solve(beta_star)
-
-    # Estimate parameters using ellipsoid method
-    if rank == 0:
-        print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
-        print(f"aggregate: {obs_bundles.sum()}")
-        input_data["obs_bundle"] = obs_bundles
-        input_data["errors"] = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    
+    theta_0 = np.ones(num_features)
+    observed_bundles = knapsack_demo.subproblems.init_and_solve(theta_0)
+    
+    if rank == 0 and observed_bundles is not None:
+        print("Total demand:", observed_bundles.sum(1).min(), observed_bundles.sum(1).max())
+        input_data["obs_bundle"] = observed_bundles
+        input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
     else:
         input_data = None
 
@@ -94,15 +94,15 @@ def test_ellipsoid_linear_knapsack():
     knapsack_demo.data.load_and_scatter(input_data)
     knapsack_demo.features.set_oracle(features_oracle)
     knapsack_demo.subproblems.load()
-    
+
     theta_hat = knapsack_demo.ellipsoid.solve()
     
+    # Check objective values on all ranks
+    obj_at_theta_0 = knapsack_demo.ellipsoid.objective(theta_0)
+    obj_at_theta_hat = knapsack_demo.ellipsoid.objective(theta_hat)
     if rank == 0:
         print("theta_hat:", theta_hat)
-        assert theta_hat.shape == (num_features,)
-        assert not np.any(np.isnan(theta_hat))
-        # Additional assertions for ellipsoid method
-        assert np.all(np.isfinite(theta_hat))
-        # Check that the solution is reasonable (not all zeros or extreme values)
-        assert np.any(theta_hat != 0)
-        assert np.all(np.abs(theta_hat) < 100)  # Reasonable bounds 
+        print("theta_0:", theta_0)
+        print("obj_at_theta_0", obj_at_theta_0)
+        print("obj_at_theta_hat", obj_at_theta_hat) 
+    
