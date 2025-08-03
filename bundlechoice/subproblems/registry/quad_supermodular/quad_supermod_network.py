@@ -18,6 +18,7 @@ class QuadraticSOptNetwork(QuadraticSupermodular):
         P_i_j_j = self.build_quadratic_matrix(theta)
         optimal_bundles =  np.zeros((self.num_local_agents, self.num_items), dtype=bool)
         for i in range(self.num_local_agents):
+            assert np.all(P_i_j_j[i] * np.tril(np.ones((self.num_items, self.num_items)), k=-1) == 0), f"P_i_j_j must be upper triangular"
             solver = MinCutSubmodularSolver(-P_i_j_j[i], self.constraint_mask[i])
             optimal_bundle = solver.solve_QSM()
             optimal_bundles[i] = optimal_bundle
@@ -39,7 +40,7 @@ class MinCutSubmodularSolver:
 
         self.b_j_j = b_j_j
         self.num_items = b_j_j.shape[0]
-        assert np.all(b_j_j * np.tril(np.ones((self.num_items, self.num_items)), k=-1) == 0), "b_j_j must be upper triangular"
+        assert np.all(b_j_j * np.tril(np.ones((self.num_items, self.num_items)), k=-1) == 0), f"b_j_j must be upper triangular"
         assert np.all(b_j_j * (1 - np.eye(self.num_items)) <= 0), "b_j_j must have non-sign off-diagonal elements"
    
         self.constraint_mask = constraint_mask

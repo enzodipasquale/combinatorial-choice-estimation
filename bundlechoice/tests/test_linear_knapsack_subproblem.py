@@ -49,8 +49,8 @@ def test_generate_data_linear():
     bc.features.build_from_data()
 
     # Solve pricing
-    theta = np.ones(num_features)
-    results = bc.subproblems.init_and_solve(theta)
+    theta_0 = np.ones(num_features)
+    results = bc.subproblems.init_and_solve(theta_0)
 
     if bc.is_root():
         assert isinstance(results, np.ndarray)

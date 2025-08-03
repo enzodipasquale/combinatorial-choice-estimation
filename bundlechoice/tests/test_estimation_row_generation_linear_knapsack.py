@@ -5,7 +5,7 @@ from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_linear_knapsack():
-    """Test RowGenerationSolver using obs_bundle generated from linear knapsack subproblem manager."""
+    """Test RowGenerationSolver using observed bundles generated from linear knapsack subproblem manager."""
     num_agents = 250
     num_items = 20
     num_modular_agent_features = 2
@@ -58,12 +58,12 @@ def test_row_generation_linear_knapsack():
     knapsack_demo.data.load_and_scatter(input_data)
     knapsack_demo.features.build_from_data()
     
-    theta = np.ones(num_features)
-    obs_bundle = knapsack_demo.subproblems.init_and_solve(theta)
+    theta_0 = np.ones(num_features)
+    observed_bundles = knapsack_demo.subproblems.init_and_solve(theta_0)
     
-    if rank == 0 and obs_bundle is not None:
-        print("Total demand:", obs_bundle.sum(1).min(), obs_bundle.sum(1).max())
-        input_data["obs_bundle"] = obs_bundle
+    if rank == 0 and observed_bundles is not None:
+        print("Total demand:", observed_bundles.sum(1).min(), observed_bundles.sum(1).max())
+        input_data["obs_bundle"] = observed_bundles
         input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
     else:
         input_data = None
@@ -77,5 +77,6 @@ def test_row_generation_linear_knapsack():
     
     if rank == 0:
         print("theta_hat:", theta_hat)
+        print("theta_0:", theta_0)
         assert theta_hat.shape == (num_features,)
         assert not np.any(np.isnan(theta_hat))

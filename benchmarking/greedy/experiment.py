@@ -58,7 +58,7 @@ else:
 greedy_experiment.data.load_and_scatter(data)
 
 # Define features oracle
-def features_oracle(i_id, B_j, data):
+def features_oracle(i_id, bundle, data):
     """
     Compute features for a given agent and bundle(s).
     Supports both single (1D) and multiple (2D) bundles.
@@ -68,31 +68,35 @@ def features_oracle(i_id, B_j, data):
     modular_agent = data["agent_data"]["modular"][i_id]
     # modular_item = data["item_data"]["modular"]
 
-    modular_agent = np.atleast_2d(modular_agent)
-    # modular_item = np.atleast_2d(modular_item)
+    # modular_agent = np.atleast_2d(modular_agent)
+    # # modular_item = np.atleast_2d(modular_item)
 
-    single_bundle = False
-    if B_j.ndim == 1:
-        B_j = B_j[:, None]
-        single_bundle = True
-    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-        agent_sum = modular_agent.T @ B_j
-    # item_sum = modular_item.T @ B_j
-    neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
+    # single_bundle = False
+    # if bundle.ndim == 1:
+    #     bundle = bundle[:, None]
+    #     single_bundle = True
+    # with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+    #     agent_sum = modular_agent.T @ bundle
+    # # item_sum = modular_item.T @ bundle
+    # neg_sq = -np.sum(bundle, axis=0, keepdims=True) ** 2
 
-    features = np.vstack((agent_sum, 
-                            # item_sum, 
-                            neg_sq))
-    if single_bundle:
-        return features[:, 0] 
-    return features
+    # features = np.vstack((agent_sum, 
+    #                         # item_sum, 
+    #                         neg_sq))
+    # if single_bundle:
+    #     return features[:, 0] 
+    # return features
+    if bundle.ndim == 1:
+        return np.concatenate((modular_agent.T @ bundle, [-bundle.sum() ** 2]))
+    else:
+        return np.concatenate((modular_agent.T @ bundle, -np.sum(bundle, axis=0, keepdims=True) ** 2), axis=0)
 
-# def features_oracle(i_id, B_j, data):
+# def features_oracle(i_id, bundle, data):
 #     modular_agent = data["agent_data"]["modular"][i_id]
-#     if B_j.ndim > 1:
-#         raise ValueError("B_j must be a 1D array")
-#     agent_sum =  (modular_agent * B_j[:,None]).sum(0)
-#     neg_sq = -(B_j.sum() ** 2)
+#     if bundle.ndim > 1:
+#         raise ValueError("bundle must be a 1D array")
+#     agent_sum =  (modular_agent * bundle[:,None]).sum(0)
+#     neg_sq = -(bundle.sum() ** 2)
 
 #     features = np.concatenate((agent_sum, [neg_sq]))
     
