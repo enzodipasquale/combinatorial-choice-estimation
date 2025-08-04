@@ -292,8 +292,8 @@ class BundleChoice(HasComm, HasConfig):
         """
         Load configuration from a dictionary or YAML file.
         
-        This method loads the complete configuration and resets all manager
-        components to ensure consistency with the new configuration.
+        This method merges the new configuration with existing configuration,
+        preserving component references and only updating specified fields.
         
         Args:
             cfg: Dictionary or YAML file path with configuration
@@ -305,18 +305,17 @@ class BundleChoice(HasComm, HasConfig):
             ValueError: If cfg is not a dictionary or string
         """
         if isinstance(cfg, str):
-            self.config = BundleChoiceConfig.from_yaml(cfg)
+            new_config = BundleChoiceConfig.from_yaml(cfg)
         elif isinstance(cfg, dict):
-            self.config = BundleChoiceConfig.from_dict(cfg)
+            new_config = BundleChoiceConfig.from_dict(cfg)
         else:
             raise ValueError("cfg must be a dictionary or a YAML path.")
 
-        # Reset all managers to ensure consistency with new configuration
-        self.data_manager = None
-        self.feature_manager = None
-        self.subproblem_manager = None
-        self.row_generation_manager = None
-        self.ellipsoid_manager = None
+        # Merge with existing config instead of overwriting
+        if self.config is None:
+            self.config = new_config
+        else:
+            self.config = self.config.merge(new_config)
 
         logger.info(f"BundleChoice configured: {self.config.dimensions.num_agents} agents, {self.config.dimensions.num_items} items, {self.config.subproblem.name} algorithm")
         return self
