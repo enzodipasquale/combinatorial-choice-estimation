@@ -139,7 +139,7 @@ def run_quad_supermod_experiment():
         print(f"[Rank 0] Optimization completed in {optimization_time:.2f} seconds")
         print(f"[Rank 0] Estimated parameters (theta_hat): {theta_hat}")
         print(f"[Rank 0] True parameters (theta_0): {theta_0}")
-        print(f"[Rank 0] Parameter difference: {np.linalg.norm(theta_hat - theta_0):.4f}")
+        print(f"[Rank 0] Parameter difference: {np.round(np.abs(theta_hat - theta_0), 2)}")
         
         # Print objective values if available
         if obj_at_star is not None and obj_at_hat is not None:
@@ -155,6 +155,7 @@ def run_quad_supermod_experiment():
         print(f"  - Optimization time: {optimization_time:.2f}s")
         print(f"  - Total time: {bundle_time + optimization_time:.2f}s")
         print(f"  - Parameter estimation error: {np.linalg.norm(theta_hat - theta_0):.4f}")
+        
 
 if __name__ == "__main__":
     run_quad_supermod_experiment() 
