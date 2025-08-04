@@ -86,6 +86,8 @@ obs_bundles, _ = quadsupermod_experiment.subproblems.init_and_solve(theta_0, ret
 # Estimate parameters using row generation
 if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()},{obs_bundles.sum(1).mean()} , {obs_bundles.sum(1).max()}")
+    print(quadsupermod_experiment.data.input_data["errors"][0,0])
+
     data["obs_bundle"] = obs_bundles
     data["errors"] = estimation_errors
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)
@@ -96,8 +98,8 @@ if rank == 0:
 cfg["dimensions"]["num_simuls"] = num_simuls
 quadsupermod_experiment.load_config(cfg)
 quadsupermod_experiment.data.load_and_scatter(data)
-quadsupermod_experiment.features.build_from_data()
-quadsupermod_experiment.subproblems.load()
+# quadsupermod_experiment.features.build_from_data()
+# quadsupermod_experiment.subproblems.load()
 
 tic = datetime.now()
 theta_hat = quadsupermod_experiment.row_generation.solve()
