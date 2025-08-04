@@ -199,6 +199,61 @@ class BundleChoiceConfig:
         if not 0 < self.ellipsoid.decay_factor < 1:
             raise ValueError("decay_factor must be between 0 and 1")
         if self.ellipsoid.min_volume <= 0:
-            raise ValueError("min_volume must be positive") 
+            raise ValueError("min_volume must be positive")
+
+    def merge(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
+        """
+        Merge another configuration into this one, updating only fields that are set in other.
+        
+        Args:
+            other: Configuration to merge from
+            
+        Returns:
+            BundleChoiceConfig: New merged configuration
+        """
+        # Merge dimensions
+        merged_dimensions = DimensionsConfig(
+            num_agents=other.dimensions.num_agents if other.dimensions.num_agents is not None else self.dimensions.num_agents,
+            num_items=other.dimensions.num_items if other.dimensions.num_items is not None else self.dimensions.num_items,
+            num_features=other.dimensions.num_features if other.dimensions.num_features is not None else self.dimensions.num_features,
+            num_simuls=other.dimensions.num_simuls
+        )
+        
+        # Merge subproblem (replace if name is set, otherwise merge settings)
+        if other.subproblem.name is not None:
+            merged_subproblem = other.subproblem
+        else:
+            merged_settings = self.subproblem.settings.copy()
+            merged_settings.update(other.subproblem.settings)
+            merged_subproblem = SubproblemConfig(name=self.subproblem.name, settings=merged_settings)
+        
+        # Merge row generation
+        merged_rowgen = RowGenerationConfig(
+            tol_certificate=other.row_generation.tol_certificate,
+            max_slack_counter=other.row_generation.max_slack_counter,
+            tol_row_generation=other.row_generation.tol_row_generation,
+            row_generation_decay=other.row_generation.row_generation_decay,
+            max_iters=other.row_generation.max_iters,
+            min_iters=other.row_generation.min_iters,
+            master_settings={**self.row_generation.master_settings, **other.row_generation.master_settings}
+        )
+        
+        # Merge ellipsoid
+        merged_ellipsoid = EllipsoidConfig(
+            max_iterations=other.ellipsoid.max_iterations,
+            num_iters=other.ellipsoid.num_iters if other.ellipsoid.num_iters is not None else self.ellipsoid.num_iters,
+            tolerance=other.ellipsoid.tolerance,
+            initial_radius=other.ellipsoid.initial_radius,
+            decay_factor=other.ellipsoid.decay_factor,
+            min_volume=other.ellipsoid.min_volume,
+            verbose=other.ellipsoid.verbose
+        )
+        
+        return BundleChoiceConfig(
+            dimensions=merged_dimensions,
+            subproblem=merged_subproblem,
+            row_generation=merged_rowgen,
+            ellipsoid=merged_ellipsoid
+        ) 
 
 
