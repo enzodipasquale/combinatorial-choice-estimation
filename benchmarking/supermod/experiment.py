@@ -98,6 +98,7 @@ quadsupermod_experiment.load_config(cfg)
 quadsupermod_experiment.data.load_and_scatter(data)
 quadsupermod_experiment.features.build_from_data()
 quadsupermod_experiment.subproblems.load()
+
 tic = datetime.now()
 theta_hat = quadsupermod_experiment.row_generation.solve()
 elapsed = (datetime.now() - tic).total_seconds()

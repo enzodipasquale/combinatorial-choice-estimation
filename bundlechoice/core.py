@@ -149,8 +149,7 @@ class BundleChoice(HasComm, HasConfig):
         Raises:
             RuntimeError: If required managers are not set
         """
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
-            # raise error with missing managers
+        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
             missing_managers = []
             if self.data_manager is None:
                 missing_managers.append("DataManager")
