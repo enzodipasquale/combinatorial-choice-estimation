@@ -120,7 +120,7 @@ def run_row_generation_greedy_experiment():
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
-    greedy_demo.subproblems.load()
+    # greedy_demo.subproblems.load()
     
     # Run row generation method
     if rank == 0:
