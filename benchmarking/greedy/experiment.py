@@ -103,8 +103,8 @@ def features_oracle(i_id, bundle, data):
 #     return features
 
 greedy_experiment.features.set_oracle(features_oracle)
-beta_star = np.ones(num_features)
-obs_bundles = greedy_experiment.subproblems.init_and_solve(beta_star)
+theta_0 = np.ones(num_features)
+obs_bundles = greedy_experiment.subproblems.init_and_solve(theta_0)
 
 
 # Estimate parameters using row generation
@@ -126,7 +126,7 @@ tic = datetime.now()
 lambda_k_iter = greedy_experiment.row_generation.solve()
 elapsed = (datetime.now() - tic).total_seconds()
 obj_at_estimate = greedy_experiment.row_generation.objective(lambda_k_iter)
-obj_at_star = greedy_experiment.row_generation.objective(beta_star)
+obj_at_star = greedy_experiment.row_generation.objective(theta_0)
 # Save estimation results as CSV
 if rank == 0:
     print(f"estimation results:{lambda_k_iter}")
@@ -139,7 +139,7 @@ if rank == 0:
         "num_features": num_features,
         "num_simuls": num_simuls,
         "subproblem": greedy_experiment.subproblem_cfg.name,
-        **{f"beta_star_{i}": val for i, val in enumerate(beta_star)},
+        **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},
         **{f"beta_hat_{i}": val for i, val in enumerate(lambda_k_iter)},
         "min_demand": obs_bundles.sum(1).min(),
         "max_demand": obs_bundles.sum(1).max(),
@@ -173,7 +173,7 @@ if rank == 0:
             Delta_features = features_i_obs - feat_alt_bundle  
             DataArray[i,j,:] = Delta_features
 
-    satisfied_at_star = ((DataArray @ beta_star) >= 0 ).sum()
+    satisfied_at_star = ((DataArray @ theta_0) >= 0 ).sum()
     print(f"satisfied_at_star: {satisfied_at_star} out of {num_agents * num_items}")
 
 

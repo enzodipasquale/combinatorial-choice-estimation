@@ -1,7 +1,9 @@
 
 greedy_experiment:
-	mpirun -np 1 python3 experiments/row_generation_greedy_experiment.py
+	mpirun -np 1 python3 experiments/experiment_inversion_greedy.py
 
+supermod_experiment:
+	mpirun -np 10 python3 experiments/experiment_inversion_supermod.py
 
 greedy:
 	mpirun -n 10 python benchmarking/greedy/experiment.py
