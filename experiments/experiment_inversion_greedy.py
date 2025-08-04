@@ -36,8 +36,8 @@ def features_oracle(i_id, B_j, data):
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agents = 500
-    num_items = 100
+    num_agents = 200
+    num_items = 50
     num_features = num_items + 1
     num_simuls = 1
     sigma = 1
@@ -75,7 +75,7 @@ def run_row_generation_greedy_experiment():
     if rank == 0:
         print("[Rank 0] Generating synthetic data...")
         # modular = np.random.normal(0, 1, (num_agents, num_items, num_features-1))
-        modular = np.eye(num_items)
+        modular = -np.eye(num_items)
         sigma = 1
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
         estimation_errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
@@ -94,13 +94,13 @@ def run_row_generation_greedy_experiment():
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
 
-    # Simulate beta_star and generate obs_bundles
+    # Simulate theta_0 and generate obs_bundles
     if rank == 0:
         print(f"[Rank {rank}] Generating observed bundles...")
-    beta_star = np.ones(num_features) * 2
-    beta_star[-1] = .1
+    theta_0 = np.ones(num_features) * 2
+    theta_0[-1] = .1
     start_time = time.time()
-    obs_bundles = greedy_demo.subproblems.init_and_solve(beta_star)
+    obs_bundles = greedy_demo.subproblems.init_and_solve(theta_0)
     bundle_time = time.time() - start_time
     
     if rank == 0:
@@ -131,7 +131,7 @@ def run_row_generation_greedy_experiment():
     
     # Compute objective values on all ranks
     try:
-        obj_at_star = greedy_demo.row_generation.objective(beta_star)
+        obj_at_star = greedy_demo.row_generation.objective(theta_0)
         obj_at_hat = greedy_demo.row_generation.objective(theta_hat)
     except AttributeError:
         obj_at_star = None
@@ -140,8 +140,8 @@ def run_row_generation_greedy_experiment():
     if rank == 0:
         print(f"[Rank 0] Optimization completed in {optimization_time:.2f} seconds")
         print(f"[Rank 0] Estimated parameters (theta_hat): {theta_hat}")
-        print(f"[Rank 0] True parameters (beta_star): {beta_star}")
-        print(f"[Rank 0] Parameter difference: {np.linalg.norm(theta_hat - beta_star):.4f}")
+        print(f"[Rank 0] True parameters (theta_0): {theta_0}")
+        print(f"[Rank 0] Parameter difference: {np.linalg.norm(theta_hat - theta_0):.4f}")
         
         # Print objective values if available
         if obj_at_star is not None and obj_at_hat is not None:
@@ -151,26 +151,12 @@ def run_row_generation_greedy_experiment():
         else:
             print("[Rank 0] Objective function not available for row generation solver")
         
-        # Validation checks
-        print(f"[Rank 0] Validation checks:")
-        print(f"  - Shape correct: {theta_hat.shape == (num_features,)}")
-        print(f"  - No NaN values: {not np.any(np.isnan(theta_hat))}")
-        print(f"  - All finite: {np.all(np.isfinite(theta_hat))}")
-        print(f"  - Not all zero: {np.any(theta_hat != 0)}")
-        print(f"  - Reasonable bounds: {np.all(np.abs(theta_hat) < 100)}")
-        
         # Summary
         print(f"\n[Rank 0] Experiment Summary:")
         print(f"  - Bundle generation time: {bundle_time:.2f}s")
         print(f"  - Optimization time: {optimization_time:.2f}s")
         print(f"  - Total time: {bundle_time + optimization_time:.2f}s")
-        print(f"  - Parameter estimation error: {np.linalg.norm(theta_hat - beta_star):.4f}")
-        
-        # Row generation specific metrics
-        print(f"  - Row generation configuration:")
-        print(f"    * Max iterations: {cfg['row_generation']['max_iters']}")
-        print(f"    * Tolerance certificate: {cfg['row_generation']['tol_certificate']}")
-        print(f"    * Min iterations: {cfg['row_generation']['min_iters']}")
+        print(f"  - Parameter estimation error: {np.linalg.norm(theta_hat - theta_0):.4f}")
 
 if __name__ == "__main__":
     run_row_generation_greedy_experiment() 
