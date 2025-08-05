@@ -64,8 +64,8 @@ class GreedySubproblem(SerialSubproblemBase):
 
     def _check_vectorized_feature_support(self, local_id: int) -> None:
         """
-        Check if the current get_features function supports vectorized computation.
-        Tests if get_features can handle multiple bundles as a numpy array.
+        Check if the current features_oracle function supports vectorized computation.
+        Tests if features_oracle can handle multiple bundles as a numpy array.
         """
         try:
             # Test with multiple bundles: shape (num_items, m) where m=2
@@ -74,7 +74,7 @@ class GreedySubproblem(SerialSubproblemBase):
             test_bundles[1, 1] = True  # Second bundle has item 1
             
             # Try vectorized call with multiple bundles
-            vectorized_result = self.get_features(local_id, test_bundles, self.local_data)
+            vectorized_result = self.features_oracle(local_id, test_bundles, self.local_data)
             
             # Check if result has expected shape (k features × m bundles)
             self._supports_vectorized_features = (
@@ -102,7 +102,7 @@ class GreedySubproblem(SerialSubproblemBase):
         bundles[items_to_add, np.arange(len(items_to_add))] = True
         
         # bundles = (np.arange(self.num_items)[:, None] == items_to_add[None, :]) + base_bundle[:, None]
-        return self.get_features(local_id, bundles, self.local_data)
+        return self.features_oracle(local_id, bundles, self.local_data)
 
     def _find_best_item(
         self, 
@@ -143,7 +143,7 @@ class GreedySubproblem(SerialSubproblemBase):
         Find the best item using vectorized approach for better performance.
         """
         # Get base features
-        base_features = self.get_features(local_id, bundle, self.local_data)
+        base_features = self.features_oracle(local_id, bundle, self.local_data)
         
         # Get vectorized features for all remaining items
         vectorized_features = self._get_vectorized_features(local_id, bundle, items_left)
@@ -173,7 +173,7 @@ class GreedySubproblem(SerialSubproblemBase):
         Find the best item using standard (non-vectorized) approach.
         """
         # Cache base features once - this is the key optimization
-        base_features = self.get_features(local_id, bundle, self.local_data)
+        base_features = self.features_oracle(local_id, bundle, self.local_data)
         
         best_val = -np.inf
         best_item = -1
@@ -181,7 +181,7 @@ class GreedySubproblem(SerialSubproblemBase):
         for j in items_left:
             # Try adding item j
             bundle[j] = True
-            new_x_k = self.get_features(local_id, bundle, self.local_data)
+            new_x_k = self.features_oracle(local_id, bundle, self.local_data)
             
             # Calculate marginal value
             marginal_j = float(error_j[j])

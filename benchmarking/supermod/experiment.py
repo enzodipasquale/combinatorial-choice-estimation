@@ -13,13 +13,13 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/supermod"
 
 
 # Define dimensions
-num_agents = 100
+num_agents = 200
 num_items = 100
 num_simuls = 1
 modular_agent_features = 3
 quadratic_item_features = 1
 num_features = modular_agent_features + quadratic_item_features
-sigma = 1
+sigma = 2
 
 cfg = {
     "dimensions": {
@@ -60,8 +60,8 @@ if rank == 0:
     agent_data = {"modular": modular_agent}
 
     # Quadratic item features
-    quadratic_item = .5 * np.exp(-np.random.normal(0, 2, size=(num_items, num_items, quadratic_item_features)) ** 2)
-    # quadratic_item = np.random.choice([0, 1], size=(num_items, num_items, quadratic_item_features), p=[0.8, 0.2])
+    # quadratic_item = .5 * np.exp(-np.random.normal(0, 2, size=(num_items, num_items, quadratic_item_features)) ** 2)
+    quadratic_item = np.random.choice([0, 1], size=(num_items, num_items, quadratic_item_features), p=[0.8, 0.2])
     quadratic_item *= (1 - np.eye(num_items, dtype=int))[:,:, None]
     item_data = {"quadratic": quadratic_item}
 
@@ -82,12 +82,10 @@ quadsupermod_experiment.features.build_from_data()
 
 theta_0 = np.ones(num_features)
 obs_bundles, _ = quadsupermod_experiment.subproblems.init_and_solve(theta_0, return_values= True)
-        
+
 # Estimate parameters using row generation
 if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()},{obs_bundles.sum(1).mean()} , {obs_bundles.sum(1).max()}")
-    print(quadsupermod_experiment.data.input_data["errors"][0,0])
-
     data["obs_bundle"] = obs_bundles
     data["errors"] = estimation_errors
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)
@@ -95,11 +93,14 @@ if rank == 0:
     pd.DataFrame(item_data["quadratic"].reshape(-1, quadratic_item_features)).to_csv(os.path.join(SAVE_PATH, "quadratic.csv"), index=False, header=False)
 
 # Run row generation
+
 cfg["dimensions"]["num_simuls"] = num_simuls
 quadsupermod_experiment.load_config(cfg)
 quadsupermod_experiment.data.load_and_scatter(data)
 # quadsupermod_experiment.features.build_from_data()
 # quadsupermod_experiment.subproblems.load()
+# quadsupermod_experiment.subproblems.initialize_local()
+
 
 tic = datetime.now()
 theta_hat = quadsupermod_experiment.row_generation.solve()

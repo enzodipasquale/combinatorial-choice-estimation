@@ -23,7 +23,7 @@ def generate_test_data(num_agents, num_items, agent_modular_dim, item_modular_di
     
     return input_data, dimensions_cfg
 
-def get_features(i_id, B_j, data):
+def features_oracle(i_id, B_j, data):
     """
     Compute features for a given agent and bundle(s).
     Supports both single (1D) and multiple (2D) bundles.
@@ -67,7 +67,7 @@ def test_greedy_vs_bruteforce():
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.set_oracle(get_features)
+    bc.features.set_oracle(features_oracle)
 
     test_lambdas = [
         np.ones(dimensions_cfg["num_features"]),

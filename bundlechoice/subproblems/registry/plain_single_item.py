@@ -11,20 +11,12 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
         item_data = self.local_data.get("item_data", {})
 
         # Modular and quadratic features (None if missing)
-        self.modular_agent = agent_data.get("modular")
-        self.modular_item = item_data.get("modular")
+        self.has_modular_agent = "modular" in agent_data
+        self.has_modular_item = "modular" in item_data
 
-        self.errors = self.local_data.get("errors")
-        self.constraint_mask = self.local_data.get("constraint_mask") or np.ones((self.num_local_agents, self.num_items), dtype=bool)
+        self.has_errors = "errors" in self.local_data
+        self.has_constraint_mask = "constraint_mask" in self.local_data
 
-        # Feature counts
-        self.num_mod_agent = self.modular_agent.shape[-1] if self.modular_agent is not None else 0
-        self.num_mod_item = self.modular_item.shape[-1] if self.modular_item is not None else 0
-
-        # Lambda slices
-        offset = 0
-        self.lambda_mod_agent_slice = slice(offset, offset + self.num_mod_agent); offset += self.num_mod_agent
-        self.lambda_mod_item_slice = slice(offset, offset + self.num_mod_item); offset += self.num_mod_item
 
     def solve(self, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
         """
@@ -35,15 +27,16 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
         Returns:
             np.ndarray: Boolean array of shape (num_local_agents, num_items) with True at the max item (if utility > 0).
         """
-        U_i_j = self.build_utility_matrix(theta)
-        U_i_j_masked = np.where(self.constraint_mask, U_i_j, -np.inf)
-        j_star = np.argmax(U_i_j_masked, axis=1)
-        max_vals = U_i_j_masked[np.arange(self.num_local_agents), j_star]
+        U_i_j = self.build_utilities(theta)
+        if self.has_constraint_mask:
+            U_i_j = np.where(self.local_data["constraint_mask"], U_i_j, -np.inf)
+        j_star = np.argmax(U_i_j, axis=1)
+        max_vals = U_i_j[np.arange(self.num_local_agents), j_star]
         # Vectorized one-hot: only set True if max utility > 0
         optimal_bundles = (max_vals > 0)[:, None] & (np.arange(self.num_items) == j_star[:, None])
         return optimal_bundles
 
-    def build_utility_matrix(self, theta: np.ndarray) -> np.ndarray:
+    def build_utilities(self, theta: np.ndarray) -> np.ndarray:
         """
         Build the utility matrix for all agents and items, handling missing features gracefully.
         Args:
@@ -52,11 +45,18 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
             np.ndarray: Utility matrix of shape (num_local_agents, num_items).
         """
         U_i_j = np.zeros((self.num_local_agents, self.num_items))
-        if self.modular_agent is not None:
-            U_i_j += self.modular_agent @ theta[self.lambda_mod_agent_slice]
-        if self.modular_item is not None:
-            U_i_j += self.modular_item @ theta[self.lambda_mod_item_slice]
-        if self.errors is not None:
-            U_i_j += self.errors
+        offset = 0
+        if self.has_modular_agent:
+            modular_agent = self.local_data["agent_data"]["modular"]
+            num_mod_agent = modular_agent.shape[-1]
+            U_i_j += modular_agent @ theta[offset:offset + num_mod_agent]
+            offset += num_mod_agent
+        if self.has_modular_item:
+            modular_item = self.local_data["item_data"]["modular"]
+            num_mod_item = modular_item.shape[-1]
+            U_i_j += modular_item @ theta[offset:offset + num_mod_item]
+            offset += num_mod_item
+        if self.has_errors:
+            U_i_j += self.local_data["errors"]
         return U_i_j
  

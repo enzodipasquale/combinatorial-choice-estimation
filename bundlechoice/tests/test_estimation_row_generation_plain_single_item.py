@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import time
 from mpi4py import MPI
+from bundlechoice import estimation
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
@@ -9,12 +10,13 @@ from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemS
 
 def test_row_generation_plain_single_item():
     """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 250
-    num_items = 100
+    num_agents = 500
+    num_items = 2
     num_modular_agent_features = 4
     num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
+    sigma = 1
     
     cfg = {
         "dimensions": {
@@ -42,10 +44,12 @@ def test_row_generation_plain_single_item():
     rank = comm.Get_rank()
     
     if rank == 0:
+        errors = sigma * np.random.normal(0, 1, (num_agents, num_items))
+        estimation_errors = sigma * np.random.normal(0, 1, (num_simuls, num_agents, num_items))
         input_data = {
             "item_data": {"modular": np.random.normal(0, 1, (num_items, num_modular_item_features))},
             "agent_data": {"modular": np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))},
-            "errors": np.random.normal(0, 0.1, (num_simuls, num_agents, num_items)),
+            "errors": errors,
         }
     else:
         input_data = None
@@ -68,7 +72,7 @@ def test_row_generation_plain_single_item():
 
         modular_agent = input_data["agent_data"]["modular"]
         modular_item = input_data["item_data"]["modular"]
-        errors = input_data["errors"][0]
+        errors = input_data["errors"]
         agent_util = np.einsum('aij,j->ai', modular_agent, theta_0[:num_modular_agent_features])
         item_util = np.dot(modular_item, theta_0[num_modular_agent_features:])
         total_util = agent_util + item_util + errors
@@ -80,7 +84,7 @@ def test_row_generation_plain_single_item():
                 assert np.all(total_util[i, :] <= 0), f"Agent {i} made no selection, but has positive utility: {total_util[i, :]}"
         print("theta_0:\n", theta_0)
         input_data["obs_bundle"] = observed_bundles
-        input_data["errors"] = np.random.normal(0, 0.1, (num_simuls, num_agents, num_items))
+        input_data["errors"] = estimation_errors
     else:
         input_data = None
 
