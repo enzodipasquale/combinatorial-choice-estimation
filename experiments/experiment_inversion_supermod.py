@@ -15,7 +15,7 @@ from bundlechoice.core import BundleChoice
 def run_quad_supermod_experiment():
     """Run the quadratic supermodular experiment."""
     # Experiment parameters
-    num_agents = 50
+    num_agents = 200
     num_items = 100
     num_modular_item_features = num_items
     num_quadratic_item_features = 2

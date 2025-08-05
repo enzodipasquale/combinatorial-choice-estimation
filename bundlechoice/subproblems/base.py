@@ -11,8 +11,8 @@ class BaseSubproblem(HasDimensions, HasData, ABC):
         self.config = subproblem_cfg
         self.dimensions_cfg = dimensions_cfg
 
-    def get_features(self, agent_id, bundle, data_override=None):
-        return self.feature_manager.compute_features(agent_id, bundle, data_override)
+    def features_oracle(self, agent_id, bundle, data_override=None):
+        return self.feature_manager.features_oracle(agent_id, bundle, data_override)
 
 class BatchSubproblemBase(BaseSubproblem, ABC):
     """
