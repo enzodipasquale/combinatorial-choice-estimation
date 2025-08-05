@@ -125,9 +125,8 @@ class RowGenerationSolver(BaseEstimationSolver):
 
             violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-6)[0]
             if len(violations) > 0:
-                logger.warning("Possible failure of demand oracle: %d", len(violations))
-                logger.warning("u_sim", u_sim[violations])
-                logger.warning("u_master", u_master[violations])
+                logger.warning("Possible failure of demand oracle: %d, u_sim: %s, u_master: %s", len(violations), u_sim[violations], u_master[violations])
+
              
             logger.info("Parameter: %s", np.round(self.theta_val, 2))
             logger.info(f"ObjVal: {self.master_model.ObjVal}")

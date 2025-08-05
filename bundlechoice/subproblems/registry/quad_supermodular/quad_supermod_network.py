@@ -8,6 +8,7 @@ import numpy as np
 import networkx as nx
 from typing import Any, Optional
 from .quadratic_supermodular_base import QuadraticSupermodular
+import matplotlib.pyplot as plt
 
 class QuadraticSOptNetwork(QuadraticSupermodular):
     """
@@ -15,11 +16,12 @@ class QuadraticSOptNetwork(QuadraticSupermodular):
     Handles modular/quadratic agent/item features, missing data, and batch MPI solving.
     """
     def solve(self, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
+        constraint_mask = self.local_data.get("constraint_mask") if self.has_constraint_mask else [np.arange(self.num_items) for _ in range(self.num_local_agents)]
         P_i_j_j = self.build_quadratic_matrix(theta)
         optimal_bundles =  np.zeros((self.num_local_agents, self.num_items), dtype=bool)
         for i in range(self.num_local_agents):
             assert np.all(P_i_j_j[i] * np.tril(np.ones((self.num_items, self.num_items)), k=-1) == 0), f"P_i_j_j must be upper triangular"
-            solver = MinCutSubmodularSolver(-P_i_j_j[i], self.constraint_mask[i])
+            solver = MinCutSubmodularSolver(-P_i_j_j[i], constraint_mask[i])
             optimal_bundle = solver.solve_QSM()
             optimal_bundles[i] = optimal_bundle
         return optimal_bundles

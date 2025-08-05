@@ -161,7 +161,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             best_bundle = None
             for bundle_tuple in all_bundles:
                 bundle = np.array(bundle_tuple, dtype=bool)
-                features = self.feature_manager.compute_features(local_id, bundle, self.local_data)
+                features = self.feature_manager.features_oracle(local_id, bundle, self.local_data)
                 error = self.local_data["errors"][local_id] @ bundle
                 bundle_value = features @ theta + error
                 if bundle_value > max_value:
