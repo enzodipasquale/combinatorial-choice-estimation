@@ -86,7 +86,10 @@ class RowGenerationSolver(BaseEstimationSolver):
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()          
             # obs_features = agents_obs_features.sum(0)
-            theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=100, name='parameter')
+            ubs = self.rowgen_cfg.theta_ubs
+            theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=ubs, name='parameter')
+            if self.rowgen_cfg.theta_lbs is not None:
+                theta.lb = self.rowgen_cfg.theta_lbs
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # self.master_model.addConstrs((
@@ -132,9 +135,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
-            if max_reduced_cost < self.rowgen_cfg.tol_certificate:
+            if max_reduced_cost < self.rowgen_cfg.tolerance_optimality:
                 stop = True
-            rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tol_certificate)[0]
+            rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
             num_removed = self._enforce_slack_counter()

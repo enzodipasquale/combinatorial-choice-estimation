@@ -46,7 +46,7 @@ class RowGenerationConfig:
     algorithm, including tolerances, iteration limits, and convergence criteria.
     
     Attributes:
-        tol_certificate: Tolerance for certificate validation
+        tolerance_optimality: Tolerance for certificate validation
         max_slack_counter: Maximum slack counter value
         tol_row_generation: Tolerance for row generation convergence
         row_generation_decay: Decay factor for row generation
@@ -54,13 +54,15 @@ class RowGenerationConfig:
         min_iters: Minimum number of iterations
         master_settings: Settings for the master problem solver
     """
-    tol_certificate: float = 0.01
+    tolerance_optimality: float = 1e-6
     max_slack_counter: float = float('inf')
     tol_row_generation: float = 0.0
     row_generation_decay: float = 0.0
     max_iters: float = float('inf')
     min_iters: int = 0
     master_settings: dict = field(default_factory=dict)
+    theta_ubs: Any = 100
+    theta_lbs: Any = None
 
 @dataclass
 class EllipsoidConfig:
@@ -183,8 +185,8 @@ class BundleChoiceConfig:
         if self.dimensions.num_simuls <= 0:
             raise ValueError("num_simuls must be positive")
         
-        if self.row_generation.tol_certificate <= 0:
-            raise ValueError("tol_certificate must be positive")
+        if self.row_generation.tolerance_optimality <= 0:
+            raise ValueError("tolerance_optimality must be positive")
         if self.row_generation.max_iters <= 0:
             raise ValueError("max_iters must be positive")
         if self.row_generation.min_iters < 0:
@@ -229,7 +231,7 @@ class BundleChoiceConfig:
         
         # Merge row generation
         merged_rowgen = RowGenerationConfig(
-            tol_certificate=other.row_generation.tol_certificate,
+            tolerance_optimality=other.row_generation.tolerance_optimality,
             max_slack_counter=other.row_generation.max_slack_counter,
             tol_row_generation=other.row_generation.tol_row_generation,
             row_generation_decay=other.row_generation.row_generation_decay,

@@ -31,7 +31,7 @@ def test_has_config_mixin():
     assert test_obj.subproblem_cfg.name == "Greedy"
     
     assert test_obj.row_generation_cfg is not None
-    assert test_obj.row_generation_cfg.tol_certificate == 0.01
+    assert test_obj.row_generation_cfg.tolerance_optimality == 0.01
     
     assert test_obj.ellipsoid_cfg is not None
     assert test_obj.ellipsoid_cfg.max_iterations == 25

@@ -26,7 +26,7 @@ def test_row_generation_linear_knapsack():
         },
         "row_generation": {
             "max_iters": 100,
-            "tol_certificate": 0.0001,
+            "tolerance_optimality": 0.0001,
             "min_iters": 1,
             "master_settings": {
                 "OutputFlag": 0

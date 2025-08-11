@@ -40,7 +40,7 @@ def test_load_configs_from_dict_partial():
     dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
     
     # Test default values are applied
-    assert rowgen_cfg.tol_certificate == 0.01
+    assert rowgen_cfg.tolerance_optimality == 0.01
     assert dimensions_cfg.num_agents == 5
     assert subproblem_cfg.name == 'test_subproblem'
 
@@ -55,7 +55,7 @@ def test_load_configs_from_dict_full():
             'num_simuls': 2,
         },
         'row_generation': {
-            'tol_certificate': 0.05,
+            'tolerance_optimality': 0.05,
             'max_iters': 50,
         },
         'subproblem': {
@@ -66,7 +66,7 @@ def test_load_configs_from_dict_full():
     dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
     
     # Test all values are correctly loaded
-    assert rowgen_cfg.tol_certificate == 0.05
+    assert rowgen_cfg.tolerance_optimality == 0.05
     assert rowgen_cfg.max_iters == 50
     assert dimensions_cfg.num_agents == 5
     assert subproblem_cfg.name == 'test_subproblem'
@@ -81,7 +81,7 @@ dimensions:
   num_features: 4
   num_simuls: 3
 row_generation:
-  tol_certificate: 0.02
+  tolerance_optimality: 0.02
   max_iters: 100
 subproblem:
   name: greedy
@@ -103,7 +103,7 @@ subproblem:
         assert dimensions_cfg.num_simuls == 3
         
         # Test row generation
-        assert rowgen_cfg.tol_certificate == 0.02
+        assert rowgen_cfg.tolerance_optimality == 0.02
         assert rowgen_cfg.max_iters == 100
         
         # Test subproblem

@@ -196,8 +196,9 @@ class DataManager(HasDimensions, HasComm):
                 expected_shape = (self.num_agents, self.num_items)
                 if obs_bundle.shape != expected_shape:
                     raise ValueError(f"obs_bundle has shape {obs_bundle.shape}, expected {expected_shape}")
+        # logger.info("Input data validated.")
 
-    def validate_standard_inputdata(self):
+    def validate_quadratic_input_data(self):
         """
         Validates that the shapes of modular and quadratic data match the expected dimensions.
         Checks:

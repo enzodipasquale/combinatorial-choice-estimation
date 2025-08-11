@@ -317,5 +317,26 @@ class BundleChoice(HasComm, HasConfig):
         else:
             self.config = self.config.merge(new_config)
 
-        logger.info(f"BundleChoice configured: {self.config.dimensions.num_agents} agents, {self.config.dimensions.num_items} items, {self.config.subproblem.name} algorithm")
+        # Build informative configuration summary
+        logger.info("BundleChoice configured:")
+        
+        # Add dimensions information
+        if self.config.dimensions.num_agents is not None:
+            logger.info(f"  • {self.config.dimensions.num_agents} agents")
+        if self.config.dimensions.num_items is not None:
+            logger.info(f"  • {self.config.dimensions.num_items} items")
+        if self.config.dimensions.num_features is not None:
+            logger.info(f"  • {self.config.dimensions.num_features} features")
+        if self.config.dimensions.num_simuls > 1:
+            logger.info(f"  • {self.config.dimensions.num_simuls} simulations")
+        
+        # Add algorithm information
+        if self.config.subproblem.name:
+            logger.info(f"  • Algorithm: {self.config.subproblem.name}")
+        
+        # Add solver information if configured
+        if hasattr(self.config, 'row_generation') and self.config.row_generation.max_iters != float('inf'):
+            logger.info(f"  • Max iterations: {self.config.row_generation.max_iters}")
+        if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:
+            logger.info(f"  • Ellipsoid iterations: {self.config.ellipsoid.max_iterations}")
         return self

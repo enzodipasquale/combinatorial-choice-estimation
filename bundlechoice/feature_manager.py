@@ -142,7 +142,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Returns:
             Callable: The new _features_oracle function.
         """
-        self.data_manager.validate_standard_inputdata()
+        self.data_manager.validate_quadratic_input_data()
         if self.is_root():
             input_data = self.input_data
             agent_data = input_data.get("agent_data")

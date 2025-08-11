@@ -44,7 +44,7 @@ def test_current_user_experience():
         },
         "row_generation": {
             "max_iters": 50,
-            "tol_certificate": 0.001,
+            "tolerance_optimality": 0.001,
             "min_iters": 1,
             "master_settings": {"OutputFlag": 0}
         }
@@ -177,7 +177,7 @@ def test_config_update_experience():
     
     # Updated config (user wants to change some parameters)
     cfg2 = {
-        "row_generation": {"max_iters": 20, "tol_certificate": 0.01}
+        "row_generation": {"max_iters": 20, "tolerance_optimality": 0.01}
     }
     
     comm = MPI.COMM_WORLD
@@ -212,8 +212,8 @@ def test_config_update_experience():
     if rank == 0:
         print("=== Config Update Experience ===")
         print(f"Updated max_iters: {bc.config.row_generation.max_iters}")
-        print(f"Updated tol_certificate: {bc.config.row_generation.tol_certificate}")
+        print(f"Updated tolerance_optimality: {bc.config.row_generation.tolerance_optimality}")
         print(f"Result: {theta_hat}")
         assert bc.config.row_generation.max_iters == 20
-        assert bc.config.row_generation.tol_certificate == 0.01
+        assert bc.config.row_generation.tolerance_optimality == 0.01
         print("✅ Config update test passed") 

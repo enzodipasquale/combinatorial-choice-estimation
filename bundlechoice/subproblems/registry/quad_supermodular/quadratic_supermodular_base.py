@@ -31,11 +31,11 @@ class QuadraticSupermodular(BatchSubproblemBase):
         if self.has_quadratic_agent:
             quadratic_agent = self.local_data["agent_data"]["quadratic"]    
             assert np.all(np.diagonal(quadratic_agent, axis1=1, axis2=2) == 0), f"Matrix has non-zero diagonal"
-            assert np.all(quadratic_agent >= 0), f"Matrix has negative values"
+            assert np.all(quadratic_agent >= 0), f"Matrix has off-diagonal negative values"
         if self.has_quadratic_item:
             quadratic_item = self.local_data["item_data"]["quadratic"]
             assert np.all(np.diagonal(quadratic_item, axis1=0, axis2=1) == 0), f"Matrix has non-zero diagonal"
-            assert np.all(quadratic_item >= 0), f"Matrix has negative values"
+            assert np.all(quadratic_item >= 0), f"Matrix has off-diagonal negative values"
 
     def build_quadratic_matrix(self, theta: np.ndarray) -> np.ndarray:
         """
