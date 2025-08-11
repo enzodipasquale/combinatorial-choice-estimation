@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, List, Any
 import numpy as np
 import yaml
 
@@ -63,6 +63,7 @@ class RowGenerationConfig:
     master_settings: dict = field(default_factory=dict)
     theta_ubs: Any = 100
     theta_lbs: Any = None
+    features_to_log: Optional[List[int]] = None
 
 @dataclass
 class EllipsoidConfig:
