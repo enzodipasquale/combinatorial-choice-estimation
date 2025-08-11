@@ -5,6 +5,7 @@ greedy_experiment:
 supermod_experiment:
 	mpirun -np 10 python3 experiments/experiment_inversion_supermod.py
 
+
 greedy:
 	mpirun -n 10 python benchmarking/greedy/experiment.py
 supermod:
