@@ -92,12 +92,13 @@ class RowGenerationSolver(BaseEstimationSolver):
                 theta.lb = self.rowgen_cfg.theta_lbs
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
-            # self.master_model.addConstrs((
-            #     u[si] >=
-            #     self.errors[si] @ obs_bundle[si % self.num_agents] +
-            #     agents_obs_features[si % self.num_agents, :] @ theta
-            #     for si in range(self.num_simuls * self.num_agents)
-            # ))
+            self.master_model.addConstrs((
+                u[s * i] >=
+                self.input_data["errors"][s,i] @ self.input_data["obs_bundle"][i] +
+                self.agents_obs_features[i, :] @ theta
+                for s in range(self.num_simuls)
+                for i in range(self.num_agents)
+            ))
             self.master_model.optimize()
             logger.info("Master Initialized")
             self.master_variables = (theta, u)
