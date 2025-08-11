@@ -12,6 +12,8 @@ subproblem:
 row_generation:
     max_iters: 200
     theta_ubs: 1000
+    features_to_log: [0, -3,-2,-1]
+
     # max_slack_counter: 6
     # tol_row_generation: 10
     # row_generation_decay: 0.5
