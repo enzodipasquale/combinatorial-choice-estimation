@@ -37,7 +37,7 @@ def run_quad_supermod_experiment():
         },
         "row_generation": {
             "max_iters": 100,
-            "tol_certificate": 0.0001,
+            "tolerance_optimality": 0.0001,
             "max_slack_counter": 10,
             "min_iters": 10,
             "master_settings": {

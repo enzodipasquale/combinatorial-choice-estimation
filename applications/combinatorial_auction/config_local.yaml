@@ -11,4 +11,5 @@ subproblem:
         MIPGap_tol: 1e-2
 row_generation:
     max_iters: 200
+    theta_ubs: 1000
 

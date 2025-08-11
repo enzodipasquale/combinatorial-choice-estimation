@@ -29,6 +29,13 @@ supermod_benchmark:
 		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/supermod/supermod.wl || exit 1; \
 	done
 
+knapsack_benchmark:
+	@for i in $(shell seq 1 100); do \
+		echo "—— Run $$i ——"; \
+		mpirun -n 10 python benchmarking/knapsack/experiment.py || exit 1; \
+		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/knapsack/knapsack.wl || exit 1; \
+	done
+
 plain_benchmark:
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
@@ -37,5 +44,17 @@ plain_benchmark:
 	done
 
 all_benchmarks: greedy_benchmark supermod_benchmark plain_benchmark
+
+
+
+
+auction:
+	mpirun -n 10 python applications/combinatorial_auction/run_estimation.py
+
+
+
+
+
+
 
 
