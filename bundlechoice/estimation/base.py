@@ -53,7 +53,8 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         self.subproblem_manager = subproblem_manager
 
         # Initialize common attributes
-        self.obs_features = self.get_obs_features()
+        self.agents_obs_features = self.get_agents_obs_features()
+        self.obs_features = self.agents_obs_features.sum(0) if self.agents_obs_features is not None else None
 
     def get_obs_features(self) -> Optional[np.ndarray]:
         """
@@ -70,6 +71,20 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         if self.is_root():
             obs_features = agents_obs_features.sum(0) 
             return obs_features
+        else:
+            return None
+
+    def get_agents_obs_features(self) -> Optional[np.ndarray]:
+        """
+        Compute observed features from local data.
+        
+        This method computes the average observed features across all simulations.
+        Only rank 0 returns the result, other ranks return None.
+        """
+        local_bundles = self.local_data.get("obs_bundles")
+        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
+        if self.is_root():
+            return agents_obs_features
         else:
             return None
 
