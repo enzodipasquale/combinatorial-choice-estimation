@@ -1,21 +1,19 @@
-num_agents: 25234235
-num_items: 493
-num_features: 4
-num_simuls: 50
+dimensions:
+    num_agents: 255
+    num_items: 493
+    num_features:  497
+    num_simuls: 1
 
-item_fixed_effects: true
-
-tol_certificate: 1e-3
-# max_slack_counter: 6
-tol_row_generation: 10
-row_generation_decay: 0.5
-max_iters: 100
-
-master_settings:
-    OutputFlag: 0
-
-subproblem: QuadKnapsack
-subproblem_settings:
-    TimeLimit: 60
-    MIPGap_tol: 1e-3
-    # multithreading: true
+subproblem: 
+    name: QuadKnapsack
+    settings:
+        TimeLimit: 100
+        MIPGap_tol: 1e-2
+row_generation:
+    max_iters: 200
+    theta_ubs: 1000
+    # max_slack_counter: 6
+    # tol_row_generation: 10
+    # row_generation_decay: 0.5
+    # master_settings:
+    #     OutputFlag: 0
