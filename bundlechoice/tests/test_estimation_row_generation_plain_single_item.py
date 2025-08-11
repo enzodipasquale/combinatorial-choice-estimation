@@ -31,7 +31,7 @@ def test_row_generation_plain_single_item():
         },
         "row_generation": {
             "max_iters": 100,
-            "tol_certificate": .0001,
+            "tolerance_optimality": .0001,
             "min_iters": 1,
             "master_settings": {
                 "OutputFlag": 0
