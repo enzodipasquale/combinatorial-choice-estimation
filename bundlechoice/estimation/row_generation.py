@@ -99,10 +99,11 @@ class RowGenerationSolver(BaseEstimationSolver):
             #     for si in range(self.num_simuls * self.num_agents)
             # ))
             self.master_model.optimize()
-            logger.info("Master Initialized. Parameter: %s", theta.X)
-            
+            logger.info("Master Initialized")
             self.master_variables = (theta, u)
             self.theta_val = theta.X
+            self.log_parameter()
+
         self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
     
 
@@ -131,7 +132,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                 logger.warning("Possible failure of demand oracle: %d, u_sim: %s, u_master: %s", len(violations), u_sim[violations], u_master[violations])
 
              
-            logger.info("Parameter: %s", np.round(self.theta_val, 2))
+            self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
@@ -210,3 +211,12 @@ class RowGenerationSolver(BaseEstimationSolver):
             return len(to_remove)
         else:
             return 0
+
+
+
+    def log_parameter(self):
+        feature_ids = self.rowgen_cfg.features_to_log
+        if feature_ids is not None:
+            logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], 2))
+        else:
+            logger.info("Parameters: %s", np.round(self.theta_val, 2))

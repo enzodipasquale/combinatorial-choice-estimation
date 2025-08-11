@@ -12,4 +12,5 @@ subproblem:
 row_generation:
     max_iters: 200
     theta_ubs: 1000
+    features_to_log: [0, -3,-2,-1]
 
