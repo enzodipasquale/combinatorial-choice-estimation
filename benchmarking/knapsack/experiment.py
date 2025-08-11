@@ -36,7 +36,7 @@ cfg = {
     },
     "rowgen": {
         "max_iters": 100,
-        "tol_certificate": 0.001,
+        "tolerance_optimality": 0.001,
         "master_settings": {
             "OutputFlag": 0
         }

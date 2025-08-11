@@ -54,7 +54,7 @@ def run_row_generation_greedy_experiment():
         },
         "row_generation": {
             "max_iters": 100,
-            "tol_certificate": 0.001,
+            "tolerance_optimality": 0.001,
             "min_iters": 10,
             # "max_slack_counter": 2, 
             "master_settings": {
