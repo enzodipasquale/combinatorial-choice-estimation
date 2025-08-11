@@ -1,4 +1,4 @@
-num_agents: 255
+num_agents: 25234235
 num_items: 493
 num_features: 4
 num_simuls: 50
@@ -14,7 +14,7 @@ max_iters: 100
 master_settings:
     OutputFlag: 0
 
-subproblem: QuadKnap
+subproblem: QuadKnapsack
 subproblem_settings:
     TimeLimit: 60
     MIPGap_tol: 1e-3
