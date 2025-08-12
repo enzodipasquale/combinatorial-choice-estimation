@@ -7,8 +7,8 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
     Subproblem that, for each agent/simulation, selects the single item with the maximum value.
     """
     def initialize(self) -> None:
-        agent_data = self.local_data.get("agent_data", {})
-        item_data = self.local_data.get("item_data", {})
+        agent_data = {} if self.local_data["agent_data"] is None else self.local_data["agent_data"]
+        item_data = {} if self.local_data["item_data"] is None else self.local_data["item_data"]
 
         # Modular and quadratic features (None if missing)
         self.has_modular_agent = "modular" in agent_data

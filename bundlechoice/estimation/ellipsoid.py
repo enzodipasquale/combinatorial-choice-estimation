@@ -70,6 +70,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         Returns:
             np.ndarray: Estimated parameter vector.
         """
+        logger.info("=== ELLIPSOID METHOD ===")
         tic = datetime.now()
         
         # Initialize subproblem manager

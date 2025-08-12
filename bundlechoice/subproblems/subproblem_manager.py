@@ -173,4 +173,9 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         all_best_bundles = self.comm_manager.concatenate_at_root(best_bundles, root=0)
         return all_best_bundles, all_max_values
 
+
+
+
+
+
 SubproblemProtocol = SubproblemType 

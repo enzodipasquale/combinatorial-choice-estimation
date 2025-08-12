@@ -86,25 +86,21 @@ class RowGenerationSolver(BaseEstimationSolver):
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()          
             # obs_features = agents_obs_features.sum(0)
-            ubs = self.rowgen_cfg.theta_ubs
-            theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=ubs, name='parameter')
-            if self.rowgen_cfg.theta_lbs is not None:
-                theta.lb = self.rowgen_cfg.theta_lbs
+            # ubs = self.rowgen_cfg.ubs
+            theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=100, name='parameter')
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
-            errors = self.input_data["errors"].reshape(-1, self.num_items)
-            self.master_model.addConstrs((
-                u[si] >=
-                errors[si] @ self.input_data["obs_bundle"][si % self.num_agents] +
-                self.agents_obs_features[si % self.num_agents, :] @ theta
-                for si in range(self.num_simuls * self.num_agents)
-            ))
+            # self.master_model.addConstrs((
+            #     u[si] >=
+            #     self.errors[si] @ obs_bundle[si % self.num_agents] +
+            #     agents_obs_features[si % self.num_agents, :] @ theta
+            #     for si in range(self.num_simuls * self.num_agents)
+            # ))
             self.master_model.optimize()
-            logger.info("Master Initialized")
+            logger.info("Master Initialized. Parameter: %s", theta.X)
+            
             self.master_variables = (theta, u)
             self.theta_val = theta.X
-            self.log_parameter()
-
         self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
     
 
@@ -130,9 +126,10 @@ class RowGenerationSolver(BaseEstimationSolver):
 
             violations = np.where((u_master - u_sim) / (np.abs(u_master) + 1e-8) > 1e-6)[0]
             if len(violations) > 0:
-                logger.warning("Possible failure of demand oracle at agents ids: %s, u_sim: %s, u_master: %s", violations, u_sim[violations], u_master[violations])
+                logger.warning("Possible failure of demand oracle: %d, u_sim: %s, u_master: %s", len(violations), u_sim[violations], u_master[violations])
 
-            self.log_parameter()
+             
+            logger.info("Parameter: %s", np.round(self.theta_val, 2))
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
@@ -161,7 +158,6 @@ class RowGenerationSolver(BaseEstimationSolver):
             tuple: (theta_val)
                 - theta_val (np.ndarray): Estimated parameter vector.
         """
-        logger.info("=== ROW GENERATION ===")
         tic = datetime.now()
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()        
@@ -212,12 +208,3 @@ class RowGenerationSolver(BaseEstimationSolver):
             return len(to_remove)
         else:
             return 0
-
-
-
-    def log_parameter(self):
-        feature_ids = self.rowgen_cfg.features_to_log
-        if feature_ids is not None:
-            logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], 2))
-        else:
-            logger.info("Parameters: %s", np.round(self.theta_val, 2))

@@ -13,7 +13,7 @@ supermod:
 knapsack:
 	mpirun -n 10 python benchmarking/knapsack/experiment.py
 plain:
-	mpirun -n 10 python benchmarking/plain_single_item/experiment.py
+	mpirun -n 1 python benchmarking/plain_single_item/experiment.py
 
 
 greedy_benchmark:

@@ -11,8 +11,8 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
-num_agents = 1500
-num_items = 100
+num_agents = 500
+num_items = 10
 num_features = 10
 num_simuls = 1
 sigma = 2
@@ -86,6 +86,8 @@ def features_oracle(i_id, bundle, data):
     # if single_bundle:
     #     return features[:, 0] 
     # return features
+    # return np.concatenate((modular_agent.T @ bundle, [-bundle.sum() ** 2]))
+
     if bundle.ndim == 1:
         return np.concatenate((modular_agent.T @ bundle, [-bundle.sum() ** 2]))
     else:
