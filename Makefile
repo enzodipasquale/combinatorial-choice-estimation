@@ -20,7 +20,7 @@ greedy_benchmark:
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
 		mpirun -n 10 python benchmarking/greedy/experiment.py || exit 1; \
-		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/greedy.wl || exit 1; \
+		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/AddDrop/greedy.wl || exit 1; \
 	done
 
 supermod_benchmark:
@@ -44,7 +44,7 @@ plain_benchmark:
 		wolframscript -file /Users/enzo-macbookpro/MyProjects/score-estimator/plain_single_item/plain_single_item.wl || exit 1; \
 	done
 
-all_benchmarks: greedy_benchmark supermod_benchmark plain_benchmark
+all_benchmarks: greedy_benchmark supermod_benchmark
 
 
 
