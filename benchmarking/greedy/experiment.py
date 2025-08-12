@@ -12,10 +12,10 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
 num_agents = 500
-num_items = 10
-num_features = 10
+num_items = 100
+num_features = 8
 num_simuls = 1
-sigma = 2
+sigma = 1
 
 # Define configuration as a dictionary
 cfg = {

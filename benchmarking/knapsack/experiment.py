@@ -13,13 +13,13 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/knapsack"
 
 
 # Define dimensions
-num_agents = 1000
+num_agents = 200
 num_items = 100
 num_simuls = 1
 modular_agent_features = 4
 modular_item_features = 2
 num_features = modular_agent_features + modular_item_features
-sigma = 2
+sigma = 1
 
 cfg = {
     "dimensions": {
@@ -57,12 +57,13 @@ if rank == 0:
 
     # Modular item features (weights)
     modular_item = np.abs(np.random.normal(0, 1, (num_items, modular_item_features)))
-    weights = np.random.uniform(0, 10, num_items)
+    weights = np.random.randint(0, 10, num_items)
     item_data = {"modular": modular_item,
                  "weights": weights}
 
     # Agent capacities
-    agent_data["capacity"] = np.random.uniform(5, 30, num_agents)
+    capacity = np.random.randint(5, 30, num_agents)
+    agent_data["capacity"] = capacity
 
     # Errors
     errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
@@ -85,11 +86,14 @@ obs_bundles, _ = knapsack_experiment.subproblems.init_and_solve(theta_0, return_
 # Estimate parameters using row generation
 if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()},{obs_bundles.sum(1).mean()} , {obs_bundles.sum(1).max()}")
+    
     data["obs_bundle"] = obs_bundles
     data["errors"] = estimation_errors
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)
-    pd.DataFrame(agent_data["modular"].reshape(-1, modular_agent_features)).to_csv(os.path.join(SAVE_PATH, "modular.csv"), index=False, header=False)
-    pd.DataFrame(item_data["modular"].reshape(-1, modular_item_features)).to_csv(os.path.join(SAVE_PATH, "weights.csv"), index=False, header=False)
+    pd.DataFrame(agent_data["modular"].reshape(-1, modular_agent_features)).to_csv(os.path.join(SAVE_PATH, "agent_modular.csv"), index=False, header=False)
+    pd.DataFrame(item_data["modular"].reshape(-1, modular_item_features)).to_csv(os.path.join(SAVE_PATH, "item_modular.csv"), index=False, header=False)
+    pd.DataFrame(capacity).to_csv(os.path.join(SAVE_PATH, "capacity.csv"), index=False, header=False)
+    pd.DataFrame(weights).to_csv(os.path.join(SAVE_PATH, "weights.csv"), index=False, header=False)
 
 # Run row generation
 cfg["dimensions"]["num_simuls"] = num_simuls
@@ -109,7 +113,11 @@ if rank == 0:
     print(theta_0)
     print(f"obj at estimate: {obj_at_estimate}")
     print(f"obj at star: {obj_at_star}")
-    print(f"{knapsack_experiment.row_generation.master_model.ObjVal}")
+
+    total_weight = (obs_bundles @ weights)
+    # print( capacity - total_weight) 
+
+    # print(f"{knapsack_experiment.row_generation.master_model.ObjVal}")
     row = {
         "num_agents": num_agents,
         "num_items": num_items,

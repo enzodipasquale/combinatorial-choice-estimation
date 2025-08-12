@@ -13,13 +13,13 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/supermod"
 
 
 # Define dimensions
-num_agents = 200
+num_agents = 500
 num_items = 100
 num_simuls = 1
-modular_agent_features = 7
+modular_agent_features = 6
 quadratic_item_features = 2
 num_features = modular_agent_features + quadratic_item_features
-sigma = 5
+sigma = 1
 
 cfg = {
     "dimensions": {
