@@ -7,6 +7,7 @@ from typing import Optional, Callable, Any
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
+from bundlechoice.estimation.inequalities import InequalitiesSolver
 from bundlechoice.base import HasComm, HasConfig
 from .comm_manager import CommManager
 logger = get_logger(__name__)
@@ -45,6 +46,7 @@ class BundleChoice(HasComm, HasConfig):
     subproblem_manager: Optional[SubproblemManager]
     row_generation_manager: Optional[RowGenerationSolver]
     ellipsoid_manager: Optional[EllipsoidSolver]
+    inequalities_manager: Optional[InequalitiesSolver]
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
 
@@ -63,6 +65,7 @@ class BundleChoice(HasComm, HasConfig):
         self.subproblem_manager = None
         self.row_generation_manager = None
         self.ellipsoid_manager = None
+        self.inequalities_manager = None
 
     # --- Initialization ---
     def _try_init_data_manager(self):
@@ -175,6 +178,8 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.row_generation_manager
 
+    
+
     def _try_init_ellipsoid_manager(self):
         """
         Initialize the EllipsoidSolver if not already present.
@@ -213,6 +218,44 @@ class BundleChoice(HasComm, HasConfig):
             subproblem_manager=self.subproblem_manager
         )
         return self.ellipsoid_manager
+
+    def _try_init_inequalities_manager(self):
+        """
+        Initialize the InequalitiesSolver if required managers are set.
+        
+        This method creates a new InequalitiesSolver instance using the current
+        configuration and managers.
+        
+        Returns:
+            InequalitiesSolver: The initialized inequalities solver instance
+            
+        Raises:
+            RuntimeError: If required managers are not initialized
+        """
+        missing_managers = []
+        if self.data_manager is None:
+            missing_managers.append("DataManager")
+        if self.feature_manager is None:
+            missing_managers.append("FeatureManager")
+        if self.subproblem_manager is None:
+            missing_managers.append("SubproblemManager")
+        if self.config is None or self.config.dimensions is None:
+            missing_managers.append("DimensionsConfig")
+        if missing_managers:
+            raise RuntimeError(
+                "DataManager, FeatureManager, SubproblemManager, and DimensionsConfig must be set in config "
+                "before initializing inequalities manager. Missing managers: "
+                f"{', '.join(missing_managers)}"
+            )
+
+        self.inequalities_manager = InequalitiesSolver(
+            comm_manager=self.comm_manager,
+            dimensions_cfg=self.config.dimensions,
+            data_manager=self.data_manager,
+            feature_manager=self.feature_manager,
+            subproblem_manager=self.subproblem_manager
+        )
+        return self.inequalities_manager
 
     # --- Properties ---
     @property
@@ -287,6 +330,18 @@ class BundleChoice(HasComm, HasConfig):
         if self.ellipsoid_manager is None:
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
+        
+    @property
+    def inequalities(self):
+        """
+        Access the inequalities manager component.
+        
+        Returns:
+            InequalitiesSolver: The inequalities solver instance
+        """
+        if self.inequalities_manager is None:
+            self._try_init_inequalities_manager()
+        return self.inequalities_manager
         
     def load_config(self, cfg):
         """
