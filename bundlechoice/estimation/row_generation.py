@@ -144,8 +144,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
-            num_removed = self._enforce_slack_counter()
-            logger.info("Removed constraints: %d", num_removed)
+            self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             self.master_model.optimize()
             theta_val = theta.X
@@ -217,8 +216,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             for constr in to_remove:
                 self.master_model.remove(constr)
                 self.slack_counter.pop(constr, None)
-            
-            return len(to_remove)
+            num_removed = len(to_remove)
+            logger.info("Removed constraints: %d", num_removed)
+            return num_removed
         else:
             return 0
 
