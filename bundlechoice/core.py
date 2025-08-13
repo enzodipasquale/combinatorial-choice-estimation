@@ -368,7 +368,7 @@ class BundleChoice(HasComm, HasConfig):
         if self.config is None:
             self.config = new_config
         else:
-            self.config = self.config.merge(new_config)
+            self.config.update_in_place(new_config)
 
         # Build informative configuration summary
         logger.info("BundleChoice configured:")

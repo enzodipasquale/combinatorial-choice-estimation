@@ -41,6 +41,21 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             _features_oracle (Callable): Function (agent_id, bundle, data) -> np.ndarray.
         """
         self._features_oracle = _features_oracle
+        self.validate_oracle()
+
+    def validate_oracle(self):
+        # check that features_oracle returns array of shape (num_features,)
+        if self._features_oracle is not None:
+            test_bundle = np.ones(self.num_items)
+            if self.input_data is not None:
+                test_features = self._features_oracle(0, test_bundle, self.input_data)
+            elif self.local_data is not None:
+                test_features = self._features_oracle(0, test_bundle, self.local_data)
+            else:
+                raise RuntimeError("No data to validate features_oracle.")
+            assert test_features.shape == (self.num_features,), f"features_oracle must return array of shape {self.num_features}. Got {test_features.shape} instead."
+        else:
+            raise RuntimeError("_features_oracle function is not set.")
 
     # --- Feature extraction methods ---
     def features_oracle(self, agent_id, bundle, data_override=None):

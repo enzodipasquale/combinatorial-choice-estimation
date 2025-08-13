@@ -37,7 +37,7 @@ cfg = {
     "rowgen": {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
-        "master_settings": {
+        "gurobi_settings": {
             "OutputFlag": 0
         }
     }

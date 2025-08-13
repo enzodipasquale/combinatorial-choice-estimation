@@ -32,7 +32,7 @@ cfg = {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "min_iters": 1,
-        "master_settings": {
+        "gurobi_settings": {
             "OutputFlag": 0
         }
     }
@@ -82,6 +82,7 @@ obs_bundles = greedy_experiment.subproblems.init_and_solve(theta_0)
 if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
     print(f"aggregate: {obs_bundles.sum()}")
+    print(f"demand_j: {obs_bundles.sum(0)}")
     data["obs_bundle"] = obs_bundles
     data["errors"] = estimation_errors
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)

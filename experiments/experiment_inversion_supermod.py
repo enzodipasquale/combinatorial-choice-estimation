@@ -40,7 +40,7 @@ def run_quad_supermod_experiment():
             "tolerance_optimality": 0.0001,
             "max_slack_counter": 10,
             "min_iters": 10,
-            "master_settings": {
+            "gurobi_settings": {
                 "OutputFlag": 0
             }
         }
@@ -148,13 +148,6 @@ def run_quad_supermod_experiment():
             print(f"[Rank 0] Objective improvement: {obj_at_star - obj_at_hat:.4f}")
         else:
             print("[Rank 0] Objective function not available for row generation solver")
-        
-        # Summary
-        print(f"\n[Rank 0] Experiment Summary:")
-        print(f"  - Bundle generation time: {bundle_time:.2f}s")
-        print(f"  - Optimization time: {optimization_time:.2f}s")
-        print(f"  - Total time: {bundle_time + optimization_time:.2f}s")
-        print(f"  - Parameter estimation error: {np.linalg.norm(theta_hat - theta_0):.4f}")
         
 
 if __name__ == "__main__":
