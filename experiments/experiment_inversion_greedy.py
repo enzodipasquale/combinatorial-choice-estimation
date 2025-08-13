@@ -34,7 +34,7 @@ def run_row_generation_greedy_experiment():
             "gurobi_settings": {
                 "OutputFlag": 0
             },
-            "max_slack_counter": 7
+            "max_slack_counter": 20
         }
     }
       
