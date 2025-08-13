@@ -135,26 +135,17 @@ def run_row_generation_greedy_experiment():
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
     greedy_demo.subproblems.load()
-    
-    
-    # Run row generation method
-
     start_time = time.time()
     theta_hat = greedy_demo.row_generation.solve()
-
-    delta_hat = theta_hat[:-1]
-    import statsmodels.api as sm
-    from statsmodels.sandbox.regression.gmm import IV2SLS
-    instruments = np.concatenate([instrument[:, None], modular], axis=1)
-    iv_model = IV2SLS(delta_hat, modular, instruments)
-    iv_results = iv_model.fit()
-    print(f"Coefficients: {iv_results.params}")
-    print(f"Standard errors: {iv_results.bse}")
-
-
-
-   
-    
+    if rank == 0:
+        delta_hat = theta_hat[:-1]
+        import statsmodels.api as sm
+        from statsmodels.sandbox.regression.gmm import IV2SLS
+        instruments = np.concatenate([instrument[:, None], modular], axis=1)
+        iv_model = IV2SLS(delta_hat, modular, instruments)
+        iv_results = iv_model.fit()
+        print(f"Coefficients: {iv_results.params}")
+        print(f"Standard errors: {iv_results.bse}")
 
 def features_oracle(i_id, B_j, data):
     """
