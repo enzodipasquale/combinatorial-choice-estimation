@@ -37,7 +37,6 @@ if rank == 0:
     num_items = config["dimensions"]["num_items"]
     num_features = config["dimensions"]["num_features"]
     num_simuls = config["dimensions"]["num_simuls"]
-
     shape = (num_simuls, num_agents, num_items)
     errors = np.random.normal(0, 1, size=shape)
 
