@@ -63,7 +63,7 @@ class RowGenerationConfig:
     gurobi_settings: dict = field(default_factory=dict)
     theta_ubs: Any = 1000
     theta_lbs: Any = None
-    features_to_log: Optional[List[int]] = None
+    parameters to log: Optional[List[int]] = None
 
 @dataclass
 class EllipsoidConfig:

@@ -221,7 +221,7 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
     def log_parameter(self):
-        feature_ids = self.rowgen_cfg.features_to_log
+        feature_ids = self.rowgen_cfg.parameters to log
         precision = 3
         if feature_ids is not None:
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
