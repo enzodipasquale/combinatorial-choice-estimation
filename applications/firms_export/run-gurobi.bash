@@ -29,6 +29,7 @@ singularity exec ${nv} \
 unset -f which
 if [[ -e /ext3/apps/openmpi/4.1.6/env.sh ]]; then source /ext3/apps/openmpi/4.1.6/env.sh; fi
 if [[ -e /ext3/env.sh ]]; then source /ext3/env.sh; fi
+export PYTHONPATH=/scratch/ed2189/JMP:\${PYTHONPATH}
 # export GRB_LICENSE_FILE=/home/ed2189/gurobi.lic
 #export PYTHONPATH=/vast/wang/ed2189/gurobi/example:\${PYTHONPATH}
 ${args}
