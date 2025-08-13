@@ -33,7 +33,7 @@ def test_row_generation_plain_single_item():
             "max_iters": 100,
             "tolerance_optimality": .0001,
             "min_iters": 1,
-            "master_settings": {
+            "gurobi_settings": {
                 "OutputFlag": 0
             }
         }

@@ -49,7 +49,7 @@ def test_row_generation_greedy():
             "max_iters": 100,
             "tolerance_optimality": 0.001,
             "min_iters": 1,
-            "master_settings": {
+            "gurobi_settings": {
                 "OutputFlag": 0
             }
         }

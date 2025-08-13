@@ -46,7 +46,7 @@ def test_current_user_experience():
             "max_iters": 50,
             "tolerance_optimality": 0.001,
             "min_iters": 1,
-            "master_settings": {"OutputFlag": 0}
+            "gurobi_settings": {"OutputFlag": 0}
         }
     }
     

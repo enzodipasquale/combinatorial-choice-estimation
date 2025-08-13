@@ -48,7 +48,7 @@ def test_real_experiment_workflow():
                 "max_iters": 50,
                 "tolerance_optimality": 0.001,
                 "min_iters": 1,
-                "master_settings": {
+                "gurobi_settings": {
                     "OutputFlag": 0
                 }
             }
@@ -126,7 +126,7 @@ def test_real_experiment_workflow():
                     "max_iters": 100,  # Changed from 50
                     "tolerance_optimality": 0.0001,  # Changed from 0.001
                     "min_iters": 5,  # Changed from 1
-                    "master_settings": {
+                    "gurobi_settings": {
                         "OutputFlag": 0
                     }
                 }

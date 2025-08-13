@@ -52,7 +52,7 @@ class RowGenerationConfig:
         row_generation_decay: Decay factor for row generation
         max_iters: Maximum number of iterations
         min_iters: Minimum number of iterations
-        master_settings: Settings for the master problem solver
+        gurobi_settings: Settings for the master problem solver
     """
     tolerance_optimality: float = 1e-6
     max_slack_counter: float = float('inf')
@@ -60,8 +60,8 @@ class RowGenerationConfig:
     row_generation_decay: float = 0.0
     max_iters: float = float('inf')
     min_iters: int = 0
-    master_settings: dict = field(default_factory=dict)
-    theta_ubs: Any = 100
+    gurobi_settings: dict = field(default_factory=dict)
+    theta_ubs: Any = 1000
     theta_lbs: Any = None
     features_to_log: Optional[List[int]] = None
 
@@ -238,7 +238,7 @@ class BundleChoiceConfig:
             row_generation_decay=other.row_generation.row_generation_decay,
             max_iters=other.row_generation.max_iters,
             min_iters=other.row_generation.min_iters,
-            master_settings={**self.row_generation.master_settings, **other.row_generation.master_settings}
+            gurobi_settings={**self.row_generation.gurobi_settings, **other.row_generation.gurobi_settings}
         )
         
         # Merge ellipsoid
@@ -258,5 +258,65 @@ class BundleChoiceConfig:
             row_generation=merged_rowgen,
             ellipsoid=merged_ellipsoid
         ) 
+
+    def update_in_place(self, other: 'BundleChoiceConfig') -> None:
+        """
+        Update this configuration in place with values from another configuration.
+        This method modifies the existing object instead of creating a new one.
+        
+        Args:
+            other: Configuration to merge from
+        """
+        # Update dimensions in place
+        if other.dimensions.num_agents is not None:
+            self.dimensions.num_agents = other.dimensions.num_agents
+        if other.dimensions.num_items is not None:
+            self.dimensions.num_items = other.dimensions.num_items
+        if other.dimensions.num_features is not None:
+            self.dimensions.num_features = other.dimensions.num_features
+        self.dimensions.num_simuls = other.dimensions.num_simuls
+        
+        # Update subproblem in place
+        if other.subproblem.name is not None:
+            self.subproblem.name = other.subproblem.name
+        self.subproblem.settings.update(other.subproblem.settings)
+        
+        # Update row generation in place
+        self.row_generation.tolerance_optimality = other.row_generation.tolerance_optimality
+        self.row_generation.max_slack_counter = other.row_generation.max_slack_counter
+        self.row_generation.tol_row_generation = other.row_generation.tol_row_generation
+        self.row_generation.row_generation_decay = other.row_generation.row_generation_decay
+        self.row_generation.max_iters = other.row_generation.max_iters
+        self.row_generation.min_iters = other.row_generation.min_iters
+        self.row_generation.gurobi_settings.update(other.row_generation.gurobi_settings)
+        
+        # Update theta bounds
+        if other.row_generation.theta_ubs is not None:
+            self.row_generation.theta_ubs = other.row_generation.theta_ubs
+        if other.row_generation.theta_lbs is not None:
+            self.row_generation.theta_lbs = other.row_generation.theta_lbs
+        
+        # Update ellipsoid in place
+        self.ellipsoid.max_iterations = other.ellipsoid.max_iterations
+        if other.ellipsoid.num_iters is not None:
+            self.ellipsoid.num_iters = other.ellipsoid.num_iters
+        self.ellipsoid.tolerance = other.ellipsoid.tolerance
+        self.ellipsoid.initial_radius = other.ellipsoid.initial_radius
+        self.ellipsoid.decay_factor = other.ellipsoid.decay_factor
+        self.ellipsoid.min_volume = other.ellipsoid.min_volume
+        self.ellipsoid.verbose = other.ellipsoid.verbose
+
+    def merge_in_place(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
+        """
+        Convenience method that calls update_in_place and returns self for chaining.
+        
+        Args:
+            other: Configuration to merge from
+            
+        Returns:
+            BundleChoiceConfig: self (for method chaining)
+        """
+        self.update_in_place(other)
+        return self 
 
 

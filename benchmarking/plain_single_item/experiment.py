@@ -32,7 +32,7 @@ cfg = {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "min_iters": 1,
-        "master_settings": {
+        "gurobi_settings": {
             "OutputFlag": 0
         },
         # "max_slack_counter": 2,

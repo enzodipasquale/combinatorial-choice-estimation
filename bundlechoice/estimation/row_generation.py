@@ -66,14 +66,14 @@ class RowGenerationSolver(BaseEstimationSolver):
         """    
         with suppress_output():
             model = gp.Model()
-            Method = self.rowgen_cfg.master_settings.get("Method", 0)
+            Method = self.rowgen_cfg.gurobi_settings.get("Method", 0)
             model.setParam('Method', Method)
             # model.setParam('Threads', self.master_threads)
-            LPWarmStart = self.rowgen_cfg.master_settings.get("LPWarmStart", 2)
+            LPWarmStart = self.rowgen_cfg.gurobi_settings.get("LPWarmStart", 2)
             model.setParam('LPWarmStart', LPWarmStart)
-            OutputFlag = self.rowgen_cfg.master_settings.get("OutputFlag", 0)
+            OutputFlag = self.rowgen_cfg.gurobi_settings.get("OutputFlag", 0)
             model.setParam('OutputFlag', OutputFlag)
-            return model
+        return model
 
     def _initialize_master_problem(self):
         """
@@ -82,11 +82,10 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             tuple: (master_model, master_variables, theta_val)
         """
-
+        obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
-            ubs = self.rowgen_cfg.theta_ubs
-            theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=ubs, name='parameter')
+            theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.rowgen_cfg.theta_ubs, name='parameter')
             if self.rowgen_cfg.theta_lbs is not None:
                 theta.lb = self.rowgen_cfg.theta_lbs
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
@@ -190,9 +189,6 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.theta_hat = self.theta_val
         return self.theta_hat
 
-
-
-
     def _enforce_slack_counter(self):
         """
         Update the slack counter for master problem constraints and remove those that have been slack for too long.
@@ -226,7 +222,8 @@ class RowGenerationSolver(BaseEstimationSolver):
 
     def log_parameter(self):
         feature_ids = self.rowgen_cfg.features_to_log
+        precision = 3
         if feature_ids is not None:
-            logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], 2))
+            logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
         else:
-            logger.info("Parameters: %s", np.round(self.theta_val, 2))
+            logger.info("Parameters: %s", np.round(self.theta_val, precision))
