@@ -249,11 +249,9 @@ class BundleChoice(HasComm, HasConfig):
             )
 
         self.inequalities_manager = InequalitiesSolver(
-            comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
-            subproblem_manager=self.subproblem_manager
         )
         return self.inequalities_manager
 
