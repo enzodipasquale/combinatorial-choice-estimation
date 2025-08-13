@@ -17,7 +17,7 @@ def load_and_prepare_data():
     
     # File paths
     current_results = Path("benchmarking/supermod/results.csv")
-    score_estimator_results = Path("/Users/enzo-macbookpro/MyProjects/score-estimator/supermod/estimation_results.csv")
+    score_estimator_results = Path("/Users/enzo-macbookpro/MyProjects/score-estimator/supermod/AddDrop/estimation_results.csv")
     
     print("Loading datasets...")
     print(f"Current results: {current_results}")
@@ -39,6 +39,25 @@ def load_and_prepare_data():
         return None, None
     
     return df_current, df_score
+
+def extract_time_comparison(df_current, df_score):
+    """Extract and compare execution times between methods."""
+    # Current method uses 'elapsed' column
+    current_times = df_current['elapsed'].values
+    
+    # Score estimator uses 'timeTaken' column
+    score_times = df_score['timeTaken'].values
+    
+    # Calculate statistics
+    time_stats = {
+        'current_mean': current_times.mean(),
+        'current_std': current_times.std(),
+        'score_mean': score_times.mean(),
+        'score_std': score_times.std(),
+        'time_ratio': score_times.mean() / current_times.mean()  # score/current
+    }
+    
+    return time_stats
 
 def extract_normalized_betas(df_current, df_score):
     """Extract and normalize beta_hat_* columns from current results, and extract k-1 columns from score estimator."""
@@ -63,6 +82,29 @@ def extract_normalized_betas(df_current, df_score):
     score_betas.columns = norm_cols
     
     return norm_betas_df, score_betas
+
+def extract_true_normalized_values(df_current):
+    """Extract the true normalized theta values for MSE computation."""
+    # Find all theta_0_* columns and sort
+    theta_0_cols = [col for col in df_current.columns if col.startswith('theta_0_')]
+    theta_0_cols.sort()
+    k = len(theta_0_cols)
+    if k < 2:
+        raise ValueError("Need at least two theta_0 columns for normalization.")
+    
+    # Get the true theta values from the first row (they should be the same across all rows)
+    true_thetas = df_current[theta_0_cols].iloc[0].values
+    
+    # Normalize: divide all theta_0_* by the first, then drop the first
+    normalized_true = true_thetas / true_thetas[0]  # divide by first theta
+    normalized_true = normalized_true[1:]           # exclude the first column
+    
+    # Create mapping from normalized beta column names to their true values
+    true_values = {}
+    for i, col in enumerate([f'beta_hat_{j}' for j in range(1, k)]):
+        true_values[col] = normalized_true[i]
+    
+    return true_values
 
 def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     """Boxplot for normalized k-1 betas from both methods."""
@@ -100,7 +142,7 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     
     # Color the boxes
     for patch in bp1['boxes']:
-        patch.set_facecolor('lightpurple')
+        patch.set_facecolor('plum')
         patch.set_alpha(0.7)
     for patch in bp2['boxes']:
         patch.set_facecolor('lightcoral')
@@ -108,7 +150,7 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     
     # Add legend
     from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='lightpurple', alpha=0.7, label='Current (normalized)'),
+    legend_elements = [Patch(facecolor='plum', alpha=0.7, label='Current (normalized)'),
                       Patch(facecolor='lightcoral', alpha=0.7, label='Score estimator')]
     ax.legend(handles=legend_elements)
     
@@ -117,9 +159,8 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     
-    # Save with timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    plot_file = results_folder / f"boxplot_normalized_{timestamp}.png"
+    # Save plot (no need for timestamp in filename since we're in a timestamped folder)
+    plot_file = results_folder / "boxplot_normalized.png"
     plt.savefig(plot_file, dpi=300)
     print(f"✓ Boxplot saved to: {plot_file}")
     plt.show()
@@ -128,28 +169,54 @@ def mean_squared_error(estimates, true_value=1.0):
     """Compute mean squared error to the true value (default 1.0)."""
     return ((estimates - true_value) ** 2).mean()
 
-def compute_individual_mse(norm_betas_df, score_betas, true_value=1.0):
-    """Compute MSE for each individual beta estimate."""
+def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
+    """Compute MSE and bias for each individual beta estimate."""
     mse_results = []
     
+    # If no true values provided, use the mean of each column as the target
+    # This is more reasonable than assuming 1.0 for all normalized betas
+    if true_values is None:
+        true_values = {}
+        for col in norm_betas_df.columns:
+            # Use the mean of the current estimates as a reasonable target
+            # This assumes the current method is unbiased
+            true_values[col] = norm_betas_df[col].mean()
+    
     for col in norm_betas_df.columns:
+        true_value = true_values.get(col, 1.0)  # fallback to 1.0 if not specified
+        
         current_mse = mean_squared_error(norm_betas_df[col], true_value)
         score_mse = mean_squared_error(score_betas[col], true_value)
         
+        # Calculate bias (average difference from true value)
+        current_bias = (norm_betas_df[col] - true_value).mean()
+        score_bias = (score_betas[col] - true_value).mean()
+        
         mse_results.append({
             'Beta_Index': col,
+            'True_Value': true_value,
             'Current_MSE': current_mse,
             'Score_MSE': score_mse,
-            'Difference': current_mse - score_mse
+            'Current_Bias': current_bias,
+            'Score_Bias': score_bias
         })
     
     return pd.DataFrame(mse_results)
 
 def create_results_folder():
-    """Create results subfolder if it doesn't exist."""
-    results_folder = Path("benchmarking/supermod/comparison_results")
-    results_folder.mkdir(exist_ok=True)
-    return results_folder
+    """Create timestamped results subfolder for this run."""
+    from datetime import datetime
+    
+    # Create base comparison_results folder
+    base_folder = Path("benchmarking/supermod/comparison_results")
+    base_folder.mkdir(exist_ok=True)
+    
+    # Create timestamped subfolder for this run
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_folder = base_folder / timestamp
+    run_folder.mkdir(exist_ok=True)
+    
+    return run_folder
 
 def extract_metadata(df_current):
     """Extract metadata from the first row of current results."""
@@ -194,29 +261,41 @@ def save_results_with_metadata(results_folder, individual_mse_df, metadata, mse_
         individual_results[key] = value
     individual_results['timestamp'] = timestamp
     
-    # Append to existing files or create new ones
+    # Save files in the timestamped run folder (no appending needed)
     summary_file = results_folder / "summary_mse.csv"
     individual_file = results_folder / "individual_mse.csv"
     
-    # Save/append summary results
-    if summary_file.exists():
-        existing_summary = pd.read_csv(summary_file)
-        updated_summary = pd.concat([existing_summary, pd.DataFrame([summary_row])], ignore_index=True)
-    else:
-        updated_summary = pd.DataFrame([summary_row])
+    # Save results directly (overwrite for this run)
+    summary_df = pd.DataFrame([summary_row])
+    summary_df.to_csv(summary_file, index=False)
     
-    updated_summary.to_csv(summary_file, index=False)
-    
-    # Save/append individual results
-    if individual_file.exists():
-        existing_individual = pd.read_csv(individual_file)
-        updated_individual = pd.concat([existing_individual, individual_results], ignore_index=True)
-    else:
-        updated_individual = individual_results
-    
-    updated_individual.to_csv(individual_file, index=False)
+    individual_results.to_csv(individual_file, index=False)
     
     return summary_file, individual_file
+
+def save_mse_results(results_folder, individual_mse_df, metadata, time_stats):
+    """Save MSE results with metadata and time comparison in a single file."""
+    from datetime import datetime
+    
+    # Create timestamp for this run
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Add metadata and time stats to the MSE dataframe
+    mse_results = individual_mse_df.copy()
+    for key, value in metadata.items():
+        mse_results[key] = value
+    
+    # Add time comparison columns
+    mse_results['current_time_mean'] = time_stats['current_mean']
+    mse_results['current_time_std'] = time_stats['current_std']
+    mse_results['score_time_mean'] = time_stats['score_mean']
+    mse_results['score_time_std'] = time_stats['score_std']
+    mse_results['time_ratio'] = time_stats['time_ratio']
+    mse_results['timestamp'] = timestamp
+    
+    # Save to mse.csv
+    mse_file = results_folder / "mse.csv"
+    mse_results.to_csv(mse_file, index=False)
 
 def main():
     print("="*60)
@@ -242,11 +321,17 @@ def main():
     # Extract normalized betas
     norm_betas_df, score_betas = extract_normalized_betas(df_current, df_score)
     
+    # Extract true normalized values for MSE computation
+    true_normalized_values = extract_true_normalized_values(df_current)
+    
+    # Extract time comparison
+    time_stats = extract_time_comparison(df_current, df_score)
+    
     # Boxplot
     boxplot_normalized(norm_betas_df, score_betas, results_folder)
     
-    # MSE calculation for each beta estimate
-    individual_mse_df = compute_individual_mse(norm_betas_df, score_betas)
+    # MSE calculation for each beta estimate using true values
+    individual_mse_df = compute_individual_mse(norm_betas_df, score_betas, true_normalized_values)
     print("\nIndividual Mean Squared Errors:")
     print("=" * 50)
     print(individual_mse_df.round(6))
@@ -257,12 +342,24 @@ def main():
     print(f"\nOverall Mean Squared Error (Current, normalized): {mse_current:.6f}")
     print(f"Overall Mean Squared Error (Score estimator): {mse_score:.6f}")
     
-    # Save results with metadata
-    summary_file, individual_file = save_results_with_metadata(
-        results_folder, individual_mse_df, metadata, mse_current, mse_score
-    )
-    print(f"✓ Summary results appended to: {summary_file}")
-    print(f"✓ Individual results appended to: {individual_file}")
+    # Overall bias calculation
+    bias_current = individual_mse_df['Current_Bias'].mean()
+    bias_score = individual_mse_df['Score_Bias'].mean()
+    print(f"\nOverall Average Bias (Current, normalized): {bias_current:.6f}")
+    print(f"Overall Average Bias (Score estimator): {bias_score:.6f}")
+    
+    # Time comparison
+    print(f"\nExecution Time Comparison:")
+    print(f"Current method: {time_stats['current_mean']:.3f} ± {time_stats['current_std']:.3f} seconds")
+    print(f"Score estimator: {time_stats['score_mean']:.3f} ± {time_stats['score_std']:.3f} seconds")
+    print(f"Time ratio (score/current): {time_stats['time_ratio']:.2f}x")
+    
+    print(f"\nNote: MSE computed against actual normalized true theta values")
+    print(f"      Bias = average(estimated - true), positive = overestimation")
+    
+    # Save only the MSE table with metadata
+    save_mse_results(results_folder, individual_mse_df, metadata, time_stats)
+    print(f"✓ MSE results saved to: {results_folder}/mse.csv")
     
     print("\n" + "="*60)
     print("ANALYSIS COMPLETE")
