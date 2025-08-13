@@ -68,7 +68,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             model = gp.Model()
             Method = self.rowgen_cfg.gurobi_settings.get("Method", 0)
             model.setParam('Method', Method)
-            # model.setParam('Threads', self.master_threads)
+            Threads = self.rowgen_cfg.gurobi_settings.get("Threads")
+            if Threads is not None:
+                model.setParam('Threads', Threads)
             LPWarmStart = self.rowgen_cfg.gurobi_settings.get("LPWarmStart", 2)
             model.setParam('LPWarmStart', LPWarmStart)
             OutputFlag = self.rowgen_cfg.gurobi_settings.get("OutputFlag", 0)
@@ -221,7 +223,7 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
     def log_parameter(self):
-        feature_ids = self.rowgen_cfg.parameters to log
+        feature_ids = self.rowgen_cfg.parameters_to_log
         precision = 3
         if feature_ids is not None:
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
