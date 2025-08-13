@@ -7,7 +7,7 @@ dimensions:
 subproblem: 
     name: QuadKnapsack
     settings:
-        TimeLimit: 100
+        TimeLimit: 5
         MIPGap_tol: 1e-2
 row_generation:
     max_iters: 300
