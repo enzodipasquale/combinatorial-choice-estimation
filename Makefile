@@ -63,6 +63,8 @@ all_benchmarks: greedy_benchmark supermod_benchmark
 auction:
 	mpirun -n 10 python applications/combinatorial_auction/run_estimation.py
 
+firms:
+	mpirun -n 10 python applications/firms_export/run_estimation.py
 
 
 
