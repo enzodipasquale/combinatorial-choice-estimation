@@ -12,8 +12,8 @@ from bundlechoice.core import BundleChoice
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agents = 200
-    num_items = 100
+    num_agents = 500
+    num_items = 150
     num_features = 4
     num_simuls = 1
     sigma = 6
@@ -44,7 +44,7 @@ def run_row_generation_greedy_experiment():
     ########## Generate data ##########
     if rank == 0:
         modular = np.abs(np.random.normal(0, 1, (num_items, num_features-1)))
-        endogenous_errors = np.random.normal(0, 1, size=(num_items,)) 
+        endogenous_errors = np.random.normal(0, 1, size=(num_items,)) *0
         instrument = np.random.normal(0, 1, size=(num_items,)) 
         modular[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
@@ -66,30 +66,30 @@ def run_row_generation_greedy_experiment():
     bundle_time = time.time() - start_time
 
 
-    ########## Estimation ##########
-    # if rank == 0:
-    #     print(f"[Rank 0] Bundle generation completed in {bundle_time:.2f} seconds")
-    #     print(f"[Rank 0] Aggregate demands: {obs_bundles.sum(1).min():.2f} to {obs_bundles.sum(1).max():.2f}")
-    #     print(f"[Rank 0] Total aggregate: {obs_bundles.sum():.2f}")
-    #     input_data["obs_bundle"] = obs_bundles
-    #     input_data["errors"] = estimation_errors
-    #     cfg["dimensions"]["num_simuls"] = num_simuls
-    # else:
-    #     input_data = None
+    ######### Estimation ##########
+    if rank == 0:
+        print(f"[Rank 0] Bundle generation completed in {bundle_time:.2f} seconds")
+        print(f"[Rank 0] Aggregate demands: {obs_bundles.sum(1).min():.2f} to {obs_bundles.sum(1).max():.2f}")
+        print(f"[Rank 0] Total aggregate: {obs_bundles.sum():.2f}")
+        input_data["obs_bundle"] = obs_bundles
+        input_data["errors"] = estimation_errors
+        cfg["dimensions"]["num_simuls"] = num_simuls
+    else:
+        input_data = None
 
-    # if rank == 0:
-    #     print(f"[Rank {rank}] Setting up for parameter estimation...")
-    # greedy_demo.load_config(cfg)
-    # greedy_demo.data.load_and_scatter(input_data)
-    # greedy_demo.features.set_oracle(features_oracle)
-    # greedy_demo.subproblems.load()
+    if rank == 0:
+        print(f"[Rank {rank}] Setting up for parameter estimation...")
+    greedy_demo.load_config(cfg)
+    greedy_demo.data.load_and_scatter(input_data)
+    greedy_demo.features.set_oracle(features_oracle)
+    greedy_demo.subproblems.load()
     
     
-    # # Run row generation method
-    # if rank == 0:
-    #     print(f"[Rank {rank}] Starting row generation optimization...")
-    # start_time = time.time()
-    # theta_hat = greedy_demo.row_generation.solve()
+    # Run row generation method
+    if rank == 0:
+        print(f"[Rank {rank}] Starting row generation optimization...")
+    start_time = time.time()
+    theta_hat = greedy_demo.row_generation.solve()
     # optimization_time = time.time() - start_time
     #   # Compute objective values on all ranks
     # try:
@@ -141,11 +141,15 @@ def run_row_generation_greedy_experiment():
         delta_hat = theta_hat[:-1]
         import statsmodels.api as sm
         from statsmodels.sandbox.regression.gmm import IV2SLS
-        instruments = np.concatenate([instrument[:, None], modular], axis=1)
+        instruments = np.concatenate([instrument[:, None], modular[:,1:]], axis=1)
         iv_model = IV2SLS(delta_hat, modular, instruments)
         iv_results = iv_model.fit()
         print(f"Coefficients: {iv_results.params}")
         print(f"Standard errors: {iv_results.bse}")
+
+
+
+
 
 def features_oracle(i_id, B_j, data):
     """
