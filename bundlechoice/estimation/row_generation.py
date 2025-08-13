@@ -172,15 +172,21 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.slack_counter = {}
         logger.info("Starting row generation loop.")
         iteration = 0
+        pricing_times, master_times = [], []
         while iteration < self.rowgen_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
+            t1 = datetime.now()
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            pricing_times.append((datetime.now() - t1).total_seconds())
+            t2 = datetime.now()
             stop = self._master_iteration(local_pricing_results) 
+            master_times.append((datetime.now() - t2).total_seconds())
             if stop and iteration >= self.rowgen_cfg.min_iters:
                 if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
+                    logger.info(f"Avg pricing time: {np.mean(pricing_times):.3f}s, Avg master time: {np.mean(master_times):.3f}s")
                 break
             iteration += 1
         self.theta_hat = self.theta_val
