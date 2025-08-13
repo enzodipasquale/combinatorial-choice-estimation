@@ -32,5 +32,3 @@ __pycache__/
 _tests/
 bundlechoice/_legacy/
 
-# Notebooks with potential tokens
-applications/firms_export/clean_data/descriptives.ipynb
