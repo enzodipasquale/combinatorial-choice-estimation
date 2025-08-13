@@ -28,7 +28,6 @@ __pycache__/
 .vscode/
 
 # Other
-applications/
 experiments_paper/
 singularity.txt
 SFM.ipynb
