@@ -13,7 +13,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 # Define dimensions
 num_agents = 500
 num_items = 100
-num_features = 3
+num_features = 10
 num_simuls = 1
 sigma = 1
 
@@ -66,43 +66,11 @@ def features_oracle(i_id, bundle, data):
     or (num_features, m) for m bundles.
     """
     modular_agent = data["agent_data"]["modular"][i_id]
-    # modular_item = data["item_data"]["modular"]
-
-    # modular_agent = np.atleast_2d(modular_agent)
-    # # modular_item = np.atleast_2d(modular_item)
-
-    # single_bundle = False
-    # if bundle.ndim == 1:
-    #     bundle = bundle[:, None]
-    #     single_bundle = True
-    # with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-    #     agent_sum = modular_agent.T @ bundle
-    # # item_sum = modular_item.T @ bundle
-    # neg_sq = -np.sum(bundle, axis=0, keepdims=True) ** 2
-
-    # features = np.vstack((agent_sum, 
-    #                         # item_sum, 
-    #                         neg_sq))
-    # if single_bundle:
-    #     return features[:, 0] 
-    # return features
-    # return np.concatenate((modular_agent.T @ bundle, [-bundle.sum() ** 2]))
-
     if bundle.ndim == 1:
         return np.concatenate((modular_agent.T @ bundle, [-bundle.sum() ** 2]))
     else:
         return np.concatenate((modular_agent.T @ bundle, -np.sum(bundle, axis=0, keepdims=True) ** 2), axis=0)
 
-# def features_oracle(i_id, bundle, data):
-#     modular_agent = data["agent_data"]["modular"][i_id]
-#     if bundle.ndim > 1:
-#         raise ValueError("bundle must be a 1D array")
-#     agent_sum =  (modular_agent * bundle[:,None]).sum(0)
-#     neg_sq = -(bundle.sum() ** 2)
-
-#     features = np.concatenate((agent_sum, [neg_sq]))
-    
-#     return features
 
 greedy_experiment.features.set_oracle(features_oracle)
 theta_0 = np.ones(num_features)
