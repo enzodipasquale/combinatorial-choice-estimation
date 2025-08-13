@@ -39,3 +39,6 @@ bundlechoice/_legacy/
 # Large dataset folders
 applications/combinatorial_auction/datasets/
 applications/firms_export/clean_data/datasets/
+
+# Notebooks with potential tokens
+applications/firms_export/clean_data/descriptives.ipynb
