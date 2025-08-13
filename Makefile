@@ -17,6 +17,10 @@ plain:
 
 
 greedy_benchmark:
+	@echo "Cleaning up previous results..."
+	@rm -f benchmarking/greedy/results.csv
+	@rm -f /Users/enzo-macbookpro/MyProjects/score-estimator/greedy/AddDrop/estimation_results.csv
+	@echo "Starting fresh benchmark runs..."
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
 		mpirun -n 10 python benchmarking/greedy/experiment.py || exit 1; \
@@ -25,6 +29,10 @@ greedy_benchmark:
 	python benchmarking/greedy/benchmarking.py
 
 supermod_benchmark:
+	@echo "Cleaning up previous results..."
+	@rm -f benchmarking/supermod/results.csv
+	@rm -f /Users/enzo-macbookpro/MyProjects/score-estimator/supermod/AddDrop/estimation_results.csv
+	@echo "Starting fresh benchmark runs..."
 	@for i in $(shell seq 1 100); do \
 		echo "—— Run $$i ——"; \
 		mpirun -n 10 python benchmarking/supermod/experiment.py || exit 1; \
