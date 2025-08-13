@@ -31,3 +31,10 @@ __pycache__/
 _tests/
 bundlechoice/_legacy/
 applications/firms_export/clean_data/datasets/
+
+# Shell scripts (utility scripts)
+add_submodules.sh
+cleanup_mpi.sh
+run_tests_with_timeout.sh
+setup_private_submodules.sh
+timeout_wrapper.sh
