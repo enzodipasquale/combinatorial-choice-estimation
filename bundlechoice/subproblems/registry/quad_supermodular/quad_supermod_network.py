@@ -43,7 +43,7 @@ class MinCutSubmodularSolver:
         self.b_j_j = b_j_j
         self.num_items = b_j_j.shape[0]
         assert np.all(b_j_j * np.tril(np.ones((self.num_items, self.num_items)), k=-1) == 0), f"b_j_j must be upper triangular"
-        assert np.all(b_j_j * (1 - np.eye(self.num_items)) <= 0), "b_j_j must have non-sign off-diagonal elements"
+        assert np.all(b_j_j * (1 - np.eye(self.num_items)) <= 0), "b_j_j must have non-positive off-diagonal elements"
    
         self.constraint_mask = constraint_mask
         if constraint_mask is not None:
@@ -81,16 +81,16 @@ class MinCutSubmodularSolver:
         G.add_node('s')
         G.add_node('t')
         G.add_nodes_from(nodes)
-        a_j *= 1e14
-        a_j_j *= 1e14
+        a_j = np.round(a_j * 1e10).astype(int)
+        a_j_j = np.round(a_j_j * 1e10).astype(int)
         for i in nodes:
             if a_j[i] >= 0:
-                G.add_edge(i, 't', capacity= int(a_j[i]))
+                G.add_edge(i, 't', capacity= a_j[i])
             else:
-                G.add_edge('s', i, capacity= -int(a_j[i]))
+                G.add_edge('s', i, capacity= -a_j[i])
             for j in nodes:
                 if j > i: 
-                    G.add_edge(i, j, capacity=int(a_j_j[i, j]))
+                    G.add_edge(i, j, capacity=a_j_j[i, j])
         G.add_edge('s', 't', capacity=0)
         return G
         
