@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 #SBATCH --job-name=greedy_experiment
-#SBATCH --nodes=3
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=3
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=100G
