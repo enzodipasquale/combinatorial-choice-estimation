@@ -81,8 +81,8 @@ class MinCutSubmodularSolver:
         G.add_node('s')
         G.add_node('t')
         G.add_nodes_from(nodes)
-        a_j = np.round(a_j * 1e10).astype(int)
-        a_j_j = np.round(a_j_j * 1e10).astype(int)
+        a_j = np.round(a_j * 1e12).astype(int)
+        a_j_j = np.round(a_j_j * 1e12).astype(int)
         for i in nodes:
             if a_j[i] >= 0:
                 G.add_edge(i, 't', capacity= a_j[i])

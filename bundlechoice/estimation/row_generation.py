@@ -84,21 +84,20 @@ class RowGenerationSolver(BaseEstimationSolver):
         """
 
         if self.is_root():
-            self.master_model = self._setup_gurobi_model_params()          
-            # obs_features = agents_obs_features.sum(0)
+            self.master_model = self._setup_gurobi_model_params()    
             ubs = self.rowgen_cfg.theta_ubs
             theta = self.master_model.addMVar(self.num_features, obj= - self.obs_features, ub=ubs, name='parameter')
             if self.rowgen_cfg.theta_lbs is not None:
                 theta.lb = self.rowgen_cfg.theta_lbs
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
-            errors = self.input_data["errors"].reshape(-1, self.num_items)
-            self.master_model.addConstrs((
-                u[si] >=
-                errors[si] @ self.input_data["obs_bundle"][si % self.num_agents] +
-                self.agents_obs_features[si % self.num_agents, :] @ theta
-                for si in range(self.num_simuls * self.num_agents)
-            ))
+            # errors = self.input_data["errors"].reshape(-1, self.num_items)
+            # self.master_model.addConstrs((
+            #     u[si] >=
+            #     errors[si] @ self.input_data["obs_bundle"][si % self.num_agents] +
+            #     self.agents_obs_features[si % self.num_agents, :] @ theta
+            #     for si in range(self.num_simuls * self.num_agents)
+            # ))
             self.master_model.optimize()
             logger.info("Master Initialized")
             self.master_variables = (theta, u)

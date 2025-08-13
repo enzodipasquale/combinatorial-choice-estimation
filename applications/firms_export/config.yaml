@@ -10,7 +10,7 @@ subproblem:
    
 row_generation:
     max_iters: 300
-    theta_ubs: 1000
+    theta_ubs: 3
     
 
 
