@@ -1,23 +1,21 @@
 #!/bin/env python
 
 from bundlechoice import BundleChoice
-from bundlechoice.subproblems import get_subproblem
-
+import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from mpi4py import MPI
 import os
-
+import platform
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
-
-# Load configuration
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
+
 
 # Load data on rank 0
 if rank == 0:  
@@ -35,7 +33,12 @@ if rank == 0:
                 }
 
     np.random.seed(34254)
-    shape = (config["num_simuls"], config["num_agents"], config["num_items"])
+    num_agents = config["dimensions"]["num_agents"]
+    num_items = config["dimensions"]["num_items"]
+    num_features = config["dimensions"]["num_features"]
+    num_simuls = config["dimensions"]["num_simuls"]
+
+    shape = (num_simuls, num_agents, num_items)
     errors = np.random.normal(0, 1, size=shape)
 
     # # Correlation structure
@@ -55,38 +58,25 @@ if rank == 0:
     # random_vals = np.random.rand(*shape)
     # errors = np.where(random_vals < p, errors, - float('inf'))
 
-    print("Check if there is a minus infinity in the errors" , np.any(np.isneginf(errors)))
-
-    data = {
+    input_data = {
             "item_data": item_data,
             "agent_data": agent_data,
             "errors": errors,
             "obs_bundle": obs_bundle
             }
 else:
-    data = None
-
-# User-defined feature oracle
-def get_x_k(self, i_id, B_j, local= False):
-    modular_item = self.item_data["modular"]
-    modular_agent = self.local_agent_data["modular"][i_id] if local else self.agent_data["modular"][i_id]
-    quadratic_item = self.item_data["quadratic"]
-    return np.concatenate(( np.einsum('jk,j->k', modular_item, B_j),
-                            np.einsum('jk,j->k', modular_agent, B_j),
-                            np.einsum('jlk,j,l->k', quadratic_item, B_j, B_j)
-                            ))
-        
-# Demand orable from library
-init_pricing, solve_pricing = get_subproblem(config["subproblem_name"])
-
-# Run estimation
-firms_export = BundleChoice(data, config, get_x_k, init_pricing, solve_pricing)
-firms_export.scatter_data()
-firms_export.local_data_to_torch()
-lambda_k_star , _ = firms_export.compute_estimator_row_gen()
+    input_data = None
 
 
-results = firms_export.solve_pricing_offline(lambda_k_star)
+# # Run the estimation
+firms_export = BundleChoice()
+firms_export.load_config(CONFIG_PATH)
+firms_export.data.load_and_scatter(input_data)
+firms_export.features.build_from_data()
+firms_export.subproblems.load()
+theta_hat = firms_export.row_generation.solve()
+
+results = firms_export.subproblems.init_and_solve(theta_hat)
 if rank == 0:
 
     aggregate_demand_obs = obs_bundle.mean(0)
@@ -94,7 +84,6 @@ if rank == 0:
     predicted_demand = results.mean(0)[sorted_indices]
 
     # Plotting the results
-    import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
     plt.plot(aggregate_demand_obs[sorted_indices], label='Observed Demand', marker='o')
     plt.plot(predicted_demand, label='Predicted Demand', marker='x')
@@ -106,8 +95,6 @@ if rank == 0:
     plt.savefig(os.path.join(BASE_DIR, "marginals.png"))
     plt.show()
 
-
-    import matplotlib.pyplot as plt
     marg_obs = obs_bundle.sum(1)
     marg_pred = results.sum(1)
     plt.hist(marg_obs, bins=50, alpha=0.5, color='blue', label='observed')
