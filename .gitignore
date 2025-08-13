@@ -35,3 +35,7 @@ test.ipynb
 *.png
 _tests/
 bundlechoice/_legacy/
+
+# Large dataset folders
+applications/combinatorial_auction/datasets/
+applications/firms_export/clean_data/datasets/
