@@ -47,9 +47,9 @@ def run_row_generation_greedy_experiment():
     ########## Generate data ##########
     if rank == 0:
         modular_item = np.abs(np.random.normal(0, 1, (num_items, num_item_features)))
-        endogenous_errors = np.random.normal(0, 1, size=(num_items,)) *0
-        instrument = np.random.normal(0, 1, size=(num_items,)) 
-        modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
+        # endogenous_errors = np.random.normal(0, 1, size=(num_items,)) 
+        # instrument = np.random.normal(0, 1, size=(num_items,)) 
+        # modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
 
         modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_agent_features)))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
@@ -122,14 +122,18 @@ def run_row_generation_greedy_experiment():
         delta_hat = theta_hat[:-1]
         import statsmodels.api as sm
         from statsmodels.sandbox.regression.gmm import IV2SLS
-        instruments = np.concatenate([instrument[:, None], modular_item[:,1:]], axis=1)
-        iv_model = IV2SLS(delta_hat, modular_item, instruments)
-        iv_results = iv_model.fit()
-        print(f"Coefficients: {iv_results.params}")
-        print(f"Standard errors: {iv_results.bse}")
+        # instruments = np.concatenate([instrument[:, None], modular_item[:,1:]], axis=1)
+        # iv_model = IV2SLS(delta_hat, modular_item, instruments)
+        # iv_results = iv_model.fit()
+        # print(f"Coefficients: {iv_results.params}")
+        # print(f"Standard errors: {iv_results.bse}")
+        # print(f"theta_hat: {theta_hat}")    
+        # do a simple OLS
+        ols_model = sm.OLS(delta_hat, modular_item)
+        ols_results = ols_model.fit()
+        print(f"Coefficients: {ols_results.params}")
+        print(f"Standard errors: {ols_results.bse}")
         print(f"theta_hat: {theta_hat}")    
-
-
 
 
 
