@@ -103,7 +103,7 @@ After 15 minutes of intensive analysis, I've identified critical user experience
        .with_data(agent_features, obs_bundles, errors)
        .with_features(simple_features_oracle)
        .with_subproblem('Greedy')
-       .with_estimation('RowGeneration', max_iters=50)
+       .with_estimation('row_generationeration', max_iters=50)
        .solve())
    ```
 
@@ -115,7 +115,7 @@ After 15 minutes of intensive analysis, I've identified critical user experience
        .data(agent_features, obs_bundles, errors)
        .features(simple_features_oracle)
        .subproblem('Greedy')
-       .estimation('RowGeneration', max_iters=50)
+       .estimation('row_generationeration', max_iters=50)
        .build())
    
    theta_hat = model.solve()

@@ -28,7 +28,7 @@ cfg = {
     "subproblem": {
         "name": "Greedy",
     },
-    "rowgen": {
+    "row_generation": {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "min_iters": 1,

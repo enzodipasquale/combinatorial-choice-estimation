@@ -6,11 +6,11 @@ in bundle choice models, including row generation and ellipsoid methods.
 """
 
 from .base import BaseEstimationSolver
-from .row_generation import RowGenerationSolver
+from .row_generation import row_generationerationSolver
 from .ellipsoid import EllipsoidSolver
 
 __all__ = [
     'BaseEstimationSolver',
-    'RowGenerationSolver', 
+    'row_generationerationSolver', 
     'EllipsoidSolver'
 ] 

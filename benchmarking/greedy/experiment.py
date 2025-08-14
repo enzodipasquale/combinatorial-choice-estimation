@@ -11,9 +11,9 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
-num_agents = 500
+num_agents = 1000
 num_items = 100
-num_features = 10
+num_features = 4
 num_simuls = 1
 sigma = 1
 
@@ -28,13 +28,14 @@ cfg = {
     "subproblem": {
         "name": "Greedy",
     },
-    "rowgen": {
+    "row_generation": {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "min_iters": 1,
         "gurobi_settings": {
             "OutputFlag": 0
-        }
+        },
+        "theta_ubs": 100
     }
 }
 
@@ -44,11 +45,19 @@ greedy_experiment.load_config(cfg)
 
 # Generate data on rank 0
 if rank == 0:
-    # modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
-    modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
+    # modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
+    modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
+    while True:
+        full_rank_matrix = np.random.randint(0,2, size=(num_features-1, num_features-1))
+        if np.any(full_rank_matrix.sum(0) == 0):
+            continue
+        if np.linalg.matrix_rank(full_rank_matrix) == num_features-1:
+            full_rank_matrix = (full_rank_matrix / full_rank_matrix.sum(0))
+            break
+    modular_agent = modular_agent @ full_rank_matrix
     errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
     estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
-    agent_data = {"modular": modular}
+    agent_data = {"modular": modular_agent}
     data = {"agent_data": agent_data, 
             "errors": errors}
 else:
@@ -74,7 +83,7 @@ def features_oracle(i_id, bundle, data):
 
 greedy_experiment.features.set_oracle(features_oracle)
 theta_0 = np.ones(num_features)
-theta_0[-1] = .1
+# theta_0[-1] = .1
 obs_bundles = greedy_experiment.subproblems.init_and_solve(theta_0)
 
 
@@ -89,7 +98,6 @@ if rank == 0:
     pd.DataFrame(agent_data["modular"].reshape(-1, num_features-1)).to_csv(os.path.join(SAVE_PATH, "modular.csv"), index=False, header=False)
 else:
     data = None
-
 greedy_experiment.load_config(cfg)
 greedy_experiment.data.load_and_scatter(data)
 greedy_experiment.features.set_oracle(features_oracle)

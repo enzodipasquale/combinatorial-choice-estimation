@@ -233,7 +233,7 @@ def test_ideal_user_experience():
         print("model.add_data(agent_features, obs_bundles, errors)")
         print("model.add_features(simple_features_oracle)")
         print("model.add_subproblem('Greedy')")
-        print("model.add_estimation('RowGeneration', max_iters=50)")
+        print("model.add_estimation('row_generationeration', max_iters=50)")
         print("theta_hat = model.solve()")
         
         print("\nBENEFITS OF IDEAL WORKFLOW:")

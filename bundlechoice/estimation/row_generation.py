@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGenerationSolver(BaseEstimationSolver):
+class row_generationerationSolver(BaseEstimationSolver):
     """
     Implements the row generation algorithm for parameter estimation in modular bundle choice models.
 
@@ -27,17 +27,17 @@ class RowGenerationSolver(BaseEstimationSolver):
                 self, 
                 comm_manager, 
                 dimensions_cfg, 
-                rowgen_cfg, 
+                row_generation_cfg, 
                 data_manager, 
                 feature_manager, 
                 subproblem_manager):
         """
-        Initialize the RowGenerationSolver.
+        Initialize the row_generationerationSolver.
 
         Args:
             comm_manager: Communication manager for MPI operations
             dimensions_cfg: DimensionsConfig instance
-            rowgen_cfg: RowGenerationConfig instance
+            row_generation_cfg: row_generationerationConfig instance
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
@@ -50,7 +50,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             subproblem_manager=subproblem_manager
         )
         
-        self.rowgen_cfg = rowgen_cfg
+        self.row_generation_cfg = row_generation_cfg
         self.master_model = None
         self.master_variables = None
         self.theta_val = None
@@ -66,14 +66,14 @@ class RowGenerationSolver(BaseEstimationSolver):
         """    
         with suppress_output():
             model = gp.Model()
-            Method = self.rowgen_cfg.gurobi_settings.get("Method", 0)
+            Method = self.row_generation_cfg.gurobi_settings.get("Method", 0)
             model.setParam('Method', Method)
-            Threads = self.rowgen_cfg.gurobi_settings.get("Threads")
+            Threads = self.row_generation_cfg.gurobi_settings.get("Threads")
             if Threads is not None:
                 model.setParam('Threads', Threads)
-            LPWarmStart = self.rowgen_cfg.gurobi_settings.get("LPWarmStart", 2)
+            LPWarmStart = self.row_generation_cfg.gurobi_settings.get("LPWarmStart", 2)
             model.setParam('LPWarmStart', LPWarmStart)
-            OutputFlag = self.rowgen_cfg.gurobi_settings.get("OutputFlag", 0)
+            OutputFlag = self.row_generation_cfg.gurobi_settings.get("OutputFlag", 0)
             model.setParam('OutputFlag', OutputFlag)
         return model
 
@@ -87,9 +87,9 @@ class RowGenerationSolver(BaseEstimationSolver):
         obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
-            theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.rowgen_cfg.theta_ubs, name='parameter')
-            if self.rowgen_cfg.theta_lbs is not None:
-                theta.lb = self.rowgen_cfg.theta_lbs
+            theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
+            if self.row_generation_cfg.theta_lbs is not None:
+                theta.lb = self.row_generation_cfg.theta_lbs
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # errors = self.input_data["errors"].reshape(-1, self.num_items)
@@ -140,16 +140,16 @@ class RowGenerationSolver(BaseEstimationSolver):
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
-            if max_reduced_cost < self.rowgen_cfg.tolerance_optimality:
+            if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
                 stop = True
-            rows_to_add = np.where(u_sim > u_master * (1 + self.rowgen_cfg.tol_row_generation) + self.rowgen_cfg.tolerance_optimality)[0]
+            rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             self.master_model.optimize()
             theta_val = theta.X
-            self.rowgen_cfg.tol_row_generation *= self.rowgen_cfg.row_generation_decay
+            self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
             theta_val = None
         self.theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
@@ -172,7 +172,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         logger.info("Starting row generation loop.")
         iteration = 0
         pricing_times, master_times = [], []
-        while iteration < self.rowgen_cfg.max_iters:
+        while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
             t1 = datetime.now()
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
@@ -180,7 +180,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             t2 = datetime.now()
             stop = self._master_iteration(local_pricing_results) 
             master_times.append((datetime.now() - t2).total_seconds())
-            if stop and iteration >= self.rowgen_cfg.min_iters:
+            if stop and iteration >= self.row_generation_cfg.min_iters:
                 if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
@@ -198,7 +198,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             int: Number of constraints removed.
         """
-        if self.rowgen_cfg.max_slack_counter < float('inf'):
+        if self.row_generation_cfg.max_slack_counter < float('inf'):
             to_remove = []
             for constr in self.master_model.getConstrs():
                 if constr.Slack < -1e-6:
@@ -206,7 +206,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                     if constr not in self.slack_counter:
                         self.slack_counter[constr] = 0
                     self.slack_counter[constr] += 1
-                    if self.slack_counter[constr] >= self.rowgen_cfg.max_slack_counter:
+                    if self.slack_counter[constr] >= self.row_generation_cfg.max_slack_counter:
                         to_remove.append(constr)
                 if constr.Pi > 1e-6:
                     self.slack_counter.pop(constr, None)
@@ -223,7 +223,7 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
     def log_parameter(self):
-        feature_ids = self.rowgen_cfg.parameters_to_log
+        feature_ids = self.row_generation_cfg.parameters_to_log
         precision = 3
         if feature_ids is not None:
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))

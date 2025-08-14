@@ -13,7 +13,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/knapsack"
 
 
 # Define dimensions
-num_agents = 200
+num_agents = 500
 num_items = 100
 num_simuls = 1
 modular_agent_features = 4
@@ -34,7 +34,7 @@ cfg = {
             "MIPGap_tol": 0.01
         }
     },
-    "rowgen": {
+    "row_generation": {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "gurobi_settings": {
@@ -53,6 +53,14 @@ if rank == 0:
 
     # Modular agent features
     modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, modular_agent_features)) )
+    while True:
+        full_rank_matrix = np.random.randint(0,2, size=(modular_agent_features, modular_agent_features))
+        if np.any(full_rank_matrix.sum(0) == 0):
+            continue
+        if np.linalg.matrix_rank(full_rank_matrix) == modular_agent_features:
+            full_rank_matrix = (full_rank_matrix / full_rank_matrix.sum(0))
+            break
+    modular_agent = modular_agent @ full_rank_matrix
     agent_data = {"modular": modular_agent}
 
     # Modular item features (weights)

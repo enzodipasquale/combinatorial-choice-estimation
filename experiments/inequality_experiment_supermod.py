@@ -3,11 +3,11 @@ from bundlechoice.core import BundleChoice
 from datetime import datetime
 
 # Define dimensions
-num_agents = 1000
+num_agents = 500
 num_items = 30
 num_simuls = 1
 modular_agent_features = 2
-quadratic_item_features = 2
+quadratic_item_features = 1
 num_features = modular_agent_features + quadratic_item_features
 sigma = 5
 

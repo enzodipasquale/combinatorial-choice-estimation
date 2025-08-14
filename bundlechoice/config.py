@@ -38,7 +38,7 @@ class SubproblemConfig:
     settings: dict = field(default_factory=dict)
 
 @dataclass
-class RowGenerationConfig:
+class row_generationerationConfig:
     """
     Configuration for row generation solver parameters.
     
@@ -106,7 +106,7 @@ class BundleChoiceConfig:
     """
     dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
     subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
-    row_generation: RowGenerationConfig = field(default_factory=RowGenerationConfig)
+    row_generation: row_generationerationConfig = field(default_factory=row_generationerationConfig)
     ellipsoid: EllipsoidConfig = field(default_factory=EllipsoidConfig)
 
     @classmethod
@@ -123,7 +123,7 @@ class BundleChoiceConfig:
         return cls(
             dimensions=DimensionsConfig(**cfg.get("dimensions", {})),
             subproblem=SubproblemConfig(**cfg.get("subproblem", {})),
-            row_generation=RowGenerationConfig(**cfg.get("row_generation", {})),
+            row_generation=row_generationerationConfig(**cfg.get("row_generation", {})),
             ellipsoid=EllipsoidConfig(**cfg.get("ellipsoid", {})),
         )
 
@@ -231,7 +231,7 @@ class BundleChoiceConfig:
             merged_subproblem = SubproblemConfig(name=self.subproblem.name, settings=merged_settings)
         
         # Merge row generation
-        merged_rowgen = RowGenerationConfig(
+        merged_row_generation = row_generationerationConfig(
             tolerance_optimality=other.row_generation.tolerance_optimality,
             max_slack_counter=other.row_generation.max_slack_counter,
             tol_row_generation=other.row_generation.tol_row_generation,
@@ -255,7 +255,7 @@ class BundleChoiceConfig:
         return BundleChoiceConfig(
             dimensions=merged_dimensions,
             subproblem=merged_subproblem,
-            row_generation=merged_rowgen,
+            row_generation=merged_row_generation,
             ellipsoid=merged_ellipsoid
         ) 
 
