@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=3
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=100G
-#SBATCH --time=00:05:00
+#SBATCH --time=00:15:00
 
 module purge
 
