@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional, List, Any
 import numpy as np
 import yaml
@@ -6,39 +6,62 @@ import yaml
 @dataclass
 class DimensionsConfig:
     """
-    Configuration for problem dimensions and data structure.
+    Configuration for problem dimensions.
     
-    This class defines the key dimensions of the bundle choice problem,
-    including the number of agents, items, features, and simulation runs.
+    This class defines the basic dimensions of the bundle choice problem,
+    including the number of agents, items, features, and simulations.
     
     Attributes:
         num_agents: Number of agents in the problem
         num_items: Number of items available for choice
-        num_features: Number of features per agent-item combination
-        num_simuls: Number of simulation runs (default: 1)
+        num_features: Number of features per item
+        num_simuls: Number of simulations to run
     """
     num_agents: Optional[int] = None
     num_items: Optional[int] = None
     num_features: Optional[int] = None
     num_simuls: int = 1
+    
+    def update_in_place(self, other: 'DimensionsConfig') -> None:
+        """Update this configuration in place with values from another configuration."""
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                other_value = getattr(other, field.name)
+                if other_value is not None:
+                    setattr(self, field.name, other_value)
 
 @dataclass
 class SubproblemConfig:
     """
-    Configuration for subproblem algorithm settings.
+    Configuration for subproblem solver settings.
     
-    This class defines the subproblem algorithm to use and its specific
-    configuration parameters.
+    This class defines the configuration for the subproblem solver,
+    including the algorithm name and any algorithm-specific settings.
     
     Attributes:
-        name: Name of the subproblem algorithm
+        name: Name of the subproblem algorithm to use
         settings: Dictionary of algorithm-specific settings
     """
     name: Optional[str] = None
     settings: dict = field(default_factory=dict)
+    
+    def update_in_place(self, other: 'SubproblemConfig') -> None:
+        """Update this configuration in place with values from another configuration."""
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                current_value = getattr(self, field.name)
+                other_value = getattr(other, field.name)
+                
+                if other_value is not None:
+                    if isinstance(current_value, dict):
+                        # Merge dictionaries
+                        current_value.update(other_value)
+                    else:
+                        # Direct assignment for simple types
+                        setattr(self, field.name, other_value)
 
 @dataclass
-class row_generationerationConfig:
+class RowGenerationConfig:
     """
     Configuration for row generation solver parameters.
     
@@ -53,6 +76,9 @@ class row_generationerationConfig:
         max_iters: Maximum number of iterations
         min_iters: Minimum number of iterations
         gurobi_settings: Settings for the master problem solver
+        theta_ubs: Upper bounds for theta parameters
+        theta_lbs: Lower bounds for theta parameters
+        parameters_to_log: List of parameter indices to log
     """
     tolerance_optimality: float = 1e-6
     max_slack_counter: float = float('inf')
@@ -64,6 +90,21 @@ class row_generationerationConfig:
     theta_ubs: Any = 1000
     theta_lbs: Any = None
     parameters_to_log: Optional[List[int]] = None
+    
+    def update_in_place(self, other: 'RowGenerationConfig') -> None:
+        """Update this configuration in place with values from another configuration."""
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                current_value = getattr(self, field.name)
+                other_value = getattr(other, field.name)
+                
+                if other_value is not None:
+                    if isinstance(current_value, dict):
+                        # Merge dictionaries
+                        current_value.update(other_value)
+                    else:
+                        # Direct assignment for simple types
+                        setattr(self, field.name, other_value)
 
 @dataclass
 class EllipsoidConfig:
@@ -89,6 +130,14 @@ class EllipsoidConfig:
     decay_factor: float = 0.95
     min_volume: float = 1e-12
     verbose: bool = True
+    
+    def update_in_place(self, other: 'EllipsoidConfig') -> None:
+        """Update this configuration in place with values from another configuration."""
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                other_value = getattr(other, field.name)
+                if other_value is not None:
+                    setattr(self, field.name, other_value)
 
 @dataclass
 class BundleChoiceConfig:
@@ -106,7 +155,7 @@ class BundleChoiceConfig:
     """
     dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
     subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
-    row_generation: row_generationerationConfig = field(default_factory=row_generationerationConfig)
+    row_generation: RowGenerationConfig = field(default_factory=RowGenerationConfig)
     ellipsoid: EllipsoidConfig = field(default_factory=EllipsoidConfig)
 
     @classmethod
@@ -123,7 +172,7 @@ class BundleChoiceConfig:
         return cls(
             dimensions=DimensionsConfig(**cfg.get("dimensions", {})),
             subproblem=SubproblemConfig(**cfg.get("subproblem", {})),
-            row_generation=row_generationerationConfig(**cfg.get("row_generation", {})),
+            row_generation=RowGenerationConfig(**cfg.get("row_generation", {})),
             ellipsoid=EllipsoidConfig(**cfg.get("ellipsoid", {})),
         )
 
@@ -204,119 +253,83 @@ class BundleChoiceConfig:
         if self.ellipsoid.min_volume <= 0:
             raise ValueError("min_volume must be positive")
 
-    def merge(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
-        """
-        Merge another configuration into this one, updating only fields that are set in other.
+    # def merge(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
+    #     """
+    #     Merge another configuration into this one, updating only fields that are set in other.
         
-        Args:
-            other: Configuration to merge from
+    #     Args:
+    #         other: Configuration to merge from
             
-        Returns:
-            BundleChoiceConfig: New merged configuration
-        """
-        # Merge dimensions
-        merged_dimensions = DimensionsConfig(
-            num_agents=other.dimensions.num_agents if other.dimensions.num_agents is not None else self.dimensions.num_agents,
-            num_items=other.dimensions.num_items if other.dimensions.num_items is not None else self.dimensions.num_items,
-            num_features=other.dimensions.num_features if other.dimensions.num_features is not None else self.dimensions.num_features,
-            num_simuls=other.dimensions.num_simuls
-        )
+    #     Returns:
+    #         BundleChoiceConfig: New merged configuration
+    #     """
+    #     # Merge dimensions
+    #     merged_dimensions = DimensionsConfig(
+    #         num_agents=other.dimensions.num_agents if other.dimensions.num_agents is not None else self.dimensions.num_agents,
+    #         num_items=other.dimensions.num_items if other.dimensions.num_items is not None else self.dimensions.num_items,
+    #         num_features=other.dimensions.num_features if other.dimensions.num_features is not None else self.dimensions.num_features,
+    #         num_simuls=other.dimensions.num_simuls
+    #     )
         
-        # Merge subproblem (replace if name is set, otherwise merge settings)
-        if other.subproblem.name is not None:
-            merged_subproblem = other.subproblem
-        else:
-            merged_settings = self.subproblem.settings.copy()
-            merged_settings.update(other.subproblem.settings)
-            merged_subproblem = SubproblemConfig(name=self.subproblem.name, settings=merged_settings)
+    #     # Merge subproblem (replace if name is set, otherwise merge settings)
+    #     if other.subproblem.name is not None:
+    #         merged_subproblem = other.subproblem
+    #     else:
+    #         merged_settings = self.subproblem.settings.copy()
+    #         merged_settings.update(other.subproblem.settings)
+    #         merged_subproblem = SubproblemConfig(name=self.subproblem.name, settings=merged_settings)
         
-        # Merge row generation
-        merged_row_generation = row_generationerationConfig(
-            tolerance_optimality=other.row_generation.tolerance_optimality,
-            max_slack_counter=other.row_generation.max_slack_counter,
-            tol_row_generation=other.row_generation.tol_row_generation,
-            row_generation_decay=other.row_generation.row_generation_decay,
-            max_iters=other.row_generation.max_iters,
-            min_iters=other.row_generation.min_iters,
-            gurobi_settings={**self.row_generation.gurobi_settings, **other.row_generation.gurobi_settings}
-        )
+    #     # Merge row generation
+    #     merged_row_generation = RowGenerationConfig(
+    #         tolerance_optimality=other.row_generation.tolerance_optimality,
+    #         max_slack_counter=other.row_generation.max_slack_counter,
+    #         tol_row_generation=other.row_generation.tol_row_generation,
+    #         row_generation_decay=other.row_generation.row_generation_decay,
+    #         max_iters=other.row_generation.max_iters,
+    #         min_iters=other.row_generation.min_iters,
+    #         gurobi_settings={**self.row_generation.gurobi_settings, **other.row_generation.gurobi_settings}
+    #     )
         
-        # Merge ellipsoid
-        merged_ellipsoid = EllipsoidConfig(
-            max_iterations=other.ellipsoid.max_iterations,
-            num_iters=other.ellipsoid.num_iters if other.ellipsoid.num_iters is not None else self.ellipsoid.num_iters,
-            tolerance=other.ellipsoid.tolerance,
-            initial_radius=other.ellipsoid.initial_radius,
-            decay_factor=other.ellipsoid.decay_factor,
-            min_volume=other.ellipsoid.min_volume,
-            verbose=other.ellipsoid.verbose
-        )
+    #     # Merge ellipsoid
+    #     merged_ellipsoid = EllipsoidConfig(
+    #         max_iterations=other.ellipsoid.max_iterations,
+    #         num_iters=other.ellipsoid.num_iters if other.ellipsoid.num_iters is not None else self.ellipsoid.num_iters,
+    #         tolerance=other.ellipsoid.tolerance,
+    #         initial_radius=other.ellipsoid.initial_radius,
+    #         decay_factor=other.ellipsoid.decay_factor,
+    #         min_volume=other.ellipsoid.min_volume,
+    #         verbose=other.ellipsoid.verbose
+    #     )
         
-        return BundleChoiceConfig(
-            dimensions=merged_dimensions,
-            subproblem=merged_subproblem,
-            row_generation=merged_row_generation,
-            ellipsoid=merged_ellipsoid
-        ) 
+    #     return BundleChoiceConfig(
+    #         dimensions=merged_dimensions,
+    #         subproblem=merged_subproblem,
+    #         row_generation=merged_row_generation,
+    #         ellipsoid=merged_ellipsoid
+    #     ) 
 
     def update_in_place(self, other: 'BundleChoiceConfig') -> None:
         """
         Update this configuration in place with values from another configuration.
-        This method modifies the existing object instead of creating a new one.
+        This method automatically updates all fields using dataclass reflection.
         
         Args:
             other: Configuration to merge from
         """
-        # Update dimensions in place
-        if other.dimensions.num_agents is not None:
-            self.dimensions.num_agents = other.dimensions.num_agents
-        if other.dimensions.num_items is not None:
-            self.dimensions.num_items = other.dimensions.num_items
-        if other.dimensions.num_features is not None:
-            self.dimensions.num_features = other.dimensions.num_features
-        self.dimensions.num_simuls = other.dimensions.num_simuls
-        
-        # Update subproblem in place
-        if other.subproblem.name is not None:
-            self.subproblem.name = other.subproblem.name
-        self.subproblem.settings.update(other.subproblem.settings)
-        
-        # Update row generation in place
-        self.row_generation.tolerance_optimality = other.row_generation.tolerance_optimality
-        self.row_generation.max_slack_counter = other.row_generation.max_slack_counter
-        self.row_generation.tol_row_generation = other.row_generation.tol_row_generation
-        self.row_generation.row_generation_decay = other.row_generation.row_generation_decay
-        self.row_generation.max_iters = other.row_generation.max_iters
-        self.row_generation.min_iters = other.row_generation.min_iters
-        self.row_generation.gurobi_settings.update(other.row_generation.gurobi_settings)
-        
-        # Update theta bounds
-        if other.row_generation.theta_ubs is not None:
-            self.row_generation.theta_ubs = other.row_generation.theta_ubs
-        if other.row_generation.theta_lbs is not None:
-            self.row_generation.theta_lbs = other.row_generation.theta_lbs
-        
-        # Update ellipsoid in place
-        self.ellipsoid.max_iterations = other.ellipsoid.max_iterations
-        if other.ellipsoid.num_iters is not None:
-            self.ellipsoid.num_iters = other.ellipsoid.num_iters
-        self.ellipsoid.tolerance = other.ellipsoid.tolerance
-        self.ellipsoid.initial_radius = other.ellipsoid.initial_radius
-        self.ellipsoid.decay_factor = other.ellipsoid.decay_factor
-        self.ellipsoid.min_volume = other.ellipsoid.min_volume
-        self.ellipsoid.verbose = other.ellipsoid.verbose
-
-    def merge_in_place(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
-        """
-        Convenience method that calls update_in_place and returns self for chaining.
-        
-        Args:
-            other: Configuration to merge from
-            
-        Returns:
-            BundleChoiceConfig: self (for method chaining)
-        """
-        self.update_in_place(other)
-        return self 
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                current_value = getattr(self, field.name)
+                other_value = getattr(other, field.name)
+                
+                if other_value is not None:
+                    if isinstance(current_value, dict):
+                        # Merge dictionaries
+                        current_value.update(other_value)
+                    elif hasattr(current_value, 'update_in_place') and hasattr(other_value, 'update_in_place'):
+                        # Recursively update nested dataclasses
+                        current_value.update_in_place(other_value)
+                    else:
+                        # Direct assignment for simple types
+                        setattr(self, field.name, other_value)
 
 

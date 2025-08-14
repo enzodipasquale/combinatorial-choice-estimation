@@ -37,7 +37,7 @@ class row_generationerationSolver(BaseEstimationSolver):
         Args:
             comm_manager: Communication manager for MPI operations
             dimensions_cfg: DimensionsConfig instance
-            row_generation_cfg: row_generationerationConfig instance
+            row_generation_cfg: RowGenerationConfig instance
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
