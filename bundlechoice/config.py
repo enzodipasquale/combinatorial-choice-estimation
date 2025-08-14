@@ -3,8 +3,39 @@ from typing import Optional, List, Any
 import numpy as np
 import yaml
 
+
+class AutoUpdateMixin:
+    """
+    Mixin class that provides automatic update_in_place functionality for dataclasses.
+    This eliminates the need to implement update_in_place in every config class.
+    """
+    def update_in_place(self, other) -> None:
+        """
+        Update this configuration in place with values from another configuration.
+        This method automatically updates all fields using dataclass reflection.
+        
+        Args:
+            other: Configuration to merge from
+        """
+        for field in fields(self):
+            if hasattr(self, field.name) and hasattr(other, field.name):
+                current_value = getattr(self, field.name)
+                other_value = getattr(other, field.name)
+                
+                if other_value is not None:
+                    if isinstance(current_value, dict):
+                        # Merge dictionaries
+                        current_value.update(other_value)
+                    elif hasattr(current_value, 'update_in_place') and hasattr(other_value, 'update_in_place'):
+                        # Recursively update nested dataclasses
+                        current_value.update_in_place(other_value)
+                    else:
+                        # Direct assignment for simple types
+                        setattr(self, field.name, other_value)
+
+
 @dataclass
-class DimensionsConfig:
+class DimensionsConfig(AutoUpdateMixin):
     """
     Configuration for problem dimensions.
     
@@ -21,17 +52,10 @@ class DimensionsConfig:
     num_items: Optional[int] = None
     num_features: Optional[int] = None
     num_simuls: int = 1
-    
-    def update_in_place(self, other: 'DimensionsConfig') -> None:
-        """Update this configuration in place with values from another configuration."""
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                other_value = getattr(other, field.name)
-                if other_value is not None:
-                    setattr(self, field.name, other_value)
+
 
 @dataclass
-class SubproblemConfig:
+class SubproblemConfig(AutoUpdateMixin):
     """
     Configuration for subproblem solver settings.
     
@@ -44,24 +68,10 @@ class SubproblemConfig:
     """
     name: Optional[str] = None
     settings: dict = field(default_factory=dict)
-    
-    def update_in_place(self, other: 'SubproblemConfig') -> None:
-        """Update this configuration in place with values from another configuration."""
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                current_value = getattr(self, field.name)
-                other_value = getattr(other, field.name)
-                
-                if other_value is not None:
-                    if isinstance(current_value, dict):
-                        # Merge dictionaries
-                        current_value.update(other_value)
-                    else:
-                        # Direct assignment for simple types
-                        setattr(self, field.name, other_value)
+
 
 @dataclass
-class RowGenerationConfig:
+class RowGenerationConfig(AutoUpdateMixin):
     """
     Configuration for row generation solver parameters.
     
@@ -90,24 +100,10 @@ class RowGenerationConfig:
     theta_ubs: Any = 1000
     theta_lbs: Any = None
     parameters_to_log: Optional[List[int]] = None
-    
-    def update_in_place(self, other: 'RowGenerationConfig') -> None:
-        """Update this configuration in place with values from another configuration."""
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                current_value = getattr(self, field.name)
-                other_value = getattr(other, field.name)
-                
-                if other_value is not None:
-                    if isinstance(current_value, dict):
-                        # Merge dictionaries
-                        current_value.update(other_value)
-                    else:
-                        # Direct assignment for simple types
-                        setattr(self, field.name, other_value)
+
 
 @dataclass
-class EllipsoidConfig:
+class EllipsoidConfig(AutoUpdateMixin):
     """
     Configuration for ellipsoid method solver parameters.
     
@@ -130,17 +126,10 @@ class EllipsoidConfig:
     decay_factor: float = 0.95
     min_volume: float = 1e-12
     verbose: bool = True
-    
-    def update_in_place(self, other: 'EllipsoidConfig') -> None:
-        """Update this configuration in place with values from another configuration."""
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                other_value = getattr(other, field.name)
-                if other_value is not None:
-                    setattr(self, field.name, other_value)
+
 
 @dataclass
-class BundleChoiceConfig:
+class BundleChoiceConfig(AutoUpdateMixin):
     """
     Unified configuration for the BundleChoice framework.
     
@@ -252,84 +241,5 @@ class BundleChoiceConfig:
             raise ValueError("decay_factor must be between 0 and 1")
         if self.ellipsoid.min_volume <= 0:
             raise ValueError("min_volume must be positive")
-
-    # def merge(self, other: 'BundleChoiceConfig') -> 'BundleChoiceConfig':
-    #     """
-    #     Merge another configuration into this one, updating only fields that are set in other.
-        
-    #     Args:
-    #         other: Configuration to merge from
-            
-    #     Returns:
-    #         BundleChoiceConfig: New merged configuration
-    #     """
-    #     # Merge dimensions
-    #     merged_dimensions = DimensionsConfig(
-    #         num_agents=other.dimensions.num_agents if other.dimensions.num_agents is not None else self.dimensions.num_agents,
-    #         num_items=other.dimensions.num_items if other.dimensions.num_items is not None else self.dimensions.num_items,
-    #         num_features=other.dimensions.num_features if other.dimensions.num_features is not None else self.dimensions.num_features,
-    #         num_simuls=other.dimensions.num_simuls
-    #     )
-        
-    #     # Merge subproblem (replace if name is set, otherwise merge settings)
-    #     if other.subproblem.name is not None:
-    #         merged_subproblem = other.subproblem
-    #     else:
-    #         merged_settings = self.subproblem.settings.copy()
-    #         merged_settings.update(other.subproblem.settings)
-    #         merged_subproblem = SubproblemConfig(name=self.subproblem.name, settings=merged_settings)
-        
-    #     # Merge row generation
-    #     merged_row_generation = RowGenerationConfig(
-    #         tolerance_optimality=other.row_generation.tolerance_optimality,
-    #         max_slack_counter=other.row_generation.max_slack_counter,
-    #         tol_row_generation=other.row_generation.tol_row_generation,
-    #         row_generation_decay=other.row_generation.row_generation_decay,
-    #         max_iters=other.row_generation.max_iters,
-    #         min_iters=other.row_generation.min_iters,
-    #         gurobi_settings={**self.row_generation.gurobi_settings, **other.row_generation.gurobi_settings}
-    #     )
-        
-    #     # Merge ellipsoid
-    #     merged_ellipsoid = EllipsoidConfig(
-    #         max_iterations=other.ellipsoid.max_iterations,
-    #         num_iters=other.ellipsoid.num_iters if other.ellipsoid.num_iters is not None else self.ellipsoid.num_iters,
-    #         tolerance=other.ellipsoid.tolerance,
-    #         initial_radius=other.ellipsoid.initial_radius,
-    #         decay_factor=other.ellipsoid.decay_factor,
-    #         min_volume=other.ellipsoid.min_volume,
-    #         verbose=other.ellipsoid.verbose
-    #     )
-        
-    #     return BundleChoiceConfig(
-    #         dimensions=merged_dimensions,
-    #         subproblem=merged_subproblem,
-    #         row_generation=merged_row_generation,
-    #         ellipsoid=merged_ellipsoid
-    #     ) 
-
-    def update_in_place(self, other: 'BundleChoiceConfig') -> None:
-        """
-        Update this configuration in place with values from another configuration.
-        This method automatically updates all fields using dataclass reflection.
-        
-        Args:
-            other: Configuration to merge from
-        """
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                current_value = getattr(self, field.name)
-                other_value = getattr(other, field.name)
-                
-                if other_value is not None:
-                    if isinstance(current_value, dict):
-                        # Merge dictionaries
-                        current_value.update(other_value)
-                    elif hasattr(current_value, 'update_in_place') and hasattr(other_value, 'update_in_place'):
-                        # Recursively update nested dataclasses
-                        current_value.update_in_place(other_value)
-                    else:
-                        # Direct assignment for simple types
-                        setattr(self, field.name, other_value)
 
 
