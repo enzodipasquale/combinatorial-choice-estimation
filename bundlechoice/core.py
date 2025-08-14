@@ -1,4 +1,4 @@
-from .config import DimensionsConfig, row_generationerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
+from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems.subproblem_manager import SubproblemManager
@@ -152,7 +152,7 @@ class BundleChoice(HasComm, HasConfig):
         Raises:
             RuntimeError: If required managers are not set
         """
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
+        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
             missing_managers = []
             if self.data_manager is None:
                 missing_managers.append("DataManager")
@@ -161,9 +161,9 @@ class BundleChoice(HasComm, HasConfig):
             if self.subproblem_manager is None:
                 missing_managers.append("SubproblemManager")
             if self.config is None or self.config.row_generation is None:
-                missing_managers.append("row_generationerationConfig")
+                missing_managers.append("RowGenerationConfig")
             raise RuntimeError(
-                "DataManager, FeatureManager, SubproblemManager, and row_generationerationConfig must be set in config "
+                "DataManager, FeatureManager, SubproblemManager, and RowGenerationConfig must be set in config "
                 "before initializing row generation manager. Missing managers: "
                 f"{', '.join(missing_managers)}"
             )

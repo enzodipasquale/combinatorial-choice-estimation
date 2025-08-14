@@ -12,9 +12,12 @@ from bundlechoice.core import BundleChoice
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agents = 500
+    num_agent_features = 2
+    num_item_features = 2
+
+    num_agents = 200
     num_items = 150
-    num_features = 4
+    num_features = num_agent_features + num_item_features +1
     num_simuls = 1
     sigma = 6
     
@@ -43,14 +46,19 @@ def run_row_generation_greedy_experiment():
 
     ########## Generate data ##########
     if rank == 0:
-        modular = np.abs(np.random.normal(0, 1, (num_items, num_features-1)))
+        modular_item = np.abs(np.random.normal(0, 1, (num_items, num_item_features)))
         endogenous_errors = np.random.normal(0, 1, size=(num_items,)) *0
         instrument = np.random.normal(0, 1, size=(num_items,)) 
-        modular[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
+        modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
+
+        modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_agent_features)))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
         estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
-        item_data = {"modular": modular}
-        input_data = {"item_data": item_data, "errors": errors}
+        item_data = {"modular": modular_item}
+        agent_data = {"modular": modular_agent}
+        input_data = {"item_data": item_data, 
+                      "agent_data": agent_data,
+                      "errors": errors}
     else:
         input_data = None
 
@@ -86,51 +94,24 @@ def run_row_generation_greedy_experiment():
     
     
     # Run row generation method
-    if rank == 0:
-        print(f"[Rank {rank}] Starting row generation optimization...")
-    start_time = time.time()
     theta_hat = greedy_demo.row_generation.solve()
-    # optimization_time = time.time() - start_time
-    #   # Compute objective values on all ranks
-    # try:
-    #     obj_at_star = greedy_demo.row_generation.objective(theta_0)
-    #     obj_at_hat = greedy_demo.row_generation.objective(theta_hat)
-    # except AttributeError:
-    #     obj_at_star = None
-    #     obj_at_hat = None
-    
-    # if rank == 0:
-    #     print(f"[Rank 0] Optimization completed in {optimization_time:.2f} seconds")
-    #     print(f"[Rank 0] Estimated parameters (theta_hat): {theta_hat}")
-    #     print(f"[Rank 0] True parameters (theta_0): {theta_0}")
-    #     print(f"[Rank 0] Parameter difference: {np.round(np.abs(theta_hat - theta_0), 2)}")
-        
-    #     # Print objective values if available
-    #     if obj_at_star is not None and obj_at_hat is not None:
-    #         print(f"[Rank 0] Objective at true parameters: {obj_at_star:.4f}")
-    #         print(f"[Rank 0] Objective at estimated parameters: {obj_at_hat:.4f}")
-    #         print(f"[Rank 0] Objective improvement: {obj_at_star - obj_at_hat:.4f}")
-    #     else:
-    #         print("[Rank 0] Objective function not available for row generation solver")
-
-
-
     ########## Modular BLP inversion ##########
     if rank == 0:
         print(f"[Rank 0] Bundle generation completed in {bundle_time:.2f} seconds")
         print(f"[Rank 0] Aggregate demands: {obs_bundles.sum(1).min():.2f} to {obs_bundles.sum(1).max():.2f}")
         print(f"[Rank 0] Total aggregate: {obs_bundles.sum():.2f}")
         print(f"[Rank 0] Demands_j: {obs_bundles.sum(0)}")
+        print(f"[Rank 0] theta_hat: {theta_hat}")
         input_data["item_data"]["modular"] = np.eye(num_items)
         input_data["obs_bundle"] = obs_bundles
         input_data["errors"] = estimation_errors 
     else:
         input_data = None
     cfg["dimensions"]["num_simuls"] = num_simuls
-    cfg["dimensions"]["num_features"] = num_items + 1
-    cfg["row_generation"]["theta_lbs"] = np.array([-500] * num_items + [0])
+    cfg["dimensions"]["num_features"] = num_agent_features + num_items + 1
+    cfg["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
     cfg["row_generation"]["theta_ubs"] = 500
-    
+    cfg["row_generation"]["parameters_to_log"] = [-1]
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
@@ -141,11 +122,12 @@ def run_row_generation_greedy_experiment():
         delta_hat = theta_hat[:-1]
         import statsmodels.api as sm
         from statsmodels.sandbox.regression.gmm import IV2SLS
-        instruments = np.concatenate([instrument[:, None], modular[:,1:]], axis=1)
-        iv_model = IV2SLS(delta_hat, modular, instruments)
+        instruments = np.concatenate([instrument[:, None], modular_item[:,1:]], axis=1)
+        iv_model = IV2SLS(delta_hat, modular_item, instruments)
         iv_results = iv_model.fit()
         print(f"Coefficients: {iv_results.params}")
         print(f"Standard errors: {iv_results.bse}")
+        print(f"theta_hat: {theta_hat}")    
 
 
 
@@ -158,16 +140,20 @@ def features_oracle(i_id, B_j, data):
     Returns array of shape (num_features,) for a single bundle,
     or (num_features, m) for m bundles.
     """
+    
+    modular_agent = data["agent_data"]["modular"][i_id]
     modular_item = data["item_data"]["modular"]
 
     modular_item = np.atleast_2d(modular_item)
+    modular_agent = np.atleast_2d(modular_agent)
+    modular = np.concatenate([modular_agent, modular_item], axis=1)
 
     single_bundle = False
     if B_j.ndim == 1:
         B_j = B_j[:, None]
         single_bundle = True
     with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-        agent_sum = modular_item.T @ B_j
+        agent_sum = modular.T @ B_j
     neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
 
     features = np.vstack((agent_sum, neg_sq))
