@@ -3,7 +3,7 @@ import tempfile
 import os
 import yaml
 from bundlechoice.config import (
-    DimensionsConfig, RowGenerationConfig, SubproblemConfig
+    DimensionsConfig, row_generationerationConfig, SubproblemConfig
 )
 from typing import Dict, Any
 
@@ -11,9 +11,9 @@ from typing import Dict, Any
 def load_configs_from_dict(config_dict: Dict[str, Any]):
     """Load configs from dictionary without requiring a bundle_choice instance."""
     dimensions_cfg = DimensionsConfig(**config_dict.get("dimensions", {}))
-    rowgen_cfg = RowGenerationConfig(**config_dict.get("row_generation", {}))
+    row_generation_cfg = row_generationerationConfig(**config_dict.get("row_generation", {}))
     subproblem_cfg = SubproblemConfig(**config_dict.get("subproblem", {}))
-    return dimensions_cfg, rowgen_cfg, subproblem_cfg
+    return dimensions_cfg, row_generation_cfg, subproblem_cfg
 
 
 def load_configs_from_yaml(yaml_path: str):
@@ -37,10 +37,10 @@ def test_load_configs_from_dict_partial():
             'settings': {'foo': 'bar'},
         }
     }
-    dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
+    dimensions_cfg, row_generation_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
     
     # Test default values are applied
-    assert rowgen_cfg.tolerance_optimality == 0.01
+    assert row_generation_cfg.tolerance_optimality == 0.01
     assert dimensions_cfg.num_agents == 5
     assert subproblem_cfg.name == 'test_subproblem'
 
@@ -63,11 +63,11 @@ def test_load_configs_from_dict_full():
             'settings': {'foo': 'bar'},
         }
     }
-    dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
+    dimensions_cfg, row_generation_cfg, subproblem_cfg = load_configs_from_dict(config_dict)
     
     # Test all values are correctly loaded
-    assert rowgen_cfg.tolerance_optimality == 0.05
-    assert rowgen_cfg.max_iters == 50
+    assert row_generation_cfg.tolerance_optimality == 0.05
+    assert row_generation_cfg.max_iters == 50
     assert dimensions_cfg.num_agents == 5
     assert subproblem_cfg.name == 'test_subproblem'
 
@@ -94,7 +94,7 @@ subproblem:
         tmp_path = tmp.name
     
     try:
-        dimensions_cfg, rowgen_cfg, subproblem_cfg = load_configs_from_yaml(tmp_path)
+        dimensions_cfg, row_generation_cfg, subproblem_cfg = load_configs_from_yaml(tmp_path)
         
         # Test dimensions
         assert dimensions_cfg.num_agents == 7
@@ -103,8 +103,8 @@ subproblem:
         assert dimensions_cfg.num_simuls == 3
         
         # Test row generation
-        assert rowgen_cfg.tolerance_optimality == 0.02
-        assert rowgen_cfg.max_iters == 100
+        assert row_generation_cfg.tolerance_optimality == 0.02
+        assert row_generation_cfg.max_iters == 100
         
         # Test subproblem
         assert subproblem_cfg.name == 'greedy'
@@ -119,9 +119,9 @@ def load_dimensions_cfg(cfg: Dict[str, Any]) -> DimensionsConfig:
     return DimensionsConfig(**cfg.get("dimensions", {}))
 
 
-def load_rowgen_config(cfg: Dict[str, Any]) -> RowGenerationConfig:
+def load_row_generation_config(cfg: Dict[str, Any]) -> row_generationerationConfig:
     """Load row generation configuration from dictionary."""
-    return RowGenerationConfig(**cfg.get("row_generation", {}))
+    return row_generationerationConfig(**cfg.get("row_generation", {}))
 
 
 def load_subproblem_config(cfg: Dict[str, Any]) -> SubproblemConfig:

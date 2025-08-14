@@ -11,11 +11,11 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/plain_single_item"
 
 # Define dimensions
-num_agents = 500
+num_agents = 1000
 num_items = 100
-num_features = 2
+num_features = 5
 num_simuls = 1
-sigma = 2
+sigma = 1
 
 # Define configuration as a dictionary
 cfg = {
@@ -28,7 +28,7 @@ cfg = {
     "subproblem": {
         "name": "PlainSingleItem",
     },
-    "rowgen": {
+    "row_generation": {
         "max_iters": 100,
         "tolerance_optimality": 0.001,
         "min_iters": 1,
@@ -45,8 +45,16 @@ plain_single_item_experiment.load_config(cfg)
 
 # Generate data on rank 0
 if rank == 0:
-    np.random.seed(1)
+    # np.random.seed(1)
     modular_agent = np.random.normal(0, 1, (num_agents, num_items, num_features))
+    while True:
+        full_rank_matrix = np.random.randint(0,4, size=(num_features, num_features))
+        if np.any(full_rank_matrix.sum(0) == 0):
+            continue
+        if np.linalg.matrix_rank(full_rank_matrix) == num_features:
+            full_rank_matrix = (full_rank_matrix / full_rank_matrix.sum(0))
+            break
+    modular_agent =  modular_agent @ full_rank_matrix
     # modular_item = np.random.normal(0, 1, (num_items, 1))
     errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
     estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
@@ -60,27 +68,6 @@ else:
 
 # Load and scatter data
 plain_single_item_experiment.data.load_and_scatter(data)
-
-# # Define features oracle
-# def features_oracle(i_id, bundle, data):
-#     """
-#     Compute features for a given agent and bundle(s).
-#     Supports both single (1D) and multiple (2D) bundles.
-#     Returns array of shape (num_features,) for a single bundle,
-#     or (num_features, m) for m bundles.
-#     """
-#     modular_agent = data["agent_data"]["modular"][i_id]
-#     modular_item = data["item_data"]["modular"]
-
-#     if bundle.ndim == 1:
-#         agent_sum = modular_agent.T @ bundle
-#         item_sum = modular_item.T @ bundle
-#         return np.concatenate((agent_sum, item_sum))
-#     else:
-#         agent_sum = modular_agent.T @ bundle
-#         item_sum = modular_item.T @ bundle
-#         return np.concatenate((agent_sum, item_sum), axis=0)
-
 plain_single_item_experiment.features.build_from_data()
 theta_0 = np.ones(num_features)
 obs_bundles = plain_single_item_experiment.subproblems.init_and_solve(theta_0)
@@ -89,6 +76,7 @@ obs_bundles = plain_single_item_experiment.subproblems.init_and_solve(theta_0)
 if rank == 0:
     print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
     print(f"aggregate: {obs_bundles.sum()}")
+    print(f"demand_j: {obs_bundles.sum(0)}")
     data["obs_bundle"] = obs_bundles
     data["errors"] = estimation_errors
     

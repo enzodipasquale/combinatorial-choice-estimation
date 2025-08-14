@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGenerationSolver
+from bundlechoice.estimation import row_generationerationSolver
 
 def test_row_generation_quadsupermodular():
-    """Test RowGenerationSolver using observed bundles generated from quadsupermodular subproblem manager."""
+    """Test row_generationerationSolver using observed bundles generated from quadsupermodular subproblem manager."""
     num_agents = 250
     num_items = 50
     num_modular_agent_features = 2

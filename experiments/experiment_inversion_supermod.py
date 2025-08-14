@@ -1,7 +1,7 @@
 """
 Quadratic Supermodular Experiment
 
-This script runs an experiment using the RowGenerationSolver with quadratic supermodular subproblem manager.
+This script runs an experiment using the row_generationerationSolver with quadratic supermodular subproblem manager.
 Based on the test but adapted for standalone execution and experimentation.
 """
 

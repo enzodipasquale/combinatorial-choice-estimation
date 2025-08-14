@@ -1,7 +1,7 @@
 """
 Row Generation Greedy Experiment
 
-This script runs an experiment using the RowGenerationSolver with greedy subproblem manager.
+This script runs an experiment using the row_generationerationSolver with greedy subproblem manager.
 It's based on the test but adapted for standalone execution and experimentation.
 """
 import numpy as np
