@@ -83,7 +83,7 @@ def features_oracle(i_id, bundle, data):
 
 greedy_experiment.features.set_oracle(features_oracle)
 theta_0 = np.ones(num_features)
-# theta_0[-1] = .1
+theta_0[-1] = .1
 obs_bundles = greedy_experiment.subproblems.init_and_solve(theta_0)
 
 

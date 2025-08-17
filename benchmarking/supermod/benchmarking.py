@@ -169,8 +169,16 @@ def mean_squared_error(estimates, true_value=1.0):
     """Compute mean squared error to the true value (default 1.0)."""
     return ((estimates - true_value) ** 2).mean()
 
+def relative_mean_squared_error(estimates, true_value=1.0):
+    """Compute relative mean squared error to the true value (default 1.0)."""
+    return mean_squared_error(estimates, true_value) / true_value**2
+
+def relative_bias(estimates, true_value=1.0):
+    """Compute relative bias to the true value (default 1.0)."""
+    return (estimates.mean() - true_value) / true_value
+
 def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
-    """Compute MSE and bias for each individual beta estimate."""
+    """Compute MSE, RMSE, absolute bias and relative bias for each individual beta estimate."""
     mse_results = []
     
     # If no true values provided, use the mean of each column as the target
@@ -188,17 +196,29 @@ def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
         current_mse = mean_squared_error(norm_betas_df[col], true_value)
         score_mse = mean_squared_error(score_betas[col], true_value)
         
-        # Calculate bias (average difference from true value)
-        current_bias = (norm_betas_df[col] - true_value).mean()
-        score_bias = (score_betas[col] - true_value).mean()
+        # Calculate RMSE
+        current_rmse = relative_mean_squared_error(norm_betas_df[col], true_value)
+        score_rmse = relative_mean_squared_error(score_betas[col], true_value)
+        
+        # Calculate absolute bias (average difference from true value)
+        current_abs_bias = (norm_betas_df[col] - true_value).mean()
+        score_abs_bias = (score_betas[col] - true_value).mean()
+        
+        # Calculate relative bias
+        current_rel_bias = relative_bias(norm_betas_df[col], true_value)
+        score_rel_bias = relative_bias(score_betas[col], true_value)
         
         mse_results.append({
             'Beta_Index': col,
             'True_Value': true_value,
             'Current_MSE': current_mse,
             'Score_MSE': score_mse,
-            'Current_Bias': current_bias,
-            'Score_Bias': score_bias
+            'Current_RMSE': current_rmse,
+            'Score_RMSE': score_rmse,
+            'Current_Abs_Bias': current_abs_bias,
+            'Score_Abs_Bias': score_abs_bias,
+            'Current_Rel_Bias': current_rel_bias,
+            'Score_Rel_Bias': score_rel_bias
         })
     
     return pd.DataFrame(mse_results)
@@ -342,11 +362,23 @@ def main():
     print(f"\nOverall Mean Squared Error (Current, normalized): {mse_current:.6f}")
     print(f"Overall Mean Squared Error (Score estimator): {mse_score:.6f}")
     
+    # Overall RMSE calculation
+    rmse_current = individual_mse_df['Current_RMSE'].mean()
+    rmse_score = individual_mse_df['Score_RMSE'].mean()
+    print(f"\nOverall Relative Mean Squared Error (Current, normalized): {rmse_current:.6f}")
+    print(f"Overall Relative Mean Squared Error (Score estimator): {rmse_score:.6f}")
+    
     # Overall bias calculation
-    bias_current = individual_mse_df['Current_Bias'].mean()
-    bias_score = individual_mse_df['Score_Bias'].mean()
-    print(f"\nOverall Average Bias (Current, normalized): {bias_current:.6f}")
-    print(f"Overall Average Bias (Score estimator): {bias_score:.6f}")
+    bias_current = individual_mse_df['Current_Abs_Bias'].mean()
+    bias_score = individual_mse_df['Score_Abs_Bias'].mean()
+    print(f"\nOverall Average Absolute Bias (Current, normalized): {bias_current:.6f}")
+    print(f"Overall Average Absolute Bias (Score estimator): {bias_score:.6f}")
+    
+    # Overall relative bias calculation
+    rel_bias_current = individual_mse_df['Current_Rel_Bias'].mean()
+    rel_bias_score = individual_mse_df['Score_Rel_Bias'].mean()
+    print(f"\nOverall Average Relative Bias (Current, normalized): {rel_bias_current:.6f}")
+    print(f"Overall Average Relative Bias (Score estimator): {rel_bias_score:.6f}")
     
     # Time comparison
     print(f"\nExecution Time Comparison:")
@@ -354,8 +386,9 @@ def main():
     print(f"Score estimator: {time_stats['score_mean']:.3f} ± {time_stats['score_std']:.3f} seconds")
     print(f"Time ratio (score/current): {time_stats['time_ratio']:.2f}x")
     
-    print(f"\nNote: MSE computed against actual normalized true theta values")
-    print(f"      Bias = average(estimated - true), positive = overestimation")
+    print(f"\nNote: MSE and RMSE computed against actual normalized true theta values")
+    print(f"      RMSE = MSE / (true_value^2) - lower is better")
+    print(f"      Relative Bias = (mean(estimated) - true) / true - positive = overestimation")
     
     # Save only the MSE table with metadata
     save_mse_results(results_folder, individual_mse_df, metadata, time_stats)

@@ -12,10 +12,10 @@ from bundlechoice.core import BundleChoice
 def run_row_generation_greedy_experiment():
     """Run the row generation greedy experiment."""
     # Experiment parameters
-    num_agent_features = 2
-    num_item_features = 2
+    num_agent_features = 1
+    num_item_features = 1
 
-    num_agents = 200
+    num_agents = 500
     num_items = 150
     num_features = num_agent_features + num_item_features +1
     num_simuls = 1
@@ -37,7 +37,7 @@ def run_row_generation_greedy_experiment():
             "gurobi_settings": {
                 "OutputFlag": 0
             },
-            "max_slack_counter": 20
+            "max_slack_counter": 30
         }
     }
       
@@ -47,9 +47,9 @@ def run_row_generation_greedy_experiment():
     ########## Generate data ##########
     if rank == 0:
         modular_item = np.abs(np.random.normal(0, 1, (num_items, num_item_features)))
-        # endogenous_errors = np.random.normal(0, 1, size=(num_items,)) 
-        # instrument = np.random.normal(0, 1, size=(num_items,)) 
-        # modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
+        endogenous_errors = np.random.normal(0, 1, size=(num_items,)) 
+        instrument = np.random.normal(0, 1, size=(num_items,)) 
+        modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
 
         modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_agent_features)))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
@@ -95,12 +95,9 @@ def run_row_generation_greedy_experiment():
     
     # Run row generation method
     theta_hat = greedy_demo.row_generation.solve()
+
     ########## Modular BLP inversion ##########
     if rank == 0:
-        print(f"[Rank 0] Bundle generation completed in {bundle_time:.2f} seconds")
-        print(f"[Rank 0] Aggregate demands: {obs_bundles.sum(1).min():.2f} to {obs_bundles.sum(1).max():.2f}")
-        print(f"[Rank 0] Total aggregate: {obs_bundles.sum():.2f}")
-        print(f"[Rank 0] Demands_j: {obs_bundles.sum(0)}")
         print(f"[Rank 0] theta_hat: {theta_hat}")
         input_data["item_data"]["modular"] = np.eye(num_items)
         input_data["obs_bundle"] = obs_bundles
@@ -111,7 +108,7 @@ def run_row_generation_greedy_experiment():
     cfg["dimensions"]["num_features"] = num_agent_features + num_items + 1
     cfg["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
     cfg["row_generation"]["theta_ubs"] = 500
-    cfg["row_generation"]["parameters_to_log"] = [-1]
+    cfg["row_generation"]["parameters_to_log"] = [i for i in range(num_agent_features)] + [-1]
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
@@ -119,7 +116,7 @@ def run_row_generation_greedy_experiment():
     start_time = time.time()
     theta_hat = greedy_demo.row_generation.solve()
     if rank == 0:
-        delta_hat = theta_hat[:-1]
+        delta_hat = theta_hat[num_agent_features:-1]
         import statsmodels.api as sm
         from statsmodels.sandbox.regression.gmm import IV2SLS
         # instruments = np.concatenate([instrument[:, None], modular_item[:,1:]], axis=1)
@@ -133,8 +130,12 @@ def run_row_generation_greedy_experiment():
         ols_results = ols_model.fit()
         print(f"Coefficients: {ols_results.params}")
         print(f"Standard errors: {ols_results.bse}")
+        # print(f"theta_hat: {theta_hat}")    
+        iv_model = IV2SLS(delta_hat, modular_item, instrument)
+        iv_results = iv_model.fit()
+        print(f"Coefficients: {iv_results.params}")
+        print(f"Standard errors: {iv_results.bse}")
         print(f"theta_hat: {theta_hat}")    
-
 
 
 def features_oracle(i_id, B_j, data):
@@ -157,10 +158,10 @@ def features_oracle(i_id, B_j, data):
         B_j = B_j[:, None]
         single_bundle = True
     with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-        agent_sum = modular.T @ B_j
+        modular_features = modular.T @ B_j
     neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
 
-    features = np.vstack((agent_sum, neg_sq))
+    features = np.vstack((modular_features, neg_sq))
     if single_bundle:
         return features[:, 0]  # Return as 1D array for a single bundle
     return features

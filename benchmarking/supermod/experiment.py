@@ -19,7 +19,7 @@ num_simuls = 1
 modular_agent_features = 3
 quadratic_item_features = 1
 num_features = modular_agent_features + quadratic_item_features
-sigma = 1
+sigma = 5
 
 cfg = {
     "dimensions": {
@@ -49,7 +49,7 @@ if rank == 0:
     # np.random.seed(64654534)
 
     # Modular agent features
-    modular_agent = - 5* np.random.normal(0, 1, (num_agents, num_items, modular_agent_features)) ** 2 
+    modular_agent = - 5* np.abs(np.random.normal(0, 1, (num_agents, num_items, modular_agent_features))) 
     while True:
         full_rank_matrix = np.random.randint(0,3, size=(modular_agent_features, modular_agent_features))
         if np.any(full_rank_matrix.sum(0) == 0):
