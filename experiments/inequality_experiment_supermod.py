@@ -3,13 +3,13 @@ from bundlechoice.core import BundleChoice
 from datetime import datetime
 
 # Define dimensions
-num_agents = 500
+num_agents = 1000
 num_items = 30
 num_simuls = 1
 modular_agent_features = 2
-quadratic_item_features = 1
+quadratic_item_features = 0
 num_features = modular_agent_features + quadratic_item_features
-sigma = 5
+sigma = 1
 
 # Define configuration as a dictionary
 cfg = {
@@ -44,7 +44,7 @@ estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents,
 
 # Data
 data = {"agent_data": agent_data, 
-        "item_data": item_data, 
+        # "item_data": item_data, 
         "errors": errors}
 
 # Load and scatter data
@@ -76,4 +76,4 @@ print(f"true theta: {theta_0}")
 print(f"elapsed time: {elapsed:.2f} seconds")
 
 
-inequality_experiment.row_generation.solve()
+# inequality_experiment.row_generation.solve()

@@ -128,19 +128,85 @@ def mean_squared_error(estimates, true_value=1.0):
     """Compute mean squared error to the true value (default 1.0)."""
     return ((estimates - true_value) ** 2).mean()
 
-def compute_individual_mse(norm_betas_df, score_betas, true_value=1.0):
-    """Compute MSE for each individual beta estimate."""
+def relative_mean_squared_error(estimates, true_value):
+    """Compute relative mean squared error: MSE / (true_value^2)."""
+    if true_value == 0:
+        return np.inf  # Avoid division by zero
+    mse = mean_squared_error(estimates, true_value)
+    return mse / (true_value ** 2)
+
+def relative_bias(estimates, true_value):
+    """Compute relative bias: (mean(estimates) - true_value) / true_value."""
+    if true_value == 0:
+        return np.inf  # Avoid division by zero
+    absolute_bias = (estimates - true_value).mean()
+    return absolute_bias / true_value
+
+def extract_true_normalized_values(df_current):
+    """Extract the true normalized theta values for MSE computation."""
+    # Find all theta_0_* columns and sort
+    theta_0_cols = [col for col in df_current.columns if col.startswith('theta_0_')]
+    theta_0_cols.sort()
+    k = len(theta_0_cols)
+    if k < 2:
+        raise ValueError("Need at least two theta_0 columns for normalization.")
+    
+    # Get the true theta values from the first row (they should be the same across all rows)
+    true_thetas = df_current[theta_0_cols].iloc[0].values
+    
+    # Normalize: divide all theta_0_* by the first, then drop the first
+    normalized_true = true_thetas / true_thetas[0]  # divide by first theta
+    normalized_true = normalized_true[1:]           # exclude the first column
+    
+    # Create mapping from normalized beta column names to their true values
+    true_values = {}
+    for i, col in enumerate([f'beta_hat_{j}' for j in range(1, k)]):
+        true_values[col] = normalized_true[i]
+    
+    return true_values
+
+def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
+    """Compute MSE, RMSE, absolute bias and relative bias for each individual beta estimate."""
     mse_results = []
     
+    # If no true values provided, use the mean of each column as the target
+    # This is more reasonable than assuming 1.0 for all normalized betas
+    if true_values is None:
+        true_values = {}
+        for col in norm_betas_df.columns:
+            # Use the mean of the current estimates as a reasonable target
+            # This assumes the current method is unbiased
+            true_values[col] = norm_betas_df[col].mean()
+    
     for col in norm_betas_df.columns:
+        true_value = true_values.get(col, 1.0)  # fallback to 1.0 if not specified
+        
         current_mse = mean_squared_error(norm_betas_df[col], true_value)
         score_mse = mean_squared_error(score_betas[col], true_value)
         
+        # Calculate RMSE
+        current_rmse = relative_mean_squared_error(norm_betas_df[col], true_value)
+        score_rmse = relative_mean_squared_error(score_betas[col], true_value)
+        
+        # Calculate absolute bias (average difference from true value)
+        current_abs_bias = (norm_betas_df[col] - true_value).mean()
+        score_abs_bias = (score_betas[col] - true_value).mean()
+        
+        # Calculate relative bias
+        current_rel_bias = relative_bias(norm_betas_df[col], true_value)
+        score_rel_bias = relative_bias(score_betas[col], true_value)
+        
         mse_results.append({
             'Beta_Index': col,
+            'True_Value': true_value,
             'Current_MSE': current_mse,
             'Score_MSE': score_mse,
-            'Difference': current_mse - score_mse
+            'Current_RMSE': current_rmse,
+            'Score_RMSE': score_rmse,
+            'Current_Abs_Bias': current_abs_bias,
+            'Score_Abs_Bias': score_abs_bias,
+            'Current_Rel_Bias': current_rel_bias,
+            'Score_Rel_Bias': score_rel_bias
         })
     
     return pd.DataFrame(mse_results)
@@ -242,11 +308,14 @@ def main():
     # Extract normalized betas
     norm_betas_df, score_betas = extract_normalized_betas(df_current, df_score)
     
+    # Extract true normalized values for MSE computation
+    true_normalized_values = extract_true_normalized_values(df_current)
+    
     # Boxplot
     boxplot_normalized(norm_betas_df, score_betas, results_folder)
     
-    # MSE calculation for each beta estimate
-    individual_mse_df = compute_individual_mse(norm_betas_df, score_betas)
+    # MSE calculation for each beta estimate using true values
+    individual_mse_df = compute_individual_mse(norm_betas_df, score_betas, true_normalized_values)
     print("\nIndividual Mean Squared Errors:")
     print("=" * 50)
     print(individual_mse_df.round(6))
@@ -256,6 +325,28 @@ def main():
     mse_score = individual_mse_df['Score_MSE'].mean()
     print(f"\nOverall Mean Squared Error (Current, normalized): {mse_current:.6f}")
     print(f"Overall Mean Squared Error (Score estimator): {mse_score:.6f}")
+    
+    # Overall RMSE calculation
+    rmse_current = individual_mse_df['Current_RMSE'].mean()
+    rmse_score = individual_mse_df['Score_RMSE'].mean()
+    print(f"\nOverall Relative Mean Squared Error (Current, normalized): {rmse_current:.6f}")
+    print(f"Overall Relative Mean Squared Error (Score estimator): {rmse_score:.6f}")
+    
+    # Overall absolute bias calculation
+    abs_bias_current = individual_mse_df['Current_Abs_Bias'].mean()
+    abs_bias_score = individual_mse_df['Score_Abs_Bias'].mean()
+    print(f"\nOverall Absolute Bias (Current, normalized): {abs_bias_current:.6f}")
+    print(f"Overall Absolute Bias (Score estimator): {abs_bias_score:.6f}")
+    
+    # Overall relative bias calculation
+    rel_bias_current = individual_mse_df['Current_Rel_Bias'].mean()
+    rel_bias_score = individual_mse_df['Score_Rel_Bias'].mean()
+    print(f"\nOverall Relative Bias (Current, normalized): {rel_bias_current:.6f}")
+    print(f"Overall Relative Bias (Score estimator): {rel_bias_score:.6f}")
+    
+    print(f"\nNote: MSE and RMSE computed against actual normalized true theta values")
+    print(f"      RMSE = MSE / (true_value^2) - lower is better")
+    print(f"      Relative Bias = (mean(estimated) - true) / true - positive = overestimation")
     
     # Save results with metadata
     summary_file, individual_file = save_results_with_metadata(
