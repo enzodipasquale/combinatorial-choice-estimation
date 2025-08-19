@@ -16,10 +16,10 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/supermod"
 num_agents = 500
 num_items = 100
 num_simuls = 1
-modular_agent_features = 3
+modular_agent_features = 5
 quadratic_item_features = 1
 num_features = modular_agent_features + quadratic_item_features
-sigma = 5
+sigma = 1
 
 cfg = {
     "dimensions": {
@@ -61,8 +61,8 @@ if rank == 0:
     agent_data = {"modular": modular_agent}
 
     # Quadratic item features
-    quadratic_item = .5 * np.exp(-np.random.normal(0, 2, size=(num_items, num_items, quadratic_item_features)) ** 2)
-    # quadratic_item = np.random.choice([0, 1], size=(num_items, num_items, quadratic_item_features), p=[0.8, 0.2])
+    # quadratic_item = .5 * np.exp(-np.random.normal(0, 2, size=(num_items, num_items, quadratic_item_features)) ** 2)
+    quadratic_item = 1 * np.random.choice([0, 1], size=(num_items, num_items, quadratic_item_features), p=[0.8, 0.2])
     quadratic_item *= (1 - np.eye(num_items, dtype=int))[:,:, None]
     item_data = {"quadratic": quadratic_item}
 
@@ -123,6 +123,7 @@ if rank == 0:
         "num_features": num_features,
         "num_simuls": num_simuls,
         "subproblem": quadsupermod_experiment.subproblem_cfg.name,
+        "sigma": sigma,
         **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},
         **{f"beta_hat_{i}": val for i, val in enumerate(theta_hat)},
         "min_demand": obs_bundles.sum(1).min(),

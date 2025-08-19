@@ -250,7 +250,8 @@ def extract_metadata(df_current):
         'num_items': first_row.get('num_items', ''),
         'num_features': first_row.get('num_features', ''),
         'num_simuls': first_row.get('num_simuls', ''),
-        'subproblem': first_row.get('subproblem', '')
+        'subproblem': first_row.get('subproblem', ''),
+        'sigma': first_row.get('sigma', '')
     }
     return metadata
 
@@ -270,6 +271,7 @@ def save_results_with_metadata(results_folder, individual_mse_df, metadata, mse_
         'num_features': metadata.get('num_features', ''),
         'num_simuls': metadata.get('num_simuls', ''),
         'subproblem': metadata.get('subproblem', ''),
+        'sigma': metadata.get('sigma', ''),
         'current_mse': mse_current,
         'score_mse': mse_score,
         'mse_difference': mse_current - mse_score
