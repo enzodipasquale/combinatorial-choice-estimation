@@ -40,6 +40,25 @@ def load_and_prepare_data():
     
     return df_current, df_score
 
+def extract_time_comparison(df_current, df_score):
+    """Extract and compare execution times between methods."""
+    # Current method uses 'elapsed' column
+    current_times = df_current['elapsed'].values
+    
+    # Score estimator uses 'timeTaken' column
+    score_times = df_score['timeTaken'].values
+    
+    # Calculate statistics
+    time_stats = {
+        'current_mean': current_times.mean(),
+        'current_std': current_times.std(),
+        'score_mean': score_times.mean(),
+        'score_std': score_times.std(),
+        'time_ratio': score_times.mean() / current_times.mean()  # score/current
+    }
+    
+    return time_stats
+
 def extract_normalized_betas(df_current, df_score):
     """Extract and normalize beta_hat_* columns from current results, and extract k-1 columns from score estimator."""
     # Find all beta_hat_* columns and sort
@@ -128,12 +147,10 @@ def mean_squared_error(estimates, true_value=1.0):
     """Compute mean squared error to the true value (default 1.0)."""
     return ((estimates - true_value) ** 2).mean()
 
-def relative_mean_squared_error(estimates, true_value):
-    """Compute relative mean squared error: MSE / (true_value^2)."""
-    if true_value == 0:
-        return np.inf  # Avoid division by zero
+def root_mean_squared_error(estimates, true_value=1.0):
+    """Compute root mean squared error: sqrt(MSE)."""
     mse = mean_squared_error(estimates, true_value)
-    return mse / (true_value ** 2)
+    return np.sqrt(mse)
 
 def relative_bias(estimates, true_value):
     """Compute relative bias: (mean(estimates) - true_value) / true_value."""
@@ -185,8 +202,8 @@ def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
         score_mse = mean_squared_error(score_betas[col], true_value)
         
         # Calculate RMSE
-        current_rmse = relative_mean_squared_error(norm_betas_df[col], true_value)
-        score_rmse = relative_mean_squared_error(score_betas[col], true_value)
+        current_rmse = root_mean_squared_error(norm_betas_df[col], true_value)
+        score_rmse = root_mean_squared_error(score_betas[col], true_value)
         
         # Calculate absolute bias (average difference from true value)
         current_abs_bias = (norm_betas_df[col] - true_value).mean()
@@ -286,6 +303,71 @@ def save_results_with_metadata(results_folder, individual_mse_df, metadata, mse_
     
     return summary_file, individual_file
 
+def generate_latex_table(individual_mse_df, metadata, time_stats, results_folder):
+    """Generate LaTeX table for the paper with RMSE and Bias values for plain single item."""
+    
+    # Extract the number of agents (N)
+    num_agents = metadata.get('num_agents', 'N/A')
+    sigma = metadata.get('sigma', 'N/A')
+    
+    # For plain single item, all features are modular, so we average across all
+    modular_rmse_current = individual_mse_df['Current_RMSE'].mean()
+    modular_rmse_score = individual_mse_df['Score_RMSE'].mean()
+    modular_bias_current = individual_mse_df['Current_Rel_Bias'].mean()
+    modular_bias_score = individual_mse_df['Score_Rel_Bias'].mean()
+    
+    # Get runtime values
+    runtime_current = time_stats['current_mean']
+    runtime_score = time_stats['score_mean']
+    
+    # Generate LaTeX table content
+    latex_content = f"""% LaTeX Table for Plain Single Item Benchmarking Results
+% N = {num_agents}, sigma = {sigma}
+
+\\begin{{frame}}{{Numerical Experiment: Plain Single Item}}
+\\begin{{table}}[htbp]
+\\centering
+\\small
+\\begin{{threeparttable}}
+\\begin{{tabular}}{{l r r r}}
+\\toprule
+\\multicolumn{{4}}{{c}}{{\\textbf{{$N={num_agents}$}}}}\\\\
+ & Runtime (s) & RMSE & Bias \\\\
+\\cmidrule(lr){{2-2}} \\cmidrule(lr){{3-3}} \\cmidrule(lr){{4-4}}
+ &  & $\\lambda_{{MOD}}$ & $\\lambda_{{MOD}}$ \\\\
+\\midrule
+Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {modular_bias_current:.4f} \\\\
+Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {modular_bias_score:.4f} \\\\
+\\bottomrule
+\\end{{tabular}}
+\\end{{threeparttable}}
+\\end{{table}}
+\\end{{frame}}
+
+% Summary for easy copy-paste:
+% N = {num_agents}, sigma = {sigma}
+% Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {modular_bias_current:.4f} \\\\
+% Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {modular_bias_score:.4f} \\\\
+"""
+    
+    # Save LaTeX table to file
+    latex_file = results_folder / "latex_table.tex"
+    with open(latex_file, 'w') as f:
+        f.write(latex_content)
+    
+    print(f"✓ LaTeX table saved to: {latex_file}")
+    
+    # Also print the summary for easy copy-paste
+    print(f"\n" + "="*60)
+    print("LATEX TABLE SUMMARY")
+    print("="*60)
+    print(f"N = {num_agents}, sigma = {sigma}")
+    print(f"Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {modular_bias_current:.4f} \\\\")
+    print(f"Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {modular_bias_score:.4f} \\\\")
+    print("="*60)
+    
+    return latex_file
+
 def main():
     print("="*60)
     print("NORMALIZED ESTIMATION RESULTS COMPARISON")
@@ -313,6 +395,9 @@ def main():
     # Extract true normalized values for MSE computation
     true_normalized_values = extract_true_normalized_values(df_current)
     
+    # Extract time comparison
+    time_stats = extract_time_comparison(df_current, df_score)
+    
     # Boxplot
     boxplot_normalized(norm_betas_df, score_betas, results_folder)
     
@@ -331,8 +416,8 @@ def main():
     # Overall RMSE calculation
     rmse_current = individual_mse_df['Current_RMSE'].mean()
     rmse_score = individual_mse_df['Score_RMSE'].mean()
-    print(f"\nOverall Relative Mean Squared Error (Current, normalized): {rmse_current:.6f}")
-    print(f"Overall Relative Mean Squared Error (Score estimator): {rmse_score:.6f}")
+    print(f"\nOverall Root Mean Squared Error (Current, normalized): {rmse_current:.6f}")
+    print(f"Overall Root Mean Squared Error (Score estimator): {rmse_score:.6f}")
     
     # Overall absolute bias calculation
     abs_bias_current = individual_mse_df['Current_Abs_Bias'].mean()
@@ -347,7 +432,7 @@ def main():
     print(f"Overall Relative Bias (Score estimator): {rel_bias_score:.6f}")
     
     print(f"\nNote: MSE and RMSE computed against actual normalized true theta values")
-    print(f"      RMSE = MSE / (true_value^2) - lower is better")
+    print(f"      RMSE = sqrt(MSE) - lower is better")
     print(f"      Relative Bias = (mean(estimated) - true) / true - positive = overestimation")
     
     # Save results with metadata
@@ -356,6 +441,9 @@ def main():
     )
     print(f"✓ Summary results appended to: {summary_file}")
     print(f"✓ Individual results appended to: {individual_file}")
+    
+    # Generate LaTeX table for the paper
+    generate_latex_table(individual_mse_df, metadata, time_stats, results_folder)
     
     print("\n" + "="*60)
     print("ANALYSIS COMPLETE")
