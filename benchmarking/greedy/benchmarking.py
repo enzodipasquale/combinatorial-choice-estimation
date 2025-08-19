@@ -132,9 +132,11 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     
     # Create boxplots side by side without labels
     bp1 = ax.boxplot(current_data, positions=x_positions - width/2, patch_artist=True, 
-                     widths=width)
+                     widths=width, showmeans=True, meanprops={'marker': 'o', 'markerfacecolor': 'white', 
+                                                             'markeredgecolor': 'blue', 'markersize': 8})
     bp2 = ax.boxplot(score_data, positions=x_positions + width/2, patch_artist=True, 
-                     widths=width)
+                     widths=width, showmeans=True, meanprops={'marker': 'o', 'markerfacecolor': 'white', 
+                                                             'markeredgecolor': 'red', 'markersize': 8})
     
     # Set the x-axis labels to be centered between the pairs
     ax.set_xticks(x_positions)
@@ -150,12 +152,18 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     
     # Add legend
     from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='lightblue', alpha=0.7, label='Current (normalized)'),
-                      Patch(facecolor='lightcoral', alpha=0.7, label='Score estimator')]
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Patch(facecolor='lightblue', alpha=0.7, label='Current (normalized)'),
+        Patch(facecolor='lightcoral', alpha=0.7, label='Score estimator'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='white', 
+               markeredgecolor='blue', markersize=8, label='Mean'),
+        Line2D([0], [0], color='orange', linewidth=2, label='Median')
+    ]
     ax.legend(handles=legend_elements)
     
     ax.set_ylabel('Normalized Beta Estimate')
-    ax.set_title('Boxplot of Normalized Beta Estimates (k-1)')
+    ax.set_title('Boxplot of Normalized Beta Estimates (k-1) - Greedy (Gross-substitutes)')
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     
@@ -163,18 +171,18 @@ def boxplot_normalized(norm_betas_df, score_betas, results_folder):
     plot_file = results_folder / "boxplot_normalized.png"
     plt.savefig(plot_file, dpi=300)
     print(f"✓ Boxplot saved to: {plot_file}")
+    print("   - Orange line = Median (50th percentile)")
+    print("   - White circle = Mean (average)")
     plt.show()
 
 def mean_squared_error(estimates, true_value=1.0):
     """Compute mean squared error to the true value (default 1.0)."""
     return ((estimates - true_value) ** 2).mean()
 
-def relative_mean_squared_error(estimates, true_value):
-    """Compute relative mean squared error: MSE / (true_value^2)."""
-    if true_value == 0:
-        return np.inf  # Avoid division by zero
+def root_mean_squared_error(estimates, true_value=1.0):
+    """Compute root mean squared error: sqrt(MSE)."""
     mse = mean_squared_error(estimates, true_value)
-    return mse / (true_value ** 2)
+    return np.sqrt(mse)
 
 def relative_bias(estimates, true_value):
     """Compute relative bias: (mean(estimates) - true_value) / true_value."""
@@ -203,8 +211,8 @@ def compute_individual_mse(norm_betas_df, score_betas, true_values=None):
         score_mse = mean_squared_error(score_betas[col], true_value)
         
         # Calculate RMSE
-        current_rmse = relative_mean_squared_error(norm_betas_df[col], true_value)
-        score_rmse = relative_mean_squared_error(score_betas[col], true_value)
+        current_rmse = root_mean_squared_error(norm_betas_df[col], true_value)
+        score_rmse = root_mean_squared_error(score_betas[col], true_value)
         
         # Calculate absolute bias (average difference from true value)
         current_abs_bias = (norm_betas_df[col] - true_value).mean()
@@ -325,6 +333,93 @@ def save_mse_results(results_folder, individual_mse_df, metadata, time_stats):
     mse_file = results_folder / "mse.csv"
     mse_results.to_csv(mse_file, index=False)
 
+def generate_latex_table(individual_mse_df, metadata, time_stats, results_folder):
+    """Generate LaTeX table for the paper with RMSE and Bias values."""
+    
+    # Extract the number of agents (N)
+    num_agents = metadata.get('num_agents', 'N/A')
+    sigma = metadata.get('sigma', 'N/A')
+    
+    # Separate modular features (first k-1) from the last feature (gross substitutes)
+    beta_cols = [col for col in individual_mse_df.columns if col.startswith('Beta_Index')]
+    if len(beta_cols) == 0:
+        # Get the actual beta columns from the data
+        beta_cols = [col for col in individual_mse_df.columns if col.startswith('beta_hat_')]
+    
+    # For greedy, we expect modular features (first k-1) and gross substitutes (last)
+    modular_features = individual_mse_df.iloc[:-1] if len(individual_mse_df) > 1 else individual_mse_df
+    gross_substitutes = individual_mse_df.iloc[-1] if len(individual_mse_df) > 1 else individual_mse_df.iloc[0]
+    
+    # Calculate averages for modular features
+    if len(modular_features) > 1:
+        modular_rmse_current = modular_features['Current_RMSE'].mean()
+        modular_rmse_score = modular_features['Score_RMSE'].mean()
+        modular_bias_current = modular_features['Current_Rel_Bias'].mean()
+        modular_bias_score = modular_features['Score_Rel_Bias'].mean()
+    else:
+        modular_rmse_current = modular_features['Current_RMSE'].iloc[0]
+        modular_rmse_score = modular_features['Score_RMSE'].iloc[0]
+        modular_bias_current = modular_features['Current_Rel_Bias'].iloc[0]
+        modular_bias_score = modular_features['Score_Rel_Bias'].iloc[0]
+    
+    # Get values for gross substitutes (last feature)
+    gs_rmse_current = gross_substitutes['Current_RMSE']
+    gs_rmse_score = gross_substitutes['Score_RMSE']
+    gs_bias_current = gross_substitutes['Current_Rel_Bias']
+    gs_bias_score = gross_substitutes['Score_Rel_Bias']
+    
+    # Get runtime values
+    runtime_current = time_stats['current_mean']
+    runtime_score = time_stats['score_mean']
+    
+    # Generate LaTeX table content
+    latex_content = f"""% LaTeX Table for Greedy Benchmarking Results
+% N = {num_agents}, sigma = {sigma}
+
+\\begin{{frame}}{{Numerical Experiment: Gross-substitutes}}
+\\begin{{table}}[htbp]
+\\centering
+\\small
+\\begin{{threeparttable}}
+\\begin{{tabular}}{{l r r r r r}}
+\\toprule
+\\multicolumn{{6}}{{c}}{{\\textbf{{$N={num_agents}$}}}}\\\\
+ & Runtime (s) & \\multicolumn{{2}}{{c}}{{RMSE}} & \\multicolumn{{2}}{{c}}{{Bias}}\\\\
+\\cmidrule(lr){{2-2}}\\cmidrule(lr){{3-4}}\\cmidrule(lr){{5-6}}
+ &  & $\\lambda_{{MOD}}$ & $\\lambda_{{GS}}$ & $\\lambda_{{MOD}}$ & $\\lambda_{{GS}}$ \\\\
+\\midrule
+Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {gs_rmse_current:.4f} & {modular_bias_current:.4f} & {gs_bias_current:.4f}\\\\
+Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {gs_rmse_score:.4f} & {modular_bias_score:.4f} & {gs_bias_score:.4f}\\\\
+\\bottomrule
+\\end{{tabular}}
+\\end{{threeparttable}}
+\\end{{table}}
+\\end{{frame}}
+
+% Summary for easy copy-paste:
+% N = {num_agents}, sigma = {sigma}
+% Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {gs_rmse_current:.4f} & {modular_bias_current:.4f} & {gs_bias_current:.4f}\\\\
+% Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {gs_rmse_score:.4f} & {modular_bias_score:.4f} & {gs_bias_score:.4f}\\\\
+"""
+    
+    # Save LaTeX table to file
+    latex_file = results_folder / "latex_table.tex"
+    with open(latex_file, 'w') as f:
+        f.write(latex_content)
+    
+    print(f"✓ LaTeX table saved to: {latex_file}")
+    
+    # Also print the summary for easy copy-paste
+    print(f"\n" + "="*60)
+    print("LATEX TABLE SUMMARY")
+    print("="*60)
+    print(f"N = {num_agents}, sigma = {sigma}")
+    print(f"Proposed & {runtime_current:.2f} & {modular_rmse_current:.4f} & {gs_rmse_current:.4f} & {modular_bias_current:.4f} & {gs_bias_current:.4f}\\\\")
+    print(f"Score    & {runtime_score:.2f} & {modular_rmse_score:.4f} & {gs_rmse_score:.4f} & {modular_bias_score:.4f} & {gs_bias_score:.4f}\\\\")
+    print("="*60)
+    
+    return latex_file
+
 def main():
     print("="*60)
     print("NORMALIZED ESTIMATION RESULTS COMPARISON")
@@ -373,8 +468,8 @@ def main():
     # Overall RMSE calculation
     rmse_current = individual_mse_df['Current_RMSE'].mean()
     rmse_score = individual_mse_df['Score_RMSE'].mean()
-    print(f"\nOverall Relative Mean Squared Error (Current, normalized): {rmse_current:.6f}")
-    print(f"Overall Relative Mean Squared Error (Score estimator): {rmse_score:.6f}")
+    print(f"\nOverall Root Mean Squared Error (Current, normalized): {rmse_current:.6f}")
+    print(f"Overall Root Mean Squared Error (Score estimator): {rmse_score:.6f}")
     
     # Overall bias calculation
     bias_current = individual_mse_df['Current_Abs_Bias'].mean()
@@ -395,12 +490,15 @@ def main():
     print(f"Time ratio (score/current): {time_stats['time_ratio']:.2f}x")
     
     print(f"\nNote: MSE and RMSE computed against actual normalized true theta values")
-    print(f"      RMSE = MSE / (true_value^2) - lower is better")
+    print(f"      RMSE = sqrt(MSE) - lower is better")
     print(f"      Bias = average(estimated - true), positive = overestimation")
     
     # Save only the MSE table with metadata
     save_mse_results(results_folder, individual_mse_df, metadata, time_stats)
     print(f"✓ MSE results saved to: {results_folder}/mse.csv")
+    
+    # Generate LaTeX table for the paper
+    generate_latex_table(individual_mse_df, metadata, time_stats, results_folder)
     
     print("\n" + "="*60)
     print("ANALYSIS COMPLETE")
