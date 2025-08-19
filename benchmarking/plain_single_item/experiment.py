@@ -111,6 +111,7 @@ if rank == 0:
         "num_features": num_features,
         "num_simuls": num_simuls,
         "subproblem": plain_single_item_experiment.subproblem_cfg.name,
+        "sigma": sigma,
         **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},
         **{f"beta_hat_{i}": val for i, val in enumerate(lambda_k_iter)},
         "min_demand": obs_bundles.sum(1).min(),
