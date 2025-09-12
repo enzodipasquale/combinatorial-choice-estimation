@@ -11,9 +11,9 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 
 # Define dimensions
-num_agents = 500
+num_agents = 1000
 num_items = 100
-num_features = 4
+num_features = 5
 num_simuls = 1
 sigma = 1
 
@@ -47,14 +47,14 @@ greedy_experiment.load_config(cfg)
 if rank == 0:
     # modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
     modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
-    while True:
-        full_rank_matrix = np.random.randint(0,2, size=(num_features-1, num_features-1))
-        if np.any(full_rank_matrix.sum(0) == 0):
-            continue
-        if np.linalg.matrix_rank(full_rank_matrix) == num_features-1:
-            full_rank_matrix = (full_rank_matrix / full_rank_matrix.sum(0))
-            break
-    modular_agent = modular_agent @ full_rank_matrix
+    # while True:
+    #     full_rank_matrix = np.random.randint(0,2, size=(num_features-1, num_features-1))
+    #     if np.any(full_rank_matrix.sum(0) == 0):
+    #         continue
+    #     if np.linalg.matrix_rank(full_rank_matrix) == num_features-1:
+    #         full_rank_matrix = (full_rank_matrix / full_rank_matrix.sum(0))
+    #         break
+    # modular_agent = modular_agent @ full_rank_matrix
     errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
     estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
     agent_data = {"modular": modular_agent}

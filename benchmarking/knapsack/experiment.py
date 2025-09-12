@@ -16,7 +16,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/knapsack"
 num_agents = 500
 num_items = 100
 num_simuls = 1
-modular_agent_features = 4
+modular_agent_features = 3
 modular_item_features = 2
 num_features = modular_agent_features + modular_item_features
 sigma = 1
@@ -65,12 +65,15 @@ if rank == 0:
 
     # Modular item features (weights)
     modular_item = np.abs(np.random.normal(0, 1, (num_items, modular_item_features)))
-    weights = np.random.randint(0, 10, num_items)
+    weights = np.random.randint(1, 11, num_items)
     item_data = {"modular": modular_item,
                  "weights": weights}
 
     # Agent capacities
-    capacity = np.random.randint(5, 30, num_agents)
+    mean_capacity = int(1/2 * weights.sum())  # realized 2/3 capacity
+    lo = int(0.85 * mean_capacity)
+    hi = int(1.15 * mean_capacity)
+    capacity = np.random.randint(lo, hi+1, size=num_agents)
     agent_data["capacity"] = capacity
 
     # Errors

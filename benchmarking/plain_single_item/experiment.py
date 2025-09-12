@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(__file__)
 SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/plain_single_item"
 
 # Define dimensions
-num_agents = 1000
+num_agents = 10000
 num_items = 100
 num_features = 5
 num_simuls = 1
