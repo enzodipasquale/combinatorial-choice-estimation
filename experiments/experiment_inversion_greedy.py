@@ -1,7 +1,7 @@
 """
 Row Generation Greedy Experiment
 
-This script runs an experiment using the row_generationerationSolver with greedy subproblem manager.
+This script runs an experiment using the RowGenerationSolver with greedy subproblem manager.
 It's based on the test but adapted for standalone execution and experimentation.
 """
 import numpy as np
@@ -15,7 +15,7 @@ def run_row_generation_greedy_experiment():
     num_agent_features = 1
     num_item_features = 1
 
-    num_agents = 1000
+    num_agents = 250
     num_items = 100
     num_features = num_agent_features + num_item_features +1
     num_simuls = 1
@@ -49,7 +49,7 @@ def run_row_generation_greedy_experiment():
         modular_item = np.abs(np.random.normal(0, 1, (num_items, num_item_features)))
         endogenous_errors = np.random.normal(0, 1, size=(num_items,)) 
         instrument = np.random.normal(0, 1, size=(num_items,)) 
-        modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, 1, size=(num_items,))
+        modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, .5, size=(num_items,))
 
         modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_agent_features)))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
@@ -108,7 +108,8 @@ def run_row_generation_greedy_experiment():
     cfg["dimensions"]["num_features"] = num_agent_features + num_items + 1
     cfg["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
     cfg["row_generation"]["theta_ubs"] = 500
-    cfg["row_generation"]["parameters_to_log"] = [i for i in range(num_agent_features)] + [-1]
+    parameters_to_log = [i for i in range(num_agent_features)] + [-1]
+    cfg["row_generation"]["parameters_to_log"] = parameters_to_log
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
     greedy_demo.features.set_oracle(features_oracle)
@@ -135,7 +136,7 @@ def run_row_generation_greedy_experiment():
         iv_results = iv_model.fit()
         print(f"Coefficients: {iv_results.params}")
         print(f"Standard errors: {iv_results.bse}")
-        print(f"theta_hat: {theta_hat}")    
+        print(f"theta_hat: {theta_hat[parameters_to_log]}")    
 
 
 def features_oracle(i_id, B_j, data):

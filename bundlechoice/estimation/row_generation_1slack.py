@@ -1,7 +1,6 @@
 """
-Row generation solver for modular bundle choice estimation (v2).
-This module will be used by BundleChoice to estimate parameters using row generation.
-Future solvers can be added to this folder as well.
+Row generation solver with 1slack formulation for modular bundle choice estimation (v2).
+This module implements a simplified row generation approach with a single scalar utility variable.
 """
 import numpy as np
 from datetime import datetime
@@ -17,9 +16,12 @@ logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGenerationSolver(BaseEstimationSolver):
+class RowGeneration1SlackSolver(BaseEstimationSolver):
     """
-    Implements the row generation algorithm for parameter estimation in modular bundle choice models.
+    Implements the row generation algorithm with 1slack formulation for parameter estimation in modular bundle choice models.
+
+    This solver uses a single scalar utility variable instead of one per simulation/agent pair,
+    with constraints of the form: u >= sum(si) errors_si + sum(si) sum(k) x_si,k * theta_k
 
     This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
@@ -32,7 +34,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                 feature_manager, 
                 subproblem_manager):
         """
-        Initialize the RowGenerationSolver.
+        Initialize the RowGeneration1SlackSolver.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -79,7 +81,7 @@ class RowGenerationSolver(BaseEstimationSolver):
 
     def _initialize_master_problem(self):
         """
-        Create and configure the master problem (Gurobi model).
+        Create and configure the master problem (Gurobi model) with 1slack formulation.
         
         Returns:
             tuple: (master_model, master_variables, theta_val)
@@ -87,31 +89,22 @@ class RowGenerationSolver(BaseEstimationSolver):
         obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
-            theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
+            theta = self.master_model.addMVar(self.num_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 theta.lb = self.row_generation_cfg.theta_lbs
-            u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
+            u_bar = self.master_model.addVar(obj=1, name='utility')  # Single scalar utility variable
             
-            # errors = self.input_data["errors"].reshape(-1, self.num_items)
-            # self.master_model.addConstrs((
-            #     u[si] >=
-            #     errors[si] @ self.input_data["obs_bundle"][si % self.num_agents] +
-            #     self.agents_obs_features[si % self.num_agents, :] @ theta
-            #     for si in range(self.num_simuls * self.num_agents)
-            # ))
             self.master_model.optimize()
-            logger.info("Master Initialized")
-            self.master_variables = (theta, u)
+            logger.info("Master Initialized (1slack formulation)")
+            self.master_variables = (theta, u_bar)
             self.theta_val = theta.X
             self.log_parameter()
 
         self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
-    
 
-
-    def _master_iteration(self, local_pricing_results):
+    def _master_iteration(self, optimal_bundles):
         """
-        Perform one iteration of the master problem in the row generation algorithm.
+        Perform one iteration of the master problem in the row generation algorithm with 1slack formulation.
 
         Args:
             pricing_results (list of np.ndarray): List of bundle selection matrices from pricing subproblems.
@@ -119,67 +112,76 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             bool: Whether the stopping criterion is met.
         """
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
+        x_sim = self.feature_manager.compute_gathered_features(optimal_bundles)
+        errors_sim = self.feature_manager.compute_gathered_errors(optimal_bundles)
         stop = False
+        
         if self.is_root():
-            theta, u = self.master_variables
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                u_sim = x_sim @ theta.X + errors_sim
-            u_master = u.X
+            theta, u_bar = self.master_variables
+            u_sim = (x_sim @ theta.X).sum() + errors_sim.sum()
+            u_master = u_bar.X  # Single scalar value
 
-            violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-6, atol = 1e-6) * (u_master > u_sim))[0]
-            if len(violations) > 0:
-                logger.warning(
-                    "Possible failure of demand oracle at agents ids: %s, "
-                    "u_sim: %s, u_master: %s",
-                    violations, u_sim[violations], u_master[violations]
-                )
+            # # Check for violations
+            # if not np.isclose(u_master, u_sim, rtol=1e-6, atol=1e-6) and u_master > u_sim:
+            #     logger.warning(
+            #         "Possible failure of demand oracle: "
+            #         "u_sim: %s, u_master: %s",
+            #         u_sim, u_master
+            #     )
 
             self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
-            max_reduced_cost = np.max(u_sim - u_master)
-            logger.info("Reduced cost: %s", max_reduced_cost)
-            if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
+            reduced_cost = u_sim - u_master
+            logger.info("Reduced cost: %s", reduced_cost)
+            
+            if reduced_cost < self.row_generation_cfg.tolerance_optimality:
                 stop = True
-            rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
-            logger.info("New constraints: %d", len(rows_to_add))
-            self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
-            self._enforce_slack_counter()
-            logger.info("Number of constraints: %d", self.master_model.NumConstrs)
-            self.master_model.optimize()
+            else:          
+                # Only add constraint if there's a violation (like standard formulation)
+                if u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality:
+                    agents_utilities = (x_sim @ theta).sum() + errors_sim.sum()
+                    self.master_model.addConstr(u_bar >= agents_utilities)
+                    self._enforce_slack_counter()
+                    logger.info("Number of constraints: %d", self.master_model.NumConstrs)
+                    self.master_model.optimize()
+                    self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
+            
+            # Get theta values for broadcasting
             theta_val = theta.X
-            self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
-            theta_val = None
+            stop = False
+            theta_val = None  # Will be overwritten by broadcast
+            
         self.theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
     def solve(self):
         """
-        Run the row generation algorithm to estimate model parameters.
+        Run the row generation algorithm with 1slack formulation to estimate model parameters.
 
         Returns:
             tuple: (theta_val)
                 - theta_val (np.ndarray): Estimated parameter vector.
         """
-        logger.info("=== ROW GENERATION ===")
+        logger.info("=== ROW GENERATION 1SLACK ===")
         tic = datetime.now()
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()        
         self.slack_counter = {}
-        logger.info("Starting row generation loop.")
+        logger.info("Starting row generation loop (1slack formulation).")
         iteration = 0
         pricing_times, master_times = [], []
+        
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
             t1 = datetime.now()
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            optimal_bundles = self.subproblem_manager.solve_local(self.theta_val)
             pricing_times.append((datetime.now() - t1).total_seconds())
             t2 = datetime.now()
-            stop = self._master_iteration(local_pricing_results) 
+            stop = self._master_iteration(optimal_bundles) 
             master_times.append((datetime.now() - t2).total_seconds())
+            
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()
@@ -188,6 +190,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                     logger.info(f"Avg pricing time: {np.mean(pricing_times):.3f}s, Avg master time: {np.mean(master_times):.3f}s")
                 break
             iteration += 1
+            
         self.theta_hat = self.theta_val
         return self.theta_hat
 
@@ -219,8 +222,6 @@ class RowGenerationSolver(BaseEstimationSolver):
             return num_removed
         else:
             return 0
-
-
 
     def log_parameter(self):
         feature_ids = self.row_generation_cfg.parameters_to_log
