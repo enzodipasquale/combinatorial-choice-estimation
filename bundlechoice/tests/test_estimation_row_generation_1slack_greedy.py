@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGenerationSolver
+from bundlechoice.estimation import RowGeneration1SlackSolver
 
 def features_oracle(i_id, B_j, data):
     """
@@ -28,8 +28,8 @@ def features_oracle(i_id, B_j, data):
         return features[:, 0]  # Return as 1D array for a single bundle
     return features
 
-def test_row_generation_greedy():
-    """Test RowGenerationSolver using observed bundles generated from greedy subproblem manager."""
+def test_row_generation_1slack_greedy():
+    """Test RowGeneration1SlackSolver using observed bundles generated from greedy subproblem manager."""
     num_agents = 250
     num_items = 50
     num_features = 6
@@ -77,7 +77,7 @@ def test_row_generation_greedy():
     theta_0 = np.ones(num_features)
     observed_bundles = greedy_demo.subproblems.init_and_solve(theta_0)
 
-    # Estimate parameters using row generation
+    # Estimate parameters using row generation 1slack
     if rank == 0:
         print(f"aggregate demands: {observed_bundles.sum(1).min()}, {observed_bundles.sum(1).max()}")
         print(f"aggregate: {observed_bundles.sum()}")
@@ -91,11 +91,30 @@ def test_row_generation_greedy():
     greedy_demo.features.set_oracle(features_oracle)
     greedy_demo.subproblems.load()
     
-    theta_hat = greedy_demo.row_generation.solve()
+    # Use 1slack solver instead of regular row generation
+    solver = RowGeneration1SlackSolver(
+        comm_manager=greedy_demo.comm_manager,
+        dimensions_cfg=greedy_demo.config.dimensions,
+        row_generation_cfg=greedy_demo.config.row_generation,
+        data_manager=greedy_demo.data_manager,
+        feature_manager=greedy_demo.feature_manager,
+        subproblem_manager=greedy_demo.subproblem_manager
+    )
+    theta_hat = solver.solve()
     
     if rank == 0:
         print("theta_hat:", theta_hat)
         print("theta_0:", theta_0)
         assert theta_hat.shape == (num_features,)
-        assert not np.any(np.isnan(theta_hat)) 
-
+        assert not np.any(np.isnan(theta_hat))
+        
+        # Check parameter recovery - should be close to true parameters
+        param_error = np.linalg.norm(theta_hat - theta_0)
+        print(f"Parameter recovery error (L2 norm): {param_error:.6f}")
+        assert param_error < 1.0, f"Parameter recovery error too large: {param_error}"
+        
+        # Check relative error for each parameter
+        relative_errors = np.abs(theta_hat - theta_0) / (np.abs(theta_0) + 1e-8)
+        max_relative_error = np.max(relative_errors)
+        print(f"Max relative error: {max_relative_error:.6f}")
+        assert max_relative_error < 0.5, f"Max relative error too large: {max_relative_error}"

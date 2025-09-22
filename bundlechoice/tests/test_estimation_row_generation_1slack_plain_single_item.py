@@ -4,12 +4,12 @@ import time
 from mpi4py import MPI
 from bundlechoice import estimation
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGenerationSolver
+from bundlechoice.estimation import RowGeneration1SlackSolver
 from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
 
 
-def test_row_generation_plain_single_item():
-    """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
+def test_row_generation_1slack_plain_single_item():
+    """Test RowGeneration1SlackSolver using PlainSingleItemSubproblem with only modular features."""
     num_agents = 500
     num_items = 2
     num_modular_agent_features = 4
@@ -94,14 +94,32 @@ def test_row_generation_plain_single_item():
     demo.subproblems.load()
     
     tic = time.time()
-    theta_hat = demo.row_generation.solve()
+    # Use 1slack solver instead of regular row generation
+    solver = RowGeneration1SlackSolver(
+        comm_manager=demo.comm_manager,
+        dimensions_cfg=demo.config.dimensions,
+        row_generation_cfg=demo.config.row_generation,
+        data_manager=demo.data_manager,
+        feature_manager=demo.feature_manager,
+        subproblem_manager=demo.subproblem_manager
+    )
+    theta_hat = solver.solve()
     toc = time.time()
     
     if rank == 0:
-        print("theta_hat (row generation result):\n", theta_hat)
+        print("theta_hat (row generation 1slack result):\n", theta_hat)
         print("theta_0:\n", theta_0)
         print(f"Time taken: {toc - tic} seconds")
         assert theta_hat.shape == (num_features,)
-        assert not np.any(np.isnan(theta_hat)) 
-    
-    
+        assert not np.any(np.isnan(theta_hat))
+        
+        # Check parameter recovery - should be close to true parameters
+        param_error = np.linalg.norm(theta_hat - theta_0)
+        print(f"Parameter recovery error (L2 norm): {param_error:.6f}")
+        assert param_error < 1.0, f"Parameter recovery error too large: {param_error}"
+        
+        # Check relative error for each parameter
+        relative_errors = np.abs(theta_hat - theta_0) / (np.abs(theta_0) + 1e-8)
+        max_relative_error = np.max(relative_errors)
+        print(f"Max relative error: {max_relative_error:.6f}")
+        assert max_relative_error < 0.5, f"Max relative error too large: {max_relative_error}"

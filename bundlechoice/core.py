@@ -5,7 +5,7 @@ from .subproblems.subproblem_manager import SubproblemManager
 from mpi4py import MPI
 from typing import Optional, Callable, Any
 from bundlechoice.utils import get_logger
-from bundlechoice.estimation import row_generationerationSolver
+from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.estimation.inequalities import InequalitiesSolver
 from bundlechoice.base import HasComm, HasConfig
@@ -44,7 +44,7 @@ class BundleChoice(HasComm, HasConfig):
     data_manager: Optional[DataManager]
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
-    row_generation_manager: Optional[row_generationerationSolver]
+    row_generation_manager: Optional[RowGenerationSolver]
     ellipsoid_manager: Optional[EllipsoidSolver]
     inequalities_manager: Optional[InequalitiesSolver]
     comm: MPI.Comm
@@ -141,13 +141,13 @@ class BundleChoice(HasComm, HasConfig):
     
     def _try_init_row_generation_manager(self):
         """
-        Initialize the row_generationerationSolver if not already present.
+        Initialize the RowGenerationSolver if not already present.
         
-        This method creates a new row_generationerationSolver instance using the current
+        This method creates a new RowGenerationSolver instance using the current
         configuration and manager components.
         
         Returns:
-            row_generationerationSolver: The initialized row_generationerationSolver instance
+            RowGenerationSolver: The initialized RowGenerationSolver instance
             
         Raises:
             RuntimeError: If required managers are not set
@@ -168,7 +168,7 @@ class BundleChoice(HasComm, HasConfig):
                 f"{', '.join(missing_managers)}"
             )
 
-        self.row_generation_manager = row_generationerationSolver(
+        self.row_generation_manager = RowGenerationSolver(
             comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             row_generation_cfg=self.config.row_generation,
@@ -311,7 +311,7 @@ class BundleChoice(HasComm, HasConfig):
         Access the row generation manager component.
         
         Returns:
-            row_generationerationSolver: The row generation solver instance
+            RowGenerationSolver: The row generation solver instance
         """
         if self.row_generation_manager is None:
             self._try_init_row_generation_manager()

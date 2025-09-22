@@ -47,36 +47,36 @@ class QuadraticSupermodular(BatchSubproblemBase):
         """
         agents_matrices = np.zeros((self.num_local_agents, self.num_items, self.num_items))
         offset = 0
-        
-        # Build diagonal contributions
-        diagonal_contributions = np.zeros((self.num_local_agents, self.num_items))
-        
-        if self.has_modular_agent:
-            modular_agent = self.local_data["agent_data"]["modular"]
-            num_mod_agent = modular_agent.shape[-1]
-            diagonal_contributions += (modular_agent @ theta[offset:offset + num_mod_agent])
-            offset += num_mod_agent
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            # Build diagonal contributions
+            diagonal_contributions = np.zeros((self.num_local_agents, self.num_items))
+            
+            if self.has_modular_agent:
+                modular_agent = self.local_data["agent_data"]["modular"]
+                num_mod_agent = modular_agent.shape[-1]
+                diagonal_contributions += (modular_agent @ theta[offset:offset + num_mod_agent])
+                offset += num_mod_agent
 
-        if self.has_quadratic_agent:
-            quadratic_agent = self.local_data["agent_data"]["quadratic"]
-            num_quad_agent = quadratic_agent.shape[-1]
-            agents_matrices += (quadratic_agent @ theta[offset:offset + num_quad_agent])
-            offset += num_quad_agent
+            if self.has_quadratic_agent:
+                quadratic_agent = self.local_data["agent_data"]["quadratic"]
+                num_quad_agent = quadratic_agent.shape[-1]
+                agents_matrices += (quadratic_agent @ theta[offset:offset + num_quad_agent])
+                offset += num_quad_agent
 
-        if self.has_modular_item:
-            modular_item = self.local_data["item_data"]["modular"]
-            num_mod_item = modular_item.shape[-1]
-            diagonal_contributions += (modular_item @ theta[offset:offset + num_mod_item])
-            offset += num_mod_item
+            if self.has_modular_item:
+                modular_item = self.local_data["item_data"]["modular"]
+                num_mod_item = modular_item.shape[-1]
+                diagonal_contributions += (modular_item @ theta[offset:offset + num_mod_item])
+                offset += num_mod_item
 
-        if self.has_quadratic_item:
-            quadratic_item = self.local_data["item_data"]["quadratic"]
-            num_quad_item = quadratic_item.shape[-1]
-            agents_matrices += (quadratic_item @ theta[offset:offset + num_quad_item])
-            offset += num_quad_item
+            if self.has_quadratic_item:
+                quadratic_item = self.local_data["item_data"]["quadratic"]
+                num_quad_item = quadratic_item.shape[-1]
+                agents_matrices += (quadratic_item @ theta[offset:offset + num_quad_item])
+                offset += num_quad_item
 
-        if self.has_errors:
-            diagonal_contributions += self.local_data["errors"]
+            if self.has_errors:
+                diagonal_contributions += self.local_data["errors"]
         
         # Apply diagonal contributions
         agents_matrices[:, np.arange(self.num_items), np.arange(self.num_items)] += diagonal_contributions

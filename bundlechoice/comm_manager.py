@@ -5,9 +5,31 @@ This module provides a clean interface for MPI communication operations,
 wrapping the underlying MPI functionality to improve readability and scalability.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 import numpy as np
 from mpi4py import MPI
+from functools import wraps
+
+
+def _mpi_error_handler(func: Callable) -> Callable:
+    """
+    Decorator to handle MPI errors by aborting all processes to prevent deadlock.
+    
+    Args:
+        func: MPI operation function to wrap
+        
+    Returns:
+        Wrapped function with error handling
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except Exception as e:
+            # If any rank fails, abort all processes to prevent deadlock
+            self.comm.Abort(1)
+            raise e
+    return wrapper
 
 
 class CommManager:
@@ -44,6 +66,7 @@ class CommManager:
         """
         return self.rank == 0
     
+    @_mpi_error_handler
     def scatter_from_root(self, data: Any, root: int = 0) -> Any:
         """
         Scatter data from root to all ranks.
@@ -57,6 +80,7 @@ class CommManager:
         """
         return self.comm.scatter(data, root=root)
     
+    @_mpi_error_handler
     def broadcast_from_root(self, data: Any, root: int = 0) -> Any:
         """
         Broadcast data from root to all ranks.
@@ -70,6 +94,7 @@ class CommManager:
         """
         return self.comm.bcast(data, root=root)
     
+    @_mpi_error_handler
     def gather_at_root(self, data: Any, root: int = 0) -> Any:
         """
         Gather data from all ranks to root.
@@ -83,6 +108,7 @@ class CommManager:
         """
         return self.comm.gather(data, root=root)
     
+    @_mpi_error_handler
     def all_reduce(self, data: Any, op: MPI.Op = MPI.SUM) -> Any:
         """
         Perform reduction operation across all ranks.
@@ -96,6 +122,7 @@ class CommManager:
         """
         return self.comm.allreduce(data, op=op)
     
+    @_mpi_error_handler
     def reduce_at_root(self, data: Any, op: MPI.Op = MPI.SUM, root: int = 0) -> Any:
         """
         Perform reduction operation and send result to root.
@@ -110,6 +137,7 @@ class CommManager:
         """
         return self.comm.reduce(data, op=op, root=root)
     
+    @_mpi_error_handler
     def concatenate_at_root(self, data: Any, root: int = 0) -> Optional[Any]:
         """
         Gather data from all ranks and concatenate at root.
@@ -142,6 +170,7 @@ class CommManager:
             return func(*args, **kwargs)
         return None
     
+    @_mpi_error_handler
     def barrier(self) -> None:
         """
         Synchronize all ranks at a barrier.
