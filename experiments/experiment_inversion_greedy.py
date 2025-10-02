@@ -15,7 +15,7 @@ def run_row_generation_greedy_experiment():
     num_agent_features = 1
     num_item_features = 1
 
-    num_agents = 250
+    num_agents = 400
     num_items = 100
     num_features = num_agent_features + num_item_features +1
     num_simuls = 1
