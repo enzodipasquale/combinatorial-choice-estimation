@@ -1,56 +1,52 @@
 # Performance Comparisons
 
-This folder contains experiments for comparing the performance of different formulations and algorithms in the BundleChoice framework.
+This folder contains clean experiments for comparing the performance of standard and 1slack row generation formulations.
 
 ## Files
 
-### `row_generation_1slack_vs_standard.py`
-Comprehensive performance comparison between the 1slack and standard row generation formulations.
+### `test_greedy_comparison.py`
+Compares standard vs 1slack formulations for the Greedy subproblem.
+- Based on `test_estimation_row_generation_1slack_greedy.py`
+- Tests with 250 agents, 50 items, 6 features
+- Compares objective values, solve times, and parameter recovery
 
-**Features:**
-- Tests multiple subproblem types (Greedy, LinearKnapsack, PlainSingleItem)
-- Tests different problem sizes (varying agents, items, features)
-- Measures solve time, parameter recovery accuracy, convergence
-- Generates detailed JSON reports with timestamps
-- Calculates speedup ratios and performance metrics
+### `test_linear_knapsack_comparison.py`
+Compares standard vs 1slack formulations for the LinearKnapsack subproblem.
+- Based on `test_estimation_row_generation_1slack_linear_knapsack.py`
+- Tests with 250 agents, 20 items, 4 features
+- Compares objective values, solve times, and parameter recovery
 
-**Usage:**
+### `test_plain_single_item_comparison.py`
+Compares standard vs 1slack formulations for the PlainSingleItem subproblem.
+- Based on `test_estimation_row_generation_1slack_plain_single_item.py`
+- Tests with 500 agents, 2 items, 5 features
+- Compares objective values, solve times, and parameter recovery
+
+### `test_quad_supermodular_comparison.py`
+Compares standard vs 1slack formulations for the QuadSupermodularNetwork subproblem.
+- Based on `test_estimation_row_generation_1slack_quadratic_supermodular.py`
+- Tests with 250 agents, 50 items, 6 features
+- Compares objective values, solve times, and parameter recovery
+
+## Usage
+
+Run individual experiments:
 ```bash
-mpirun -n 10 python experiments/performance_comparisons/row_generation_1slack_vs_standard.py
-```
-
-### `quick_comparison.py`
-Simplified version for quick testing and development.
-
-**Features:**
-- Single scenario (Greedy subproblem, 1000 agents, 100 items)
-- Fast execution for development and debugging
-- Console output with key metrics
-
-**Usage:**
-```bash
-mpirun -n 10 python experiments/performance_comparisons/quick_comparison.py
+mpirun -n 10 python experiments/performance_comparisons/test_greedy_comparison.py
+mpirun -n 10 python experiments/performance_comparisons/test_linear_knapsack_comparison.py
+mpirun -n 10 python experiments/performance_comparisons/test_plain_single_item_comparison.py
+mpirun -n 10 python experiments/performance_comparisons/test_quad_supermodular_comparison.py
 ```
 
 ## Metrics Compared
 
+- **Objective Value**: Final objective value of the master problem
 - **Solve Time**: Total wall-clock time for parameter estimation
 - **Parameter Recovery**: L2 norm error and max relative error vs true parameters
-- **Convergence**: Whether the algorithm converged within tolerance
-- **Memory Usage**: Number of constraints in master problem (for standard formulation)
-- **Objective Value**: Final objective value of the master problem
+- **Iterations**: Number of row generation iterations
+- **Constraints**: Number of constraints in final master problem
 
 ## Expected Results
 
-The 1slack formulation should generally be:
-- **Faster**: Fewer variables and constraints in master problem
-- **More Memory Efficient**: Single utility variable vs one per simulation/agent
-- **Similar Accuracy**: Should recover parameters with similar accuracy
-
-## Output
-
-Results are saved as JSON files with timestamps in the same directory, containing:
-- Detailed timing and accuracy metrics for each formulation
-- Problem parameters and configuration
-- Summary statistics and speedup ratios
-
+The two formulations should produce **identical objective values** (mathematical equivalence).
+Any differences indicate implementation issues that need to be resolved.
