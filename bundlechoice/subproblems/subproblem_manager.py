@@ -1,23 +1,11 @@
-from typing import Protocol, Any, cast, Optional, List, Union
+from typing import Any, cast, Optional
 from .subproblem_registry import SUBPROBLEM_REGISTRY
-from .base import BatchSubproblemBase, SerialSubproblemBase
+from .base import BaseSubproblem
 import numpy as np
 from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.base import HasDimensions, HasData, HasComm
-
-class BatchSubproblemProtocol(Protocol):
-    solve_all_local_problems: bool
-    def initialize(self) -> Any: ...
-    def solve(self, theta: Any) -> Any: ...
-
-class SerialSubproblemProtocol(Protocol):
-    solve_all_local_problems: bool
-    def initialize(self, local_id: int) -> Any: ...
-    def solve(self, local_id: int, theta: Any, pb: Any = None) -> Any: ...
-
-SubproblemType = Union[BatchSubproblemProtocol, SerialSubproblemProtocol]
 
 class SubproblemManager(HasDimensions, HasComm, HasData):
     """
@@ -30,16 +18,16 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
-        self.demand_oracle: Optional[SubproblemType] = None
+        self.demand_oracle: Optional[BaseSubproblem] = None
 
-    def load(self, subproblem: Optional[Union[str, Any]] = None) -> SubproblemType:
+    def load(self, subproblem: Optional[Any] = None) -> BaseSubproblem:
         """
         Load and instantiate the subproblem class from the registry or directly.
 
         Args:
             subproblem (str, class, or callable, optional): Name, class, or callable for the subproblem. If None, uses subproblem_cfg.name.
         Returns:
-            SubproblemType: Instantiated subproblem object.
+            BaseSubproblem: Instantiated subproblem object.
         Raises:
             ValueError: If subproblem is unknown or invalid.
         """
@@ -59,7 +47,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             subproblem_cfg=self.subproblem_cfg,
             dimensions_cfg=self.dimensions_cfg
         )
-        self.demand_oracle = cast(SubproblemType, subproblem_instance)
+        self.demand_oracle = cast(BaseSubproblem, subproblem_instance)
         return self.demand_oracle
 
     def initialize_local(self) -> Any:
@@ -69,17 +57,13 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Returns:
             None for batch subproblems, or list of local subproblems for serial.
         Raises:
-            RuntimeError: If subproblem is not initialized or missing methods.
+            RuntimeError: If subproblem is not initialized.
         """
         if self.demand_oracle is None:
             raise RuntimeError("Subproblem is not initialized.")
-        if isinstance(self.demand_oracle, BatchSubproblemBase):
-            # Batch: initialize expects no arguments
-            self.demand_oracle.initialize()
-            return None
-        elif isinstance(self.demand_oracle, SerialSubproblemBase):
-            # Serial: initialize expects local_id
-            self.local_subproblems = [self.demand_oracle.initialize(id) for id in range(self.num_local_agents)]
+        
+        self.local_subproblems = self.demand_oracle.initialize_all()
+        return self.local_subproblems
 
 
     def solve_local(self, theta: Any) -> Any:
@@ -98,12 +82,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
    
-        if isinstance(self.demand_oracle, BatchSubproblemBase):
-            return self.demand_oracle.solve(theta)
-        elif isinstance(self.demand_oracle, SerialSubproblemBase):
-            if self.local_subproblems is None:
-                raise RuntimeError("local_subproblems is not initialized for serial subproblem.")
-            return self.demand_oracle.solve_all(theta, self.local_subproblems)
+        return self.demand_oracle.solve_all(theta, self.local_subproblems)
 
     def init_and_solve(self, theta: Any, return_values: bool = False) -> Optional[Any]:
         """
@@ -177,5 +156,3 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
 
 
 
-
-SubproblemProtocol = SubproblemType 
