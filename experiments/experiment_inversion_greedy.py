@@ -15,8 +15,8 @@ def run_row_generation_greedy_experiment():
     num_agent_features = 1
     num_item_features = 1
 
-    num_agents = 400
-    num_items = 100
+    num_agents = 600
+    num_items = 150
     num_features = num_agent_features + num_item_features +1
     num_simuls = 1
     sigma = 6
@@ -95,10 +95,11 @@ def run_row_generation_greedy_experiment():
     
     # Run row generation method
     theta_hat = greedy_demo.row_generation.solve()
-
+    
     ########## Modular BLP inversion ##########
     if rank == 0:
         print(f"[Rank 0] theta_hat: {theta_hat}")
+        print("#"*100)
         input_data["item_data"]["modular"] = np.eye(num_items)
         input_data["obs_bundle"] = obs_bundles
         input_data["errors"] = estimation_errors 
