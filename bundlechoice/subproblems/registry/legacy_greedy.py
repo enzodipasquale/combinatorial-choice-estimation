@@ -3,12 +3,11 @@ from typing import Any, Optional
 from ..base import SerialSubproblemBase
 # import time
 
-class GreedySubproblem(SerialSubproblemBase):
+class LegacyGreedySubproblem(SerialSubproblemBase):
     """
-    Greedy subproblem solver for bundle choice estimation.
+    Legacy greedy subproblem solver for bundle choice estimation.
     
-    This solver uses a greedy algorithm to find approximately optimal bundles
-    by iteratively adding items with the highest marginal value.
+    This is the original implementation without optimizations for performance comparison.
     """
     
     def __init__(self, *args, **kwargs):
