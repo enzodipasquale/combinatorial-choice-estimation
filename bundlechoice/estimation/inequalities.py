@@ -5,7 +5,7 @@ import logging
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
-from .base import HasDimensions, HasData
+from .base import BaseEstimationSolver
 logger = get_logger(__name__)
 
 
@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class InequalitiesSolver(HasDimensions, HasData):
+class InequalitiesSolver(BaseEstimationSolver):
     """
     Implements the inequalities method for parameter estimation in modular bundle choice models.
 
@@ -21,19 +21,23 @@ class InequalitiesSolver(HasDimensions, HasData):
     """
     def __init__(
                 self,
+                comm_manager,
                 dimensions_cfg,  
                 data_manager, 
-                feature_manager 
+                feature_manager,
+                subproblem_manager=None
                 ):
         """
         Initialize the InequalitiesSolver.
+        Note: subproblem_manager is optional (not needed for inequalities method).
         """
-        self.dimensions_cfg = dimensions_cfg
-        self.data_manager = data_manager
-        self.feature_manager = feature_manager
-        
-        # Initialize common attributes
-        self.obs_features = self.get_obs_features()
+        super().__init__(
+            comm_manager=comm_manager,
+            dimensions_cfg=dimensions_cfg,
+            data_manager=data_manager,
+            feature_manager=feature_manager,
+            subproblem_manager=subproblem_manager
+        )
 
     def solve(self):
         """
