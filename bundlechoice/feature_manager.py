@@ -148,7 +148,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             np.ndarray or None: Features for all simulated agents (on rank 0), None on other ranks.
         """
         features_local = self.compute_rank_features(local_bundles)
-        return self.comm_manager.concatenate_at_root(features_local, root=0)
+        return self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
 
 
     def compute_gathered_utilities(self, local_bundles, theta):
@@ -160,7 +160,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             utilities_local = features_local @ theta + errors_local
-        return self.comm_manager.concatenate_at_root(utilities_local, root=0)
+        return self.comm_manager.concatenate_array_at_root_fast(utilities_local, root=0)
     
 
     def compute_gathered_errors(self, local_bundles):
@@ -169,7 +169,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Gathers and concatenates all local results on rank 0.
         """
         errors_local = (self.data_manager.local_data["errors"]* local_bundles).sum(1)
-        return self.comm_manager.concatenate_at_root(errors_local, root=0)
+        return self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
 
 
     # --- Feature oracle builder ---

@@ -113,8 +113,10 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.master_variables = (theta, u)
             self.theta_val = theta.X
             self.log_parameter()
-
-        self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
+        else:
+            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+        
+        self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
     
 
 
@@ -160,8 +162,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
-            theta_val = None
-        self.theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
+            theta_val = np.empty(self.num_features, dtype=np.float64)
+        
+        self.theta_val = self.comm_manager.broadcast_array(theta_val, root=0)
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
