@@ -399,17 +399,20 @@ class BundleChoice(HasComm, HasConfig):
         """
         obs_bundles = self.subproblems.init_and_solve(theta_true)
         
+        # Prepare input_data on rank 0
         if self.is_root():
             if self.data_manager.input_data is None:
                 raise RuntimeError("Cannot generate observations without input_data")
             self.data_manager.input_data["obs_bundle"] = obs_bundles
-            self.data.load_and_scatter(self.data_manager.input_data)
+            updated_data = self.data_manager.input_data
         else:
-            self.data.load_and_scatter(None)
+            updated_data = None
+        
+        # All ranks participate in scatter
+        self.data.load_and_scatter(updated_data)
         
         # Rebuild features if using auto-generated oracle
         if self.feature_manager._features_oracle is not None:
-            # Check if oracle was auto-generated (has specific structure)
             oracle_code = self.feature_manager._features_oracle.__code__
             if 'features_oracle' in oracle_code.co_name:
                 self.features.build_from_data()
