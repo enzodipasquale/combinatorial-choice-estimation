@@ -142,6 +142,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         Compute the gradient of the objective function.
         
         This method computes the gradient with respect to the parameters.
+        Note: Assumes subproblems are already initialized.
         
         Args:
             theta: Parameter vector
@@ -149,12 +150,9 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         Returns:
             np.ndarray or None: Gradient vector (rank 0) or None (other ranks)
         """
-        self.subproblem_manager.initialize_local()
         B_local = self.subproblem_manager.solve_local(theta)
         agents_features = self.feature_manager.compute_gathered_features(B_local)
         if self.is_root():
-            # print("agents_features", agents_features.sum(0))
-            # print("obs_features", self.obs_features)
             return (agents_features.sum(0) - self.obs_features) / self.num_agents
         else:
             return None

@@ -30,7 +30,8 @@ class RowGenerationSolver(BaseEstimationSolver):
                 row_generation_cfg, 
                 data_manager, 
                 feature_manager, 
-                subproblem_manager):
+                subproblem_manager,
+                theta_init=None):
         """
         Initialize the RowGenerationSolver.
 
@@ -41,6 +42,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
+            theta_init: Optional initial theta for warm start
         """
         super().__init__(
             comm_manager=comm_manager,
@@ -56,6 +58,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
+        self.theta_init = theta_init
 
     def _setup_gurobi_model_params(self):
         """
@@ -90,6 +93,12 @@ class RowGenerationSolver(BaseEstimationSolver):
             theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 theta.lb = self.row_generation_cfg.theta_lbs
+            
+            # Apply warm start if provided
+            if self.theta_init is not None:
+                for k in range(self.num_features):
+                    theta[k].Start = self.theta_init[k]
+            
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # errors = self.input_data["errors"].reshape(-1, self.num_items)
@@ -156,10 +165,13 @@ class RowGenerationSolver(BaseEstimationSolver):
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
-    def solve(self):
+    def solve(self, callback=None):
         """
         Run the row generation algorithm to estimate model parameters.
 
+        Args:
+            callback: Optional callback function called after each iteration with info dict
+        
         Returns:
             tuple: (theta_val)
                 - theta_val (np.ndarray): Estimated parameter vector.
@@ -180,6 +192,17 @@ class RowGenerationSolver(BaseEstimationSolver):
             t2 = datetime.now()
             stop = self._master_iteration(local_pricing_results) 
             master_times.append((datetime.now() - t2).total_seconds())
+            
+            # Call callback if provided
+            if callback and self.is_root():
+                callback({
+                    'iteration': iteration + 1,
+                    'theta': self.theta_val.copy() if self.theta_val is not None else None,
+                    'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
+                    'pricing_time': pricing_times[-1],
+                    'master_time': master_times[-1],
+                })
+            
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()

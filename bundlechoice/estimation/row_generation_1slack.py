@@ -121,13 +121,6 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             u_sim = (x_sim @ theta.X).sum() + errors_sim.sum()
             u_master = u_bar.X  # Single scalar value
 
-            # # Check for violations
-            # if not np.isclose(u_master, u_sim, rtol=1e-6, atol=1e-6) and u_master > u_sim:
-            #     logger.warning(
-            #         "Possible failure of demand oracle: "
-            #         "u_sim: %s, u_master: %s",
-            #         u_sim, u_master
-            #     )
 
             self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")

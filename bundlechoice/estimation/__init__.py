@@ -15,4 +15,4 @@ __all__ = [
     'RowGenerationSolver', 
     'RowGeneration1SlackSolver',
     'EllipsoidSolver'
-] 
+]
