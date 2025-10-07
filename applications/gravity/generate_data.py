@@ -11,7 +11,7 @@ import time
 import argparse
 
 
-def fetch_country_metadata():
+def fetch_country_metadata(country_codes):
     """Fetch country names, coordinates, languages, and regions from real data sources."""
     import country_converter as coco
     
@@ -22,7 +22,7 @@ def fetch_country_metadata():
     import requests
     
     countries = {}
-    for iso2 in COUNTRY_CODES:
+    for iso2 in country_codes:
         # Get country info from pycountry
         country = pycountry.countries.get(alpha_2=iso2)
         if not country:
@@ -205,7 +205,7 @@ def fetch_world_bank_data(countries):
 
 
 def create_country_features(countries):
-    """Create country-level features (modular) from real World Bank data."""
+    """Create comprehensive country-level features from real World Bank data."""
     country_codes = list(countries.keys())
     
     # Fetch real World Bank data
@@ -223,13 +223,9 @@ def create_country_features(countries):
     for code in country_codes:
         region_df.loc[code, countries[code]['region']] = 1
     
-    # Economic indicators from World Bank
-    econ_data = {
-        'gdp_billions': [wb_data[c]['gdp_billions'] for c in country_codes],
-        'population_millions': [wb_data[c]['population_millions'] for c in country_codes],
-        'gdp_per_capita': [wb_data[c]['gdp_per_capita'] for c in country_codes],
-        'trade_openness_pct': [wb_data[c]['trade_openness_pct'] for c in country_codes],
-    }
+    # Economic indicators from World Bank - all variables
+    econ_vars = list(wb_data[country_codes[0]].keys())
+    econ_data = {var: [wb_data[c][var] for c in country_codes] for var in econ_vars}
     econ_df = pd.DataFrame(econ_data, index=country_codes)
     
     # Combine all features
@@ -296,11 +292,23 @@ def create_pairwise_features(countries, distances):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Generate gravity model data for export choice')
+    parser.add_argument('--num_countries', type=int, default=15, 
+                       help='Number of countries to include')
+    parser.add_argument('--sort_by', type=str, default='gdp',
+                       choices=['gdp', 'population', 'gdp_per_capita', 'trade', 'exports'],
+                       help='Criterion to select top countries')
+    args = parser.parse_args()
+    
     print("Generating gravity model data...")
+    print(f"Configuration: top {args.num_countries} countries by {args.sort_by}\n")
+    
+    # Select countries
+    country_codes = select_top_countries(args.num_countries, args.sort_by)
     
     # Fetch country metadata
-    print("Fetching country metadata (coords, languages, regions)...")
-    countries = fetch_country_metadata()
+    print("\nFetching country metadata (coords, languages, regions)...")
+    countries = fetch_country_metadata(country_codes)
     
     # Distance matrix
     print("\nComputing distances...")
@@ -313,11 +321,11 @@ def main():
     features = create_country_features(countries)
     features.to_csv('datasets/country_features.csv')
     print(f"  Saved country features: {features.shape}")
-    print(f"  Features: {list(features.columns)}")
+    print(f"  Features: {list(features.columns)[:10]}... (showing first 10)")
     
     # Pairwise features
     print("\nCreating pairwise features...")
-    pairwise = create_pairwise_features(countries)
+    pairwise = create_pairwise_features(countries, distances)
     for name, df in pairwise.items():
         df.to_csv(f'datasets/{name}.csv')
         print(f"  Saved {name}: {df.shape}")

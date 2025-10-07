@@ -35,7 +35,6 @@ if rank == 0:
         "quadratic": np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy")),
         "weights": np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
     }
-    # print(item_data["weights"])
     agent_data = {
         "modular": np.load(os.path.join(INPUT_DIR, "modular_characteristics_i_j_k.npy")),
         "capacity": np.load(os.path.join(INPUT_DIR, "capacity_i.npy")),
