@@ -119,7 +119,12 @@ class EllipsoidSolver(BaseEstimationSolver):
 
             # Update ellipsoid
             self._update_ellipsoid(direction)
-            self.theta_iter = self.comm_manager.broadcast_from_root(self.theta_iter, root=0)
+            
+            # Prepare buffer on non-root ranks
+            if not self.is_root():
+                self.theta_iter = np.empty(self.num_features, dtype=np.float64)
+            
+            self.theta_iter = self.comm_manager.broadcast_array(self.theta_iter, root=0)
             
             # Call callback if provided
             if callback and self.is_root() and obj_value != np.inf:
@@ -146,10 +151,10 @@ class EllipsoidSolver(BaseEstimationSolver):
                 # All iterations were constraint violations
                 best_theta = self.theta_iter
         else:
-            best_theta = None
+            best_theta = np.empty(self.num_features, dtype=np.float64)
         
         # Broadcast result to all ranks
-        best_theta = self.comm_manager.broadcast_from_root(best_theta, root=0)
+        best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
         return best_theta
 
     def _initialize_ellipsoid(self):

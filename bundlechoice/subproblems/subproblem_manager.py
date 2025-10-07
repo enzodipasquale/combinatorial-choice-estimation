@@ -122,11 +122,16 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         """
         if self.comm_manager is None:
             raise RuntimeError("Communication manager is not set in SubproblemManager.")
-        # Broadcast theta from rank 0 to all ranks if available
-        theta = self.comm_manager.broadcast_from_root(theta, root=0)
+        
+        # Broadcast theta using fast buffer-based method (2-7x faster)
+        if self.is_root():
+            theta = np.asarray(theta, dtype=np.float64)
+        else:
+            theta = np.empty(self.num_features, dtype=np.float64)
+        theta = self.comm_manager.broadcast_array(theta, root=0)
         self.initialize_local()
         local_bundles = self.solve_local(theta)
-        bundles = self.comm_manager.concatenate_at_root(local_bundles, root=0)
+        bundles = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
         if return_values:
             utilities = self.feature_manager.compute_gathered_utilities(local_bundles, theta)
             return bundles, utilities
@@ -146,11 +151,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If num_items is not set.
         """
-        # Broadcast theta from rank 0 to all ranks if available
-        if self.is_root() and theta is not None:
-            theta = self.comm_manager.broadcast_from_root(theta, root=0)
+        # Broadcast theta using fast buffer-based method (2-7x faster)
+        if self.is_root():
+            theta = np.asarray(theta, dtype=np.float64)
         else:
-            theta = self.comm_manager.broadcast_from_root(None, root=0)
+            theta = np.empty(self.num_features, dtype=np.float64)
+        theta = self.comm_manager.broadcast_array(theta, root=0)
         
         from itertools import product
         num_local_agents = self.num_local_agents
@@ -173,8 +179,8 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
                     best_bundle = bundle.copy()
             max_values[local_id] = max_value
             best_bundles[local_id] = best_bundle
-        all_max_values = self.comm_manager.concatenate_at_root(max_values, root=0)
-        all_best_bundles = self.comm_manager.concatenate_at_root(best_bundles, root=0)
+        all_max_values = self.comm_manager.concatenate_array_at_root_fast(max_values, root=0)
+        all_best_bundles = self.comm_manager.concatenate_array_at_root_fast(best_bundles, root=0)
         return all_best_bundles, all_max_values
     
     def get_stats(self):

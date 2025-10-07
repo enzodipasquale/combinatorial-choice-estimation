@@ -99,8 +99,10 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             self.master_variables = (theta, u_bar)
             self.theta_val = theta.X
             self.log_parameter()
+        else:
+            self.theta_val = np.empty(self.num_features, dtype=np.float64)
 
-        self.theta_val = self.comm_manager.broadcast_from_root(self.theta_val, root=0)
+        self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
     def _master_iteration(self, optimal_bundles):
         """
@@ -143,9 +145,9 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             theta_val = theta.X
         else:
             stop = False
-            theta_val = None  # Will be overwritten by broadcast
+            theta_val = np.empty(self.num_features, dtype=np.float64)
             
-        self.theta_val = self.comm_manager.broadcast_from_root(theta_val, root=0)
+        self.theta_val = self.comm_manager.broadcast_array(theta_val, root=0)
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
