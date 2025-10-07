@@ -2,15 +2,46 @@ import numpy as np
 from typing import Any, Optional
 from ..base import SerialSubproblemBase
 
-class OptimizedGreedySubproblem(SerialSubproblemBase):
+try:
+    from numba import jit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Create a dummy jit decorator if numba is not available
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+# JIT-compiled functions for hot paths
+@jit(nopython=True, cache=True)
+def _compute_marginal_values_vectorized(theta, vectorized_features, base_features, error_j):
+    """JIT-compiled marginal value computation for vectorized approach."""
+    return theta @ vectorized_features - theta @ base_features + error_j
+
+@jit(nopython=True, cache=True)
+def _compute_marginal_value_standard(theta, new_features, base_features, error_j):
+    """JIT-compiled single marginal value computation."""
+    return error_j + (new_features - base_features) @ theta
+
+@jit(nopython=True, cache=True)
+def _find_best_item_vectorized_core(marginal_values, items_left):
+    """JIT-compiled core logic for finding best item from marginal values."""
+    best_idx = np.argmax(marginal_values)
+    best_item = items_left[best_idx]
+    best_val = marginal_values[best_idx]
+    return best_item, best_val
+
+class GreedyJITSubproblem(SerialSubproblemBase):
     """
-    Optimized Greedy subproblem solver for bundle choice estimation.
+    JIT-optimized Greedy subproblem solver for bundle choice estimation.
     
-    Key optimizations:
-    1. Single features_oracle call per iteration (eliminate duplicate calls)
-    2. Pre-compute base features once per solve
-    3. More efficient vectorized operations
-    4. Better memory management
+    This extends OptimizedGreedy with Numba JIT compilation for hot paths:
+    1. Marginal value computations (vectorized and standard)
+    2. Best item selection logic
+    3. Core numerical operations
+    
+    Falls back to pure NumPy if Numba is not available.
     """
     
     def __init__(self, *args, **kwargs):
@@ -18,6 +49,7 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         self._supports_vectorized_features = None
         self._base_features_cache = None
         self._current_bundle_hash = None
+        self._use_jit = NUMBA_AVAILABLE
     
     def initialize(self, local_id: int) -> Optional[Any]:
         """
@@ -30,6 +62,10 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
             Problem state (None for greedy, but could be used for caching)
         """
         self._check_vectorized_feature_support(local_id)
+        if self._use_jit:
+            print(f"  🚀 JIT compilation enabled for agent {local_id}")
+        else:
+            print(f"  ⚠️  JIT compilation disabled (Numba not available)")
         return None
     
     def solve(self, local_id: int, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
@@ -58,7 +94,7 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         
         # Greedy algorithm: iteratively add best item
         while len(items_left) > 0:
-            best_item, best_val = self._find_best_item_optimized(local_id, bundle, items_left, theta, error_j)
+            best_item, best_val = self._find_best_item_jit(local_id, bundle, items_left, theta, error_j)
             # If no positive marginal value, stop
             if best_val <= 0:
                 break
@@ -118,7 +154,7 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         
         return self.features_oracle(local_id, bundles, self.local_data)
 
-    def _find_best_item_optimized(
+    def _find_best_item_jit(
         self, 
         local_id: int, 
         bundle: np.ndarray, 
@@ -127,19 +163,16 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         error_j: np.ndarray
     ) -> tuple[int, float]:
         """
-        Find the best item to add to the current bundle - OPTIMIZED VERSION.
+        Find the best item to add to the current bundle - JIT OPTIMIZED VERSION.
         
-        Key optimizations:
-        1. Use cached base features (no duplicate features_oracle call)
-        2. More efficient vectorized operations
-        3. Better memory management
+        Uses JIT compilation for hot paths while maintaining correctness.
         """
         if self._supports_vectorized_features and len(items_left) > 1:
-            return self._find_best_item_vectorized_optimized(local_id, bundle, items_left, theta, error_j)
+            return self._find_best_item_vectorized_jit(local_id, bundle, items_left, theta, error_j)
         else:
-            return self._find_best_item_standard_optimized(local_id, bundle, items_left, theta, error_j)
+            return self._find_best_item_standard_jit(local_id, bundle, items_left, theta, error_j)
     
-    def _find_best_item_vectorized_optimized(
+    def _find_best_item_vectorized_jit(
             self, 
             local_id: int, 
             bundle: np.ndarray, 
@@ -148,9 +181,7 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
             error_j: np.ndarray
         ) -> tuple[int, float]:
         """
-        Find the best item using vectorized approach - OPTIMIZED VERSION.
-        
-        Key optimization: Use cached base features instead of calling features_oracle again!
+        Find the best item using vectorized approach with JIT optimization.
         """
         # Use cached base features (major optimization!)
         base_features = self._base_features_cache
@@ -158,17 +189,27 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         # Get vectorized features for all remaining items
         vectorized_features = self._get_vectorized_features_optimized(local_id, bundle, items_left)
         
-        # Calculate marginal values more efficiently
-        marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
+        # Calculate marginal values using JIT-compiled function
+        if self._use_jit:
+            marginal_values = _compute_marginal_values_vectorized(
+                theta, vectorized_features, base_features, error_j[items_left]
+            )
+        else:
+            # Fallback to pure NumPy
+            marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
         
-        # Find best item
-        best_idx = np.argmax(marginal_values)
-        best_item = items_left[best_idx]
-        best_val = float(marginal_values[best_idx])
+        # Find best item using JIT-compiled function
+        if self._use_jit:
+            best_item, best_val = _find_best_item_vectorized_core(marginal_values, items_left)
+        else:
+            # Fallback to pure NumPy
+            best_idx = np.argmax(marginal_values)
+            best_item = items_left[best_idx]
+            best_val = float(marginal_values[best_idx])
         
         return best_item, best_val
 
-    def _find_best_item_standard_optimized(
+    def _find_best_item_standard_jit(
         self, 
         local_id: int, 
         bundle: np.ndarray, 
@@ -177,9 +218,7 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
         error_j: np.ndarray
     ) -> tuple[int, float]:
         """
-        Find the best item using standard approach - OPTIMIZED VERSION.
-        
-        Key optimization: Use cached base features instead of calling features_oracle again!
+        Find the best item using standard approach with JIT optimization.
         """
         # Use cached base features (major optimization!)
         base_features = self._base_features_cache
@@ -192,10 +231,16 @@ class OptimizedGreedySubproblem(SerialSubproblemBase):
             bundle[j] = True
             new_x_k = self.features_oracle(local_id, bundle, self.local_data)
             
-            # Calculate marginal value
-            marginal_j = float(error_j[j])
-            if base_features is not None and new_x_k is not None:
-                marginal_j += float((new_x_k - base_features) @ theta)
+            # Calculate marginal value using JIT-compiled function
+            if self._use_jit:
+                marginal_j = _compute_marginal_value_standard(
+                    theta, new_x_k, base_features, error_j[j]
+                )
+            else:
+                # Fallback to pure NumPy
+                marginal_j = float(error_j[j])
+                if base_features is not None and new_x_k is not None:
+                    marginal_j += float((new_x_k - base_features) @ theta)
             
             # Remove item j for next iteration
             bundle[j] = False

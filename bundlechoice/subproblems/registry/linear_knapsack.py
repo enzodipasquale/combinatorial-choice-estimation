@@ -29,7 +29,6 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
 
     def solve(self, local_id, theta, pb: Any):
         L_j = self._build_L_j(local_id, theta)
-        # print(L_j)
         B_j = pb.getVars()
         for j in range(len(B_j)):
             B_j[j].Obj = L_j[j]

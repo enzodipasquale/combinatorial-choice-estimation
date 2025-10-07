@@ -48,19 +48,23 @@ class GreedySubproblem(SerialSubproblemBase):
         bundle = np.zeros(num_items, dtype=bool)
         items_left = np.arange(num_items)
         
+        # Cache base features for empty bundle
+        base_features = self.features_oracle(local_id, bundle, self.local_data)
+        
         # Greedy algorithm: iteratively add best item
-        # tic = time.time()
         while len(items_left) > 0:
-            best_item, best_val = self._find_best_item(local_id, bundle, items_left, theta, error_j)
+            best_item, best_val = self._find_best_item_cached(
+                local_id, bundle, items_left, theta, error_j, base_features
+            )
             # If no positive marginal value, stop
             if best_val <= 0:
                 break
                 
-            # Add best item to bundle
+            # Add best item to bundle and update cached features
             bundle[best_item] = True
+            base_features = self.features_oracle(local_id, bundle, self.local_data)
             items_left = items_left[items_left != best_item]
-        # toc = time.time() - tic
-        # print(f"Done with local id {local_id} time {toc}")
+        
         return bundle
 
     def _check_vectorized_feature_support(self, local_id: int) -> None:
@@ -130,6 +134,53 @@ class GreedySubproblem(SerialSubproblemBase):
             return self._find_best_item_vectorized(local_id, bundle, items_left, theta, error_j)
         else:
             return self._find_best_item_standard(local_id, bundle, items_left, theta, error_j)
+    
+    def _find_best_item_cached(
+        self, 
+        local_id: int, 
+        bundle: np.ndarray, 
+        items_left: np.ndarray, 
+        theta: np.ndarray, 
+        error_j: np.ndarray,
+        base_features: np.ndarray
+    ) -> tuple[int, float]:
+        """
+        Find the best item using cached base features (optimized).
+        
+        Args:
+            local_id: Local agent ID
+            bundle: Current bundle (boolean array)
+            items_left: Array of remaining item indices
+            theta: Parameter vector
+            error_j: Error values for current agent
+            base_features: Cached feature vector for current bundle
+            
+        Returns:
+            Tuple of (best_item_index, best_marginal_value)
+        """
+        if self._supports_vectorized_features and len(items_left) > 1:
+            # Vectorized version with cached features
+            vectorized_features = self._get_vectorized_features(local_id, bundle, items_left)
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
+            best_idx = np.argmax(marginal_values)
+            return items_left[best_idx], float(marginal_values[best_idx])
+        else:
+            # Standard version with cached features
+            best_val = -np.inf
+            best_item = -1
+            
+            for j in items_left:
+                bundle[j] = True
+                new_x_k = self.features_oracle(local_id, bundle, self.local_data)
+                marginal_j = float(error_j[j]) + float((new_x_k - base_features) @ theta)
+                bundle[j] = False
+                
+                if marginal_j > best_val:
+                    best_val = marginal_j
+                    best_item = j
+            
+            return best_item, best_val
     
     
     def _find_best_item_vectorized(
