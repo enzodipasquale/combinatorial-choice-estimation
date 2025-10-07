@@ -30,6 +30,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         self.comm_manager = comm_manager
         self.data_manager = data_manager
         self._features_oracle = None
+        self._supports_batch = None
 
         self.num_global_agents = self.num_simuls * self.num_agents
 
@@ -81,9 +82,27 @@ class FeatureManager(HasDimensions, HasComm, HasData):
        
         return self._features_oracle(agent_id, bundle, data)
 
+    def _check_batch_support(self):
+        """Check if oracle supports batch computation across agents."""
+        if self._supports_batch is not None:
+            return self._supports_batch
+        
+        try:
+            test_bundles = np.zeros((2, self.num_items))
+            result = self._features_oracle(None, test_bundles, self.local_data)
+            self._supports_batch = (
+                isinstance(result, np.ndarray) and 
+                result.shape == (2, self.num_features)
+            )
+        except:
+            self._supports_batch = False
+        
+        return self._supports_batch
+
     def compute_rank_features(self, local_bundles):
         """
         Compute features for all local agents (on this MPI rank only).
+        Automatically uses batch computation if oracle supports it.
 
         Args:
             local_bundles (array-like): List or array of bundles for local agents (length = num_local_agents).
@@ -92,6 +111,12 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         """
         assert self.num_local_agents == len(local_bundles), f"num_local_agents and local_bundles must have the same length. Bundle shape: {local_bundles.shape} while num_local_agents: {self.num_local_agents}"
         data = self.local_data
+        
+        # Try batch computation first
+        if self._check_batch_support():
+            return self._features_oracle(None, local_bundles, data)
+        
+        # Fallback to per-agent computation
         return np.stack([self.features_oracle(i, local_bundles[i], data) for i in range(self.num_local_agents)])
 
 
@@ -157,6 +182,9 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         Returns:
             Callable: The new _features_oracle function.
         """
+        if self._features_oracle is not None:
+            logger.info("Rebuilding feature oracle (overwriting existing)")
+        
         self.data_manager.validate_quadratic_input_data()
         if self.is_root():
             input_data = self.input_data

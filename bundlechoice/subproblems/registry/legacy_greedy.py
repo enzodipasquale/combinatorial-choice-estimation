@@ -46,7 +46,6 @@ class LegacyGreedySubproblem(SerialSubproblemBase):
         # Initialize empty bundle
         bundle = np.zeros(num_items, dtype=bool)
         items_left = np.arange(num_items)
-        
         # Greedy algorithm: iteratively add best item
         # tic = time.time()
         while len(items_left) > 0:

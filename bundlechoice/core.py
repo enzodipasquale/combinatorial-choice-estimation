@@ -10,6 +10,7 @@ from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.estimation.inequalities import InequalitiesSolver
 from bundlechoice.base import HasComm, HasConfig
 from .comm_manager import CommManager
+from contextlib import contextmanager
 logger = get_logger(__name__)
 
 
@@ -104,7 +105,7 @@ class BundleChoice(HasComm, HasConfig):
             ValueError: If dimensions_cfg is not set
         """
         if self.config is None or self.config.dimensions is None:
-            logger.error("dimensions_cfg must be set in config before initializing feature manager.")
+            raise ValueError("dimensions_cfg must be set in config before initializing feature manager.")
         
         self.feature_manager = FeatureManager(
             dimensions_cfg=self.config.dimensions,
@@ -127,7 +128,17 @@ class BundleChoice(HasComm, HasConfig):
             RuntimeError: If required managers or configs are not set
         """
         if self.data_manager is None or self.feature_manager is None or self.config is None or self.config.subproblem is None:
-            raise RuntimeError("DataManager, FeatureManager, and SubproblemConfig must be set in config before initializing subproblem manager.")
+            missing = []
+            if self.data_manager is None:
+                missing.append("data (call bc.data.load_and_scatter(input_data))")
+            if self.feature_manager is None:
+                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
+            if self.config is None or self.config.subproblem is None:
+                missing.append("subproblem config (add 'subproblem' to your config)")
+            raise RuntimeError(
+                "Cannot initialize subproblem manager - missing setup:\n  " +
+                "\n  ".join(missing)
+            )
 
         self.subproblem_manager = SubproblemManager(
             dimensions_cfg=self.config.dimensions,
@@ -153,19 +164,19 @@ class BundleChoice(HasComm, HasConfig):
             RuntimeError: If required managers are not set
         """
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
-            missing_managers = []
+            missing = []
             if self.data_manager is None:
-                missing_managers.append("DataManager")
+                missing.append("data (call bc.data.load_and_scatter(input_data))")
             if self.feature_manager is None:
-                missing_managers.append("FeatureManager")
+                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
             if self.subproblem_manager is None:
-                missing_managers.append("SubproblemManager")
+                missing.append("subproblem (call bc.subproblems.load())")
             if self.config is None or self.config.row_generation is None:
-                missing_managers.append("RowGenerationConfig")
+                missing.append("row_generation config (add 'row_generation' to your config)")
             raise RuntimeError(
-                "DataManager, FeatureManager, SubproblemManager, and RowGenerationConfig must be set in config "
-                "before initializing row generation manager. Missing managers: "
-                f"{', '.join(missing_managers)}"
+                "Cannot initialize row generation solver - missing setup:\n  " +
+                "\n  ".join(missing) +
+                "\n\nRun bc.validate_setup('row_generation') to check your configuration."
             )
 
         self.row_generation_manager = RowGenerationSolver(
@@ -194,19 +205,19 @@ class BundleChoice(HasComm, HasConfig):
             RuntimeError: If required managers are not set
         """
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
-            missing_managers = []
+            missing = []
             if self.data_manager is None:
-                missing_managers.append("DataManager")
+                missing.append("data (call bc.data.load_and_scatter(input_data))")
             if self.feature_manager is None:
-                missing_managers.append("FeatureManager")
+                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
             if self.subproblem_manager is None:
-                missing_managers.append("SubproblemManager")
+                missing.append("subproblem (call bc.subproblems.load())")
             if self.config is None or self.config.ellipsoid is None:
-                missing_managers.append("EllipsoidConfig")
+                missing.append("ellipsoid config (add 'ellipsoid' to your config)")
             raise RuntimeError(
-                "DataManager, FeatureManager, SubproblemManager, and EllipsoidConfig must be set in config "
-                "before initializing ellipsoid manager. Missing managers: "
-                f"{', '.join(missing_managers)}"
+                "Cannot initialize ellipsoid solver - missing setup:\n  " +
+                "\n  ".join(missing) +
+                "\n\nRun bc.validate_setup('ellipsoid') to check your configuration."
             )
 
         self.ellipsoid_manager = EllipsoidSolver(
@@ -249,9 +260,11 @@ class BundleChoice(HasComm, HasConfig):
             )
 
         self.inequalities_manager = InequalitiesSolver(
+            comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
+            subproblem_manager=None
         )
         return self.inequalities_manager
 
@@ -265,10 +278,6 @@ class BundleChoice(HasComm, HasConfig):
             DataManager: The data manager instance
         """
         if self.data_manager is None:
-            # if self.comm_manager.is_root():
-            #     print("*"*100)
-            #     print("Initializing data manager")
-            #     print("*"*100)
             self._try_init_data_manager()
 
         return self.data_manager
@@ -282,10 +291,6 @@ class BundleChoice(HasComm, HasConfig):
             FeatureManager: The feature manager instance
         """
         if self.feature_manager is None:
-            # if self.comm_manager.is_root():
-            #     print("*"*100)
-            #     print("Initializing feature manager")
-            #     print("*"*100)
             self._try_init_feature_manager()
         return self.feature_manager
 
@@ -298,10 +303,6 @@ class BundleChoice(HasComm, HasConfig):
             SubproblemManager: The subproblem manager instance
         """
         if self.subproblem_manager is None:
-            # if self.comm_manager.is_root():
-            #     print("*"*100)
-            #     print("Initializing subproblem manager")
-            #     print("*"*100)
             self._try_init_subproblem_manager()
         return self.subproblem_manager
 
@@ -340,6 +341,130 @@ class BundleChoice(HasComm, HasConfig):
         if self.inequalities_manager is None:
             self._try_init_inequalities_manager()
         return self.inequalities_manager
+    
+    def validate_setup(self, for_method='row_generation'):
+        """
+        Validate that all components are initialized for the specified estimation method.
+        
+        Args:
+            for_method: Estimation method to validate for ('row_generation', 'ellipsoid', or 'inequalities')
+        
+        Raises:
+            RuntimeError: If setup is incomplete with helpful guidance
+        
+        Returns:
+            bool: True if setup is valid
+        """
+        missing = []
+        
+        if self.config is None:
+            missing.append("config (call bc.load_config(...))")
+        if self.data_manager is None:
+            missing.append("data (call bc.data.load_and_scatter(input_data))")
+        if self.feature_manager is None or self.feature_manager._features_oracle is None:
+            missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
+        if self.subproblem_manager is None and for_method in ['row_generation', 'ellipsoid']:
+            missing.append("subproblem (call bc.subproblems.load())")
+        
+        if for_method == 'row_generation' and (self.config is None or self.config.row_generation is None):
+            missing.append("row_generation config (add 'row_generation' to your config)")
+        elif for_method == 'ellipsoid' and (self.config is None or self.config.ellipsoid is None):
+            missing.append("ellipsoid config (add 'ellipsoid' to your config)")
+        
+        if missing:
+            raise RuntimeError(
+                f"Setup incomplete for {for_method}:\n  " +
+                "\n  ".join(f"- {m}" for m in missing)
+            )
+        
+        logger.info("✅ Setup validated for %s", for_method)
+        return True
+    
+    def generate_observations(self, theta_true):
+        """
+        Generate observed bundles from true parameters and reload data.
+        Handles the common workflow pattern automatically.
+        
+        Args:
+            theta_true: True parameter vector for generating observations
+        
+        Returns:
+            Observed bundles (rank 0 only, None on other ranks)
+        
+        Example:
+            >>> bc.data.load_and_scatter(input_data)
+            >>> bc.features.build_from_data()
+            >>> bc.generate_observations(theta_true)
+            >>> theta_hat = bc.row_generation.solve()
+        """
+        obs_bundles = self.subproblems.init_and_solve(theta_true)
+        
+        if self.is_root():
+            if self.data_manager.input_data is None:
+                raise RuntimeError("Cannot generate observations without input_data")
+            self.data_manager.input_data["obs_bundle"] = obs_bundles
+            self.data.load_and_scatter(self.data_manager.input_data)
+        else:
+            self.data.load_and_scatter(None)
+        
+        # Rebuild features if using auto-generated oracle
+        if self.feature_manager._features_oracle is not None:
+            # Check if oracle was auto-generated (has specific structure)
+            oracle_code = self.feature_manager._features_oracle.__code__
+            if 'features_oracle' in oracle_code.co_name:
+                self.features.build_from_data()
+        
+        return obs_bundles
+    
+    @contextmanager
+    def temp_config(self, **updates):
+        """
+        Temporarily modify configuration.
+        
+        Args:
+            **updates: Configuration updates to apply temporarily
+        
+        Example:
+            >>> with bc.temp_config(row_generation={'max_iters': 5}):
+            ...     quick_theta = bc.row_generation.solve()
+            >>> # Config restored to original
+            >>> final_theta = bc.row_generation.solve()
+        """
+        import copy
+        original_config = copy.deepcopy(self.config)
+        try:
+            self.load_config(updates)
+            yield self
+        finally:
+            self.config = original_config
+    
+    def quick_setup(self, config, input_data, features_oracle=None):
+        """
+        Quick setup for common workflow.
+        Combines load_config, load_and_scatter, features, and subproblems.load().
+        
+        Args:
+            config: Configuration dict or YAML path
+            input_data: Input data dictionary
+            features_oracle: Feature function or None to auto-generate
+        
+        Returns:
+            self for method chaining
+        
+        Example:
+            >>> bc = BundleChoice().quick_setup(cfg, data, my_features)
+            >>> theta = bc.row_generation.solve()
+        """
+        self.load_config(config)
+        self.data.load_and_scatter(input_data)
+        
+        if features_oracle is not None:
+            self.features.set_oracle(features_oracle)
+        else:
+            self.features.build_from_data()
+        
+        self.subproblems.load()
+        return self
         
     def load_config(self, cfg):
         """
@@ -369,6 +494,9 @@ class BundleChoice(HasComm, HasConfig):
             self.config = new_config
         else:
             self.config.update_in_place(new_config)
+        
+        # Validate configuration
+        self.config.validate()
 
         # Build informative configuration summary
         logger.info("BundleChoice configured:")

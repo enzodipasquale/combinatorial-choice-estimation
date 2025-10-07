@@ -19,6 +19,9 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
         self.demand_oracle: Optional[BaseSubproblem] = None
+        self._solve_times = []
+        self._cache_enabled = False
+        self._result_cache = {}
 
     def load(self, subproblem: Optional[Any] = None) -> BaseSubproblem:
         """
@@ -36,7 +39,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if isinstance(subproblem, str):
             subproblem_cls = SUBPROBLEM_REGISTRY.get(subproblem)
             if subproblem_cls is None:
-                raise ValueError(f"Unknown subproblem: {subproblem}")
+                available = ', '.join(SUBPROBLEM_REGISTRY.keys())
+                raise ValueError(
+                    f"Unknown subproblem: '{subproblem}'\n"
+                    f"Available algorithms: {available}\n"
+                    f"Or provide a custom class inheriting from BaseSubproblem"
+                )
         elif callable(subproblem):
             subproblem_cls = subproblem
         else:
@@ -81,8 +89,25 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
-   
-        return self.demand_oracle.solve_all(theta, self.local_subproblems)
+        
+        # Check cache
+        if self._cache_enabled:
+            theta_key = theta.tobytes()
+            if theta_key in self._result_cache:
+                return self._result_cache[theta_key]
+        
+        # Solve with timing
+        import time
+        t0 = time.time()
+        result = self.demand_oracle.solve_all(theta, self.local_subproblems)
+        elapsed = time.time() - t0
+        self._solve_times.append(elapsed)
+        
+        # Cache result
+        if self._cache_enabled:
+            self._result_cache[theta_key] = result
+        
+        return result
 
     def init_and_solve(self, theta: Any, return_values: bool = False) -> Optional[Any]:
         """
@@ -151,6 +176,41 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         all_max_values = self.comm_manager.concatenate_at_root(max_values, root=0)
         all_best_bundles = self.comm_manager.concatenate_at_root(best_bundles, root=0)
         return all_best_bundles, all_max_values
+    
+    def get_stats(self):
+        """
+        Get solving statistics for profiling.
+        
+        Returns:
+            dict: Statistics including num_solves, total_time, mean_time, max_time
+        """
+        if not self._solve_times:
+            return {
+                'num_solves': 0,
+                'total_time': 0.0,
+                'mean_time': 0.0,
+                'max_time': 0.0,
+            }
+        
+        return {
+            'num_solves': len(self._solve_times),
+            'total_time': sum(self._solve_times),
+            'mean_time': np.mean(self._solve_times),
+            'max_time': max(self._solve_times),
+        }
+    
+    def enable_cache(self):
+        """Enable result caching for repeated solves (useful for sensitivity analysis)."""
+        self._cache_enabled = True
+    
+    def disable_cache(self):
+        """Disable result caching and clear cache."""
+        self._cache_enabled = False
+        self._result_cache.clear()
+    
+    def clear_stats(self):
+        """Clear solve time statistics."""
+        self._solve_times.clear()
 
 
 

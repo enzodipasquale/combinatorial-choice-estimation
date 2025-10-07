@@ -17,11 +17,14 @@ from .core import BundleChoice
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .config import BundleChoiceConfig, DimensionsConfig
+from .config_profiles import load_profile, list_profiles
 
 __all__ = [
     'BundleChoice',
     'DataManager', 
     'FeatureManager',
     'BundleChoiceConfig',
-    'DimensionsConfig'
+    'DimensionsConfig',
+    'load_profile',
+    'list_profiles'
 ]
