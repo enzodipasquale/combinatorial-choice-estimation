@@ -142,12 +142,15 @@ class EllipsoidSolver(BaseEstimationSolver):
                 best_idx = np.argmin(vals)
                 best_theta = np.array(centers)[best_idx]
                 logger.info(f"Best objective: {vals[best_idx]:.4f} at iteration {best_idx+1}")
-                return best_theta
             else:
                 # All iterations were constraint violations
-                return self.theta_iter
+                best_theta = self.theta_iter
         else:
-            return self.comm_manager.broadcast_from_root(None, root=0)
+            best_theta = None
+        
+        # Broadcast result to all ranks
+        best_theta = self.comm_manager.broadcast_from_root(best_theta, root=0)
+        return best_theta
 
     def _initialize_ellipsoid(self):
         """Initialize the ellipsoid with starting parameters and matrix."""

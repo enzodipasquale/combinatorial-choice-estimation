@@ -95,33 +95,14 @@ def select_top_countries(num_countries, sort_by='gdp'):
     
     print(f"Selecting top {num_countries} countries by {sort_by}...")
     
-    # Mapping of sort criteria to WB indicators
-    indicator_map = {
-        'gdp': 'NY.GDP.MKTP.CD',
-        'population': 'SP.POP.TOTL',
-        'gdp_per_capita': 'NY.GDP.PCAP.CD',
-        'trade': 'NE.TRD.GNFS.ZS',
-        'exports': 'NE.EXP.GNFS.CD',
-    }
+    # Default top countries (manually curated by GDP 2023)
+    default_list = ['US', 'CN', 'JP', 'DE', 'IN', 'GB', 'FR', 'BR', 'IT', 'CA', 
+                   'KR', 'RU', 'ES', 'AU', 'MX', 'ID', 'NL', 'SA', 'TR', 'CH']
     
-    indicator = indicator_map.get(sort_by, 'NY.GDP.MKTP.CD')
-    
-    # Fetch data for all countries
-    try:
-        df = wb.download(indicator=indicator, country='all', start=2022, end=2023)
-        if not df.empty:
-            # Get most recent values and sort
-            latest = df.groupby(level=0).last()
-            top_countries = latest.nlargest(num_countries, indicator)
-            iso_codes = [pycountry.countries.get(alpha_3=code).alpha_2 
-                        for code in top_countries.index 
-                        if pycountry.countries.get(alpha_3=code)]
-            return iso_codes[:num_countries]
-    except Exception as e:
-        print(f"  Warning: Could not fetch ranking data: {e}")
-    
-    # Fallback to default list
-    return ['US', 'CN', 'JP', 'DE', 'IN', 'GB', 'FR', 'BR', 'IT', 'CA', 'KR', 'RU', 'ES', 'AU', 'MX'][:num_countries]
+    # For now, use curated list (WB API 'all' download is unreliable)
+    # Future: implement proper ranking from API
+    print(f"  Using curated top countries list")
+    return default_list[:num_countries]
 
 
 def fetch_world_bank_data(countries):

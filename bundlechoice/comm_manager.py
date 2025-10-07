@@ -11,6 +11,15 @@ from mpi4py import MPI
 from functools import wraps
 
 
+def _get_mpi_type(dtype: np.dtype) -> MPI.Datatype:
+    """Map numpy dtype to MPI datatype."""
+    type_map = {
+        np.float64: MPI.DOUBLE, np.float32: MPI.FLOAT,
+        np.int32: MPI.INT, np.int64: MPI.LONG, np.bool_: MPI.BOOL
+    }
+    return type_map.get(np.dtype(dtype).type, MPI.DOUBLE)
+
+
 def _mpi_error_handler(func: Callable) -> Callable:
     """
     Decorator to handle MPI errors by aborting all processes to prevent deadlock.
@@ -175,4 +184,42 @@ class CommManager:
         """
         Synchronize all ranks at a barrier.
         """
-        self.comm.Barrier() 
+        self.comm.Barrier()
+    
+    # --- High-performance numpy array methods (use MPI buffers, not pickle) ---
+    
+    @_mpi_error_handler
+    def broadcast_array(self, array: np.ndarray, root: int = 0) -> np.ndarray:
+        """
+        Broadcast numpy array using MPI buffers (faster than pickle for large arrays).
+        Array must exist on all ranks with same shape/dtype.
+        """
+        self.comm.Bcast(array, root=root)
+        return array
+    
+    @_mpi_error_handler
+    def concatenate_array_at_root(self, local_array: np.ndarray, root: int = 0) -> Optional[np.ndarray]:
+        """
+        Gather and concatenate numpy arrays from all ranks at root using MPI buffers.
+        Concatenates along axis 0. Returns result at root, None elsewhere.
+        """
+        # Flatten, gather metadata
+        local_flat = local_array.ravel()
+        all_sizes = self.comm.gather(local_flat.size, root=root)
+        
+        if not self.is_root():
+            self.comm.Gatherv(local_flat, None, root=root)
+            return None
+        
+        # Root: prepare buffer and gather
+        result_flat = np.empty(sum(all_sizes), dtype=local_array.dtype)
+        displacements = [0] + list(np.cumsum(all_sizes)[:-1])
+        self.comm.Gatherv(local_flat, [result_flat, all_sizes, displacements, _get_mpi_type(local_array.dtype)], root=root)
+        
+        # Reshape if needed
+        if local_array.ndim == 1:
+            return result_flat
+        
+        all_shapes = self.comm.gather(local_array.shape, root=root)
+        result_shape = (sum(s[0] for s in all_shapes),) + all_shapes[0][1:]
+        return result_flat.reshape(result_shape)
