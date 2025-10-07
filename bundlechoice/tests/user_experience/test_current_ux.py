@@ -87,6 +87,9 @@ def test_current_user_experience():
     # Step 4: User sets up feature computation
     bc.features.set_oracle(simple_features_oracle)
     
+    # Step 4.5: User sets up subproblem (this was missing!)
+    bc.subproblems.load("Greedy")
+    
     # Step 5: User runs estimation
     theta_hat = bc.row_generation.solve()
     
@@ -141,6 +144,7 @@ def test_user_experience_pain_points():
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
     bc.features.set_oracle(simple_features_oracle)
+    bc.subproblems.load("Greedy")  # Missing subproblem setup
     
     # Pain Point 2: User has to know which solver to call
     theta_hat = bc.ellipsoid.solve()
@@ -202,6 +206,7 @@ def test_config_update_experience():
     bc.load_config(cfg1)
     bc.data.load_and_scatter(input_data)
     bc.features.set_oracle(simple_features_oracle)
+    bc.subproblems.load("Greedy")  # Missing subproblem setup
     
     # User updates config
     bc.load_config(cfg2)
