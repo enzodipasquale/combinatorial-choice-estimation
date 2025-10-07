@@ -101,9 +101,6 @@ def test_ellipsoid_plain_single_item():
     # obj_at_theta_hat = demo.ellipsoid.objective(theta_hat)
     
     # if rank == 0:
-    #     print("theta_hat (ellipsoid result):\n", theta_hat)
-    #     print("theta_0:\n", theta_0)
-    #     print(f"Time taken: {toc - tic} seconds")
     #     assert theta_hat.shape == (num_features,)
     #     assert not np.any(np.isnan(theta_hat))
     #     # Additional assertions for ellipsoid method
@@ -112,5 +109,3 @@ def test_ellipsoid_plain_single_item():
     #     assert np.any(theta_hat != 0)
     #     assert np.all(np.abs(theta_hat) < 100)  # Reasonable bounds
         
-    #     print("obj_at_theta_0", obj_at_theta_0)
-    #     print("obj_at_theta_hat", obj_at_theta_hat) 

@@ -93,8 +93,6 @@ def test_greedy_vs_bruteforce():
             brute_bundles, brute_vals = result
             print(f"Greedy time: {t1-t0:.3f}s | Brute force: {t2-t1:.3f}s | Speedup: {(t2-t1)/(t1-t0):.1f}x")
             # Print bundle sizes for greedy and brute force
-            # print("Greedy bundle sizes:", [int(np.sum(bundle)) for bundle in greedy_bundles])
-            # print("Brute force bundle sizes:", [int(np.sum(bundle)) for bundle in brute_bundles])
             assert np.array_equal(greedy_bundles, brute_bundles), f"Mismatch for theta_0 {idx+1}"
             print(f"✅ Test {idx+1} passed: Greedy and brute force results match")
         else:
