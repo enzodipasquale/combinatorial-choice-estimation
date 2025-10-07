@@ -1,57 +1,50 @@
 # Combinatorial Discrete Choice Model Estimation
 
-A comprehensive implementation of parametric estimation methods for combinatorial discrete choice models. This repository provides efficient estimation algorithms using user-provided oracles and advanced optimization techniques, with full support for parallel computing using MPI.
+Parametric estimation for combinatorial discrete choice models using row generation and ellipsoid methods. Supports MPI parallelization and includes 8 optimization algorithms for solving bundle choice subproblems.
 
 ---
 
 ## Overview
 
-The estimation procedure requires two user-provided oracles (functions or class methods):
+The estimation procedure needs two oracles:
 
-- **Features Oracle:** A user-defined function or class method that computes the feature vector for each bundle.
-- **Demand Oracle:** A user-defined function or class method that computes the demanded bundle at candidate parameter values.
+**Features Oracle:** Computes feature vectors for bundles. Either write your own function or use `build_from_data()` to auto-generate from modular/quadratic data structures.
 
-The demand oracle supports integration with **Mixed Integer Programming (MIP) solvers** for solving complex subproblems. The repository includes a comprehensive library of built-in subproblem solvers:
+**Demand Oracle:** Solves the bundle optimization subproblem. Use one of 8 built-in algorithms or write a custom solver by inheriting from `BaseSubproblem`.
 
-- **Greedy algorithms** - Fast approximate solutions for various problem types
-- **Quadratic supermodular optimization** - Network flow and Lovász extension methods
-- **Linear knapsack** - Standard knapsack problem solver
-- **Plain single item** - Basic single-item choice optimization
-- **Unconstrained supermodular optimization** - Specialized algorithms for supermodular functions
+**Built-in algorithms:**
+- `Greedy`, `OptimizedGreedy`, `GreedyJIT` - greedy heuristics with vectorization
+- `QuadSupermodularNetwork`, `QuadSupermodularLovasz` - min-cut and Lovász extension for supermodular functions
+- `LinearKnapsack`, `QuadKnapsack` - knapsack variants
+- `PlainSingleItem` - single-item choice
 
 ---
 
 ## Implementation Details
 
-### Estimation Methods
+**Estimation methods:**
+- Row generation (uses Gurobi for master problem)
+- Ellipsoid method
 
-- **Row Generation Method** - Fully implemented and tested with parallel subproblem solving
-- **Ellipsoid Method** - Complete implementation with comprehensive test coverage
-
-### Core Features
-
-- **Parallel Computing** - Full MPI support using `mpi4py` for High-Performance Computing (HPC) systems
-- **Distributed Data Handling** - Efficient data distribution across MPI ranks
-- **Gurobi Integration** - Seamless integration with Gurobi for MIP solving
-- **Modular Architecture** - Clean separation of concerns with extensible subproblem registry
-- **Comprehensive Testing** - Full test suite covering all estimation methods and subproblems
+**Key features:**
+- MPI parallelization with `mpi4py`
+- Distributed data handling across ranks
+- Extensible subproblem registry
+- Full test suite
 
 ---
 
 ## Current Status
 
-✅ **Fully Implemented and Tested:**
-- Row-generation estimation method with parallel subproblem solving
-- Ellipsoid method for estimation with full test coverage
-- Complete library of subproblem solvers
-- MPI-based parallel computing infrastructure
-- User-defined demand and features oracles integration
-- Comprehensive testing framework
+**Working:**
+- Row generation and ellipsoid estimation methods
+- 8 subproblem algorithms with MPI support
+- Auto-generated and custom feature oracles
+- Full test coverage
 
-🚧 **Under Development:**
-- Additional optimization algorithms
-- Enhanced documentation and usage examples
-- Performance benchmarking and optimization
+**In progress:**
+- Performance benchmarking
+- Documentation improvements
 
 ---
 
@@ -68,16 +61,49 @@ This will:
 - Install all required dependencies
 - Set up MPI environment for parallel computing
 
+---
+
+## Quick Start
+
+```python
+from bundlechoice import BundleChoice
+import numpy as np
+
+# Create and configure
+bc = BundleChoice()
+bc.load_config({
+    "dimensions": {"num_agents": 100, "num_items": 50, "num_features": 10, "num_simuls": 1},
+    "subproblem": {"name": "Greedy"},
+    "row_generation": {"max_iters": 50}
+})
+
+# Load data (on rank 0)
+bc.data.load_and_scatter(input_data)
+
+# Set up features - either auto-generate:
+bc.features.build_from_data()
+
+# Or define custom:
+def my_features(agent_id, bundle, data):
+    return data["agent_data"]["features"][agent_id] @ bundle
+bc.features.set_oracle(my_features)
+
+# Estimate parameters
+theta_hat = bc.row_generation.solve()
+```
+
+Run with MPI: `mpirun -n 10 python your_script.py`
+
 
 
 ## Contributing
 
-Contributions are welcome! Please open issues or submit pull requests. The project follows these guidelines:
+Contributions welcome. When contributing:
 
-- All new code should include comprehensive tests
-- MPI compatibility is required for core functionality
-- Follow the existing code structure and patterns
-- Use descriptive attribute names over abbreviations
+- Include tests for new code
+- Maintain MPI compatibility for core functionality
+- Follow existing patterns
+- Use descriptive names (no abbreviations)
 
 ---
 
