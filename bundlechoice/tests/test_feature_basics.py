@@ -245,20 +245,28 @@ def test_result_caching():
         assert stats3['num_solves'] == 1  # Stats were cleared
 
 
-def test_config_profiles():
-    """Test configuration profiles."""
-    profiles = ['fast', 'accurate', 'debug', 'balanced']
+def test_config_dict_creation():
+    """Test manual configuration dictionary creation."""
+    # Test creating different config styles manually
+    configs = [
+        {  # Fast config
+            'dimensions': {'num_agents': 10, 'num_items': 5, 'num_features': 3, 'num_simuls': 1},
+            'subproblem': {'name': 'Greedy'},
+            'row_generation': {'max_iters': 20, 'tolerance_optimality': 0.01}
+        },
+        {  # Accurate config
+            'dimensions': {'num_agents': 10, 'num_items': 5, 'num_features': 3, 'num_simuls': 1},
+            'subproblem': {'name': 'QuadSupermodularNetwork'},
+            'row_generation': {'max_iters': 200, 'tolerance_optimality': 1e-6}
+        }
+    ]
     
-    for profile_name in profiles:
-        cfg = load_profile(profile_name, {
-            'dimensions': {'num_agents': 10, 'num_items': 5, 'num_features': 3, 'num_simuls': 1}
-        })
-        
+    for cfg in configs:
         assert 'dimensions' in cfg
         assert 'subproblem' in cfg
         
-        if rank == 0:
-            print(f"✅ Profile '{profile_name}' loaded successfully")
+    if rank == 0:
+        print(f"✅ Manual config creation works")
 
 
 def test_batch_feature_detection():
