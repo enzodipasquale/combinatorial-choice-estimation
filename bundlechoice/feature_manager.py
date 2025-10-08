@@ -197,15 +197,13 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             else:
                 has_modular_item = None
                 has_quadratic_item = None
+            flags = (has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item)
         else:
-            has_modular_agent = None
-            has_quadratic_agent = None
-            has_modular_item = None
-            has_quadratic_item = None
-        has_modular_agent = self.comm_manager.broadcast_from_root(has_modular_agent, root=0)
-        has_quadratic_agent = self.comm_manager.broadcast_from_root(has_quadratic_agent, root=0)
-        has_modular_item = self.comm_manager.broadcast_from_root(has_modular_item, root=0)
-        has_quadratic_item = self.comm_manager.broadcast_from_root(has_quadratic_item, root=0)
+            flags = None
+        
+        # Single broadcast for all flags (4x faster than 4 separate broadcasts)
+        flags = self.comm_manager.broadcast_from_root(flags, root=0)
+        has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item = flags
 
         code_lines = ["def features_oracle(agent_id, bundle, data):", "    feats = []"]
         if has_modular_agent:
