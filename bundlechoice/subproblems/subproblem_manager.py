@@ -1,7 +1,8 @@
-from typing import Any, cast, Optional
+from typing import Any, cast, Optional, Dict, List, Tuple, Union
 from .subproblem_registry import SUBPROBLEM_REGISTRY
 from .base import BaseSubproblem
 import numpy as np
+from numpy.typing import NDArray
 from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
@@ -23,7 +24,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self._cache_enabled = False
         self._result_cache = {}
 
-    def load(self, subproblem: Optional[Any] = None) -> BaseSubproblem:
+    def load(self, subproblem: Optional[Union[str, type]] = None) -> BaseSubproblem:
         """
         Load and instantiate the subproblem class from the registry or directly.
 
@@ -41,9 +42,11 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             if subproblem_cls is None:
                 available = ', '.join(SUBPROBLEM_REGISTRY.keys())
                 raise ValueError(
-                    f"Unknown subproblem: '{subproblem}'\n"
-                    f"Available algorithms: {available}\n"
-                    f"Or provide a custom class inheriting from BaseSubproblem"
+                    f"Unknown subproblem algorithm: '{subproblem}'\n\n"
+                    f"Available algorithms:\n" +
+                    "\n".join(f"  - {name}" for name in SUBPROBLEM_REGISTRY.keys()) +
+                    "\n\nTo use: bc.subproblems.load('{list(SUBPROBLEM_REGISTRY.keys())[0]}')\n"
+                    "Or provide a custom class inheriting from BaseSubproblem."
                 )
         elif callable(subproblem):
             subproblem_cls = subproblem
@@ -58,7 +61,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.demand_oracle = cast(BaseSubproblem, subproblem_instance)
         return self.demand_oracle
 
-    def initialize_local(self) -> Any:
+    def initialize_local(self) -> Optional[List[Any]]:
         """
         Initialize local subproblems for all local agents (serial) or all at once (batch).
 
@@ -74,14 +77,14 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         return self.local_subproblems
 
 
-    def solve_local(self, theta: Any) -> Any:
+    def solve_local(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Solve all local subproblems for the current rank.
 
         Args:
-            theta (Any): Parameter vector for subproblem solving.
+            theta: Parameter vector for subproblem solving.
         Returns:
-            list or batch result: List of results (serial) or batch result (batch).
+            Array of bundle solutions for local agents.
         Raises:
             RuntimeError: If subproblem or local subproblems are not initialized.
         """
@@ -109,14 +112,16 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         
         return result
 
-    def init_and_solve(self, theta: Any, return_values: bool = False) -> Optional[Any]:
+    def init_and_solve(self, theta: NDArray[np.float64], return_values: bool = False) -> Optional[Union[NDArray[np.float64], Tuple[NDArray[np.float64], NDArray[np.float64]]]]:
         """
         Initialize and solve local subproblems, then gather results at rank 0.
 
         Args:
-            theta (Any): Parameters for subproblem solving.
+            theta: Parameters for subproblem solving.
+            return_values: If True, also return utility values.
         Returns:
-            np.ndarray or None: Gathered results at rank 0, None at other ranks.
+            At rank 0: bundles array, or (bundles, utilities) tuple if return_values=True.
+            At other ranks: None.
         Raises:
             RuntimeError: If MPI communicator is not set.
         """
@@ -138,16 +143,17 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         else:
             return bundles
 
-    def brute_force(self, theta: Any) -> Optional[Any]:
+    def brute_force(self, theta: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
         """
         Find the maximum bundle value for each local agent using brute force.
         Iterates over all possible bundles (2^num_items combinations) for each local agent.
         Gathers results at rank 0.
 
         Args:
-            theta (Any): Parameter vector for computing bundle values.
+            theta: Parameter vector for computing bundle values.
         Returns:
-            tuple or None: At rank 0, tuple (max_values, best_bundles). At other ranks, (None, None).
+            At rank 0: tuple (best_bundles, max_values).
+            At other ranks: (None, None).
         Raises:
             RuntimeError: If num_items is not set.
         """
@@ -183,12 +189,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         all_best_bundles = self.comm_manager.concatenate_array_at_root_fast(best_bundles, root=0)
         return all_best_bundles, all_max_values
     
-    def get_stats(self):
+    def get_stats(self) -> Dict[str, float]:
         """
         Get solving statistics for profiling.
         
         Returns:
-            dict: Statistics including num_solves, total_time, mean_time, max_time
+            Dictionary with statistics including num_solves, total_time, mean_time, max_time.
         """
         if not self._solve_times:
             return {

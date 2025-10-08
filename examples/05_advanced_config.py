@@ -3,7 +3,7 @@
 Example: Advanced configuration patterns.
 
 This demonstrates:
-- Config profiles for quick setup
+- Quick configuration setup
 - Warm start for iterative solving
 - Result caching for sensitivity analysis
 - Multiple estimation methods
@@ -14,7 +14,6 @@ Run with: mpirun -n 10 python examples/05_advanced_config.py
 import numpy as np
 from mpi4py import MPI
 from bundlechoice import BundleChoice
-from bundlechoice.config_profiles import load_profile, list_profiles
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -22,19 +21,25 @@ rank = comm.Get_rank()
 if rank == 0:
     print("=== Advanced Configuration Example ===\n")
 
-# ===== 1. CONFIG PROFILES =====
+# ===== 1. QUICK CONFIGURATION =====
 if rank == 0:
-    print("1. Available config profiles:", list_profiles())
+    print("1. Setting up with fast configuration...")
 
-# Load profile with custom dimensions
-cfg = load_profile('fast', {
+# Create config for quick solving
+cfg = {
     'dimensions': {
         'num_agents': 100,
         'num_items': 20,
         'num_features': 5,
         'num_simuls': 1
+    },
+    'subproblem': {'name': 'Greedy'},
+    'row_generation': {
+        'max_iters': 20,
+        'tolerance_optimality': 0.01,
+        'gurobi_settings': {'OutputFlag': 0}
     }
-})
+}
 
 # Setup
 bc = BundleChoice()

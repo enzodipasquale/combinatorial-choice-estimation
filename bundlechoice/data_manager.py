@@ -194,7 +194,13 @@ class DataManager(HasDimensions, HasComm):
                 else:
                     raise ValueError(f"errors has {errors.ndim} dimensions, expected 2 or 3")
             else:
-                raise ValueError("errors must be set")
+                raise ValueError(
+                    "errors must be provided in input_data.\n"
+                    "Expected: input_data = {\n"
+                    "    'errors': np.ndarray with shape (num_agents, num_items) or (num_simuls, num_agents, num_items),\n"
+                    "    ...\n"
+                    "}"
+                )
                 
             obs_bundle = input_data.get("obs_bundle")
             if obs_bundle is not None:
@@ -254,74 +260,3 @@ class DataManager(HasDimensions, HasComm):
             if num_features != total_features:
                 raise ValueError(f"num_features ({num_features}) does not match the sum of all feature dimensions ({total_features})")
             return True
-
-
-
-
-
- # def scatter_data_single_error(self, seed: Optional[int] = 42) -> None:
-    #     """
-    #     Distribute input data across MPI ranks with a single random error per agent.
-    #     Similar to scatter_data but picks one random error realization per agent.
-    #     Sets up local and global data attributes for each rank.
-
-    #     Args:
-    #         seed (int, optional): Seed for random error selection. Defaults to 42.
-    #     Raises:
-    #         ValueError: If dimensions_cfg is not set, or if input_data is not set on rank 0.
-    #         RuntimeError: If no data chunk is received after scatter.
-    #     """
-    #     self._validate_input_data(self.input_data)
-    
-
-    #     if self.rank == 0:
-    #         agent_data = self.input_data.get("agent_data")
-    #         error_s_i_j = self.input_data.get("errors")
-            
-    #         # Pick random error realization for each agent
-    #         if error_s_i_j is not None and self.num_simuls is not None and self.num_agents is not None:
-    #             np.random.seed(seed)  # For reproducibility
-    #             random_simul_indices = np.random.randint(0, self.num_simuls, size=self.num_agents)
-    #             error_i_j = error_s_i_j[random_simul_indices, np.arange(self.num_agents), :]
-    #         else:
-    #             error_i_j = None
-                
-    #         obs_bundle = self.input_data.get("obs_bundle")
-    #         agent_data_chunks = self._create_agent_chunks(agent_data, error_i_j, obs_bundle)
-    #         item_data = self.input_data.get("item_data")
-    #     else:
-    #         agent_data_chunks = None
-    #         item_data = None
-
-    #     local_chunk = self.comm.scatter(agent_data_chunks, root=0)
-    #     item_data = self.comm.bcast(item_data, root=0)
-     
-    #     self.local_data = self._build_local_data(local_chunk, item_data)
-    #     self.num_local_agents = local_chunk["num_local_agents"]
-
-    # def _create_agent_chunks(self, 
-    #                             agent_data: Optional[Dict], 
-    #                             errors: Optional[np.ndarray], 
-    #                             obs_bundle: Optional[np.ndarray] = None) -> Optional[List[Dict]]:
-    #     """
-    #     Create chunks for agent data distribution.
-
-    #     Args:
-    #         agent_data (dict or None): Agent data dictionary.
-    #         errors (np.ndarray or None): Error array.
-    #         obs_bundle (np.ndarray or None): Observed bundles.
-    #     Returns:
-    #         list of dict: List of data chunks for each MPI rank.
-    #     """
-    #     all_indices = np.arange(self.num_agents)
-    #     chunks = np.array_split(all_indices, self.comm_size)
-        
-    #     return [
-    #         {
-    #             "num_local_agents": len(indices),
-    #             "agent_data": {k: v[indices] for k, v in agent_data.items()} if agent_data else None,
-    #             "errors": errors[indices, :],
-    #             "obs_bundle": obs_bundle[indices, :] if obs_bundle is not None else None,
-    #         }
-    #         for indices in chunks
-    #     ]
