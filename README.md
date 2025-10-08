@@ -1,119 +1,133 @@
-# Combinatorial Discrete Choice Model Estimation
+# Combinatorial Choice Estimation
 
-Parametric estimation for combinatorial discrete choice models using row generation and ellipsoid methods. Supports MPI parallelization and includes 8 optimization algorithms for solving bundle choice subproblems.
+Toolkit for estimating discrete choice models where agents choose bundles of items (export destinations, product portfolios, spectrum licenses, etc.). Uses row generation or ellipsoid methods with MPI parallelization.
 
----
+## What it does
 
-## Overview
+You have agents making combinatorial choices. You observe their choices and want to estimate preference parameters. This estimates them.
 
-The estimation procedure needs two oracles:
+**Two things you provide:**
+1. **How to compute features** from bundles (or use auto-generated features)
+2. **How to solve the optimization** (use built-in algorithms or write your own)
 
-**Features Oracle:** Computes feature vectors for bundles. Either write your own function or use `build_from_data()` to auto-generate from modular/quadratic data structures.
-
-**Demand Oracle:** Solves the bundle optimization subproblem. Use one of 8 built-in algorithms or write a custom solver by inheriting from `BaseSubproblem`.
-
-**Built-in algorithms:**
-- `Greedy`, `OptimizedGreedy`, `GreedyJIT` - greedy heuristics with vectorization
-- `QuadSupermodularNetwork`, `QuadSupermodularLovasz` - min-cut and Lovász extension for supermodular functions
-- `LinearKnapsack`, `QuadKnapsack` - knapsack variants
-- `PlainSingleItem` - single-item choice
-
----
-
-## Implementation Details
-
-**Estimation methods:**
-- Row generation (uses Gurobi for master problem)
-- Ellipsoid method
-
-**Key features:**
-- MPI parallelization with `mpi4py`
-- Distributed data handling across ranks
-- Extensible subproblem registry
-- Full test suite
-
----
-
-## Current Status
-
-**Working:**
-- Row generation and ellipsoid estimation methods
-- 8 subproblem algorithms with MPI support
-- Auto-generated and custom feature oracles
-- Full test coverage
-
-**In progress:**
-- Performance benchmarking
-- Documentation improvements
-
----
+**Built-in solvers:**
+- Greedy (3 variants: standard, optimized, JIT)  
+- Knapsack (linear, quadratic)
+- Supermodular (network flow, Lovász extension)
+- Single-item choice
 
 ## Installation
 
-To set up the environment and install all dependencies, run the provided setup script:
-
 ```bash
-./dev_setup.sh
+pip install -e .
 ```
 
-This will:
-- Create and activate a virtual environment (`.bundle/`)
-- Install all required dependencies
-- Set up MPI environment for parallel computing
+Requires Gurobi (for row generation) and MPI (for parallelization).
 
----
-
-## Quick Start
+## Usage
 
 ```python
 from bundlechoice import BundleChoice
-import numpy as np
 
-# Create and configure
 bc = BundleChoice()
 bc.load_config({
-    "dimensions": {"num_agents": 100, "num_items": 50, "num_features": 10, "num_simuls": 1},
+    "dimensions": {"num_agents": 100, "num_items": 20, "num_features": 5},
     "subproblem": {"name": "Greedy"},
     "row_generation": {"max_iters": 50}
 })
 
-# Load data (on rank 0)
+# Load data
 bc.data.load_and_scatter(input_data)
 
-# Set up features - either auto-generate:
+# Either auto-generate features:
 bc.features.build_from_data()
 
-# Or define custom:
+# Or provide custom feature function:
 def my_features(agent_id, bundle, data):
-    return data["agent_data"]["features"][agent_id] @ bundle
+    return data["agent_data"]["X"][agent_id] @ bundle
+
 bc.features.set_oracle(my_features)
 
-# Estimate parameters
-theta_hat = bc.row_generation.solve()
+# Estimate
+theta = bc.row_generation.solve()
 ```
 
-Run with MPI: `mpirun -n 10 python your_script.py`
+Run with MPI: `mpirun -n 10 python script.py`
 
+## Examples
 
+See `examples/` for:
+- Basic estimation (70 lines)
+- Custom features (90 lines)  
+- Custom optimization algorithm (100 lines)
+- MPI usage patterns
 
-## Contributing
+## Applications
 
-Contributions welcome. When contributing:
+Three real applications in `applications/`:
 
-- Include tests for new code
-- Maintain MPI compatibility for core functionality
-- Follow existing patterns
-- Use descriptive names (no abbreviations)
+**Gravity model (`gravity/`):** Export destination choice with real country data from World Bank API. Features include GDP, distance, trade costs, language similarity.
 
----
+**Spectrum auctions (`combinatorial_auction/`):** FCC spectrum license allocation using BTA data.
+
+**Firm exports (`firms_export/`):** Multi-destination export decisions from Stata firm data.
+
+## Customization
+
+### Custom features
+```python
+def features(agent_id, bundle, data):
+    # Your feature engineering
+    return feature_vector
+
+bc.features.set_oracle(features)
+```
+
+### Custom optimization
+```python
+from bundlechoice.subproblems.base import SerialSubproblemBase
+
+class MyOptimizer(SerialSubproblemBase):
+    def initialize(self, agent_id):
+        # Setup
+        return problem_state
+    
+    def solve(self, agent_id, theta, problem_state):
+        # Solve and return bundle
+        return optimal_bundle
+
+bc.subproblems.load(MyOptimizer)
+```
+
+## How it works
+
+**Row generation:** Master problem (Gurobi LP) + separation oracle (your optimization algorithm). Iteratively adds violated constraints until convergence.
+
+**Ellipsoid method:** Gradient-based parameter search. Slower but doesn't need Gurobi.
+
+**MPI parallelization:** Each rank handles subset of agents. Features and subproblems solved in parallel, results gathered at rank 0.
+
+## Debugging
+
+Check setup:
+```python
+bc.print_status()
+# Shows what's initialized, what's missing
+```
+
+## Tests
+
+```bash
+pytest bundlechoice/tests/
+```
+
+25+ tests covering all solvers and estimation methods.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
-
----
+MIT
 
 ## Contact
 
-Developed by Enzo Di Pasquale  
-GitHub: [enzodipasquale](https://github.com/enzodipasquale)
+Enzo Di Pasquale  
+[enzodipasquale](https://github.com/enzodipasquale)
