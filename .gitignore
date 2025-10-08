@@ -29,10 +29,6 @@ __pycache__/
 .cursorrules
 
 # Shell scripts (utility scripts)
-add_submodules.sh
-cleanup_mpi.sh
-run_tests_with_timeout.sh
-setup_private_submodules.sh
 timeout_wrapper.sh
 
 # Other

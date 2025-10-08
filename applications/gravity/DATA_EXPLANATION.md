@@ -1,3 +1,31 @@
+# Gravity Model: Complete Guide
+
+## Quick Start
+
+```bash
+# 1. Generate data (choose ONE):
+python generate_data.py --num_countries 50                    # Top 50 by GDP
+python generate_data.py --num_countries 100 --sort_by population  # Top 100 by pop
+python generate_data.py --countries US CN JP DE FR GB IT     # Custom list
+
+# 2. Add tariffs
+python fetch_tariffs.py
+
+# 3. Calibrate from real firm data
+python fetch_real_data.py
+
+# 4. Validate
+python validate_data.py
+
+# 5. Simulate 10K firms
+python simulate_simple.py --num_firms 10000
+
+# 6. Analyze flows
+python analyze_flows.py
+```
+
+---
+
 # Gravity Model Data Explanation
 
 ## What Data We Generate
