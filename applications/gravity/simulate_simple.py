@@ -177,9 +177,10 @@ def analyze_flows(bundles, home_countries, country_names):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--num_firms', type=int, default=10000)
-    parser.add_argument('--seed', type=int, default=123)
+    parser = argparse.ArgumentParser(description='Simulate and analyze export flows')
+    parser.add_argument('--num_firms', type=int, default=10000, help='Number of firms to simulate')
+    parser.add_argument('--seed', type=int, default=123, help='Random seed')
+    parser.add_argument('--analyze', action='store_true', help='Run flow analysis after simulation')
     args = parser.parse_args()
     
     print("="*60)
@@ -209,12 +210,28 @@ def main():
     bundles, bilateral = analyze_flows(bundles, home_countries, features.index.tolist())
     
     # Save
-    np.savez('datasets/simple_simulation.npz',
+    np.savez('datasets/simulated_choices.npz',
              bundles=bundles,
              home_countries=home_countries,
              bilateral_flows=bilateral,
-             country_names=features.index.tolist())
-    print(f"\n✓ Saved to datasets/simple_simulation.npz")
+             country_names=features.index.tolist(),
+             theta_true=theta,
+             num_firms=args.num_firms,
+             seed=args.seed)
+    
+    df = pd.DataFrame(bundles, columns=features.index.tolist())
+    df.insert(0, 'home_country', [features.index[i] for i in home_countries])
+    df.to_csv('datasets/simulated_choices.csv')
+    
+    print(f"\n✓ Saved to datasets/simulated_choices.npz and .csv")
+    
+    # Optional: run detailed flow analysis
+    if args.analyze:
+        print(f"\n{'='*60}")
+        print("RUNNING DETAILED FLOW ANALYSIS")
+        print(f"{'='*60}")
+        import subprocess
+        subprocess.run(['python', 'analyze_flows.py'])
 
 
 if __name__ == '__main__':
