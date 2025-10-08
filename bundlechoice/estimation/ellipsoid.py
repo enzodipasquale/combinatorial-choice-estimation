@@ -3,8 +3,9 @@ Ellipsoid method solver for modular bundle choice estimation (v2).
 This module implements the ellipsoid method for parameter estimation.
 """
 import numpy as np
+from numpy.typing import NDArray
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable, Dict, Any
 from .base import BaseEstimationSolver
 from bundlechoice.utils import get_logger
 
@@ -66,12 +67,17 @@ class EllipsoidSolver(BaseEstimationSolver):
         self.gamma_1 = (n**2 / (n**2 - 1))**(1/2)
         self.gamma_2 = self.gamma_1 * ((2 / (n + 1)))
 
-    def solve(self, callback=None) -> np.ndarray:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
         """
         Run the ellipsoid method to estimate model parameters.
 
         Args:
-            callback: Optional callback function called after each iteration with info dict
+            callback: Optional callback function called after each iteration.
+                     Signature: callback(info: dict) where info contains:
+                     - 'iteration': Current iteration number (int)
+                     - 'theta': Current parameter estimate (np.ndarray)
+                     - 'objective': Current objective value (float)
+                     - 'best_objective': Best objective found so far (float or None)
 
         Returns:
             np.ndarray: Estimated parameter vector.
@@ -157,7 +163,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
         return best_theta
 
-    def _initialize_ellipsoid(self):
+    def _initialize_ellipsoid(self) -> None:
         """Initialize the ellipsoid with starting parameters and matrix."""
         if self.theta_init is not None:
             self.theta_iter = self.theta_init.copy()
@@ -165,12 +171,12 @@ class EllipsoidSolver(BaseEstimationSolver):
             self.theta_iter = 0.1 * np.ones(self.n)
         self.B_iter = self.ellipsoid_cfg.initial_radius * np.eye(self.n)
 
-    def _update_ellipsoid(self, d: np.ndarray):
+    def _update_ellipsoid(self, d: NDArray[np.float64]) -> None:
         """
         Update the ellipsoid using the gradient.
         
         Args:
-            e: direction of update
+            d: Direction of update.
         """
         if self.is_root():
             b = (self.B_iter @ d) / np.sqrt(d.T @ self.B_iter @ d)

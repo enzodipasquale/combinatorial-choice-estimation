@@ -3,7 +3,8 @@ Base estimation solver for modular bundle choice estimation (v2).
 This module provides a base class with common functionality for different estimation algorithms.
 """
 import numpy as np
-from typing import Optional, Any, Tuple
+from typing import Optional, Tuple
+from numpy.typing import NDArray
 from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
 
@@ -88,7 +89,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         else:
             return None
 
-    def compute_obj_and_gradient(self, theta: np.ndarray) -> Optional[Tuple[float, np.ndarray]]:
+    def compute_obj_and_gradient(self, theta: NDArray[np.float64]) -> Tuple[Optional[float], Optional[NDArray[np.float64]]]:
         """
         Compute both objective function value and gradient efficiently.
         
@@ -99,7 +100,8 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             theta: Parameter vector
             
         Returns:
-            Tuple[float, np.ndarray] or None: (objective_value, gradient) (rank 0) or None (other ranks)
+            At rank 0: tuple (objective_value, gradient).
+            At other ranks: (None, None).
         """
         # Solve subproblem and compute features (expensive operation)
         B_local = self.subproblem_manager.solve_local(theta)
@@ -117,7 +119,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         else:
             return None, None
 
-    def objective(self, theta: np.ndarray) -> Optional[float]:
+    def objective(self, theta: NDArray[np.float64]) -> Optional[float]:
         """
         Compute the objective function value for given parameters.
         
@@ -128,7 +130,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             theta: Parameter vector
             
         Returns:
-            float or None: Objective function value (rank 0) or None (other ranks)
+            Objective function value (rank 0) or None (other ranks).
         """
         B_local = self.subproblem_manager.solve_local(theta)
         utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
@@ -137,7 +139,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
         else:
             return None
     
-    def obj_gradient(self, theta: np.ndarray) -> Optional[np.ndarray]:
+    def obj_gradient(self, theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
         """
         Compute the gradient of the objective function.
         
@@ -148,7 +150,7 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
             theta: Parameter vector
             
         Returns:
-            np.ndarray or None: Gradient vector (rank 0) or None (other ranks)
+            Gradient vector (rank 0) or None (other ranks).
         """
         B_local = self.subproblem_manager.solve_local(theta)
         agents_features = self.feature_manager.compute_gathered_features(B_local)
@@ -159,13 +161,13 @@ class BaseEstimationSolver(HasDimensions, HasData, HasComm):
 
 
 
-    def solve(self) -> np.ndarray:
+    def solve(self) -> NDArray[np.float64]:
         """
         Main solve method to be implemented by subclasses.
         
         This method should implement the specific estimation algorithm.
         
         Returns:
-            np.ndarray: Estimated parameter vector
+            Estimated parameter vector.
         """
         raise NotImplementedError("Subclasses must implement the solve method") 

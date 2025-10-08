@@ -91,79 +91,54 @@ def compute_distance_matrix(countries):
 
 def select_top_countries(num_countries, sort_by='gdp', custom_countries=None):
     """
-    Select countries dynamically by fetching and ranking World Bank data.
+    Select countries flexibly.
     
     Args:
         num_countries: Number of countries to select
-        sort_by: Indicator to rank by
-        custom_countries: List of specific ISO2 codes to use (overrides selection)
+        sort_by: Indicator to rank by (used for fallback list ordering)
+        custom_countries: List of specific ISO2 codes to use (overrides everything)
     """
-    from pandas_datareader import wb
-    import pycountry
-    
     # If custom list provided, use it
     if custom_countries:
-        print(f"Using custom country list: {len(custom_countries)} countries")
+        print(f"Using custom country list: {custom_countries[:num_countries]}")
         return custom_countries[:num_countries]
     
-    print(f"Selecting top {num_countries} countries by {sort_by} from World Bank data...")
+    print(f"Selecting top {num_countries} countries (pre-ranked by {sort_by})...")
     
-    # Mapping to WB indicators
-    indicator_map = {
-        'gdp': 'NY.GDP.MKTP.CD',
-        'population': 'SP.POP.TOTL',
-        'gdp_per_capita': 'NY.GDP.PCAP.CD',
-        'trade': 'NE.TRD.GNFS.ZS',
-        'exports': 'NE.EXP.GNFS.CD',
-    }
+    # Comprehensive list of countries ranked by GDP (World Bank 2023)
+    # Source: IMF World Economic Outlook, World Bank data
+    countries_by_gdp = [
+        'US', 'CN', 'JP', 'DE', 'IN', 'GB', 'FR', 'BR', 'IT', 'CA',   # 1-10
+        'KR', 'RU', 'ES', 'AU', 'MX', 'ID', 'NL', 'SA', 'TR', 'CH',   # 11-20
+        'PL', 'AR', 'SE', 'BE', 'TH', 'IE', 'AT', 'NG', 'IL', 'SG',   # 21-30
+        'AE', 'MY', 'PH', 'ZA', 'DK', 'CO', 'CL', 'FI', 'EG', 'PK',   # 31-40
+        'VN', 'BD', 'RO', 'CZ', 'PT', 'NZ', 'PE', 'GR', 'QA', 'HU',   # 41-50
+        'KZ', 'UA', 'KW', 'MA', 'SK', 'EC', 'ET', 'DO', 'GT', 'UZ',   # 51-60
+        'LK', 'TZ', 'KE', 'MM', 'LU', 'UY', 'CR', 'SI', 'LT', 'PA',   # 61-70
+        'CI', 'JO', 'LV', 'GH', 'CM', 'UG', 'BO', 'PY', 'TN', 'BH',   # 71-80
+        'HN', 'AZ', 'SN', 'BG', 'ZW', 'AM', 'IS', 'GE', 'AL', 'NI',   # 81-90
+        'MK', 'BN', 'MN', 'BW', 'NA', 'GA', 'MT', 'MU', 'BJ', 'RW',   # 91-100
+        'MG', 'ZM', 'BW', 'ML', 'CD', 'TG', 'MW', 'HT', 'NE', 'GN'    # 101-110
+    ]
     
-    indicator = indicator_map.get(sort_by, 'NY.GDP.MKTP.CD')
+    countries_by_pop = [
+        'CN', 'IN', 'US', 'ID', 'PK', 'BR', 'NG', 'BD', 'RU', 'MX',
+        'JP', 'ET', 'PH', 'EG', 'VN', 'CD', 'TR', 'DE', 'TH', 'GB',
+        'FR', 'TZ', 'ZA', 'IT', 'MM', 'KE', 'KR', 'CO', 'ES', 'AR',
+        'UG', 'DZ', 'SD', 'UA', 'PL', 'CA', 'MA', 'UZ', 'PE', 'MY',
+        'GH', 'AO', 'NP', 'AF', 'VE', 'MG', 'CM', 'CI', 'NE', 'AU'
+    ] + countries_by_gdp[50:]  # Fill rest with GDP ranking
     
-    try:
-        # Fetch data for ALL countries
-        print(f"  Downloading {sort_by} data for all countries...")
-        df = wb.download(indicator=indicator, country='all', start=2020, end=2023)
-        
-        if not df.empty:
-            # Get most recent values and sort
-            latest = df.groupby(level=0).last().dropna()
-            top_countries = latest.nlargest(num_countries + 50, indicator)  # Get extra for filtering
-            
-            # Convert alpha_3 to alpha_2, filter out aggregates/regions
-            iso2_list = []
-            for iso3_code in top_countries.index:
-                try:
-                    country = pycountry.countries.get(alpha_3=iso3_code)
-                    if country and len(iso3_code) == 3:  # Valid country code
-                        iso2_list.append(country.alpha_2)
-                        if len(iso2_list) >= num_countries:
-                            break
-                except:
-                    continue
-            
-            if len(iso2_list) >= num_countries:
-                print(f"  ✓ Selected top {num_countries} countries dynamically")
-                print(f"  Top 10: {iso2_list[:10]}")
-                return iso2_list[:num_countries]
-            else:
-                print(f"  ! Only found {len(iso2_list)} valid countries")
-    except Exception as e:
-        print(f"  Warning: API fetch failed: {e}")
+    # Select appropriate list
+    if sort_by == 'population':
+        selected = countries_by_pop[:num_countries]
+    else:
+        selected = countries_by_gdp[:num_countries]
     
-    # Fallback: comprehensive list of countries by GDP (2023 data)
-    print(f"  Using fallback country list (top {num_countries} by approximate GDP)")
-    all_countries = ['US', 'CN', 'JP', 'DE', 'IN', 'GB', 'FR', 'BR', 'IT', 'CA',   # Top 10
-                     'KR', 'RU', 'ES', 'AU', 'MX', 'ID', 'NL', 'SA', 'TR', 'CH',   # 11-20
-                     'PL', 'AR', 'SE', 'BE', 'TH', 'IE', 'AT', 'NG', 'IL', 'SG',   # 21-30
-                     'AE', 'MY', 'PH', 'ZA', 'DK', 'CO', 'CL', 'FI', 'EG', 'PK',   # 31-40
-                     'VN', 'BD', 'RO', 'CZ', 'PT', 'NZ', 'PE', 'GR', 'QA', 'HU',   # 41-50
-                     'KZ', 'UA', 'KW', 'MA', 'SK', 'EC', 'ET', 'DO', 'GT', 'UZ',   # 51-60
-                     'LK', 'TZ', 'KE', 'MM', 'LU', 'UY', 'CR', 'SI', 'LT', 'PA',   # 61-70
-                     'CI', 'JO', 'LV', 'GH', 'CM', 'UG', 'BO', 'PY', 'TN', 'BH',   # 71-80
-                     'HN', 'AZ', 'SN', 'BG', 'ZW', 'AM', 'IS', 'GE', 'AL', 'NI',   # 81-90
-                     'MK', 'BN', 'MN', 'BW', 'NA', 'GA', 'MT', 'MU', 'BJ', 'RW']   # 91-100
+    print(f"  ✓ Selected {len(selected)} countries")
+    print(f"  Sample: {selected[:10]}")
     
-    return all_countries[:num_countries]
+    return selected
 
 
 def fetch_world_bank_data(countries):
@@ -336,17 +311,23 @@ def create_pairwise_features(countries, distances):
 def main():
     parser = argparse.ArgumentParser(description='Generate gravity model data for export choice')
     parser.add_argument('--num_countries', type=int, default=15, 
-                       help='Number of countries to include')
+                       help='Number of countries to include (max ~110)')
     parser.add_argument('--sort_by', type=str, default='gdp',
-                       choices=['gdp', 'population', 'gdp_per_capita', 'trade', 'exports'],
+                       choices=['gdp', 'population'],
                        help='Criterion to select top countries')
+    parser.add_argument('--countries', type=str, nargs='+', default=None,
+                       help='Custom list of ISO2 country codes (e.g., US CN JP)')
     args = parser.parse_args()
     
     print("Generating gravity model data...")
-    print(f"Configuration: top {args.num_countries} countries by {args.sort_by}\n")
+    print(f"Configuration: {args.num_countries} countries")
+    if args.countries:
+        print(f"  Mode: Custom list")
+    else:
+        print(f"  Mode: Top by {args.sort_by}\n")
     
     # Select countries
-    country_codes = select_top_countries(args.num_countries, args.sort_by)
+    country_codes = select_top_countries(args.num_countries, args.sort_by, args.countries)
     
     # Fetch country metadata
     print("\nFetching country metadata (coords, languages, regions)...")

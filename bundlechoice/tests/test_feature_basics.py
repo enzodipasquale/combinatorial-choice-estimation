@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """
-Test suite for newly implemented features.
+Test suite for basic feature functionality.
 """
 import numpy as np
 import pytest
 from mpi4py import MPI
-from bundlechoice import BundleChoice, load_profile
+from bundlechoice import BundleChoice
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

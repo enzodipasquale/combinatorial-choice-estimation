@@ -4,8 +4,9 @@ This module will be used by BundleChoice to estimate parameters using row genera
 Future solvers can be added to this folder as well.
 """
 import numpy as np
+from numpy.typing import NDArray
 from datetime import datetime
-from typing import Tuple, List, Optional, Any, Dict
+from typing import Tuple, List, Optional, Any, Dict, Callable
 import logging
 import gurobipy as gp
 from gurobipy import GRB
@@ -168,16 +169,21 @@ class RowGenerationSolver(BaseEstimationSolver):
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
 
-    def solve(self, callback=None):
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
         """
         Run the row generation algorithm to estimate model parameters.
 
         Args:
-            callback: Optional callback function called after each iteration with info dict
+            callback: Optional callback function called after each iteration.
+                     Signature: callback(info: dict) where info contains:
+                     - 'iteration': Current iteration number (int)
+                     - 'theta': Current parameter estimate (np.ndarray)
+                     - 'objective': Current objective value (float)
+                     - 'pricing_time': Time spent solving subproblems in seconds (float)
+                     - 'master_time': Time spent on master problem in seconds (float)
         
         Returns:
-            tuple: (theta_val)
-                - theta_val (np.ndarray): Estimated parameter vector.
+            np.ndarray: Estimated parameter vector.
         """
         logger.info("=== ROW GENERATION ===")
         tic = datetime.now()

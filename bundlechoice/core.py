@@ -137,7 +137,8 @@ class BundleChoice(HasComm, HasConfig):
                 missing.append("subproblem config (add 'subproblem' to your config)")
             raise RuntimeError(
                 "Cannot initialize subproblem manager - missing setup:\n  " +
-                "\n  ".join(missing)
+                "\n  ".join(f"✗ {m}" for m in missing) +
+                "\n\nRun bc.print_status() to see your current setup state."
             )
 
         self.subproblem_manager = SubproblemManager(
@@ -379,6 +380,74 @@ class BundleChoice(HasComm, HasConfig):
         
         logger.info("✅ Setup validated for %s", for_method)
         return True
+    
+    def status(self) -> dict:
+        """
+        Get setup status summary.
+        
+        Returns a dictionary with initialization status of all components.
+        Useful for debugging setup issues without raising errors.
+        
+        Returns:
+            dict: Dictionary with status information including:
+                - config_loaded: Whether config is loaded
+                - data_loaded: Whether data is loaded
+                - features_set: Whether features oracle is set
+                - subproblems_ready: Whether subproblem solver is loaded
+                - dimensions: String representation of dimensions
+                - subproblem: Name of subproblem algorithm
+                - mpi_rank: Current MPI rank
+                - mpi_size: Total number of MPI processes
+        
+        Example:
+            >>> bc = BundleChoice()
+            >>> bc.load_config(cfg)
+            >>> status = bc.status()
+            >>> if not status['features_set']:
+            ...     bc.features.build_from_data()
+        """
+        return {
+            'config_loaded': self.config is not None,
+            'data_loaded': self.data_manager is not None and self.data_manager.local_data is not None,
+            'features_set': self.feature_manager is not None and self.feature_manager._features_oracle is not None,
+            'subproblems_ready': self.subproblem_manager is not None and self.subproblem_manager.demand_oracle is not None,
+            'dimensions': f"agents={self.config.dimensions.num_agents}, items={self.config.dimensions.num_items}, features={self.config.dimensions.num_features}" if self.config and self.config.dimensions else 'Not set',
+            'subproblem': self.config.subproblem.name if self.config and self.config.subproblem and self.config.subproblem.name else 'Not set',
+            'mpi_rank': self.rank,
+            'mpi_size': self.comm_size,
+        }
+    
+    def print_status(self):
+        """
+        Print formatted setup status.
+        
+        Displays a human-readable summary of the current setup state,
+        showing which components are initialized and key configuration values.
+        
+        Example:
+            >>> bc = BundleChoice()
+            >>> bc.load_config(cfg)
+            >>> bc.data.load_and_scatter(input_data)
+            >>> bc.print_status()
+            === BundleChoice Status ===
+            Config:      ✓
+            Data:        ✓
+            Features:    ✗
+            Subproblems: ✗
+            
+            Dimensions:  agents=100, items=20, features=5
+            Algorithm:   Greedy
+            MPI:         rank 0/10
+        """
+        status = self.status()
+        print("\n=== BundleChoice Status ===")
+        print(f"Config:      {'✓' if status['config_loaded'] else '✗'}")
+        print(f"Data:        {'✓' if status['data_loaded'] else '✗'}")
+        print(f"Features:    {'✓' if status['features_set'] else '✗'}")
+        print(f"Subproblems: {'✓' if status['subproblems_ready'] else '✗'}")
+        print(f"\nDimensions:  {status['dimensions']}")
+        print(f"Algorithm:   {status['subproblem']}")
+        print(f"MPI:         rank {status['mpi_rank']}/{status['mpi_size']}")
     
     def generate_observations(self, theta_true):
         """
