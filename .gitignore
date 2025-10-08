@@ -37,4 +37,4 @@ bundlechoice/_legacy/
 applications/firms_export/clean_data/datasets/
 singularity.txt
 benchmarking/
-examples/
+examples/greedy_benchmarking/
