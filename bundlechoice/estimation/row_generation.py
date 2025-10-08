@@ -164,7 +164,9 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
             theta_val = np.empty(self.num_features, dtype=np.float64)
+            stop = False
         
+        # Broadcast theta and stop flag together
         self.theta_val = self.comm_manager.broadcast_array(theta_val, root=0)
         stop = self.comm_manager.broadcast_from_root(stop, root=0)
         return stop
