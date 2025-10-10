@@ -73,10 +73,10 @@ def compute_utilities(features, distances, lang, region, home_countries, theta):
     # Initialize utilities
     utilities = np.zeros((num_firms, num_countries))
     
-    # Modular: firm heterogeneity + home boost
+    # Modular: firm heterogeneity + HOME EXCLUSION
     firm_effects = np.random.normal(0, 0.3, (num_firms, num_countries))
     for i, home_idx in enumerate(home_countries):
-        firm_effects[i, home_idx] += 5.0  # Strong home boost
+        firm_effects[i, home_idx] = -1000.0  # Exclude home (firms don't export to themselves!)
     utilities += theta[0] * firm_effects
     
     # Modular: country characteristics
