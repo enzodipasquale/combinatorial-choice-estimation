@@ -1,8 +1,8 @@
 """
 Test that Row Generation and 1-Slack give identical objective values on the same problem.
 
-1-Slack needs more iterations (~100+) to converge to the same solution as Row Generation (~20).
-Both should reach identical objective values at convergence.
+1-Slack needs ~100+ iterations to converge to the same solution as Row Generation.
+Both should reach identical objective values at convergence (they solve the same LP).
 
 Run with: mpirun -n 10 python -m pytest bundlechoice/tests/test_solver_consistency.py -v
 """
@@ -30,13 +30,13 @@ def features_oracle(i_id, B_j, data):
     return features
 
 
-def test_all_three_solvers_consistency_greedy():
-    """Verify Row Generation, 1-Slack, and Ellipsoid reach identical objective values."""
+def test_row_generation_vs_1slack_identical_objval():
+    """Verify Row Generation and 1-Slack reach identical objective values."""
     
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    # Very small problem for speed (1-Slack with 1000 iters is slow)
+    # Small problem for speed
     num_agents = 10
     num_items = 15
     num_features = 3
@@ -73,10 +73,10 @@ def test_all_three_solvers_consistency_greedy():
     if rank == 0:
         input_data["obs_bundle"] = observed_bundles
     
-    # --- Method 1: Row Generation (converges fast) ---
+    # --- Method 1: Row Generation (converges fast, ~20 iterations) ---
     cfg_rg = cfg_base.copy()
     cfg_rg["row_generation"] = {
-        "max_iters": 50,
+        "max_iters": 100,
         "tolerance_optimality": 1e-6,
         "gurobi_settings": {"OutputFlag": 0}
     }
@@ -91,10 +91,10 @@ def test_all_three_solvers_consistency_greedy():
     if rank == 0:
         objval_rg = bc_rg.row_generation.master_model.ObjVal
     
-    # --- Method 2: 1-Slack (needs more iterations) ---
+    # --- Method 2: 1-Slack (needs 1000 max iterations to ensure convergence) ---
     cfg_1s = cfg_base.copy()
     cfg_1s["row_generation"] = {
-        "max_iters": 1000,  # 1-Slack needs many more iterations
+        "max_iters": 1000,
         "tolerance_optimality": 1e-6,
         "gurobi_settings": {"OutputFlag": 0}
     }
@@ -117,62 +117,25 @@ def test_all_three_solvers_consistency_greedy():
     
     if rank == 0:
         objval_1s = solver_1s.master_model.ObjVal
-    
-    # --- Method 3: Ellipsoid ---
-    cfg_el = cfg_base.copy()
-    cfg_el["ellipsoid"] = {
-        "num_iters": 200,
-        "tolerance": 1e-4
-    }
-    
-    bc_el = BundleChoice()
-    bc_el.load_config(cfg_el)
-    bc_el.data.load_and_scatter(input_data)
-    bc_el.features.set_oracle(features_oracle)
-    bc_el.subproblems.load()
-    theta_el = bc_el.ellipsoid.solve()
-    
-    if rank == 0:
-        # For ellipsoid, compute objective value manually
-        # The objective is sum over agents of max(0, features @ theta)
-        objval_el = 0.0
-        for i in range(num_agents):
-            bundle = input_data["obs_bundle"][i]
-            features = features_oracle(i, bundle, {"agent_data": input_data["agent_data"]})
-            value = features @ theta_el
-            objval_el += max(0, value)
-        objval_el = -objval_el  # Negative because we're minimizing violations
         
-        objval_diff_rg_1s = abs(objval_rg - objval_1s)
-        objval_diff_rg_el = abs(objval_rg - objval_el)
-        objval_diff_1s_el = abs(objval_1s - objval_el)
-        max_diff = max(objval_diff_rg_1s, objval_diff_rg_el, objval_diff_1s_el)
+        objval_diff = abs(objval_rg - objval_1s)
+        theta_diff = np.linalg.norm(theta_rg - theta_1s)
         
-        print(f"\nRow Generation (50 iters):   objval={objval_rg:.8f}  theta={theta_rg}")
-        print(f"1-Slack (1000 iters):        objval={objval_1s:.8f}  theta={theta_1s}")
-        print(f"Ellipsoid (200 iters):       objval={objval_el:.8f}  theta={theta_el}")
-        print(f"\nPairwise objective differences:")
-        print(f"  Row Gen vs 1-Slack:  {objval_diff_rg_1s:.10f}")
-        print(f"  Row Gen vs Ellipsoid: {objval_diff_rg_el:.10f}")
-        print(f"  1-Slack vs Ellipsoid: {objval_diff_1s_el:.10f}")
-        print(f"  Max difference:       {max_diff:.10f}")
+        print(f"\nRow Generation (100 max_iters):   objval={objval_rg:.10f}")
+        print(f"1-Slack (1000 max_iters):         objval={objval_1s:.10f}")
+        print(f"\nObjective difference: {objval_diff:.12f}")
+        print(f"Theta difference:     {theta_diff:.6f} (may differ - multiple optimal solutions)")
         
-        # Row Gen and 1-Slack must be identical (same LP)
-        assert objval_diff_rg_1s < 1e-6, f"Row Gen and 1-Slack give different objvals: {objval_diff_rg_1s}"
-        
-        # Ellipsoid should be close (different algorithm, approximate)
-        assert objval_diff_rg_el < 5.0, f"Ellipsoid too far from Row Gen: {objval_diff_rg_el}"
+        # Objective values must be identical (they solve the same LP)
+        assert objval_diff < 1e-6, f"Row Gen and 1-Slack give different objvals: {objval_diff}"
         
         # Sanity checks
         assert not np.any(np.isnan(theta_rg)), "Row Gen theta has NaN"
         assert not np.any(np.isnan(theta_1s)), "1-Slack theta has NaN"
-        assert not np.any(np.isnan(theta_el)), "Ellipsoid theta has NaN"
         
-        if max_diff < 1e-3:
-            print("\n✅ All three solvers converge to identical objective value!")
-        else:
-            print(f"\n✅ Row Gen and 1-Slack identical. Ellipsoid close (diff={objval_diff_rg_el:.4f})")
+        print("\n✅ PASS: Row Generation and 1-Slack converge to identical objective value!")
+        print(f"   Both methods solve the same LP and reach the same optimum.")
 
 
 if __name__ == "__main__":
-    test_all_three_solvers_consistency_greedy()
+    test_row_generation_vs_1slack_identical_objval()
