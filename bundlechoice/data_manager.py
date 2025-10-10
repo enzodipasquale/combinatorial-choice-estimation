@@ -157,106 +157,19 @@ class DataManager(HasDimensions, HasComm):
     def _validate_input_data(self, input_data: Dict[str, Any]) -> None:
         """
         Validate that input_data has the required structure and dimensions.
-        Only validates keys that are present in input_data.
+        Uses comprehensive validation utilities for better error messages.
 
         Args:
             input_data (dict): Dictionary containing the input data to validate.
         Raises:
-            ValueError: If input_data structure or dimensions don't match expectations.
+            ValidationError: If input_data structure or dimensions don't match expectations.
         """ 
         if self.is_root():
-            agent_data = input_data.get("agent_data")
-            if agent_data is not None:
-                for key, value in agent_data.items():
-                    if not isinstance(value, np.ndarray):
-                        raise ValueError(f"agent_data[{key}] must be a numpy array, got {type(value)}")
-                    if value.shape[0] != self.num_agents:
-                        raise ValueError(f"agent_data[{key}] has leading dimension {value.shape[0]}, expected {self.num_agents}")
-            
-            item_data = input_data.get("item_data")
-            if item_data is not None:
-                for key, value in item_data.items():
-                    if not isinstance(value, np.ndarray):
-                        raise ValueError(f"item_data[{key}] must be a numpy array, got {type(value)}")
-                    if value.shape[0] != self.num_items:
-                        raise ValueError(f"item_data[{key}] has leading dimension {value.shape[0]}, expected {self.num_items}")
-            
-            errors = input_data.get("errors")
-            if errors is not None:
-                if not isinstance(errors, np.ndarray):
-                    raise ValueError(f"errors must be a numpy array, got {type(errors)}")
-                if errors.ndim == 2:
-                    if errors.shape != (self.num_agents, self.num_items):
-                        raise ValueError(f"errors has shape {errors.shape}, expected ({self.num_agents}, {self.num_items})")
-                elif errors.ndim == 3:
-                    if errors.shape != (self.num_simuls, self.num_agents, self.num_items):
-                        raise ValueError(f"errors has shape {errors.shape}, expected ({self.num_simuls}, {self.num_agents}, {self.num_items})")
-                else:
-                    raise ValueError(f"errors has {errors.ndim} dimensions, expected 2 or 3")
-            else:
-                raise ValueError(
-                    "errors must be provided in input_data.\n"
-                    "Expected: input_data = {\n"
-                    "    'errors': np.ndarray with shape (num_agents, num_items) or (num_simuls, num_agents, num_items),\n"
-                    "    ...\n"
-                    "}"
-                )
-                
-            obs_bundle = input_data.get("obs_bundle")
-            if obs_bundle is not None:
-                if not isinstance(obs_bundle, np.ndarray):
-                    raise ValueError(f"obs_bundle must be a numpy array, got {type(obs_bundle)}")
-                expected_shape = (self.num_agents, self.num_items)
-                if obs_bundle.shape != expected_shape:
-                    raise ValueError(f"obs_bundle has shape {obs_bundle.shape}, expected {expected_shape}")
+            from bundlechoice.validation import validate_input_data_comprehensive
+            validate_input_data_comprehensive(input_data, self.dimensions_cfg)
 
-    def validate_quadratic_input_data(self):
-        """
-        Validates that the shapes of modular and quadratic data match the expected dimensions.
-        Checks:
-        - modular item data shape matches (num_items, num_modular_item_features)
-        - modular agent data shape matches (num_agents, num_items, num_modular_agent_features)
-        - num_features equals the sum of all feature dimensions
-        Raises ValueError if any check fails.
-        """
-        input_data = self.input_data
+    def verify_feature_count(self):
+        """Verify that num_features in config matches data structure."""
         if self.is_root():
-            dimensions_cfg = self.dimensions_cfg
-            agent_data = input_data.get("agent_data", {})
-            item_data = input_data.get("item_data", {})
-            num_agents = dimensions_cfg.num_agents
-            num_items = dimensions_cfg.num_items
-            num_features = dimensions_cfg.num_features
-            # Modular agent features
-            modular_agent = agent_data.get("modular")
-            num_modular_agent_features = 0
-            if modular_agent is not None:
-                if modular_agent.shape[0] != num_agents or modular_agent.shape[1] != num_items:
-                    raise ValueError(f"modular agent data shape {modular_agent.shape} does not match (num_agents, num_items, ...)")
-                num_modular_agent_features = modular_agent.shape[2] if modular_agent.ndim == 3 else 0
-            # Modular item features
-            modular_item = item_data.get("modular")
-            num_modular_item_features = 0
-            if modular_item is not None:
-                if modular_item.shape[0] != num_items:
-                    raise ValueError(f"modular item data shape {modular_item.shape} does not match (num_items, ...)")
-                num_modular_item_features = modular_item.shape[1] if modular_item.ndim == 2 else 0
-            # Quadratic item features
-            quadratic_item = item_data.get("quadratic")
-            num_quadratic_item_features = 0
-            if quadratic_item is not None:
-                if quadratic_item.shape[0] != num_items or quadratic_item.shape[1] != num_items:
-                    raise ValueError(f"quadratic item data shape {quadratic_item.shape} does not match (num_items, num_items, ...)")
-                num_quadratic_item_features = quadratic_item.shape[2] if quadratic_item.ndim == 3 else 0
-            # Quadratic agent features
-            quadratic_agent = agent_data.get("quadratic")
-            num_quadratic_agent_features = 0
-            if quadratic_agent is not None:
-                if quadratic_agent.shape[0] != num_agents or quadratic_agent.shape[1] != num_items or quadratic_agent.shape[2] != num_items:
-                    raise ValueError(f"quadratic agent data shape {quadratic_agent.shape} does not match (num_agents, num_items, num_items, ...)")
-                num_quadratic_agent_features = quadratic_agent.shape[3] if quadratic_agent.ndim == 4 else 0
-            # Check num_features
-            total_features = num_modular_agent_features + num_modular_item_features + num_quadratic_agent_features + num_quadratic_item_features
-            if num_features != total_features:
-                raise ValueError(f"num_features ({num_features}) does not match the sum of all feature dimensions ({total_features})")
-            return True
+            from bundlechoice.validation import validate_feature_count
+            validate_feature_count(self.input_data, self.num_features)

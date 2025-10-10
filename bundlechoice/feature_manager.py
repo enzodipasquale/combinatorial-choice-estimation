@@ -180,7 +180,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         if self._features_oracle is not None:
             logger.info("Rebuilding feature oracle (overwriting existing)")
         
-        self.data_manager.validate_quadratic_input_data()
+        self.data_manager.verify_feature_count()
         if self.is_root():
             input_data = self.input_data
             agent_data = input_data.get("agent_data")
