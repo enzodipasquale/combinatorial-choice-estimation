@@ -111,7 +111,7 @@ def try_init_subproblem_manager(bc):
         feature_manager=bc.feature_manager,
         subproblem_cfg=bc.config.subproblem
     )
-    bc.subproblem_manager.load()
+    # Don't auto-load here - will auto-load on first use (init_and_solve)
     return bc.subproblem_manager
 
 
