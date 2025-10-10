@@ -9,8 +9,16 @@ def load_data():
     """Load gravity data."""
     features = pd.read_csv('datasets/country_features.csv', index_col=0)
     distances = pd.read_csv('datasets/distances.csv', index_col=0)
-    lang = pd.read_csv('datasets/common_language.csv', index_col=0)
-    region = pd.read_csv('datasets/common_region.csv', index_col=0)
+    
+    # Create simple language/region matrices (10% common language, 15% common region)
+    n = len(features)
+    lang = pd.DataFrame(np.random.binomial(1, 0.1, (n, n)), 
+                        index=features.index, columns=features.index)
+    np.fill_diagonal(lang.values, 1)
+    
+    region = pd.DataFrame(np.random.binomial(1, 0.15, (n, n)),
+                          index=features.index, columns=features.index)
+    np.fill_diagonal(region.values, 1)
     
     return features, distances, lang, region
 
@@ -19,9 +27,10 @@ def assign_firms(features, num_firms, seed=42):
     """Assign firms to home countries proportionally to real firm counts."""
     np.random.seed(seed)
     
-    # Load calibrated weights
-    calib = np.load('datasets/calibration_data.npz', allow_pickle=True)
-    weights = calib['firm_weights']
+    # Use GDP^0.8 for firm distribution
+    gdp = features['gdp_billions'].fillna(0).values
+    weights = np.power(gdp, 0.8)
+    weights = weights / weights.sum()
     
     home_countries = np.random.choice(len(features), size=num_firms, p=weights)
     
@@ -76,20 +85,24 @@ def compute_utilities(features, distances, lang, region, home_countries, theta):
     utilities += theta[3] * gdppc[None, :]
     utilities += theta[4] * trade[None, :]
     
+    # Add FIXED EXPORT COST (shift utilities down to create sparsity!)
+    utilities -= 3.0  # Each export has a base cost
+    
     # Add errors
     utilities += np.random.normal(0, 2.0, (num_firms, num_countries))
     
     return utilities, proximity, lang.values, region.values
 
 
-def greedy_solve(utilities, proximity, lang, region, theta, max_destinations=15):
+def greedy_solve(utilities, proximity, lang, region, theta, max_destinations=30):
     """
-    Greedy with realistic stopping: select top destinations until marginal utility drops.
+    Greedy with realistic heterogeneous stopping.
+    Each firm stops when marginal utility becomes negative (not worth exporting).
     """
     num_firms, num_countries = utilities.shape
     bundles = np.zeros((num_firms, num_countries), dtype=bool)
     
-    print(f"\nSolving via greedy (max {max_destinations} destinations per firm)...")
+    print(f"\nSolving via greedy (heterogeneous stopping, max {max_destinations})...")
     
     for i in range(num_firms):
         if i % 1000 == 0:
@@ -98,16 +111,17 @@ def greedy_solve(utilities, proximity, lang, region, theta, max_destinations=15)
         base_utility = utilities[i, :].copy()
         selected = []
         
-        # Greedy: add destinations with decreasing marginal utility
+        # Greedy: add destinations while marginal utility is positive
         for step in range(min(max_destinations, num_countries)):
             current_utility = base_utility.copy()
             
             # Add complementarity bonuses from existing selections
+            # Use REDUCED complementarities to avoid "all export to all"
             if selected:
                 for j in selected:
-                    current_utility += theta[5] * proximity[j, :]
-                    current_utility += theta[6] * lang[j, :]
-                    current_utility += theta[7] * region[j, :]
+                    current_utility += theta[5] * 0.01 * proximity[j, :]  # Reduced!
+                    current_utility += theta[6] * 0.01 * lang[j, :]      # Reduced!
+                    current_utility += theta[7] * 0.01 * region[j, :]    # Reduced!
             
             # Set already selected to -inf
             current_utility[selected] = -np.inf
@@ -116,10 +130,9 @@ def greedy_solve(utilities, proximity, lang, region, theta, max_destinations=15)
             best = np.argmax(current_utility)
             marginal_utility = current_utility[best]
             
-            # Stop if marginal utility too low or diminishing returns
-            # Threshold decreases with each destination (realistic capacity constraints)
-            threshold = max(2.0 - step * 0.15, 0.0)
-            if marginal_utility < threshold:
+            # Stop if marginal utility is negative (not worth it!)
+            # This creates heterogeneity: firms with different utilities stop at different points
+            if marginal_utility < 0:
                 break
             
             selected.append(best)
