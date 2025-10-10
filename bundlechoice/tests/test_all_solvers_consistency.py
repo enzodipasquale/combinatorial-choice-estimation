@@ -18,7 +18,7 @@ def test_row_generation_mpi_optimizations():
     rank = comm.Get_rank()
     
     # Shared configuration (small for fast testing)
-    num_agents = 20
+    num_agents = 100
     num_items = 30
     num_features = 5
     num_simuls = 1

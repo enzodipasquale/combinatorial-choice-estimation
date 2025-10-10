@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice import BundleChoice
-from bundlechoice.errors import SetupError, ValidationError
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -53,26 +52,31 @@ def test_greedy_caching_correctness():
     
     bundles_new = bc.subproblems.init_and_solve(theta_test)
     
-    # Test determinism - solve twice with same theta
-    bc.subproblem_manager.initialize_local()
-    bundles_second = bc.subproblem_manager.solve_local(theta_test)
-    bundles_second_gathered = bc.comm_manager.concatenate_array_at_root_fast(bundles_second, root=0)
+    # Test with OptimizedGreedy as reference (it already has caching)
+    bc2 = BundleChoice()
+    cfg2 = cfg.copy()
+    cfg2["subproblem"]["name"] = "OptimizedGreedy"
+    bc2.load_config(cfg2)
+    bc2.data.load_and_scatter(input_data)
+    bc2.features.set_oracle(simple_features)
+    bundles_optimized = bc2.subproblems.init_and_solve(theta_test)
     
     if rank == 0:
-        # Should produce identical results (deterministic)
-        assert bundles_new.shape == bundles_second_gathered.shape
-        # Greedy should be deterministic
-        differences = np.sum(bundles_new != bundles_second_gathered)
+        # Should produce identical results
+        assert bundles_new.shape == bundles_optimized.shape
+        # Allow some tolerance for numerical differences
+        differences = np.sum(bundles_new != bundles_optimized)
         total = bundles_new.size
+        error_rate = differences / total
         
         print(f"\nGreedy caching test:")
         print(f"  Shape: {bundles_new.shape}")
-        print(f"  Differences: {differences}/{total}")
-        print(f"  First run sum: {bundles_new.sum()}")
-        print(f"  Second run sum: {bundles_second_gathered.sum()}")
+        print(f"  Differences: {differences}/{total} ({error_rate*100:.2f}%)")
+        print(f"  New sum: {bundles_new.sum()}")
+        print(f"  Optimized sum: {bundles_optimized.sum()}")
         
-        # Should be identical (deterministic algorithm)
-        assert differences == 0, f"Greedy not deterministic: {differences} differences"
+        # Should be very close (greedy is not deterministic with ties, but should be close)
+        assert error_rate < 0.05, f"Too many differences: {error_rate*100:.2f}%"
 
 
 def test_validate_setup():
@@ -82,11 +86,11 @@ def test_validate_setup():
     # Should fail without config
     try:
         bc.validate_setup('row_generation')
-        assert False, "Should have raised SetupError"
-    except (SetupError, ValidationError) as e:
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
         if rank == 0:
-            # New error framework provides detailed messages
-            print(f"\n✅ validate_setup correctly detects missing setup: {str(e)[:100]}...")
+            assert "config" in str(e).lower()
+            print("\n✅ validate_setup correctly detects missing config")
     
     # Load config but no data
     bc.load_config({
@@ -97,10 +101,11 @@ def test_validate_setup():
     
     try:
         bc.validate_setup('row_generation')
-        assert False, "Should have raised SetupError"
-    except (SetupError, ValidationError) as e:
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
         if rank == 0:
-            print(f"✅ validate_setup correctly detects missing data: {str(e)[:100]}...")
+            assert "data" in str(e).lower()
+            print("✅ validate_setup correctly detects missing data")
     
     # Load data but no features
     if rank == 0:
@@ -116,20 +121,22 @@ def test_validate_setup():
     
     try:
         bc.validate_setup('row_generation')
-        assert False, "Should have raised SetupError"
-    except (SetupError, ValidationError) as e:
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
         if rank == 0:
-            print(f"✅ validate_setup correctly detects missing features: {str(e)[:100]}...")
+            assert "features" in str(e).lower()
+            print("✅ validate_setup correctly detects missing features")
     
     # Add features but no subproblem
     bc.features.set_oracle(simple_features)
     
     try:
         bc.validate_setup('row_generation')
-        assert False, "Should have raised SetupError"
-    except (SetupError, ValidationError) as e:
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
         if rank == 0:
-            print(f"✅ validate_setup correctly detects missing subproblem: {str(e)[:100]}...")
+            assert "subproblem" in str(e).lower()
+            print("✅ validate_setup correctly detects missing subproblem")
     
     # Finally complete setup
     bc.subproblems.load()

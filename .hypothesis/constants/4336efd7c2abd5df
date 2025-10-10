@@ -1,4 +1,0 @@
-# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/errors.py
-# hypothesis_version: 6.140.3
-
-['Data not loaded', 'Not configured', 'actual', 'agent_data', 'array_name', 'completed_steps', 'config', 'config_loaded', 'current_step', 'data', 'data_loaded', 'dimension_mismatch', 'dimensions', 'errors', 'errors.shape', 'expected', 'features', 'features_set', 'invalid_subproblem', 'item_data', 'message', 'missing_config', 'missing_data', 'missing_features', 'missing_obs_bundles', 'missing_steps', 'missing_subproblems', 'mpi_rank', 'mpi_size', 'nan_or_inf', 'num_agents', 'num_features', 'num_items', 'num_simuls', 'obs_bundle', 'obs_bundle.shape', 'problems', 'required_steps', 'subproblems', 'subproblems_ready', 'suggestion', '✓', '✗', '💡 Suggestion:']

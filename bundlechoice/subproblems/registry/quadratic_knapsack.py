@@ -1,11 +1,9 @@
-import logging
-from typing import Any
-
 import numpy as np
 import gurobipy as gp
-
-from bundlechoice.utils import suppress_output
 from ..base import SerialSubproblemBase
+import logging
+from typing import Any
+from bundlechoice.utils import suppress_output
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +16,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def initialize(self, agent_id):
+    def initialize(self, local_id):
         with suppress_output():
             subproblem = gp.Model()
             subproblem.setParam('OutputFlag', 0)
@@ -29,14 +27,14 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
             subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
             B_j = subproblem.addVars(self.num_items, vtype=gp.GRB.BINARY)
             weights = self.local_data["item_data"]["weights"]
-            capacity = self.local_data["agent_data"]["capacity"][agent_id]
+            capacity = self.local_data["agent_data"]["capacity"][local_id]
             subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.num_items)) <= capacity)
             subproblem.update()        
         return subproblem
 
-    def solve(self, agent_id, theta, pb: Any):
-        L_j = self._build_L_j(agent_id, theta)
-        Q_j_j = self._build_Q_j_j(agent_id, theta)
+    def solve(self, local_id, theta, pb: Any):
+        L_j = self._build_L_j(local_id, theta)
+        Q_j_j = self._build_Q_j_j(local_id, theta)
         
         B_j = pb.getVars()
         
@@ -56,10 +54,10 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         pb.optimize()
         
         optimal_bundle = np.array(pb.x, dtype=bool)
-        self._check_mip_gap(pb, agent_id)
+        self._check_mip_gap(pb, local_id)
         return optimal_bundle
 
-    def _build_Q_j_j(self, agent_id, theta):
+    def _build_Q_j_j(self, local_id, theta):
         """
         Build the quadratic matrix Q_j_j for the given agent.
         """
@@ -78,7 +76,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         if "quadratic" in agent_data:
             quadratic_agent = agent_data["quadratic"]
             num_quad_agent = quadratic_agent.shape[-1]
-            Q_j_j += (quadratic_agent[agent_id] @ theta[offset:offset + num_quad_agent])
+            Q_j_j += (quadratic_agent[local_id] @ theta[offset:offset + num_quad_agent])
             offset += num_quad_agent
         
         # Handle item modular features
@@ -95,11 +93,11 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         
         return Q_j_j
 
-    def _build_L_j(self, agent_id, theta):
+    def _build_L_j(self, local_id, theta):
         """
         Build the linear coefficients L_j for the given agent.
         """
-        error_j = self.local_data["errors"][agent_id]
+        error_j = self.local_data["errors"][local_id]
         agent_data = self.local_data.get("agent_data", {})
         item_data = self.local_data.get("item_data", {})
         
@@ -110,7 +108,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         if "modular" in agent_data:
             modular_agent = agent_data["modular"]
             num_mod_agent = modular_agent.shape[-1]
-            L_j += (modular_agent[agent_id] @ theta[offset:offset + num_mod_agent])
+            L_j += (modular_agent[local_id] @ theta[offset:offset + num_mod_agent])
             offset += num_mod_agent
         
         # Handle item modular features
@@ -122,7 +120,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         
         return L_j
 
-    def _check_mip_gap(self, subproblem, agent_id):
+    def _check_mip_gap(self, subproblem, local_id):
         """
         Check MIP gap and log warnings if it exceeds tolerance.
         """
@@ -130,6 +128,6 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         if MIPGap_tol is not None:
             if subproblem.MIPGap > float(MIPGap_tol):
                 logger.warning(
-                    f"Subproblem {agent_id} (rank {getattr(self.data_manager, 'rank', '?')}): "
+                    f"Subproblem {local_id} (rank {getattr(self.data_manager, 'rank', '?')}): "
                     f"MIPGap {subproblem.MIPGap:.4g} > tol {MIPGap_tol}, value: {subproblem.objVal}"
                 )

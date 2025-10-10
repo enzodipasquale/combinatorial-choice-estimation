@@ -32,7 +32,7 @@ def features_oracle(i_id, B_j, data):
 
 def test_ellipsoid_greedy():
     """Test EllipsoidSolver using observed bundles generated from greedy subproblem manager."""
-    num_agents = 20
+    num_agents = 300
     num_items = 50
     num_features = 4
     num_simuls = 1

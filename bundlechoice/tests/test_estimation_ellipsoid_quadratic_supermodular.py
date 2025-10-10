@@ -6,7 +6,7 @@ from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 
 def test_ellipsoid_quadsupermodular():
     """Test EllipsoidSolver using observed bundles generated from quadsupermodular subproblem manager."""
-    num_agents = 20
+    num_agents = 100
     num_items = 30
     num_modular_agent_features = 2
     num_modular_item_features = 2

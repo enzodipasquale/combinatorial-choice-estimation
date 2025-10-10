@@ -3,17 +3,15 @@ Row generation solver for modular bundle choice estimation (v2).
 This module will be used by BundleChoice to estimate parameters using row generation.
 Future solvers can be added to this folder as well.
 """
-import logging
-from datetime import datetime
-from typing import Tuple, List, Optional, Any, Dict, Callable
-
 import numpy as np
 from numpy.typing import NDArray
+from datetime import datetime
+from typing import Tuple, List, Optional, Any, Dict, Callable
+import logging
 import gurobipy as gp
-
+from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationSolver
-
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output

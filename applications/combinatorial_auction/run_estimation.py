@@ -1,12 +1,12 @@
 #!/bin/env python
 
-import os
+from bundlechoice import BundleChoice
 
 import numpy as np
 import yaml
 from mpi4py import MPI
-
-from bundlechoice import BundleChoice
+import os
+import platform
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

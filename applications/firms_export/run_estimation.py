@@ -1,13 +1,12 @@
 #!/bin/env python
 
-import os
-
+from bundlechoice import BundleChoice
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from mpi4py import MPI
-
-from bundlechoice import BundleChoice
+import os
+import platform
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -40,6 +39,23 @@ if rank == 0:
     num_simuls = config["dimensions"]["num_simuls"]
     shape = (num_simuls, num_agents, num_items)
     errors = np.random.normal(0, 1, size=shape)
+
+    # # Correlation structure
+    # rho_0 = .16
+    # rho_d = .82
+    # sigmasq = 1
+    # distance_j_j = np.load(os.path.join(INPUT_DIR, "distance_j_j.npy"))
+    # Covariance = sigmasq * rho_0 * np.exp(- rho_d * distance_j_j)
+    # from scipy.linalg import sqrtm
+    # cov_sqrt = sqrtm(Covariance)
+    # for s in range(config["num_simuls"]):
+    #     for i in range(config["num_agents"]):
+    #         errors[s, i] = cov_sqrt @ errors[s, i]
+
+    # Blocking shocks
+    # p = 0.97
+    # random_vals = np.random.rand(*shape)
+    # errors = np.where(random_vals < p, errors, - float('inf'))
 
     input_data = {
             "item_data": item_data,

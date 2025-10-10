@@ -31,7 +31,7 @@ def features_oracle(i_id, B_j, data):
 
 def test_ellipsoid_linear_knapsack():
     """Test EllipsoidSolver using observed bundles generated from linear knapsack subproblem manager."""
-    num_agents = 20
+    num_agents = 100
     num_items = 20
     num_modular_agent_features = 2
     num_modular_item_features = 2

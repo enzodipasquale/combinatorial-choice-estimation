@@ -64,19 +64,19 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
     Base class for serial (per-agent) subproblems.
     """
     @abstractmethod
-    def initialize(self, agent_id: int) -> Any:
+    def initialize(self, id: int) -> Any:
         pass
 
     @abstractmethod
-    def solve(self, agent_id: int, theta: Any, pb: Any = None) -> Any:
+    def solve(self, id: int, theta: Any, pb: Any = None) -> Any:
         pass
     
     def solve_serial(self, theta: Any, problems: list[Any]) -> Any:
-        return np.array([self.solve(agent_id, theta, pb) for agent_id, pb in enumerate(problems)])
+        return np.array([self.solve(id, theta, pb) for id, pb in enumerate(problems)])
     
     def initialize_all(self) -> Any:
         """Initialize serial subproblems for all agents on this rank."""
-        return [self.initialize(agent_id) for agent_id in range(self.num_local_agents)]
+        return [self.initialize(id) for id in range(self.num_local_agents)]
     
     def solve_all(self, theta: Any, subproblems: Any = None) -> Any:
         """Solve serial subproblems using subproblems."""
