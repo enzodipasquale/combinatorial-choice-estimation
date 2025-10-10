@@ -47,7 +47,11 @@ class MinCutSubmodularSolver:
    
         self.constraint_mask = constraint_mask
         if constraint_mask is not None:
-            self.choice_set = constraint_mask.tolist()
+            # Convert to indices (works for both boolean masks and index arrays)
+            if isinstance(constraint_mask, np.ndarray) and constraint_mask.dtype == bool:
+                self.choice_set = np.where(constraint_mask)[0].tolist()
+            else:
+                self.choice_set = constraint_mask.tolist() if isinstance(constraint_mask, np.ndarray) else constraint_mask
         else:
             self.choice_set = list(range(self.num_items))
 

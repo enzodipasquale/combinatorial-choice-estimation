@@ -140,13 +140,31 @@ class DataManager(HasDimensions, HasComm):
         else:
             local_obs_bundles = None
         
+        # Scatter constraint_mask if present
+        has_constraint_mask = self.is_root() and "constraint_mask" in self.input_data and self.input_data["constraint_mask"] is not None
+        if has_constraint_mask:
+            if self.is_root():
+                constraint_masks = self.input_data["constraint_mask"]
+                # constraint_mask is a list of arrays, one per agent
+                # Split into chunks for each rank
+                all_chunks = []
+                for chunk_indices in np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size):
+                    chunk_masks = [constraint_masks[idx % self.num_agents] for idx in chunk_indices]
+                    all_chunks.append(chunk_masks)
+            else:
+                all_chunks = None
+            # Scatter as a simple list (each rank gets its subset)
+            local_constraint_mask = self.comm_manager.comm.scatter(all_chunks, root=0)
+        else:
+            local_constraint_mask = None
+        
         # Scatter agent_data dict if present using buffer-based scatter_dict
         if has_agent_data:
             if self.is_root():
                 # Index agent_data properly (modulo for simulations)
                 indexed_agent_data = {}
                 for key, array in agent_data.items():
-                    indexed_agent_data[key] = np.vstack([array[idx % self.num_agents] for idx in idx_chunks])
+                    indexed_agent_data[key] = (np.concatenate if array.ndim == 1 else np.vstack)([array[idx % self.num_agents] for idx in idx_chunks])
             else:
                 indexed_agent_data = None
             
@@ -169,6 +187,10 @@ class DataManager(HasDimensions, HasComm):
             "errors": local_errors,
             "obs_bundles": local_obs_bundles,
         }
+        
+        # Add constraint_mask if present
+        if has_constraint_mask:
+            self.local_data["constraint_mask"] = local_constraint_mask
         self.num_local_agents = num_local_agents 
 
     # --- Helper Methods ---
