@@ -35,6 +35,10 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             ValueError: If subproblem is unknown or invalid.
         """
+        # If already loaded and no override requested, return existing (idempotent)
+        if subproblem is None and self.demand_oracle is not None:
+            return self.demand_oracle
+        
         if subproblem is None:
             subproblem = getattr(self.subproblem_cfg, 'name', None)
         if isinstance(subproblem, str):
@@ -70,6 +74,10 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         Raises:
             RuntimeError: If subproblem is not initialized.
         """
+        # Auto-load subproblem from config if not already loaded
+        if self.demand_oracle is None and self.subproblem_cfg and self.subproblem_cfg.name:
+            self.load()
+        
         if self.demand_oracle is None:
             raise RuntimeError("Subproblem is not initialized.")
         
@@ -127,6 +135,10 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         """
         if self.comm_manager is None:
             raise RuntimeError("Communication manager is not set in SubproblemManager.")
+        
+        # Auto-load subproblem from config if not already loaded
+        if self.demand_oracle is None and self.subproblem_cfg and self.subproblem_cfg.name:
+            self.load()
         
         # Broadcast theta using fast buffer-based method (2-7x faster)
         if self.is_root():

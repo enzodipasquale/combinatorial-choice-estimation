@@ -224,7 +224,7 @@ def validate_quadratic_features(item_data: Dict[str, np.ndarray]) -> None:
     if issues:
         raise ValidationError(
             "Invalid quadratic features: " + "; ".join(issues),
-            suggestion="Quadratic features should be non-negative with zero diagonal"
+            suggestions=["Quadratic features should be non-negative with zero diagonal"]
         )
 
 
@@ -283,8 +283,8 @@ def validate_feature_count(input_data: Dict[str, Any], expected_features: int) -
     if actual != expected_features:
         raise ValidationError(
             f"Feature count mismatch: config has {expected_features} features but data has {actual}",
-            suggestion="Ensure num_features in config matches your data structure",
-            context={'expected': expected_features, 'actual': actual}
+            suggestions=["Ensure num_features in config matches your data structure"],
+            details={'expected': expected_features, 'actual': actual}
         )
 
 

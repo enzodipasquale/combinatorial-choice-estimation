@@ -146,6 +146,8 @@ class BundleChoice(HasComm, HasConfig):
             RowGenerationSolver: The row generation solver instance
         """
         if self.row_generation_manager is None:
+            # Ensure subproblem_manager is initialized first
+            _ = self.subproblems
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
@@ -158,6 +160,8 @@ class BundleChoice(HasComm, HasConfig):
             EllipsoidSolver: The ellipsoid solver instance
         """
         if self.ellipsoid_manager is None:
+            # Ensure subproblem_manager is initialized first
+            _ = self.subproblems
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
         
@@ -170,6 +174,9 @@ class BundleChoice(HasComm, HasConfig):
             InequalitiesSolver: The inequalities solver instance
         """
         if self.inequalities_manager is None:
+            # Ensure subproblem_manager is initialized first (if needed by config)
+            if self.config and self.config.subproblem:
+                _ = self.subproblems
             self._try_init_inequalities_manager()
         return self.inequalities_manager
 
@@ -236,6 +243,16 @@ class BundleChoice(HasComm, HasConfig):
         
         # Validate configuration
         self.config.validate()
+        
+        # Validate subproblem name early if specified
+        if self.config.subproblem and self.config.subproblem.name:
+            from bundlechoice.subproblems.subproblem_registry import SUBPROBLEM_REGISTRY
+            if self.config.subproblem.name not in SUBPROBLEM_REGISTRY:
+                available = ', '.join(SUBPROBLEM_REGISTRY.keys())
+                logger.warning(
+                    f"⚠️  Config specifies unknown subproblem '{self.config.subproblem.name}'. "
+                    f"Available: {available}"
+                )
 
         # Build informative configuration summary
         logger.info("BundleChoice configured:")

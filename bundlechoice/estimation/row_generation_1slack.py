@@ -145,10 +145,10 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             theta_val = theta.X
         else:
             stop = False
-            theta_val = np.empty(self.num_features, dtype=np.float64)
+            theta_val = None
             
-        self.theta_val = self.comm_manager.broadcast_array(theta_val, root=0)
-        stop = self.comm_manager.broadcast_from_root(stop, root=0)
+        # Broadcast theta and stop flag together (single broadcast reduces latency)
+        self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
         return stop
 
     def solve(self):
