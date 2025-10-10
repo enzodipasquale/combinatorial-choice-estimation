@@ -113,49 +113,15 @@ Check setup:
 ```python
 bc.print_status()
 # Shows what's initialized, what's missing
-
-# Validate before solving
-bc.validate_setup('row_generation')
-
-# Get detailed status
-status = bc.status()
 ```
-
-## Documentation
-
-**📚 Comprehensive guides available in `docs/`:**
-
-- **[User Guide](docs/USER_GUIDE.md)** - Complete usage guide from basics to advanced
-- **[Quick Reference](docs/QUICK_REFERENCE.md)** - Cheat sheet for common tasks
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common errors and solutions
-- **[Best Practices](docs/BEST_PRACTICES.md)** - Production-ready patterns
-- **[Documentation Index](docs/README.md)** - Navigate all documentation
-
-**New Features:**
-- ✨ Enhanced error messages with actionable suggestions
-- ✨ Comprehensive validation framework
-- ✨ Property-based testing suite
-- ✨ 100+ new tests for better reliability
 
 ## Tests
 
 ```bash
-# Run all tests
 pytest bundlechoice/tests/
-
-# Run property-based tests
-pytest bundlechoice/tests/test_property_based.py -v
-
-# Run integration tests with MPI
-mpirun -n 4 pytest bundlechoice/tests/test_integration_comprehensive.py -v
 ```
 
-**100+ tests** covering:
-- All solvers and estimation methods
-- Property-based tests (infinite edge cases via Hypothesis)
-- Complete workflow integration tests
-- Edge case and boundary condition tests
-- Error handling and validation
+25+ tests covering all solvers and estimation methods.
 
 ## License
 

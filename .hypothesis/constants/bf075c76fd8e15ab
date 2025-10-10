@@ -1,4 +1,0 @@
-# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/estimation/row_generation.py
-# hypothesis_version: 6.140.3
-
-[-1e-06, 1e-06, 'LPWarmStart', 'Master Initialized', 'Method', 'New constraints: %d', 'ObjVal', 'OutputFlag', 'Parameters: %s', 'Reduced cost: %s', 'Threads', 'ignore', 'inf', 'iteration', 'master_time', 'objective', 'parameter', 'pricing_time', 'theta', 'utility']

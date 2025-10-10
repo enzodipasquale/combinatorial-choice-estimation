@@ -7,7 +7,6 @@ Run with: mpirun -n 10 python examples/01_basic_estimation.py
 
 import numpy as np
 from mpi4py import MPI
-
 from bundlechoice import BundleChoice
 
 # MPI setup

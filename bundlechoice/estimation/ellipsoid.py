@@ -2,14 +2,12 @@
 Ellipsoid method solver for modular bundle choice estimation (v2).
 This module implements the ellipsoid method for parameter estimation.
 """
-from datetime import datetime
-from typing import Optional, Callable, Dict, Any
-
 import numpy as np
 from numpy.typing import NDArray
-
-from bundlechoice.utils import get_logger
+from datetime import datetime
+from typing import Optional, Tuple, Callable, Dict, Any
 from .base import BaseEstimationSolver
+from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 

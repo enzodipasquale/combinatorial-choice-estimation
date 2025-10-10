@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, fields
 from typing import Optional, List, Any
+import numpy as np
 import yaml
 
 

@@ -33,7 +33,7 @@ def dummy_get_x_k(i, B, data):
 
 def test_compute_rank_features():
     """Test feature computation for local rank."""
-    num_agents = 20
+    num_agents = 30
     num_simuls = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,

@@ -1,13 +1,11 @@
-import logging
-from datetime import datetime
-from typing import Optional, Any
-
 import numpy as np
+from datetime import datetime
+from typing import Tuple, List, Optional, Any, Dict
+import logging
 import gurobipy as gp
-
+from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationSolver
-
 logger = get_logger(__name__)
 
 

@@ -1,4 +1,0 @@
-# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/feature_manager.py
-# hypothesis_version: 6.140.3
-
-['    feats = []', 'agent_data', 'errors', 'features_oracle', 'ignore', 'item_data', 'modular', 'np', 'quadratic']
