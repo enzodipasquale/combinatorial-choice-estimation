@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/config.py
+# hypothesis_version: 6.140.3
+
+[0.0, 1e-12, 1e-06, 0.95, 1.0, 1000, 'dimensions', 'ellipsoid', 'inf', 'r', 'row_generation', 'subproblem', 'update_in_place']

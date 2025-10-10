@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/subproblems/registry/quad_supermodular/quadratic_supermodular_base.py
+# hypothesis_version: 6.140.3
+
+['agent_data', 'constraint_mask', 'errors', 'ignore', 'item_data', 'modular', 'quadratic']

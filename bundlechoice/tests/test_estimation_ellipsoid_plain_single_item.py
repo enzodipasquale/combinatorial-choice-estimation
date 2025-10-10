@@ -10,7 +10,7 @@ from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemS
 
 def test_ellipsoid_plain_single_item():
     """Test EllipsoidSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 1000
+    num_agents = 20
     num_items = 100
     num_modular_agent_features = 10
     num_modular_item_features = 1

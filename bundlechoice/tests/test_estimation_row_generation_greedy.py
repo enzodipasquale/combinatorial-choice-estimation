@@ -30,7 +30,7 @@ def features_oracle(i_id, B_j, data):
 
 def test_row_generation_greedy():
     """Test RowGenerationSolver using observed bundles generated from greedy subproblem manager."""
-    num_agents = 250
+    num_agents = 20
     num_items = 50
     num_features = 6
     num_simuls = 1

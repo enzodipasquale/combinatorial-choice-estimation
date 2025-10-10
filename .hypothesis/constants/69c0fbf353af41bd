@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/subproblems/registry/quad_supermodular/quad_supermod_lovasz.py
+# hypothesis_version: 6.140.3
+
+[0.1, 0.5, 0.9, 100, 'alpha', 'constant_over_sqrt_k', 'constant_step_length', 'constant_step_size', 'method', 'mirror_descent', 'num_iters_SGM', 'verbose']

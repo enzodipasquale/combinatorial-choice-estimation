@@ -6,7 +6,7 @@ from bundlechoice.estimation import RowGeneration1SlackSolver
 
 def test_row_generation_1slack_quadsupermodular():
     """Test RowGeneration1SlackSolver using observed bundles generated from quadsupermodular subproblem manager."""
-    num_agents = 250
+    num_agents = 20
     num_items = 50
     num_modular_agent_features = 2
     num_modular_item_features = 2

@@ -172,19 +172,19 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         max_values = np.zeros(num_local_agents)
         best_bundles = np.zeros((num_local_agents, num_items), dtype=bool)
         all_bundles = list(product([0, 1], repeat=num_items))
-        for local_id in range(num_local_agents):
+        for agent_id in range(num_local_agents):
             max_value = float('-inf')
             best_bundle = None
             for bundle_tuple in all_bundles:
                 bundle = np.array(bundle_tuple, dtype=bool)
-                features = self.feature_manager.features_oracle(local_id, bundle, self.local_data)
-                error = self.local_data["errors"][local_id] @ bundle
+                features = self.feature_manager.features_oracle(agent_id, bundle, self.local_data)
+                error = self.local_data["errors"][agent_id] @ bundle
                 bundle_value = features @ theta + error
                 if bundle_value > max_value:
                     max_value = bundle_value
                     best_bundle = bundle.copy()
-            max_values[local_id] = max_value
-            best_bundles[local_id] = best_bundle
+            max_values[agent_id] = max_value
+            best_bundles[agent_id] = best_bundle
         all_max_values = self.comm_manager.concatenate_array_at_root_fast(max_values, root=0)
         all_best_bundles = self.comm_manager.concatenate_array_at_root_fast(best_bundles, root=0)
         return all_best_bundles, all_max_values

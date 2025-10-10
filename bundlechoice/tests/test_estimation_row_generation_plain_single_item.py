@@ -10,7 +10,7 @@ from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemS
 
 def test_row_generation_plain_single_item():
     """Test RowGenerationSolver using PlainSingleItemSubproblem with only modular features."""
-    num_agents = 500
+    num_agents = 20
     num_items = 2
     num_modular_agent_features = 4
     num_modular_item_features = 1

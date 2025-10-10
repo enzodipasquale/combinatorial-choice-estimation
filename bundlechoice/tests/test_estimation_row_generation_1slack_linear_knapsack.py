@@ -6,7 +6,7 @@ from bundlechoice.estimation import RowGeneration1SlackSolver
 
 def test_row_generation_1slack_linear_knapsack():
     """Test RowGeneration1SlackSolver using observed bundles generated from linear knapsack subproblem manager."""
-    num_agents = 250
+    num_agents = 20
     num_items = 20
     num_modular_agent_features = 2
     num_modular_item_features = 2

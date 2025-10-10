@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/core/_initialization.py
+# hypothesis_version: 6.140.3
+
+['DataManager', 'DimensionsConfig', 'FeatureManager', 'SubproblemManager']
