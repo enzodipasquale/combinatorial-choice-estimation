@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/data_manager.py
+# hypothesis_version: 6.140.3
+
+['Loading input data.', 'agent_data', 'errors', 'item_data', 'modular', 'num_local_agents', 'obs_bundle', 'obs_bundles', 'quadratic']

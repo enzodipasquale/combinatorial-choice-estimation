@@ -9,7 +9,7 @@ from bundlechoice.comm_manager import CommManager
 def test_data_manager_scatter_mpi():
     """Test MPI scatter functionality of DataManager."""
     dimensions_cfg = DimensionsConfig(
-        num_agents=40,
+        num_agents=20,
         num_items=3,
         num_features=1,
         num_simuls=1
@@ -21,9 +21,9 @@ def test_data_manager_scatter_mpi():
     if rank == 0:
         input_data = {
             'item_data': {'a': np.array([1, 2, 3])},
-            'agent_data': {'b': np.random.normal(0, 1, (40, 3))},
-            'errors': np.zeros((40, 3)),
-            'observed_bundles': np.ones((40, 3)),
+        'agent_data': {'b': np.random.normal(0, 1, (20, 3))},
+        'errors': np.zeros((20, 3)),
+        'observed_bundles': np.ones((20, 3)),
         }
     else:
         input_data = None

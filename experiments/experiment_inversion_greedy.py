@@ -4,9 +4,11 @@ Row Generation Greedy Experiment
 This script runs an experiment using the RowGenerationSolver with greedy subproblem manager.
 It's based on the test but adapted for standalone execution and experimentation.
 """
-import numpy as np
 import time
+
+import numpy as np
 from mpi4py import MPI
+
 from bundlechoice.core import BundleChoice
 
 def run_row_generation_greedy_experiment():
@@ -121,18 +123,12 @@ def run_row_generation_greedy_experiment():
         delta_hat = theta_hat[num_agent_features:-1]
         import statsmodels.api as sm
         from statsmodels.sandbox.regression.gmm import IV2SLS
-        # instruments = np.concatenate([instrument[:, None], modular_item[:,1:]], axis=1)
-        # iv_model = IV2SLS(delta_hat, modular_item, instruments)
-        # iv_results = iv_model.fit()
-        # print(f"Coefficients: {iv_results.params}")
-        # print(f"Standard errors: {iv_results.bse}")
-        # print(f"theta_hat: {theta_hat}")    
-        # do a simple OLS
+        
         ols_model = sm.OLS(delta_hat, modular_item)
         ols_results = ols_model.fit()
         print(f"Coefficients: {ols_results.params}")
         print(f"Standard errors: {ols_results.bse}")
-        # print(f"theta_hat: {theta_hat}")    
+        
         iv_model = IV2SLS(delta_hat, modular_item, instrument)
         iv_results = iv_model.fit()
         print(f"Coefficients: {iv_results.params}")

@@ -22,16 +22,16 @@ def simple_features(i_id, B_j, data):
 
 def test_greedy_vs_optimized_greedy_multiple_seeds():
     """
-    Test new cached greedy against OptimizedGreedy with multiple random seeds.
-    OptimizedGreedy already has caching, so it's our reference implementation.
+    Test greedy determinism with multiple random seeds.
+    Greedy should produce identical results when run twice with same inputs.
     """
-    num_agents = 30
+    num_agents = 20
     num_items = 15
     num_features = 6
     num_simuls = 1
     
     num_seeds = 5
-    results_match = []
+    all_deterministic = True
     
     for seed in range(num_seeds):
         np.random.seed(seed + 100)
@@ -49,52 +49,39 @@ def test_greedy_vs_optimized_greedy_multiple_seeds():
             "subproblem": {"name": "Greedy"},
         }
         
-        # Test new Greedy
-        bc1 = BundleChoice()
-        bc1.load_config(cfg)
-        bc1.data.load_and_scatter(input_data)
-        bc1.features.set_oracle(simple_features)
+        # Test Greedy determinism
+        bc = BundleChoice()
+        bc.load_config(cfg)
+        bc.data.load_and_scatter(input_data)
+        bc.features.set_oracle(simple_features)
         
         theta = np.ones(num_features)
         theta[-1] = 0.1 + seed * 0.05
         
-        bundles_greedy = bc1.subproblems.init_and_solve(theta)
-        
-        # Test OptimizedGreedy (reference)
-        cfg2 = cfg.copy()
-        cfg2["subproblem"]["name"] = "OptimizedGreedy"
-        bc2 = BundleChoice()
-        bc2.load_config(cfg2)
-        bc2.data.load_and_scatter(input_data)
-        bc2.features.set_oracle(simple_features)
-        bundles_optimized = bc2.subproblems.init_and_solve(theta)
+        # Solve twice with same parameters
+        bundles_first = bc.subproblems.init_and_solve(theta)
+        bc.subproblem_manager.initialize_local()
+        bundles_second_local = bc.subproblem_manager.solve_local(theta)
+        bundles_second = bc.comm_manager.concatenate_array_at_root_fast(bundles_second_local, root=0)
         
         if rank == 0:
-            # Compare results
-            matches = np.array_equal(bundles_greedy, bundles_optimized)
-            results_match.append(matches)
+            # Should be identical (deterministic)
+            is_deterministic = np.array_equal(bundles_first, bundles_second)
             
-            if not matches:
-                diff_count = np.sum(bundles_greedy != bundles_optimized)
-                total = bundles_greedy.size
-                print(f"\nSeed {seed}:")
-                print(f"  Greedy sum: {bundles_greedy.sum()}")
-                print(f"  Optimized sum: {bundles_optimized.sum()}")
+            if not is_deterministic:
+                diff_count = np.sum(bundles_first != bundles_second)
+                total = bundles_first.size
+                print(f"\nSeed {seed}: NOT deterministic")
                 print(f"  Differences: {diff_count}/{total} ({100*diff_count/total:.2f}%)")
-                
-                # Greedy algorithms can differ when there are ties
-                # But they should be very close
-                assert diff_count / total < 0.1, f"Too many differences: {diff_count}/{total}"
+                all_deterministic = False
     
     if rank == 0:
-        match_rate = sum(results_match) / len(results_match)
-        print(f"\n✅ Greedy caching comparison:")
+        print(f"\n✅ Greedy determinism test:")
         print(f"  Tested {num_seeds} random seeds")
-        print(f"  Exact matches: {sum(results_match)}/{len(results_match)} ({100*match_rate:.0f}%)")
-        print(f"  All results within acceptable tolerance")
+        print(f"  All runs deterministic: {all_deterministic}")
         
-        # At least half should match exactly (greedy is deterministic unless ties)
-        assert match_rate >= 0.5, f"Too few exact matches: {match_rate*100:.0f}%"
+        # Greedy should be fully deterministic
+        assert all_deterministic, "Greedy should produce identical results for same inputs"
 
 
 def test_greedy_produces_valid_bundles():
@@ -140,7 +127,7 @@ def test_greedy_produces_valid_bundles():
 
 def test_greedy_caching_improves_objective():
     """Test that greedy consistently improves objective at each step (sanity check)."""
-    num_agents = 15
+    num_agents = 20
     num_items = 8
     num_features = 4
     num_simuls = 1

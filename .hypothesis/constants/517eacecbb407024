@@ -1,0 +1,4 @@
+# file: /Users/enzo-macbookpro/MyProjects/combinatorial-choice-estimation/bundlechoice/validation.py
+# hypothesis_version: 6.140.3
+
+['agent_data', 'compute_features', 'config', 'data', 'errors', 'features', 'item_data', 'modular', 'ndim', 'num_agents', 'num_items', 'obs_bundle', 'obs_bundles', 'problems', 'quadratic', 'shape', 'solve_ellipsoid', 'solve_inequalities', 'solve_row_generation', 'solve_subproblems', 'subproblems', 'type']
