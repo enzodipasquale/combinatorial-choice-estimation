@@ -15,6 +15,9 @@ python 2_simulate.py
 
 # Step 3: Visualize results
 python 3_visualize.py
+
+# Step 4: Analyze Mexico (optional - similar to firms_export)
+python 4_analyze_mexico.py
 ```
 
 ---
@@ -70,15 +73,46 @@ Firms are drawn from countries proportional to GDP^0.8:
 
 ---
 
+## 🇲🇽 Mexico Analysis
+
+Similar to the `firms_export` application, we analyze Mexican firms specifically:
+
+**Mexico Simulation Results:**
+- **Mexican firms**: 175 (1.75% of total)
+- **Average destinations**: 20.0 (range: 13-29)
+- **Top 3 destinations**: USA (100%), China (100%), India (97.7%)
+
+**Visualizations** (similar to `firms_export/graphs_MEX/`):
+1. `mexico_marginals.png` - Fraction of firms per destination (sorted)
+2. `mexico_count_distribution.png` - Distribution of destinations per firm
+3. `mexico_top_destinations.png` - Top 15 export destinations
+4. `mexico_comprehensive.png` - 4-panel overview
+
+**Key Insight**: USA is the #1 destination (100% of firms) ✅ - realistic given proximity and NAFTA/USMCA!
+
+---
+
 ## 📁 Output Files
 
 **`datasets/`**
+
+*Input Data:*
 - `country_features.csv` - Country-level data (GDP, population, etc.)
 - `distances.csv` - Pairwise geographic distances
+
+*Simulation Output:*
 - `quad_simulation.csv` - Firm-level export choices (10,000 × 50)
 - `quad_simulation.npz` - Simulation data (bundles, home_countries, theta)
+
+*General Visualizations:*
 - `comprehensive_analysis.png` - Main visualization (6 panels)
 - `parameter_effects.png` - Parameter sensitivity plots
+
+*Mexico-Specific (like firms_export):*
+- `mexico_marginals.png` - Export demand by destination
+- `mexico_count_distribution.png` - Distribution of destinations per firm
+- `mexico_top_destinations.png` - Top 15 destinations bar chart
+- `mexico_comprehensive.png` - 4-panel Mexico overview
 
 ---
 
