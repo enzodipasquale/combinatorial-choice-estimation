@@ -16,7 +16,7 @@ def run_quad_supermod_experiment():
     """Run the quadratic supermodular experiment."""
     # Experiment parameters
     num_agents = 1000
-    num_items = 150
+    num_items = 300
     num_modular_agent_features = 1
     num_modular_item_features = 1
     num_quadratic_item_features = 2
@@ -46,7 +46,8 @@ def run_quad_supermod_experiment():
             }
         }
     }
-    
+    cfg["row_generation"]["theta_ubs"] = 10
+    cfg["row_generation"]["theta_lbs"] = 0
     # MPI setup
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -69,7 +70,7 @@ def run_quad_supermod_experiment():
         instrument = np.random.normal(0, 1, size=(num_items,)) 
         modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, .5, size=(num_items,))
         # Generate quadratic features
-        item_quadratic =  np.random.choice([0, 1], size=(num_items, num_items, num_quadratic_item_features), p=[.8, .2]) * 1.0 
+        item_quadratic =  np.random.choice([0, 1], size=(num_items, num_items, num_quadratic_item_features), p=[.8, .2]) * .5 
         item_quadratic *= (1.0 - np.eye(num_items))[:,:,None]
 
         # Generate errors with endogenous component
