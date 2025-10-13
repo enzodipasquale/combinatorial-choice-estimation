@@ -70,7 +70,7 @@ def run_quad_supermod_experiment():
         instrument = np.random.normal(0, 1, size=(num_items,)) 
         modular_item[:,0] = instrument + endogenous_errors + np.random.normal(0, .5, size=(num_items,))
         # Generate quadratic features
-        item_quadratic =  np.random.choice([0, 1], size=(num_items, num_items, num_quadratic_item_features), p=[.8, .2]) * .5 
+        item_quadratic =  np.random.choice([0, 1], size=(num_items, num_items, num_quadratic_item_features), p=[.8, .2]) * .5
         item_quadratic *= (1.0 - np.eye(num_items))[:,:,None]
 
         # Generate errors with endogenous component
