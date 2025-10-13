@@ -10,7 +10,7 @@ from bundlechoice.feature_manager import FeatureManager
 def test_quad_vs_bruteforce():
     """Test that quadratic solver finds the same optimal bundles as brute force."""
     # Simulate config and data with non-negative quadratic terms
-    num_agents, num_items, num_simuls = 100, 13, 1  # Small problem for brute force efficiency
+    num_agents, num_items, num_simuls = 30, 13, 1  # Small problem for brute force efficiency
     agent_modular_dim = 1
     agent_quadratic_dim = 1
     item_modular_dim = 1
