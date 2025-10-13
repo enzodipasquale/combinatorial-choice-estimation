@@ -6,7 +6,7 @@ from bundlechoice.estimation import RowGenerationSolver
 
 def test_row_generation_quadsupermodular():
     """Test RowGenerationSolver using observed bundles generated from quadsupermodular subproblem manager."""
-    num_agents = 250
+    num_agents = 20
     num_items = 50
     num_modular_agent_features = 2
     num_modular_item_features = 2

@@ -87,7 +87,7 @@ def main():
     print("="*60)
     
     # Config
-    num_firms = 1000
+    num_firms = 10000
     seed = 42
     
     # Load
