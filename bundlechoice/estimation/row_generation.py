@@ -68,17 +68,23 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             Gurobi model instance with configured parameters.
         """    
+        # Default values for parameters not specified in config
+        defaults = {
+            'Method': 0,
+            'LPWarmStart': 2,
+            'OutputFlag': 0
+        }
+        
         with suppress_output():
             model = gp.Model()
-            Method = self.row_generation_cfg.gurobi_settings.get("Method", 0)
-            model.setParam('Method', Method)
-            Threads = self.row_generation_cfg.gurobi_settings.get("Threads")
-            if Threads is not None:
-                model.setParam('Threads', Threads)
-            LPWarmStart = self.row_generation_cfg.gurobi_settings.get("LPWarmStart", 2)
-            model.setParam('LPWarmStart', LPWarmStart)
-            OutputFlag = self.row_generation_cfg.gurobi_settings.get("OutputFlag", 0)
-            model.setParam('OutputFlag', OutputFlag)
+            
+            # Merge defaults with user settings (user settings take precedence)
+            params = {**defaults, **self.row_generation_cfg.gurobi_settings}
+            
+            # Set all parameters
+            for param_name, value in params.items():
+                if value is not None:
+                    model.setParam(param_name, value)
         return model
 
     def _initialize_master_problem(self):
@@ -121,20 +127,25 @@ class RowGenerationSolver(BaseEstimationSolver):
     
 
 
-    def _master_iteration(self, local_pricing_results):
+    def _master_iteration(self, local_pricing_results, timing_dict):
         """
         Perform one iteration of the master problem in the row generation algorithm.
 
         Args:
             pricing_results (list of np.ndarray): List of bundle selection matrices from pricing subproblems.
+            timing_dict (dict): Dictionary to store timing information for this iteration.
 
         Returns:
             bool: Whether the stopping criterion is met.
         """
+        t_mpi_gather_start = datetime.now()
         x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
         errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
+        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
+        
         stop = False
         if self.is_root():
+            t_master_prep_start = datetime.now()
             theta, u = self.master_variables
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + errors_sim
@@ -156,18 +167,32 @@ class RowGenerationSolver(BaseEstimationSolver):
                 stop = True
             rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
+            timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+            
+            t_master_update_start = datetime.now()
             self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
+            timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
+            
+            t_master_optimize_start = datetime.now()
             self.master_model.optimize()
+            timing_dict['master_optimize'] = (datetime.now() - t_master_optimize_start).total_seconds()
+            
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
             theta_val = None
             stop = False
+            timing_dict['master_prep'] = 0.0
+            timing_dict['master_update'] = 0.0
+            timing_dict['master_optimize'] = 0.0
         
         # Broadcast theta and stop flag together (single broadcast reduces latency)
+        t_mpi_broadcast_start = datetime.now()
         self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
+        timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
+        
         return stop
 
     def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
@@ -188,39 +213,72 @@ class RowGenerationSolver(BaseEstimationSolver):
         """
         logger.info("=== ROW GENERATION ===")
         tic = datetime.now()
+        
+        t_init = datetime.now()
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()        
         self.slack_counter = {}
+        init_time = (datetime.now() - t_init).total_seconds()
+        
         logger.info("Starting row generation loop.")
         iteration = 0
-        pricing_times, master_times = [], []
+        
+        # Detailed timing tracking
+        timing_breakdown = {
+            'pricing': [],
+            'mpi_gather': [],
+            'master_prep': [],
+            'master_update': [],
+            'master_optimize': [],
+            'mpi_broadcast': [],
+            'callback': []
+        }
+        
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
-            t1 = datetime.now()
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            pricing_times.append((datetime.now() - t1).total_seconds())
-            t2 = datetime.now()
-            stop = self._master_iteration(local_pricing_results) 
-            master_times.append((datetime.now() - t2).total_seconds())
+            iter_timing = {}
             
-            # Call callback if provided
-            if callback and self.is_root():
-                callback({
-                    'iteration': iteration + 1,
-                    'theta': self.theta_val.copy() if self.theta_val is not None else None,
-                    'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
-                    'pricing_time': pricing_times[-1],
-                    'master_time': master_times[-1],
-                })
+            # Pricing phase
+            t_pricing = datetime.now()
+            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            iter_timing['pricing'] = (datetime.now() - t_pricing).total_seconds()
+            
+            # Master iteration (with internal timing)
+            stop = self._master_iteration(local_pricing_results, iter_timing) 
+            
+            # Store timing breakdown
+            for key in timing_breakdown.keys():
+                if key in iter_timing:
+                    timing_breakdown[key].append(iter_timing[key])
+            
+            # Callback phase
+            if callback:
+                t_callback = datetime.now()
+                if self.is_root():
+                    callback({
+                        'iteration': iteration + 1,
+                        'theta': self.theta_val.copy() if self.theta_val is not None else None,
+                        'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
+                        'pricing_time': iter_timing['pricing'],
+                        'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
+                    })
+                timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 if self.is_root():
                     elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
-                    logger.info(f"Avg pricing time: {np.mean(pricing_times):.3f}s, Avg master time: {np.mean(master_times):.3f}s")
+                    self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown)
                 break
             iteration += 1
+        
+        # Log timing even if max iterations reached
+        if iteration >= self.row_generation_cfg.max_iters and self.is_root():
+            elapsed = (datetime.now() - tic).total_seconds()
+            logger.info("Row generation reached max iterations (%d) in %.2f seconds.", iteration, elapsed)
+            self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown)
+        
         self.theta_hat = self.theta_val
         return self.theta_hat
 
@@ -254,6 +312,81 @@ class RowGenerationSolver(BaseEstimationSolver):
             return 0
 
 
+
+    def _log_timing_summary(self, init_time, total_time, num_iterations, timing_breakdown):
+        """
+        Log comprehensive timing summary showing bottlenecks.
+        
+        Args:
+            init_time: Time spent on initialization
+            total_time: Total elapsed time
+            num_iterations: Number of iterations completed
+            timing_breakdown: Dictionary of timing lists for each component
+        """
+        logger.info("=" * 70)
+        logger.info("TIMING SUMMARY - Row Generation Performance Analysis")
+        logger.info("=" * 70)
+        logger.info(f"Total iterations: {num_iterations}")
+        logger.info(f"Total time: {total_time:.2f}s")
+        logger.info(f"Initialization time: {init_time:.3f}s ({100*init_time/total_time:.1f}%)")
+        logger.info("-" * 70)
+        
+        # Calculate totals and percentages for each component
+        component_stats = []
+        total_accounted = init_time
+        
+        for component, times in timing_breakdown.items():
+            if len(times) > 0:
+                total = np.sum(times)
+                mean = np.mean(times)
+                std = np.std(times)
+                min_t = np.min(times)
+                max_t = np.max(times)
+                pct = 100 * total / total_time
+                total_accounted += total
+                component_stats.append({
+                    'name': component,
+                    'total': total,
+                    'mean': mean,
+                    'std': std,
+                    'min': min_t,
+                    'max': max_t,
+                    'pct': pct
+                })
+        
+        # Sort by total time (descending) to show bottlenecks first
+        component_stats.sort(key=lambda x: x['total'], reverse=True)
+        
+        logger.info("Component breakdown (sorted by total time):")
+        for stat in component_stats:
+            logger.info(
+                f"  {stat['name']:16s}: {stat['total']:7.2f}s ({stat['pct']:5.1f}%) | "
+                f"avg: {stat['mean']:.3f}s ± {stat['std']:.3f}s | "
+                f"range: [{stat['min']:.3f}s, {stat['max']:.3f}s]"
+            )
+        
+        logger.info("-" * 70)
+        
+        # Combined metrics
+        total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
+        total_mpi = np.sum(timing_breakdown.get('mpi_gather', [0])) + np.sum(timing_breakdown.get('mpi_broadcast', [0]))
+        total_master_work = (np.sum(timing_breakdown.get('master_prep', [0])) + 
+                            np.sum(timing_breakdown.get('master_update', [0])) + 
+                            np.sum(timing_breakdown.get('master_optimize', [0])))
+        
+        logger.info("Aggregated metrics:")
+        logger.info(f"  Total pricing time:        {total_pricing:7.2f}s ({100*total_pricing/total_time:5.1f}%)")
+        logger.info(f"  Total MPI communication:   {total_mpi:7.2f}s ({100*total_mpi/total_time:5.1f}%)")
+        logger.info(f"  Total master problem work: {total_master_work:7.2f}s ({100*total_master_work/total_time:5.1f}%)")
+        
+        if num_iterations > 0:
+            logger.info(f"  Avg time per iteration:    {total_time/num_iterations:.3f}s")
+        
+        unaccounted = total_time - total_accounted
+        if abs(unaccounted) > 0.01:
+            logger.info(f"  Unaccounted time:          {unaccounted:7.2f}s ({100*unaccounted/total_time:5.1f}%)")
+        
+        logger.info("=" * 70)
 
     def log_parameter(self):
         feature_ids = self.row_generation_cfg.parameters_to_log
