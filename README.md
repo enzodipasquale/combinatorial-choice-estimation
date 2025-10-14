@@ -1,19 +1,19 @@
 # BundleChoice
 
-A Python toolkit for estimating discrete choice models when agents select bundles of items rather than single alternatives. Handles the case where you observe choices and want to recover preference parameters—think firms choosing export destinations, bidders selecting spectrum licenses, or consumers picking product portfolios.
+Estimate discrete choice models when agents pick bundles instead of single items. Firms don't just export to one country—they export to many. Bidders don't buy one spectrum license—they buy portfolios. This handles that.
 
-## The problem
+The core problem: you observe bundle choices, you want to recover the utility parameters that rationalize them. Standard revealed preference estimation but for combinatorial choice sets.
 
-Standard discrete choice works when people pick one thing. But many decisions involve selecting multiple items simultaneously. The challenge: given observed bundle choices, estimate the underlying utility parameters that rationalize those choices.
+## Why this is hard
 
-This is hard because:
-- The choice set grows exponentially with the number of items
-- You need to solve an optimization problem for each agent at each iteration
-- Estimation requires checking rationality constraints across all possible bundles
+The choice set explodes. With 50 items, there are 2^50 possible bundles. You can't enumerate them. So estimation requires:
+- Solving an optimization problem per agent per iteration
+- Checking rationality constraints you can't write down explicitly
+- Distributing computation because it's slow
 
-BundleChoice solves this using row generation (fast, needs Gurobi) or ellipsoid methods (slower, Gurobi-free), with MPI parallelization across agents.
+BundleChoice does row generation (fast, needs Gurobi) or ellipsoid method (slower, no Gurobi needed), parallelized with MPI.
 
-## Installation
+## Install
 
 ```bash
 git clone https://github.com/enzodipasquale/combinatorial-choice-estimation
@@ -21,12 +21,9 @@ cd combinatorial-choice-estimation
 pip install -e .
 ```
 
-**Requirements:**
-- Python ≥3.9
-- MPI installation (OpenMPI or MPICH)
-- Gurobi license (optional, only for row generation)
+You need MPI (OpenMPI or MPICH) and optionally Gurobi if you want row generation.
 
-## Quick start
+## Minimal example
 
 ```python
 from bundlechoice import BundleChoice
@@ -36,15 +33,10 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Generate data on rank 0
+# Data on rank 0
 if rank == 0:
-    num_agents = 100
-    num_items = 20
-    num_features = 5
-    
-    agent_features = np.random.normal(0, 1, (num_agents, num_items, num_features))
-    errors = np.random.normal(0, 0.1, (1, num_agents, num_items))
-    
+    agent_features = np.random.normal(0, 1, (100, 20, 5))  # 100 agents, 20 items, 5 features
+    errors = np.random.normal(0, 0.1, (1, 100, 20))
     input_data = {
         "agent_data": {"modular": agent_features},
         "errors": errors
@@ -52,33 +44,22 @@ if rank == 0:
 else:
     input_data = None
 
-# Initialize and configure
+# Setup
 bc = BundleChoice()
 bc.load_config({
-    "dimensions": {
-        "num_agents": 100,
-        "num_items": 20,
-        "num_features": 5,
-        "num_simuls": 1
-    },
+    "dimensions": {"num_agents": 100, "num_items": 20, "num_features": 5, "num_simuls": 1},
     "subproblem": {"name": "Greedy"},
-    "row_generation": {
-        "max_iters": 50,
-        "tolerance_optimality": 0.001
-    }
+    "row_generation": {"max_iters": 50, "tolerance_optimality": 0.001}
 })
 
-# Load and scatter data across MPI ranks
 bc.data.load_and_scatter(input_data)
-
-# Auto-generate feature oracle from data structure
 bc.features.build_from_data()
 
-# Generate observed bundles (simulate choices)
-theta_true = np.ones(num_features)
+# Generate choices with true parameters
+theta_true = np.ones(5)
 obs_bundles = bc.subproblems.init_and_solve(theta_true)
 
-# Add observations to data
+# Add observations and estimate
 if rank == 0:
     input_data["obs_bundle"] = obs_bundles
 
@@ -86,202 +67,125 @@ bc.data.load_and_scatter(input_data)
 bc.features.build_from_data()
 bc.subproblems.load()
 
-# Estimate parameters
 theta_hat = bc.row_generation.solve()
 
 if rank == 0:
-    print(f"True:      {theta_true}")
+    print(f"True: {theta_true}")
     print(f"Estimated: {theta_hat}")
 ```
 
-Run with:
+Run it:
 ```bash
 mpirun -n 10 python script.py
 ```
 
-## Architecture
+## How it works
 
-BundleChoice follows a modular design with five core components:
+BundleChoice has five components:
 
-### 1. DataManager
-Handles MPI data distribution and local data access.
+**DataManager** - Scatters data from rank 0 across MPI processes. Each rank gets a slice of agents.
 
+**FeatureManager** - Computes utility features from bundles. Either auto-generated from your data structure or custom function you provide.
+
+**SubproblemManager** - Solves each agent's utility maximization. Picks from built-in algorithms or uses your custom solver.
+
+**RowGenerationSolver** - Main estimation loop. Gurobi LP for master problem + your subproblem solver as separation oracle.
+
+**EllipsoidSolver** - Alternative estimation that doesn't need Gurobi. Slower but sometimes useful.
+
+## Built-in subproblem solvers
+
+| Name | What it does |
+|------|--------------|
+| `Greedy` | Greedily add items one by one |
+| `LinearKnapsack` | Linear utility + weight constraint |
+| `QuadKnapsack` | Quadratic utility + weight constraint (uses Gurobi) |
+| `QuadSupermodularNetwork` | Supermodular utilities via network flow |
+| `QuadSupermodularLovasz` | Supermodular utilities via Lovász extension |
+| `PlainSingleItem` | Just picks one item (standard discrete choice) |
+
+Pick one:
 ```python
-bc.data.load_and_scatter(input_data)  # Scatter data from rank 0
-local_data = bc.data.local_data        # Access local slice
+bc.load_config({"subproblem": {"name": "QuadSupermodularNetwork"}})
 ```
 
-**Data structure:**
+## Data structure
+
 ```python
 input_data = {
     "agent_data": {
-        "modular": np.array,      # Shape: (num_agents, num_items, num_features)
-        # ... other agent-specific data
+        "modular": np.array,      # (num_agents, num_items, num_features)
     },
     "item_data": {
-        "modular": np.array,      # Shape: (num_items, num_features)
-        "quadratic": np.array,    # Shape: (num_items, num_items, num_features)
+        "modular": np.array,      # (num_items, num_features)
+        "quadratic": np.array,    # (num_items, num_items, num_features) - optional
     },
-    "errors": np.array,           # Shape: (num_simuls, num_agents, num_items)
-    "obs_bundle": np.array        # Shape: (num_agents, num_items)
+    "errors": np.array,           # (num_simuls, num_agents, num_items)
+    "obs_bundle": np.array,       # (num_agents, num_items)
+    "constraint_mask": np.array   # (num_agents, num_items) - optional, boolean
 }
 ```
 
-### 2. FeatureManager
-Computes utility features from bundles.
+The `modular` arrays get used to auto-generate features. If you have quadratic terms, add them under `item_data["quadratic"]`.
 
-**Auto-generated oracle:**
-```python
-bc.features.build_from_data()
-```
+## Custom features
 
-This automatically creates a feature function that sums modular features over selected items.
+Auto-generated features work for simple cases but you'll often want custom logic:
 
-**Custom oracle:**
 ```python
 def my_features(agent_id, bundle, data):
     """
-    Args:
-        agent_id: Index of agent (local to this rank)
-        bundle: Binary array of shape (num_items,)
-        data: Dictionary with local data slices
+    agent_id: index on this MPI rank (int)
+    bundle: binary array (num_items,)
+    data: local data dictionary
     
-    Returns:
-        Feature vector of shape (num_features,)
+    Returns: feature vector (num_features,)
     """
     X = data["agent_data"]["modular"][agent_id]  # (num_items, num_features)
-    return X.T @ bundle  # (num_features,)
+    return X.T @ bundle
 
 bc.features.set_oracle(my_features)
 ```
 
-**Vectorized computation:**
-```python
-# Compute features for multiple bundles at once
-bundles = np.array([[1,0,1,0], [0,1,1,0]])  # 2 bundles, 4 items
-features = bc.features.compute_vectorized(agent_id, bundles)
-# Returns: (2, num_features)
-```
+The feature function gets called a lot, so make it fast. The greedy solver will automatically detect if your oracle can handle vectorized computation (multiple bundles at once) and use that if available.
 
-### 3. SubproblemManager
-Solves the agent's utility maximization problem.
+## Custom subproblem solver
 
-**Built-in solvers:**
+If the built-in solvers don't fit your problem:
 
-| Solver | Use case | Method |
-|--------|----------|--------|
-| `Greedy` | Unconstrained, myopic selection | Greedy insertion |
-| `GreedyOptimized` | Same, faster | Vectorized greedy |
-| `GreedyJIT` | Same, fastest | Numba JIT compilation |
-| `LinearKnapsack` | Linear utility + capacity | Dynamic programming |
-| `QuadraticKnapsack` | Quadratic utility + capacity | MIP (Gurobi) |
-| `QuadSupermodularNetwork` | Supermodular with quadratic | Network flow |
-| `QuadSupermodularLovasz` | Same | Lovász extension |
-| `PlainSingleItem` | Single item choice | Argmax |
-
-**Usage:**
-```python
-bc.load_config({"subproblem": {"name": "Greedy"}})
-bc.subproblems.load()
-
-# Solve for all agents with given parameters
-bundles = bc.subproblems.init_and_solve(theta)
-# Returns: (num_agents, num_items) on rank 0, local slice on other ranks
-```
-
-**Custom solver:**
 ```python
 from bundlechoice.subproblems.base import SerialSubproblemBase
 import numpy as np
 
 class MyOptimizer(SerialSubproblemBase):
     def initialize(self, agent_id):
-        """Set up problem for one agent."""
-        # Return problem state (optional)
-        return {"weights": self.local_data["item_data"]["weights"]}
+        """Setup for one agent. Return whatever state you need."""
+        capacity = self.local_data["agent_data"]["capacity"][agent_id]
+        return {"capacity": capacity}
     
     def solve(self, agent_id, theta, problem_state):
-        """Solve for one agent given theta."""
+        """Solve for this agent given parameters theta."""
         # Compute utilities
-        utilities = np.zeros(self.num_items)
+        utilities = []
         for j in range(self.num_items):
             bundle = np.zeros(self.num_items)
             bundle[j] = 1
             features = self.features_oracle(agent_id, bundle)
-            utilities[j] = theta @ features
+            utilities.append(theta @ features)
         
-        # Your optimization logic here
-        best_bundle = np.zeros(self.num_items)
-        best_bundle[np.argmax(utilities)] = 1
-        return best_bundle
+        # Your optimization logic
+        bundle = np.zeros(self.num_items)
+        bundle[np.argmax(utilities)] = 1
+        return bundle
 
-# Load custom solver
 bc.subproblems.load(MyOptimizer)
 ```
 
-### 4. Row Generation Solver
-Main estimation algorithm using Gurobi LP + separation oracle.
-
-```python
-theta_hat = bc.row_generation.solve()
-```
-
-**How it works:**
-1. **Master problem**: LP that finds parameters satisfying rationality constraints
-2. **Separation oracle**: For each agent, solve utility maximization with current θ
-3. **Add violated constraints**: If any agent could improve, add that constraint
-4. **Iterate**: Until convergence or max iterations
-
-**Configuration:**
-```python
-bc.load_config({
-    "row_generation": {
-        "max_iters": 100,              # Max iterations
-        "min_iters": 10,               # Force at least this many
-        "tolerance_optimality": 1e-6,  # Convergence tolerance
-        "theta_ubs": 10.0,             # Upper bound on parameters
-        "theta_lbs": -10.0,            # Lower bound on parameters
-        "gurobi_settings": {
-            "Method": 0,               # Primal simplex
-            "OutputFlag": 0,           # Suppress output
-            "LPWarmStart": 2           # Use warm start
-        }
-    }
-})
-```
-
-**Warm start:**
-```python
-# Provide initial theta
-bc.row_generation_manager = RowGenerationSolver(
-    ...,
-    theta_init=theta_initial
-)
-```
-
-### 5. Ellipsoid Solver
-Alternative estimation without Gurobi (slower but more flexible).
-
-```python
-theta_hat = bc.ellipsoid.solve()
-```
-
-**Configuration:**
-```python
-bc.load_config({
-    "ellipsoid": {
-        "max_iterations": 1000,
-        "tolerance": 1e-6,
-        "initial_radius": 1.0,
-        "decay_factor": 0.95,
-        "verbose": True
-    }
-})
-```
+Inherit from `SerialSubproblemBase` if you solve per agent, or `BatchSubproblemBase` if you can vectorize across agents.
 
 ## Configuration
 
-Settings can be provided as a dictionary or YAML file:
+Settings go in a dict or YAML file:
 
 ```yaml
 dimensions:
@@ -291,307 +195,181 @@ dimensions:
   num_simuls: 1
 
 subproblem:
-  name: "QuadSupermodularNetwork"
-  settings:
-    # Solver-specific options
+  name: "Greedy"
+  settings: {}
 
 row_generation:
   max_iters: 100
-  tolerance_optimality: 0.001
-  theta_ubs: 10.0
+  tolerance_optimality: 1e-6
+  theta_ubs: 1000
+  theta_lbs: -1000
   gurobi_settings:
-    Method: 0
-    OutputFlag: 0
-
-ellipsoid:
-  max_iterations: 1000
-  tolerance: 1e-6
+    Method: 0        # Primal simplex
+    OutputFlag: 0    # Quiet
 ```
 
-Load configuration:
+Load it:
 ```python
 bc.load_config("config.yaml")
 # or
 bc.load_config(config_dict)
 ```
 
-**Update configuration:**
+You can update config incrementally:
 ```python
-# Merge new settings with existing
-bc.load_config({"row_generation": {"max_iters": 200}})
+bc.load_config({"row_generation": {"max_iters": 200}})  # Merges with existing
 ```
 
-## API patterns
+## Typical workflow
 
-### Standard workflow
 ```python
 bc = BundleChoice()
 bc.load_config(config)
 bc.data.load_and_scatter(input_data)
 bc.features.build_from_data()  # or set_oracle(fn)
 bc.subproblems.load()
-theta_hat = bc.row_generation.solve()
+theta = bc.row_generation.solve()
 ```
 
-### Quick setup
+Or use the shortcut:
 ```python
 bc = BundleChoice().quick_setup(config, input_data, features_oracle=None)
 theta = bc.row_generation.solve()
 ```
 
-### Generate observations
-```python
-bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
-bc.generate_observations(theta_true)  # Automatically reloads data
-theta_hat = bc.row_generation.solve()
-```
+## Row generation details
 
-### Temporary config
-```python
-with bc.temp_config(row_generation={'max_iters': 5}):
-    quick_theta = bc.row_generation.solve()
-# Config restored after context
-```
+The row generation solver iterates:
+1. Master problem (Gurobi LP): find θ satisfying current rationality constraints
+2. Separation oracle: for each agent, solve utility maximization with current θ
+3. Add violated constraints: if any agent could improve, add that constraint
 
-### Status checking
-```python
-bc.print_status()
-# Output:
-# === BundleChoice Status ===
-# Config:      ✓
-# Data:        ✓
-# Features:    ✓
-# Subproblems: ✓
-# 
-# Dimensions:  agents=100, items=20, features=5
-# Algorithm:   Greedy
-# MPI:         rank 0/10
+Stops when converged or max iterations hit.
 
-# Or programmatic check
-status = bc.status()
-if not status['features_set']:
-    bc.features.build_from_data()
-```
+Config options:
+- `tolerance_optimality`: convergence threshold (default 1e-6)
+- `max_iters`: hard stop (default infinity)
+- `min_iters`: force at least this many iterations (default 0)
+- `theta_ubs` / `theta_lbs`: bounds on parameters (defaults: 1000, None)
+- `gurobi_settings`: pass through to Gurobi model
 
-### Validation
-```python
-bc.validate_setup('row_generation')  # Raises error if incomplete
-bc.validate_setup('ellipsoid')
-```
+Typical convergence is 20-50 iterations for synthetic data.
 
-## Advanced features
+## Ellipsoid method
 
-### Constraint masks
-
-Exclude certain items for specific agents (e.g., firms can't export to home country):
+Alternative that doesn't need Gurobi:
 
 ```python
-# Boolean mask: True = feasible, False = excluded
-constraint_mask = np.ones((num_agents, num_items), dtype=bool)
-for i in range(num_agents):
-    home_country = home_countries[i]
-    constraint_mask[i, home_country] = False
-
-input_data["constraint_mask"] = constraint_mask
-bc.data.load_and_scatter(input_data)
-```
-
-The solver automatically respects these constraints during optimization.
-
-### Quadratic utilities
-
-For complementarities between items:
-
-```python
-input_data = {
-    "agent_data": {"modular": ...},
-    "item_data": {
-        "modular": ...,
-        "quadratic": ...  # (num_items, num_items, num_features)
-    }
-}
-
-bc.load_config({"subproblem": {"name": "QuadSupermodularNetwork"}})
-```
-
-Utility: `θ' f(bundle)` where features include both linear and quadratic terms.
-
-### Multiple simulations
-
-Run multiple simulations with different error draws:
-
-```python
-errors = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
-input_data["errors"] = errors
-
-bc.load_config({"dimensions": {"num_simuls": 10}})
-```
-
-### Callbacks
-
-Monitor convergence:
-
-```python
-def progress_callback(info):
-    print(f"Iter {info['iteration']}: obj={info['objective']:.4f}, "
-          f"violation={info['max_violation']:.6f}")
-
-theta = bc.row_generation.solve(callback=progress_callback)
-```
-
-## Testing
-
-Run the test suite:
-
-```bash
-# All tests (excluding slow ellipsoid tests)
-mpirun -n 10 pytest bundlechoice/tests/ -k "not ellipsoid"
-
-# Specific solver
-mpirun -n 10 pytest bundlechoice/tests/test_greedy.py
-
-# With coverage
-mpirun -n 10 pytest bundlechoice/tests/ --cov=bundlechoice
-```
-
-Tests cover:
-- All built-in solvers
-- Row generation and ellipsoid estimation
-- Data distribution across MPI ranks
-- Feature computation (auto and custom)
-- Configuration loading and validation
-- Edge cases and error handling
-
-## Debugging
-
-Common issues and solutions:
-
-**"Cannot initialize subproblem manager"**
-```python
-bc.print_status()
-# Check what's missing, then:
-bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
-bc.subproblems.load()
-```
-
-**Gurobi license error**
-```python
-# Use ellipsoid method instead
 theta = bc.ellipsoid.solve()
 ```
 
-**Slow convergence**
+Uses subgradient cuts to shrink an ellipsoid around the feasible region. Slower than row generation but doesn't require a commercial solver.
+
+Config:
 ```python
-# Increase tolerance or decrease max_iters
 bc.load_config({
-    "row_generation": {
-        "tolerance_optimality": 0.01,  # Looser tolerance
-        "max_iters": 50
+    "ellipsoid": {
+        "max_iterations": 1000,
+        "tolerance": 1e-6,
+        "initial_radius": 1.0
     }
 })
 ```
 
-**MPI errors**
-```bash
-# Always run with mpirun
-mpirun -n 10 python script.py
-```
+## Advanced stuff
 
-**Wrong results**
+**Constraint masks** - exclude items for specific agents:
 ```python
-# Validate your feature oracle
-features = bc.features.features_oracle(agent_id=0, bundle=np.array([1,0,1,0]))
-print(features)  # Should have shape (num_features,)
-
-# Check observed bundles are being used
-print(bc.data.local_data["obs_bundle"])
+# Firms can't export to their home country
+constraint_mask = np.ones((num_agents, num_items), dtype=bool)
+constraint_mask[i, home_country[i]] = False
+input_data["constraint_mask"] = constraint_mask
 ```
 
-## Performance
+**Quadratic utilities** - for complementarities:
+```python
+input_data["item_data"]["quadratic"] = ...  # (num_items, num_items, num_features)
+bc.load_config({"subproblem": {"name": "QuadSupermodularNetwork"}})
+```
 
-Typical timings (100 agents, 50 items, 5 features):
+**Callbacks** - monitor progress:
+```python
+def callback(info):
+    print(f"Iter {info['iteration']}: theta={info['theta']}")
 
-| Solver | Time per iteration | Convergence |
-|--------|-------------------|-------------|
-| Greedy | ~0.5s | 20-40 iters |
-| GreedyJIT | ~0.1s | 20-40 iters |
-| LinearKnapsack | ~2s | 30-50 iters |
-| QuadSupermodular | ~5s | 40-60 iters |
+theta = bc.row_generation.solve(callback=callback)
+```
 
-**MPI scaling:**
-- Linear speedup up to ~20 processes
-- Beyond that, communication overhead dominates
-- Best practice: Use `num_processes ≤ num_agents / 5`
+The callback gets a dict with: `iteration`, `theta`, `objective`, `max_violation`, and timing info.
 
-**Memory usage:**
-- Rank 0: Stores full data + Gurobi model
-- Other ranks: Only their data slice
-- Largest arrays: features matrix, observed bundles
+## Debugging
 
-## Project structure
+Check what's initialized:
+```python
+bc.print_status()
+```
+
+Output tells you what's missing. Common issues:
+
+- **"Cannot initialize subproblem manager"** - you didn't load data or set features yet
+- **Gurobi license error** - use `bc.ellipsoid.solve()` instead
+- **Wrong results** - check your feature function returns shape `(num_features,)`
+- **Slow** - try a simpler subproblem solver
+
+Validate before running:
+```python
+bc.validate_setup('row_generation')  # Raises informative error if something's wrong
+```
+
+## Tests
+
+```bash
+# All tests except ellipsoid (slow)
+mpirun -n 10 pytest bundlechoice/tests/ -k "not ellipsoid"
+
+# Specific solver
+mpirun -n 10 pytest bundlechoice/tests/test_greedy.py
+```
+
+## Project layout
 
 ```
 bundlechoice/
-├── __init__.py
-├── core.py                    # BundleChoice main class
-├── base.py                    # Base classes and mixins
-├── config.py                  # Configuration dataclasses
+├── core.py                    # Main BundleChoice class
 ├── data_manager.py            # MPI data distribution
 ├── feature_manager.py         # Feature computation
-├── comm_manager.py            # MPI communication wrapper
-├── utils.py                   # Utilities and logging
-├── validation.py              # Input validation
-├── errors.py                  # Custom exceptions
+├── config.py                  # Configuration objects
 │
-├── core/                      # Core workflow logic
-│   ├── _initialization.py
-│   ├── _validation.py
-│   └── _workflow.py
-│
-├── subproblems/               # Optimization algorithms
+├── subproblems/
 │   ├── base.py                # Base classes
-│   ├── subproblem_manager.py  # Manager component
-│   ├── subproblem_registry.py # Solver registry
+│   ├── subproblem_manager.py
 │   └── registry/              # Built-in solvers
 │       ├── greedy.py
 │       ├── linear_knapsack.py
 │       ├── quadratic_knapsack.py
-│       ├── plain_single_item.py
 │       └── quad_supermodular/
-│           ├── quad_supermod_network.py
-│           └── quad_supermod_lovasz.py
 │
-├── estimation/                # Estimation methods
-│   ├── base.py                # Base solver class
-│   ├── row_generation.py      # Row generation
-│   ├── ellipsoid.py           # Ellipsoid method
-│   └── inequalities.py        # Inequality solver
+├── estimation/
+│   ├── row_generation.py
+│   ├── ellipsoid.py
+│   └── inequalities.py
 │
-└── tests/                     # Test suite
-    ├── test_greedy.py
-    ├── test_knapsack.py
-    ├── test_supermodular.py
-    ├── test_row_generation.py
-    └── ...
+└── tests/
 ```
 
-## Contributing
+## Requirements
 
-To extend BundleChoice:
+- Python ≥3.9
+- numpy ≥1.24
+- scipy ≥1.10
+- mpi4py ≥3.1
+- gurobipy ≥11.0 (optional, for row generation)
+- networkx ≥3.0 (for supermodular solvers)
+- pyyaml ≥6.0
 
-**Add a new solver:**
-1. Create file in `bundlechoice/subproblems/registry/`
-2. Inherit from `SerialSubproblemBase` or `BatchSubproblemBase`
-3. Implement `initialize()` and `solve()` methods
-4. Register in `subproblem_registry.py`
+## License
 
-**Add a new estimator:**
-1. Create file in `bundlechoice/estimation/`
-2. Inherit from `BaseEstimationSolver`
-3. Implement `solve()` method
-4. Add property to `BundleChoice` class
+MIT
 
 ## Citation
 
@@ -600,17 +378,8 @@ To extend BundleChoice:
   author = {Di Pasquale, Enzo},
   title = {BundleChoice: Combinatorial Discrete Choice Estimation},
   year = {2025},
-  version = {0.2.0},
   url = {https://github.com/enzodipasquale/combinatorial-choice-estimation}
 }
 ```
 
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contact
-
-Enzo Di Pasquale  
-Email: [ed2189@nyu.edu](mailto:ed2189@nyu.edu)  
-GitHub: [@enzodipasquale](https://github.com/enzodipasquale)
+Enzo Di Pasquale • [ed2189@nyu.edu](mailto:ed2189@nyu.edu) • [@enzodipasquale](https://github.com/enzodipasquale)
