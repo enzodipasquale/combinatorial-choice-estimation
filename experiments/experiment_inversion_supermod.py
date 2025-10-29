@@ -15,13 +15,13 @@ from bundlechoice.core import BundleChoice
 def run_quad_supermod_experiment():
     """Run the quadratic supermodular experiment."""
     # Experiment parameters
-    num_agents = 1000
-    num_items = 300
+    num_agents = 100
+    num_items = 150
     num_modular_agent_features = 1
     num_modular_item_features = 1
     num_quadratic_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_item_features
-    num_simuls = 1
+    num_simuls = 10
     sigma = 3
     
     # Configuration
@@ -29,9 +29,7 @@ def run_quad_supermod_experiment():
         "dimensions": {
             "num_agents": num_agents,
             "num_items": num_items,
-            "num_features": num_features,
-            "num_simuls": num_simuls
-        },
+            "num_features": num_features,        },
         "subproblem": {
             "name": "QuadSupermodularNetwork",
             "settings": {}
