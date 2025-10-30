@@ -10,6 +10,33 @@ from typing import Any, Optional
 from .quadratic_supermodular_base import QuadraticSupermodular
 import matplotlib.pyplot as plt
 
+def get_scale_factor(arr, digits=12):
+    """
+    Calculate scale factor to preserve specified number of significant digits.
+    Args:
+        arr: Input array
+        digits: Number of significant digits to preserve (default: 12)
+    Returns:
+        Scale factor for converting to integers
+    """
+    max_val = np.max(np.abs(arr))
+    if max_val == 0:
+        return 1
+    
+    return 10**(digits - 1 - int(np.floor(np.log10(max_val))))
+
+def truncate_to_significant_digits(arr, digits=12):
+    """
+    Truncate array to specified number of significant digits and convert to integers.
+    Args:
+        arr: Input array
+        digits: Number of significant digits to preserve (default: 12)
+    Returns:
+        Integer array with truncated significant digits
+    """
+    scale = get_scale_factor(arr, digits)
+    return np.round(arr * scale).astype(np.int64)
+
 class QuadraticSOptNetwork(QuadraticSupermodular):
     """
     Subproblem for quadratic supermodular minimization via min-cut reduction.
@@ -85,8 +112,11 @@ class MinCutSubmodularSolver:
         G.add_node('s')
         G.add_node('t')
         G.add_nodes_from(nodes)
-        a_j = np.round(a_j * 1e12).astype(int)
-        a_j_j = np.round(a_j_j * 1e12).astype(int)
+        # Use the same scale for both arrays since they represent the same problem
+        combined_array = np.concatenate([a_j.flatten(), a_j_j.flatten()])
+        scale = get_scale_factor(combined_array)
+        a_j = np.round(a_j * scale).astype(np.int64)
+        a_j_j = np.round(a_j_j * scale).astype(np.int64)
         for i in nodes:
             if a_j[i] >= 0:
                 G.add_edge(i, 't', capacity= a_j[i])

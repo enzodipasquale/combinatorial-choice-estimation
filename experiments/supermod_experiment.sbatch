@@ -2,9 +2,9 @@
 
 #SBATCH --job-name=supermod_experiment
 #SBATCH --nodes=15
-#SBATCH --ntasks-per-node=10
+#SBATCH --ntasks-per-node=15
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=5G
+#SBATCH --mem=20G
 #SBATCH --time=00:40:00
 
 module purge
