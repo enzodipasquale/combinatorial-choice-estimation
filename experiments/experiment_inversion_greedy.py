@@ -15,10 +15,10 @@ def run_row_generation_greedy_experiment():
     num_agent_features = 1
     num_item_features = 1
 
-    num_agents = 1000
-    num_items = 150
+    num_agents = 100
+    num_items = 300
     num_features = num_agent_features + num_item_features +1
-    num_simuls = 10
+    num_simuls = 50
     sigma = 6
     
     # Configuration
@@ -37,7 +37,7 @@ def run_row_generation_greedy_experiment():
             "gurobi_settings": {
                 "OutputFlag": 0
             },
-            "max_slack_counter": 30
+            "max_slack_counter": 5
         }
     }
       

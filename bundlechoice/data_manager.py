@@ -124,11 +124,15 @@ class DataManager(HasDimensions, HasComm):
         )
         local_errors = local_errors_flat.reshape(num_local_agents, self.num_items)
         
-        # Scatter obs_bundles if present
+        # Scatter obs_bundles if present - use buffer scatter_array for speed
         if has_obs_bundles:
             if self.is_root():
-                # Index obs_bundles properly (modulo for simulations)
-                indexed_obs_bundles = np.vstack([obs_bundles[idx % self.num_agents] for idx in idx_chunks])
+                # Create obs_chunks the old way
+                obs_chunks = []
+                for idx in idx_chunks:
+                    obs_chunks.append(obs_bundles[idx % self.num_agents])
+                # Concatenate for scatter_array
+                indexed_obs_bundles = np.concatenate(obs_chunks, axis=0)
             else:
                 indexed_obs_bundles = None
             
@@ -158,19 +162,20 @@ class DataManager(HasDimensions, HasComm):
         else:
             local_constraint_mask = None
         
-        # Scatter agent_data dict if present using buffer-based scatter_dict
+        # Scatter agent_data dict if present - use pickle scatter for flexibility
         if has_agent_data:
+            # Create chunks the old way
             if self.is_root():
-                # Index agent_data properly (modulo for simulations)
-                indexed_agent_data = {}
-                for key, array in agent_data.items():
-                    indexed_agent_data[key] = (np.concatenate if array.ndim == 1 else np.vstack)([array[idx % self.num_agents] for idx in idx_chunks])
+                agent_data_chunks = []
+                for idx in idx_chunks:
+                    chunk_dict = {
+                        k: array[idx % self.num_agents] for k, array in agent_data.items()
+                    }
+                    agent_data_chunks.append(chunk_dict)
             else:
-                indexed_agent_data = None
+                agent_data_chunks = None
             
-            local_agent_data = self.comm_manager.scatter_dict(
-                data_dict=indexed_agent_data, counts=counts, root=0
-            )
+            local_agent_data = self.comm_manager.comm.scatter(agent_data_chunks, root=0)
         else:
             local_agent_data = None
         
