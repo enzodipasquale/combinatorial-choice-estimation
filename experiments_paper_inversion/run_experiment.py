@@ -48,8 +48,8 @@ def main():
                        help='Output directory (default: experiments_paper_inversion/outputs/experiment_timestamp)')
     parser.add_argument('--skip-run', action='store_true', help='Skip experiment run, only generate tables')
     parser.add_argument('--config', type=str, default=None, help='Override config file path')
-    parser.add_argument('--timeout', type=int, default=120,
-                       help='Timeout in seconds (default: 120 = 2 minutes for debugging)')
+    parser.add_argument('--timeout', type=int, default=600,
+                       help='Timeout per size in seconds (default: 600 = 10 minutes)')
     
     args = parser.parse_args()
     

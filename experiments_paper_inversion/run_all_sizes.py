@@ -21,8 +21,8 @@ def main():
     parser.add_argument('--sizes', type=str, default='sizes.yaml', 
                        help='Sizes config file (default: sizes.yaml)')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
-    parser.add_argument('--timeout', type=int, default=300,
-                       help='Timeout in seconds (default: 300 = 5 minutes)')
+    parser.add_argument('--timeout', type=int, default=600,
+                       help='Timeout in seconds (default: 600 = 10 minutes)')
     
     args = parser.parse_args()
     
@@ -32,6 +32,9 @@ def main():
         print(f"Error: Experiment directory not found: {exp_dir}")
         return 1
     
+    # Set working directory to project root for MPI
+    project_root = base_dir.parent
+    
     sizes_path = exp_dir / args.sizes
     if not sizes_path.exists():
         print(f"Error: Sizes config not found: {sizes_path}")
@@ -40,7 +43,12 @@ def main():
     
     sizes_cfg = load_yaml_config(str(sizes_path))
     config_path = exp_dir / 'config.yaml'
-    cfg = load_yaml_config(str(config_path))
+    
+    # Load config (optional - defaults if missing)
+    if config_path.exists():
+        cfg = load_yaml_config(str(config_path))
+    else:
+        cfg = {'results_csv': 'results.csv'}
     
     # Determine which sizes to run
     if 'sizes' in sizes_cfg:
@@ -86,7 +94,7 @@ def main():
                str(run_script)]
         
         try:
-            result = subprocess.run(cmd, cwd=str(base_dir), env=env, check=True)
+            result = subprocess.run(cmd, cwd=str(project_root), env=env, check=True)
             print(f"✓ Completed {size_name}")
         except subprocess.CalledProcessError as e:
             print(f"✗ Failed {size_name}: {e}")
