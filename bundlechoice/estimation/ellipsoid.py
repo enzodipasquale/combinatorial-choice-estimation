@@ -23,14 +23,14 @@ class EllipsoidSolver(BaseEstimationSolver):
     
     def __init__(
         self,
-        comm_manager,
-        dimensions_cfg,
-        ellipsoid_cfg,  
-        data_manager,
-        feature_manager,
-        subproblem_manager,
-        theta_init=None
-    ):
+        comm_manager: Any,
+        dimensions_cfg: Any,
+        ellipsoid_cfg: Any,
+        data_manager: Any,
+        feature_manager: Any,
+        subproblem_manager: Any,
+        theta_init: Optional[NDArray[np.float64]] = None
+    ) -> None:
         """
         Initialize the EllipsoidSolver.
 

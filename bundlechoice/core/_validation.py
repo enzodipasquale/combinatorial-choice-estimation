@@ -4,12 +4,17 @@ Validation and status methods for BundleChoice.
 This module contains methods for validating setup and checking component status.
 """
 
+from typing import Any, Dict
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-def validate_setup(bc, for_method='row_generation'):
+# ============================================================================
+# Validation Functions
+# ============================================================================
+
+def validate_setup(bc: Any, for_method: str = 'row_generation') -> bool:
     """
     Validate that all components are initialized for the specified estimation method.
     
@@ -38,7 +43,7 @@ def validate_setup(bc, for_method='row_generation'):
     return True
 
 
-def status(bc) -> dict:
+def status(bc: Any) -> Dict[str, Any]:
     """
     Get setup status summary.
     
@@ -78,7 +83,7 @@ def status(bc) -> dict:
     }
 
 
-def print_status(bc):
+def print_status(bc: Any) -> None:
     """
     Print formatted setup status.
     

@@ -5,6 +5,7 @@ This module contains all the _try_init_* methods that lazily initialize
 the various managers and solvers used by BundleChoice.
 """
 
+from typing import Any, Optional
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
@@ -13,7 +14,11 @@ from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.estimation.inequalities import InequalitiesSolver
 
 
-def try_init_data_manager(bc):
+# ============================================================================
+# Initialization Functions
+# ============================================================================
+
+def try_init_data_manager(bc: Any) -> DataManager:
     """
     Initialize the DataManager if dimensions_cfg is set and not already initialized.
     
@@ -41,19 +46,8 @@ def try_init_data_manager(bc):
     return bc.data_manager
 
 
-def try_init_feature_manager(bc):
-    """
-    Initialize the FeatureManager if dimensions_cfg is set.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        FeatureManager: The initialized FeatureManager instance
-        
-    Raises:
-        SetupError: If dimensions_cfg is not set
-    """
+def try_init_feature_manager(bc: Any) -> FeatureManager:
+    """Initialize FeatureManager if dimensions_cfg is set."""
     from bundlechoice.errors import SetupError
     
     if bc.config is None or bc.config.dimensions is None:
@@ -70,19 +64,8 @@ def try_init_feature_manager(bc):
     return bc.feature_manager
 
 
-def try_init_subproblem_manager(bc):
-    """
-    Initialize the subproblem manager if subproblem_cfg is set.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        SubproblemManager: The initialized SubproblemManager instance
-        
-    Raises:
-        SetupError: If required managers or configs are not set
-    """
+def try_init_subproblem_manager(bc: Any) -> SubproblemManager:
+    """Initialize SubproblemManager if subproblem_cfg is set."""
     from bundlechoice.errors import SetupError
     
     if bc.data_manager is None or bc.feature_manager is None or bc.config is None or bc.config.subproblem is None:
@@ -115,19 +98,8 @@ def try_init_subproblem_manager(bc):
     return bc.subproblem_manager
 
 
-def try_init_row_generation_manager(bc):
-    """
-    Initialize the RowGenerationSolver if not already present.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        RowGenerationSolver: The initialized RowGenerationSolver instance
-        
-    Raises:
-        RuntimeError: If required managers are not set
-    """
+def try_init_row_generation_manager(bc: Any, theta_init: Optional[Any] = None) -> RowGenerationSolver:
+    """Initialize RowGenerationSolver if not already present."""
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
         missing = []
         if bc.data_manager is None:
@@ -150,24 +122,14 @@ def try_init_row_generation_manager(bc):
         row_generation_cfg=bc.config.row_generation,
         data_manager=bc.data_manager,
         feature_manager=bc.feature_manager,
-        subproblem_manager=bc.subproblem_manager
+        subproblem_manager=bc.subproblem_manager,
+        theta_init=theta_init
     )
     return bc.row_generation_manager
 
 
-def try_init_ellipsoid_manager(bc):
-    """
-    Initialize the EllipsoidSolver if not already present.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        EllipsoidSolver: The initialized EllipsoidSolver instance
-        
-    Raises:
-        RuntimeError: If required managers are not set
-    """
+def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> EllipsoidSolver:
+    """Initialize EllipsoidSolver if not already present."""
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.ellipsoid is None:
         missing = []
         if bc.data_manager is None:
@@ -190,24 +152,14 @@ def try_init_ellipsoid_manager(bc):
         ellipsoid_cfg=bc.config.ellipsoid,
         data_manager=bc.data_manager,
         feature_manager=bc.feature_manager,
-        subproblem_manager=bc.subproblem_manager
+        subproblem_manager=bc.subproblem_manager,
+        theta_init=theta_init
     )
     return bc.ellipsoid_manager
 
 
-def try_init_inequalities_manager(bc):
-    """
-    Initialize the InequalitiesSolver if required managers are set.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        InequalitiesSolver: The initialized inequalities solver instance
-        
-    Raises:
-        RuntimeError: If required managers are not initialized
-    """
+def try_init_inequalities_manager(bc: Any) -> InequalitiesSolver:
+    """Initialize InequalitiesSolver if required managers are set."""
     missing_managers = []
     if bc.data_manager is None:
         missing_managers.append("DataManager")

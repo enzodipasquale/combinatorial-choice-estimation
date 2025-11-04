@@ -5,10 +5,17 @@ This module contains high-level workflow methods that combine multiple
 operations for common use cases.
 """
 
+from typing import Any, Optional, Dict
 from contextlib import contextmanager
+import numpy as np
+from numpy.typing import NDArray
 
 
-def generate_observations(bc, theta_true):
+# ============================================================================
+# Workflow Functions
+# ============================================================================
+
+def generate_observations(bc: Any, theta_true: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
     """
     Generate observed bundles from true parameters and reload data.
     Handles the common workflow pattern automatically.
@@ -50,7 +57,7 @@ def generate_observations(bc, theta_true):
 
 
 @contextmanager
-def temp_config(bc, **updates):
+def temp_config(bc: Any, **updates: Any):
     """
     Temporarily modify configuration.
     
@@ -73,7 +80,8 @@ def temp_config(bc, **updates):
         bc.config = original_config
 
 
-def quick_setup(bc, config, input_data, features_oracle=None):
+def quick_setup(bc: Any, config: Any, input_data: Dict[str, Any], 
+                features_oracle: Optional[Any] = None) -> Any:
     """
     Quick setup for common workflow.
     Combines configure, load_and_scatter, features, and subproblems.load().

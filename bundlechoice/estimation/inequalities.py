@@ -1,6 +1,7 @@
 import numpy as np
 from datetime import datetime
 from typing import Tuple, List, Optional, Any, Dict
+from numpy.typing import NDArray
 import logging
 import gurobipy as gp
 from gurobipy import GRB
@@ -21,12 +22,12 @@ class InequalitiesSolver(BaseEstimationSolver):
     """
     def __init__(
                 self,
-                comm_manager,
-                dimensions_cfg,  
-                data_manager, 
-                feature_manager,
-                subproblem_manager=None
-                ):
+                comm_manager: Any,
+                dimensions_cfg: Any,
+                data_manager: Any,
+                feature_manager: Any,
+                subproblem_manager: Optional[Any] = None
+                ) -> None:
         """
         Initialize the InequalitiesSolver.
         Note: subproblem_manager is optional (not needed for inequalities method).
@@ -63,13 +64,8 @@ class InequalitiesSolver(BaseEstimationSolver):
         
         return theta.X
         
-    def compute_features_alt_AddDrop(self):
-        """
-        Compute alternative features for add/drop operations.
-        
-        Returns:
-            tuple: (features_alt, errors_alt) arrays
-        """
+    def compute_features_alt_AddDrop(self) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Compute alternative features for add/drop operations. Returns (features_alt, errors_alt)."""
         features_alt = np.zeros((self.num_agents * self.num_simuls, self.num_items, self.num_features))
         errors_alt = np.zeros((self.num_agents * self.num_simuls, self.num_items))
         
