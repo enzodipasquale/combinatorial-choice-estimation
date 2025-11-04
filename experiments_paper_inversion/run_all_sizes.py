@@ -32,7 +32,7 @@ def main():
         print(f"Error: Experiment directory not found: {exp_dir}")
         return 1
     
-    # Set working directory to project root for MPI
+    # Set working directory to project root for MPI (same as experiments_paper)
     project_root = base_dir.parent
     
     sizes_path = exp_dir / args.sizes
