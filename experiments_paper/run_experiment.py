@@ -42,6 +42,8 @@ def main():
     parser.add_argument('experiment', type=str, choices=['greedy', 'supermod', 'knapsack', 'supermodknapsack'],
                        help='Experiment type to run')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
+    parser.add_argument('--timeout', type=int, default=600,
+                       help='Timeout per size in seconds (default: 600 = 10 minutes)')
     parser.add_argument('--output-dir', type=str, default=None, 
                        help='Output directory (default: experiments_paper/outputs/experiment_timestamp)')
     parser.add_argument('--skip-run', action='store_true', help='Skip experiment run, only generate tables')
@@ -86,7 +88,7 @@ def main():
             return 1
         
         # Run all sizes
-        cmd = ['python', str(base_dir / 'run_all_sizes.py'), args.experiment, '--mpi', str(args.mpi)]
+        cmd = ['python', str(base_dir / 'run_all_sizes.py'), args.experiment, '--mpi', str(args.mpi), '--timeout', str(args.timeout)]
         try:
             result = subprocess.run(cmd, cwd=base_dir, check=True)
             print("✓ Experiments completed")

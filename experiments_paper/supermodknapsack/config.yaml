@@ -8,7 +8,7 @@ sigma: 2.0
 modular_agent_features: 4
 modular_item_features: 1
 quadratic_item_features: 1
-num_replications: 1
+num_replications: 10
 base_seed: 12345
 results_csv: results.csv
 

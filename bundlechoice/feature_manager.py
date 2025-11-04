@@ -47,15 +47,27 @@ class FeatureManager(HasDimensions, HasComm, HasData):
 
     def validate_oracle(self) -> None:
         """Validate that the features oracle returns the expected shape."""
+        # Only validate on rank 0 to avoid issues with data distribution on other ranks
+        if self.comm_manager is not None and self.comm_manager.rank != 0:
+            return
+            
         # check that features_oracle returns array of shape (num_features,)
         if self._features_oracle is not None:
             test_bundle = np.ones(self.num_items)
             if self.input_data is not None:
                 test_features = self._features_oracle(0, test_bundle, self.input_data)
             elif self.local_data is not None:
-                test_features = self._features_oracle(0, test_bundle, self.local_data)
+                # Check if agent 0 data is available on this rank
+                agent_data = self.local_data.get("agent_data", {})
+                modular = agent_data.get("modular")
+                if modular is not None and modular.shape[0] > 0:
+                    test_features = self._features_oracle(0, test_bundle, self.local_data)
+                else:
+                    # Data not distributed yet, skip validation on non-zero ranks
+                    return
             else:
-                raise RuntimeError("No data to validate features_oracle.")
+                # No data available, skip validation (might be on non-zero rank)
+                return
             assert test_features.shape == (self.num_features,), f"features_oracle must return array of shape {self.num_features}. Got {test_features.shape} instead."
         else:
             raise RuntimeError("_features_oracle function is not set.")

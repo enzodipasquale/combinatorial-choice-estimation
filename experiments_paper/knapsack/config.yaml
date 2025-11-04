@@ -7,7 +7,7 @@ dimensions:
 sigma: 1.0
 modular_agent_features: 3
 modular_item_features: 2
-num_replications: 2
+num_replications: 10
 base_seed: 12345
 results_csv: results.csv
 
@@ -19,9 +19,11 @@ subproblem:
 
 row_generation:
   max_iters: 100
+  min_iters: 1
   tolerance_optimality: 0.001
   gurobi_settings:
     OutputFlag: 0
+  theta_ubs: 100
 
 ellipsoid:
   solver_precision: 1.0e-6
