@@ -1,0 +1,36 @@
+dimensions:
+  num_agents: 100
+  num_items: 100
+  num_features: 6  # 4 modular agent + 1 modular item + 1 quadratic item
+  num_simuls: 1
+
+sigma: 2.0
+modular_agent_features: 4
+modular_item_features: 1
+quadratic_item_features: 1
+num_replications: 1
+base_seed: 12345
+results_csv: results.csv
+
+subproblem:
+  name: QuadKnapsack
+  settings:
+    TimeLimit: 60
+    MIPGap_tol: 0.01
+
+row_generation:
+  max_iters: 100
+  min_iters: 1
+  gurobi_settings:
+    OutputFlag: 0
+  theta_ubs: 100
+
+ellipsoid:
+  solver_precision: 1.0e-6
+  tolerance: 1.0e-6
+  initial_radius: 1.0
+  decay_factor: 0.95
+  min_volume: 1.0e-12
+  verbose: false
+
+

@@ -1,0 +1,47 @@
+% Generated LaTeX tables from experiment results
+% Use with beamer document class
+
+\section{Numerical Experiments}
+
+\begin{frame}{Numerical Experiment: Gross Substitutes}
+
+\only<1>{
+
+\begin{itemize}
+    \item $J = 100$ items, $K = 5$ features: 4 modular, 1 gross substitutes.
+    \item Agent $i$'s utility for bundle $B$:
+    \[
+    \sum_{j \in B} \phi_{ij}^\top \theta_{\text{MOD}} -|B|^2\theta_{\text{GS}} + \varepsilon_{iB}.
+    \]
+    \item Modular component $\phi_{ijk}$ drawn i.i.d. from half-normal distribution.
+    \item Modular errors: $\varepsilon_{iB} = \sum_{j \in B} \nu_{ij},\; \nu_{ij} \sim \mathcal{N}(0, \sigma^2).$
+\end{itemize}
+
+}
+
+\only<2>{
+
+\begin{landscape}
+\begin{table}[htbp]
+\centering
+\small
+\begin{threeparttable}
+\begin{tabular}{l r rr rr r rr rr r rr rr r rr rr r rr rr r rr rr }
+\toprule
+Method & \multicolumn{5}{c}{$(I,J)=(5,10)$} & \multicolumn{5}{c}{$(I,J)=(5,20)$} & \multicolumn{5}{c}{$(I,J)=(10,10)$} & \multicolumn{5}{c}{$(I,J)=(10,20)$} & \multicolumn{5}{c}{$(I,J)=(20,10)$} & \multicolumn{5}{c}{$(I,J)=(20,20)$} \\
+ & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} & Runtime (s) & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{Bias} \\
+ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ &  & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ & $\theta_{\text{MOD}}$ & $\theta_{\text{GS}}$ \\
+\cmidrule(lr){2-6} \cmidrule(lr){7-11} \cmidrule(lr){12-16} \cmidrule(lr){17-21} \cmidrule(lr){22-26} \cmidrule(lr){27-31}
+\midrule
+Ellipsoid & 19.313 & 0.6340 & 0.0089 & 0.1371 & -0.0089 & 22.402 & 0.4285 & 0.0483 & 0.3894 & 0.0483 & 27.650 & 0.1583 & 0.0015 & -0.0421 & 0.0015 & 30.186 & 0.1757 & 0.0265 & -0.1177 & -0.0265 & 36.593 & 0.2555 & 5.29e-04 & 0.0531 & 5.29e-04 & 28.898 & 0.2018 & 0.0142 & -0.0669 & -0.0142 \\
+Row Gen & 2.645 & 0.7590 & 0.0019 & 0.2590 & 0.0019 & 2.283 & 0.4285 & 0.0478 & 0.3894 & 0.0478 & 0.9529 & 0.1583 & 0.0015 & -0.0420 & 0.0015 & 2.287 & 0.1756 & 0.0264 & -0.1175 & -0.0264 & 1.256 & 0.2555 & 5.29e-04 & 0.0531 & 5.29e-04 & 2.467 & 0.2018 & 0.0142 & -0.0669 & -0.0142 \\
+Row Gen (1-Slack) & 1.490 & 0.7590 & 0.0019 & 0.2590 & 0.0019 & 5.824 & 0.4285 & 0.0484 & 0.3894 & 0.0484 & 6.103 & 0.1583 & 0.0015 & -0.0420 & 0.0015 & 5.680 & 0.1756 & 0.0264 & -0.1175 & -0.0264 & 2.846 & 0.2555 & 5.29e-04 & 0.0531 & 5.29e-04 & 7.180 & 0.2018 & 0.0142 & -0.0669 & -0.0142 \\
+\bottomrule
+\end{tabular}
+\end{threeparttable}
+\end{table}
+\end{landscape}
+
+}
+\end{frame}
+

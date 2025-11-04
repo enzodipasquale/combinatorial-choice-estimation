@@ -56,6 +56,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.row_generation_cfg = row_generation_cfg
         self.master_model = None
         self.master_variables = None
+        self.timing_stats = None  # Store detailed timing statistics
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
@@ -265,19 +266,65 @@ class RowGenerationSolver(BaseEstimationSolver):
                 timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
+                elapsed = (datetime.now() - tic).total_seconds()
                 if self.is_root():
-                    elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
                     self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown)
+                
+                # Store timing statistics
+                if self.is_root():
+                    total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
+                    total_master = (np.sum(timing_breakdown.get('master_prep', [0])) + 
+                                  np.sum(timing_breakdown.get('master_update', [0])) + 
+                                  np.sum(timing_breakdown.get('master_optimize', [0])))
+                    total_mpi = (np.sum(timing_breakdown.get('mpi_gather', [0])) + 
+                                np.sum(timing_breakdown.get('mpi_broadcast', [0])))
+                    
+                    self.timing_stats = {
+                        'total_time': elapsed,
+                        'init_time': init_time,
+                        'num_iterations': iteration + 1,
+                        'pricing_time': total_pricing,
+                        'master_time': total_master,
+                        'mpi_time': total_mpi,
+                        'pricing_time_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
+                        'master_time_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
+                        'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
+                    }
+                else:
+                    self.timing_stats = None
                 break
             iteration += 1
         
         # Log timing even if max iterations reached
+        elapsed = (datetime.now() - tic).total_seconds()
         if iteration >= self.row_generation_cfg.max_iters and self.is_root():
-            elapsed = (datetime.now() - tic).total_seconds()
             logger.info("Row generation reached max iterations (%d) in %.2f seconds.", iteration, elapsed)
             self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown)
+        
+        # Store timing statistics for access later
+        if self.is_root():
+            total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
+            total_master = (np.sum(timing_breakdown.get('master_prep', [0])) + 
+                          np.sum(timing_breakdown.get('master_update', [0])) + 
+                          np.sum(timing_breakdown.get('master_optimize', [0])))
+            total_mpi = (np.sum(timing_breakdown.get('mpi_gather', [0])) + 
+                        np.sum(timing_breakdown.get('mpi_broadcast', [0])))
+            
+            self.timing_stats = {
+                'total_time': elapsed,
+                'init_time': init_time,
+                'num_iterations': iteration,
+                'pricing_time': total_pricing,
+                'master_time': total_master,
+                'mpi_time': total_mpi,
+                'pricing_time_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
+                'master_time_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
+                'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
+            }
+        else:
+            self.timing_stats = None
         
         self.theta_hat = self.theta_val
         return self.theta_hat

@@ -1,0 +1,19 @@
+# Problem size configurations
+# Option 1: Named sizes (small, medium, large) - 3 sizes
+sizes:
+  small:
+    num_agents: 5
+    num_items: 5
+  medium:
+    num_agents: 10
+    num_items: 10
+  large:
+    num_agents: 20
+    num_items: 20
+
+# Option 2: Grid of sizes (3x3 = 9 sizes)
+# This creates all combinations of agents and items for scaling analysis
+# Uncomment to run all combinations for thorough scaling study
+# sizes_grid:
+#   agents: [10, 20, 30]
+#   items: [10, 20, 30]
