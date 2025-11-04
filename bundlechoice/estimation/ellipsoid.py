@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime
 from typing import Optional, Tuple, Callable, Dict, Any
+import math
 from .base import BaseEstimationSolver
 from bundlechoice.utils import get_logger
 
@@ -57,6 +58,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         self.theta_iter = None
         self.B_iter = None
         self.iteration_count = 0
+        self.timing_stats = None  # Store detailed timing statistics
         
         # Ellipsoid update coefficients
         n = self.num_features
@@ -95,9 +97,23 @@ class EllipsoidSolver(BaseEstimationSolver):
         iteration = 0
         vals = []
         centers = []
-        keep_last_n = min(1000, self.ellipsoid_cfg.num_iters)  # Limit memory for large num_iters
+        # Use num_iters if provided, otherwise compute from solver_precision or fall back to max_iterations
+        if self.ellipsoid_cfg.num_iters is not None:
+            num_iters = self.ellipsoid_cfg.num_iters
+        else:
+            # Compute iterations using formula: n*(n-1)*log(1/precision) where n is num_features
+            num_iters = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
+        keep_last_n = min(1000, num_iters)  # Limit memory for large num_iters
 
-        while iteration < self.ellipsoid_cfg.num_iters:
+        # Track timing breakdown
+        timing_breakdown = {
+            'pricing': [],
+            'gradient_compute': [],
+            'ellipsoid_update': [],
+            'mpi_broadcast': []
+        }
+
+        while iteration < num_iters:
             iteration += 1
             logger.info(f"ELLIPSOID ITERATION {iteration}")
             logger.info(f"THETA: {np.round(self.theta_iter, 4)}")
@@ -113,7 +129,9 @@ class EllipsoidSolver(BaseEstimationSolver):
                 obj_value = np.inf
             else:
                 # Use objective gradient for productive update
+                t_gradient = datetime.now()
                 obj_value, gradient = self.compute_obj_and_gradient(self.theta_iter)
+                timing_breakdown['gradient_compute'].append((datetime.now() - t_gradient).total_seconds())
                 direction = gradient
                 vals.append(obj_value)
                 centers.append(self.theta_iter.copy())
@@ -124,13 +142,17 @@ class EllipsoidSolver(BaseEstimationSolver):
                     centers = centers[-keep_last_n:]
 
             # Update ellipsoid
+            t_update = datetime.now()
             self._update_ellipsoid(direction)
+            timing_breakdown['ellipsoid_update'].append((datetime.now() - t_update).total_seconds())
             
             # Prepare buffer on non-root ranks
             if not self.is_root():
                 self.theta_iter = np.empty(self.num_features, dtype=np.float64)
             
+            t_bcast = datetime.now()
             self.theta_iter = self.comm_manager.broadcast_array(self.theta_iter, root=0)
+            timing_breakdown['mpi_broadcast'].append((datetime.now() - t_bcast).total_seconds())
             
             # Call callback if provided
             if callback and self.is_root() and obj_value != np.inf:
@@ -145,7 +167,7 @@ class EllipsoidSolver(BaseEstimationSolver):
 
         elapsed = (datetime.now() - tic).total_seconds()
         logger.info("Ellipsoid method completed %d iterations in %.2f seconds.", 
-                   self.ellipsoid_cfg.num_iters, elapsed)
+                   num_iters, elapsed)
         
         # Return best theta found, not last iteration
         if self.is_root():
@@ -161,6 +183,26 @@ class EllipsoidSolver(BaseEstimationSolver):
         
         # Broadcast result to all ranks
         best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
+        
+        # Store timing statistics
+        if self.is_root():
+            total_gradient = np.sum(timing_breakdown.get('gradient_compute', [0]))
+            total_update = np.sum(timing_breakdown.get('ellipsoid_update', [0]))
+            total_mpi = np.sum(timing_breakdown.get('mpi_broadcast', [0]))
+            
+            self.timing_stats = {
+                'total_time': elapsed,
+                'num_iterations': num_iters,
+                'gradient_time': total_gradient,
+                'update_time': total_update,
+                'mpi_time': total_mpi,
+                'gradient_time_pct': 100 * total_gradient / elapsed if elapsed > 0 else 0,
+                'update_time_pct': 100 * total_update / elapsed if elapsed > 0 else 0,
+                'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
+            }
+        else:
+            self.timing_stats = None
+        
         return best_theta
 
     def _initialize_ellipsoid(self) -> None:
@@ -179,9 +221,20 @@ class EllipsoidSolver(BaseEstimationSolver):
             d: Direction of update.
         """
         if self.is_root():
-            b = (self.B_iter @ d) / np.sqrt(d.T @ self.B_iter @ d)
+            dTBd = d.T @ self.B_iter @ d
+            if dTBd <= 0 or not np.isfinite(dTBd):
+                logger.warning("Ellipsoid update: dTBd <= 0 or non-finite, skipping update")
+                return
+            b = (self.B_iter @ d) / np.sqrt(dTBd)
+            if not np.all(np.isfinite(b)):
+                logger.warning("Ellipsoid update: b is non-finite, skipping update")
+                return
             self.theta_iter = self.theta_iter - (1/(self.n+1)) * b
-            self.B_iter = self.gamma_1 * self.B_iter - self.gamma_2 *  np.outer(b, b)
+            B_new = self.gamma_1 * self.B_iter - self.gamma_2 * np.outer(b, b)
+            if np.all(np.isfinite(B_new)):
+                self.B_iter = B_new
+            else:
+                logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")
 
 
 

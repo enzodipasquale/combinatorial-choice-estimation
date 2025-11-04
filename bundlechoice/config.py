@@ -113,6 +113,7 @@ class EllipsoidConfig(AutoUpdateMixin):
     Attributes:
         max_iterations: Maximum number of iterations
         num_iters: Number of iterations to run (overrides convergence)
+        solver_precision: Precision parameter for computing num_iters = n*(n-1)*log(1/precision)
         tolerance: Convergence tolerance
         initial_radius: Initial radius of the ellipsoid
         decay_factor: Factor for radius decay
@@ -121,6 +122,7 @@ class EllipsoidConfig(AutoUpdateMixin):
     """
     max_iterations: int = 1000
     num_iters: Optional[int] = None
+    solver_precision: float = 1e-6
     tolerance: float = 1e-6
     initial_radius: float = 1.0
     decay_factor: float = 0.95
@@ -233,6 +235,8 @@ class BundleChoiceConfig(AutoUpdateMixin):
         
         if self.ellipsoid.max_iterations <= 0:
             raise ValueError("max_iterations must be positive")
+        if self.ellipsoid.solver_precision <= 0:
+            raise ValueError("solver_precision must be positive")
         if self.ellipsoid.tolerance <= 0:
             raise ValueError("tolerance must be positive")
         if self.ellipsoid.initial_radius <= 0:

@@ -58,6 +58,7 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
+        self.timing_stats = None  # Store detailed timing statistics
 
     def _setup_gurobi_model_params(self):
         """
@@ -104,25 +105,28 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
 
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
-    def _master_iteration(self, optimal_bundles):
+    def _master_iteration(self, optimal_bundles, timing_dict):
         """
         Perform one iteration of the master problem in the row generation algorithm with 1slack formulation.
 
         Args:
             pricing_results (list of np.ndarray): List of bundle selection matrices from pricing subproblems.
+            timing_dict (dict): Dictionary to store timing information for this iteration.
 
         Returns:
             bool: Whether the stopping criterion is met.
         """
+        t_mpi_gather_start = datetime.now()
         x_sim = self.feature_manager.compute_gathered_features(optimal_bundles)
         errors_sim = self.feature_manager.compute_gathered_errors(optimal_bundles)
+        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         stop = False
         
         if self.is_root():
+            t_master_prep_start = datetime.now()
             theta, u_bar = self.master_variables
             u_sim = (x_sim @ theta.X).sum() + errors_sim.sum()
             u_master = u_bar.X  # Single scalar value
-
 
             self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
@@ -131,24 +135,41 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             
             if reduced_cost < self.row_generation_cfg.tolerance_optimality:
                 stop = True
+                timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+                timing_dict['master_update'] = 0.0
+                timing_dict['master_optimize'] = 0.0
             else:          
                 # Only add constraint if there's a violation (like standard formulation)
                 if u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality:
+                    timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+                    t_master_update_start = datetime.now()
                     agents_utilities = (x_sim @ theta).sum() + errors_sim.sum()
                     self.master_model.addConstr(u_bar >= agents_utilities)
                     self._enforce_slack_counter()
                     logger.info("Number of constraints: %d", self.master_model.NumConstrs)
+                    timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
+                    t_master_optimize_start = datetime.now()
                     self.master_model.optimize()
+                    timing_dict['master_optimize'] = (datetime.now() - t_master_optimize_start).total_seconds()
                     self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
+                else:
+                    timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+                    timing_dict['master_update'] = 0.0
+                    timing_dict['master_optimize'] = 0.0
             
             # Get theta values for broadcasting
             theta_val = theta.X
         else:
             stop = False
             theta_val = None
+            timing_dict['master_prep'] = 0.0
+            timing_dict['master_update'] = 0.0
+            timing_dict['master_optimize'] = 0.0
             
         # Broadcast theta and stop flag together (single broadcast reduces latency)
+        t_mpi_broadcast_start = datetime.now()
         self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
+        timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
         return stop
 
     def solve(self):
@@ -166,26 +187,93 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         self.slack_counter = {}
         logger.info("Starting row generation loop (1slack formulation).")
         iteration = 0
-        pricing_times, master_times = [], []
+        
+        # Detailed timing tracking
+        timing_breakdown = {
+            'pricing': [],
+            'mpi_gather': [],
+            'master_prep': [],
+            'master_update': [],
+            'master_optimize': [],
+            'mpi_broadcast': []
+        }
         
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
-            t1 = datetime.now()
+            iter_timing = {}
+            
+            # Pricing phase
+            t_pricing = datetime.now()
             optimal_bundles = self.subproblem_manager.solve_local(self.theta_val)
-            pricing_times.append((datetime.now() - t1).total_seconds())
-            t2 = datetime.now()
-            stop = self._master_iteration(optimal_bundles) 
-            master_times.append((datetime.now() - t2).total_seconds())
+            iter_timing['pricing'] = (datetime.now() - t_pricing).total_seconds()
+            
+            # Master iteration (with internal timing)
+            t_master_start = datetime.now()
+            stop = self._master_iteration(optimal_bundles, iter_timing)
+            iter_timing['master_total'] = (datetime.now() - t_master_start).total_seconds()
+            
+            # Store timing breakdown
+            for key in timing_breakdown.keys():
+                if key in iter_timing:
+                    timing_breakdown[key].append(iter_timing[key])
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
+                elapsed = (datetime.now() - tic).total_seconds()
                 if self.is_root():
-                    elapsed = (datetime.now() - tic).total_seconds()
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     logger.info(f"ObjVal: {self.master_model.ObjVal}")
-                    logger.info(f"Avg pricing time: {np.mean(pricing_times):.3f}s, Avg master time: {np.mean(master_times):.3f}s")
+                
+                # Store timing statistics
+                if self.is_root():
+                    total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
+                    total_master = (np.sum(timing_breakdown.get('master_prep', [0])) + 
+                                  np.sum(timing_breakdown.get('master_update', [0])) + 
+                                  np.sum(timing_breakdown.get('master_optimize', [0])))
+                    total_mpi = (np.sum(timing_breakdown.get('mpi_gather', [0])) + 
+                                np.sum(timing_breakdown.get('mpi_broadcast', [0])))
+                    
+                    self.timing_stats = {
+                        'total_time': elapsed,
+                        'num_iterations': iteration + 1,
+                        'pricing_time': total_pricing,
+                        'master_time': total_master,
+                        'mpi_time': total_mpi,
+                        'pricing_time_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
+                        'master_time_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
+                        'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
+                    }
+                else:
+                    self.timing_stats = None
                 break
             iteration += 1
+        
+        elapsed = (datetime.now() - tic).total_seconds()
+        if iteration >= self.row_generation_cfg.max_iters:
+            if self.is_root():
+                logger.info("Row generation reached max iterations (%d) in %.2f seconds.", iteration, elapsed)
             
+            # Store timing statistics
+            if self.is_root():
+                total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
+                total_master = (np.sum(timing_breakdown.get('master_prep', [0])) + 
+                              np.sum(timing_breakdown.get('master_update', [0])) + 
+                              np.sum(timing_breakdown.get('master_optimize', [0])))
+                total_mpi = (np.sum(timing_breakdown.get('mpi_gather', [0])) + 
+                            np.sum(timing_breakdown.get('mpi_broadcast', [0])))
+                
+                self.timing_stats = {
+                    'total_time': elapsed,
+                    'num_iterations': iteration,
+                    'pricing_time': total_pricing,
+                    'master_time': total_master,
+                    'mpi_time': total_mpi,
+                    'pricing_time_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
+                    'master_time_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
+                    'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
+                }
+            else:
+                self.timing_stats = None
+        
         self.theta_hat = self.theta_val
         return self.theta_hat
 
