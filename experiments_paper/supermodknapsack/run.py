@@ -21,8 +21,9 @@ def main():
     cfg_path = os.path.join(base_dir, 'config.yaml')
     cfg = load_yaml_config(cfg_path)
 
-    num_agents = cfg['dimensions']['num_agents']
-    num_items = cfg['dimensions']['num_items']
+    # Dimensions - allow override via environment variables
+    num_agents = int(os.environ.get('NUM_AGENTS', cfg['dimensions']['num_agents']))
+    num_items = int(os.environ.get('NUM_ITEMS', cfg['dimensions']['num_items']))
     num_features = cfg['dimensions']['num_features']
     num_simuls = cfg['dimensions'].get('num_simuls', 1)
     sigma = cfg.get('sigma', 2.0)
@@ -30,11 +31,14 @@ def main():
     base_seed = cfg.get('base_seed', 12345)
 
     results_path = os.path.join(base_dir, cfg.get('results_csv', 'results.csv'))
-    rank = MPI.COMM_WORLD.Get_rank()
+
     if rank == 0 and not os.path.exists(results_path):
-        # Create header with theta columns
+        # Create header with theta columns and timing breakdown
         cols = ['replication','seed','method','time_s','obj_value',
                 'num_agents','num_items','num_features','num_simuls','sigma','subproblem']
+        # Add timing breakdown columns (universal across all methods)
+        cols.extend(['timing_compute', 'timing_solve', 'timing_comm',
+                    'timing_compute_pct', 'timing_solve_pct', 'timing_comm_pct'])
         # Add theta_true columns
         cols.extend([f'theta_true_{k}' for k in range(num_features)])
         # Add theta_est columns  
@@ -76,9 +80,15 @@ def main():
         else:
             data = None
 
-        # Configure Quadratic Knapsack subproblem which supports modular+quadratic with capacity
+        # Setup BundleChoice
         bc = BundleChoice()
-        bc.load_config(cfg)
+        # Override dimensions if set via environment variables
+        cfg_override = cfg.copy()
+        if 'dimensions' in cfg_override:
+            cfg_override['dimensions'] = cfg_override['dimensions'].copy()
+            cfg_override['dimensions']['num_agents'] = num_agents
+            cfg_override['dimensions']['num_items'] = num_items
+        bc.load_config(cfg_override)
         bc.data.load_and_scatter(data)
         bc.features.build_from_data()
         bc.subproblems.load()
@@ -90,17 +100,24 @@ def main():
             bc.data.input_data["errors"] = estimation_errors
         bc.data.load_and_scatter(bc.data.input_data if rank == 0 else None)
 
-        cfg_dims = cfg.get('dimensions', {}).copy()
-        cfg_dims['num_simuls'] = num_simuls
-        bc.load_config({"dimensions": cfg_dims})
+        # Ensure num_simuls for estimation - need to override again
+        cfg_dims_est = cfg.get('dimensions', {}).copy()
+        cfg_dims_est['num_agents'] = num_agents
+        cfg_dims_est['num_items'] = num_items
+        cfg_dims_est['num_simuls'] = num_simuls
+        bc.load_config({"dimensions": cfg_dims_est})
 
+        # Run solvers and time them
         try:
             results = {}
+
             t0 = time.time()
             theta_row = bc.row_generation.solve()
             time_row = time.time() - t0
             obj_row = bc.row_generation.objective(theta_row)
-            results['row_generation'] = (theta_row, time_row, obj_row)
+            # Extract timing stats
+            timing_rg = bc.row_generation.timing_stats if bc.row_generation.timing_stats else None
+            results['row_generation'] = (theta_row, time_row, obj_row, timing_rg)
 
             rg1 = RowGeneration1SlackSolver(
                 comm_manager=bc.comm_manager,
@@ -114,7 +131,9 @@ def main():
             theta_row1 = rg1.solve()
             time_row1 = time.time() - t1
             obj_row1 = bc.row_generation.objective(theta_row1)
-            results['row_generation_1slack'] = (theta_row1, time_row1, obj_row1)
+            # Extract timing stats
+            timing_rg1 = rg1.timing_stats if rg1.timing_stats else None
+            results['row_generation_1slack'] = (theta_row1, time_row1, obj_row1, timing_rg1)
 
             # Warm start ellipsoid with row generation solution
             ell = EllipsoidSolver(
@@ -130,12 +149,14 @@ def main():
             theta_ell = ell.solve()
             time_ell = time.time() - t2
             obj_ell = bc.row_generation.objective(theta_ell)
-            results['ellipsoid'] = (theta_ell, time_ell, obj_ell)
+            # Extract timing stats
+            timing_ell = ell.timing_stats if ell.timing_stats else None
+            results['ellipsoid'] = (theta_ell, time_ell, obj_ell, timing_ell)
 
             if rank == 0:
-                # Write rows with theta_true and theta_est
+                # Write rows with theta_true, theta_est, and timing breakdown
                 rows = []
-                for method, (theta, elapsed, objv) in results.items():
+                for method, (theta, elapsed, objv, timing_stats) in results.items():
                     row = {
                         'replication': rep,
                         'seed': seed,
@@ -149,6 +170,27 @@ def main():
                         'sigma': sigma,
                         'subproblem': cfg['subproblem']['name']
                     }
+                    # Add timing breakdown (map different methods to common fields)
+                    if timing_stats:
+                        # Row generation: pricing_time -> compute, master_time -> solve, mpi_time -> comm
+                        # Ellipsoid: gradient_time -> compute, update_time -> solve, mpi_time -> comm
+                        row['timing_compute'] = timing_stats.get('pricing_time', 
+                                                                 timing_stats.get('gradient_time', np.nan))
+                        row['timing_solve'] = timing_stats.get('master_time',
+                                                                timing_stats.get('update_time', np.nan))
+                        row['timing_comm'] = timing_stats.get('mpi_time', np.nan)
+                        row['timing_compute_pct'] = timing_stats.get('pricing_time_pct',
+                                                                     timing_stats.get('gradient_time_pct', np.nan))
+                        row['timing_solve_pct'] = timing_stats.get('master_time_pct',
+                                                                    timing_stats.get('update_time_pct', np.nan))
+                        row['timing_comm_pct'] = timing_stats.get('mpi_time_pct', np.nan)
+                    else:
+                        row['timing_compute'] = np.nan
+                        row['timing_solve'] = np.nan
+                        row['timing_comm'] = np.nan
+                        row['timing_compute_pct'] = np.nan
+                        row['timing_solve_pct'] = np.nan
+                        row['timing_comm_pct'] = np.nan
                     # Add theta_true columns
                     for k in range(num_features):
                         row[f'theta_true_{k}'] = theta_true[k]
@@ -156,11 +198,13 @@ def main():
                     for k in range(num_features):
                         row[f'theta_{k}'] = theta[k]
                     rows.append(row)
-                pd.DataFrame(rows).to_csv(results_path, mode='a', header=False, index=False)
+                df = pd.DataFrame(rows)
+                df.to_csv(results_path, mode='a', header=False, index=False)
 
-                th_rg, _, obj_rg = results['row_generation']
-                th_r1, _, obj_r1 = results['row_generation_1slack']
-                th_el, _, obj_el = results['ellipsoid']
+                # Print quick consistency checks
+                th_rg, _, obj_rg, _ = results['row_generation']
+                th_r1, _, obj_r1, _ = results['row_generation_1slack']
+                th_el, _, obj_el, _ = results['ellipsoid']
                 print(f"[rep {rep}] theta close rg vs 1slack: {np.allclose(th_rg, th_r1, atol=1e-2, rtol=0)}; obj close: {abs(obj_rg-obj_r1) < 1e-3}")
                 print(f"[rep {rep}] theta close rg vs ellipsoid: {np.allclose(th_rg, th_el, atol=1e-2, rtol=0)}; obj close: {abs(obj_rg-obj_el) < 1e-3}")
         except Exception as e:
