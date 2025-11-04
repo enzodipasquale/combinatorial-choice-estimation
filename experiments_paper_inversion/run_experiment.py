@@ -48,8 +48,8 @@ def main():
                        help='Output directory (default: experiments_paper_inversion/outputs/experiment_timestamp)')
     parser.add_argument('--skip-run', action='store_true', help='Skip experiment run, only generate tables')
     parser.add_argument('--config', type=str, default=None, help='Override config file path')
-    parser.add_argument('--timeout', type=int, default=600,
-                       help='Timeout per size in seconds (default: 600 = 10 minutes)')
+    parser.add_argument('--timeout', type=int, default=None,
+                       help='Timeout per size in seconds for debugging (optional, passed to run_all_sizes.py)')
     
     args = parser.parse_args()
     
@@ -122,7 +122,9 @@ def main():
                 
                 exp_name = exp_dir_to_run.name
                 cmd = ['python', str(base_dir / 'run_all_sizes.py'), exp_name, 
-                       '--mpi', str(args.mpi), '--timeout', str(args.timeout)]
+                       '--mpi', str(args.mpi)]
+                if args.timeout is not None:
+                    cmd.extend(['--timeout', str(args.timeout)])
                 try:
                     result = subprocess.run(cmd, cwd=base_dir, check=True)
                     print(f"✓ {method_name.upper()} experiments completed")
@@ -138,7 +140,9 @@ def main():
                 return 1
             
             cmd = ['python', str(base_dir / 'run_all_sizes.py'), args.experiment, 
-                   '--mpi', str(args.mpi), '--timeout', str(args.timeout)]
+                   '--mpi', str(args.mpi)]
+            if args.timeout is not None:
+                cmd.extend(['--timeout', str(args.timeout)])
             try:
                 result = subprocess.run(cmd, cwd=base_dir, check=True)
                 print("✓ Experiments completed")
