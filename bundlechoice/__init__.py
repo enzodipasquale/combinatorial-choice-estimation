@@ -13,6 +13,9 @@ Main components:
 - Various estimation solvers (row generation, ellipsoid)
 """
 
+__version__ = "0.2.0"
+__version_info__ = tuple(map(int, __version__.split('.')))
+
 from .core import BundleChoice
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
@@ -24,4 +27,6 @@ __all__ = [
     'FeatureManager',
     'BundleChoiceConfig',
     'DimensionsConfig',
+    '__version__',
+    '__version_info__',
 ]

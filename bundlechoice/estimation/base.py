@@ -1,9 +1,11 @@
 """
-Base estimation solver for modular bundle choice estimation (v2).
-This module provides a base class with common functionality for different estimation algorithms.
+Base estimation solver for bundle choice estimation.
+
+Provides common functionality for row generation, ellipsoid, and other solvers.
 """
+
 import numpy as np
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from numpy.typing import NDArray
 from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
@@ -11,163 +13,79 @@ from bundlechoice.utils import get_logger
 logger = get_logger(__name__)
 
 
-class BaseEstimationSolver(HasDimensions, HasData, HasComm):
-    """
-    Base class for estimation solvers in modular bundle choice models.
-    
-    This class provides common functionality and helper methods that can be shared
-    across different estimation algorithms (row generation, ellipsoid, etc.).
-    
-    Attributes:
-        comm: MPI communicator
-        rank: MPI rank of current process
-        dimensions_cfg: DimensionsConfig instance
-        data_manager: DataManager instance
-        feature_manager: FeatureManager instance
-        subproblem_manager: SubproblemManager instance
-        errors: Error terms from input data
-        obs_features: Observed features (computed on rank 0)
-    """
-    
-    def __init__(
-        self,
-        comm_manager,
-        dimensions_cfg,
-        data_manager,
-        feature_manager,
-        subproblem_manager
-    ):
-        """
-        Initialize the BaseEstimationSolver.
+# ============================================================================
+# Base Estimation Solver
+# ============================================================================
 
-        Args:
-            comm_manager: Communication manager for MPI operations
-            dimensions_cfg: DimensionsConfig instance
-            data_manager: DataManager instance
-            feature_manager: FeatureManager instance
-            subproblem_manager: SubproblemManager instance
-        """
+class BaseEstimationSolver(HasDimensions, HasData, HasComm):
+    """Base class for estimation solvers (row generation, ellipsoid, etc.)."""
+    
+    def __init__(self, comm_manager: Any, dimensions_cfg: Any, data_manager: Any,
+                 feature_manager: Any, subproblem_manager: Any) -> None:
+        """Initialize base estimation solver."""
         self.comm_manager = comm_manager
         self.dimensions_cfg = dimensions_cfg
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_manager = subproblem_manager
 
-        # Initialize common attributes
         self.agents_obs_features = self.get_agents_obs_features()
         self.obs_features = self.agents_obs_features.sum(0) if self.agents_obs_features is not None else None
 
-    def get_obs_features(self) -> Optional[np.ndarray]:
-        """
-        Compute observed features from local data.
-        
-        This method computes the average observed features across all simulations.
-        Only rank 0 returns the result, other ranks return None.
-        
-        Returns:
-            np.ndarray or None: Average observed features (rank 0) or None (other ranks)
-        """
-        local_bundles = self.local_data.get("obs_bundles")
-        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
-        if self.is_root():
-            obs_features = agents_obs_features.sum(0) 
-            return obs_features
-        else:
-            return None
+    # ============================================================================
+    # Observed Features
+    # ============================================================================
 
-    def get_agents_obs_features(self) -> Optional[np.ndarray]:
-        """
-        Compute observed features from local data.
-        
-        This method computes the average observed features across all simulations.
-        Only rank 0 returns the result, other ranks return None.
-        """
+    def get_obs_features(self) -> Optional[NDArray[np.float64]]:
+        """Compute aggregate observed features (rank 0 only)."""
         local_bundles = self.local_data.get("obs_bundles")
         agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
         if self.is_root():
-            return agents_obs_features
-        else:
-            return None
+            return agents_obs_features.sum(0)
+        return None
+
+    def get_agents_obs_features(self) -> Optional[NDArray[np.float64]]:
+        """Compute per-agent observed features (rank 0 only)."""
+        local_bundles = self.local_data.get("obs_bundles")
+        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
+        return agents_obs_features if self.is_root() else None
+
+    # ============================================================================
+    # Objective & Gradient
+    # ============================================================================
 
     def compute_obj_and_gradient(self, theta: NDArray[np.float64]) -> Tuple[Optional[float], Optional[NDArray[np.float64]]]:
-        """
-        Compute both objective function value and gradient efficiently.
-        
-        This method computes both values in one call to avoid duplicate
-        expensive computations like subproblem solving and feature computation.
-        
-        Args:
-            theta: Parameter vector
-            
-        Returns:
-            At rank 0: tuple (objective_value, gradient).
-            At other ranks: (None, None).
-        """
-        # Solve subproblem and compute features (expensive operation)
+        """Compute objective and gradient in one call (avoids duplicate subproblem solves)."""
         B_local = self.subproblem_manager.solve_local(theta)
         agents_features = self.feature_manager.compute_gathered_features(B_local)
         utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
         
         if self.is_root():
-            # Compute utilities for objective
             obj_value = utilities.sum() - (self.obs_features @ theta).sum()
-            
-            # Compute (normalized) gradient
             gradient = (agents_features.sum(0) - self.obs_features) / self.num_agents
-            
             return obj_value, gradient
-        else:
-            return None, None
+        return None, None
 
     def objective(self, theta: NDArray[np.float64]) -> Optional[float]:
-        """
-        Compute the objective function value for given parameters.
-        
-        This method computes the difference between simulated and observed features
-        weighted by the parameters, plus error terms.
-        
-        Args:
-            theta: Parameter vector
-            
-        Returns:
-            Objective function value (rank 0) or None (other ranks).
-        """
+        """Compute objective function value."""
         B_local = self.subproblem_manager.solve_local(theta)
         utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
         if self.is_root():
             return utilities.sum() - (self.obs_features @ theta).sum()
-        else:
-            return None
+        return None
     
     def obj_gradient(self, theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
-        """
-        Compute the gradient of the objective function.
-        
-        This method computes the gradient with respect to the parameters.
-        Note: Assumes subproblems are already initialized.
-        
-        Args:
-            theta: Parameter vector
-            
-        Returns:
-            Gradient vector (rank 0) or None (other ranks).
-        """
+        """Compute objective gradient."""
         B_local = self.subproblem_manager.solve_local(theta)
         agents_features = self.feature_manager.compute_gathered_features(B_local)
         if self.is_root():
             return (agents_features.sum(0) - self.obs_features) / self.num_agents
-        else:
-            return None
+        return None
 
-
+    # ============================================================================
+    # Abstract Solve Method
+    # ============================================================================
 
     def solve(self) -> NDArray[np.float64]:
-        """
-        Main solve method to be implemented by subclasses.
-        
-        This method should implement the specific estimation algorithm.
-        
-        Returns:
-            Estimated parameter vector.
-        """
+        """Main solve method (implemented by subclasses)."""
         raise NotImplementedError("Subclasses must implement the solve method") 

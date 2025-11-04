@@ -3,7 +3,8 @@ from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems.subproblem_manager import SubproblemManager
 from mpi4py import MPI
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Dict, Union
+import numpy as np
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
@@ -14,32 +15,23 @@ from contextlib import contextmanager
 logger = get_logger(__name__)
 
 
+# ============================================================================
+# Main BundleChoice Class
+# ============================================================================
+
 class BundleChoice(HasComm, HasConfig):
     """
-    Main orchestrator for modular bundle choice estimation.
+    Main orchestrator for bundle choice estimation.
     
-    This class provides a clean API for distributed bundle choice estimation using MPI.
-    It manages the lifecycle of data loading, feature extraction, subproblem solving,
-    and parameter estimation. All distributed computation is handled transparently.
+    Manages data loading, feature extraction, subproblem solving, and parameter
+    estimation with MPI distribution. Components are lazily initialized on access.
     
-    The class follows a lazy initialization pattern where components are created
-    only when needed, allowing for flexible configuration and setup.
-    
-    Typical usage:
+    Example:
         bc = BundleChoice()
         bc.load_config(cfg)
-        bc.load_data(data, scatter=True)
-        bc.build_feature_oracle_from_data()
-        results = bc.init_and_solve_subproblems(theta)
-        
-    Attributes:
-        config: Main configuration object containing all components
-        data_manager: Data management component
-        feature_manager: Feature extraction component
-        subproblem_manager: Subproblem solving component
-        row_generation_manager: Row generation estimation component
-        ellipsoid_manager: Ellipsoid method estimation component
-        comm: MPI communicator
+        bc.data.load_and_scatter(input_data)
+        bc.features.build_from_data()
+        theta = bc.row_generation.solve()
     """
     config: Optional[BundleChoiceConfig]
     data_manager: Optional[DataManager]
@@ -51,14 +43,8 @@ class BundleChoice(HasComm, HasConfig):
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
 
-    def __init__(self):
-        """
-        Initialize an empty BundleChoice instance.
-        
-        All configuration, data, and features must be loaded explicitly via the
-        provided methods. The MPI communicator is automatically initialized to
-        COMM_WORLD.
-        """
+    def __init__(self) -> None:
+        """Initialize empty BundleChoice instance. Config and data must be loaded separately."""
         self.config = None
         self.comm_manager = CommManager(MPI.COMM_WORLD)
         self.data_manager = None
@@ -68,20 +54,11 @@ class BundleChoice(HasComm, HasConfig):
         self.ellipsoid_manager = None
         self.inequalities_manager = None
 
-    # --- Initialization ---
-    def _try_init_data_manager(self):
-        """
-        Initialize the DataManager if dimensions_cfg is set and not already initialized.
-        
-        This method creates a new DataManager instance using the current dimensions
-        configuration and MPI communicator.
-        
-        Returns:
-            DataManager: The initialized DataManager instance
-            
-        Raises:
-            ValueError: If dimensions_cfg is not set
-        """
+    # ============================================================================
+    # Component Initialization
+    # ============================================================================
+    def _try_init_data_manager(self) -> DataManager:
+        """Initialize DataManager from dimensions config."""
         if self.config is None or self.config.dimensions is None:
             raise ValueError("dimensions_cfg must be set in config before initializing data manager.")
         
@@ -91,19 +68,8 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.data_manager
         
-    def _try_init_feature_manager(self):
-        """
-        Initialize the FeatureManager if dimensions_cfg is set.
-        
-        This method creates a new FeatureManager instance using the current
-        dimensions configuration, MPI communicator, and data manager.
-        
-        Returns:
-            FeatureManager: The initialized FeatureManager instance
-            
-        Raises:
-            ValueError: If dimensions_cfg is not set
-        """
+    def _try_init_feature_manager(self) -> FeatureManager:
+        """Initialize FeatureManager from dimensions config."""
         if self.config is None or self.config.dimensions is None:
             raise ValueError("dimensions_cfg must be set in config before initializing feature manager.")
         
@@ -114,19 +80,8 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.feature_manager
         
-    def _try_init_subproblem_manager(self):
-        """
-        Initialize the subproblem manager if subproblem_cfg is set.
-        
-        This method creates a new SubproblemManager instance and loads the
-        specified subproblem algorithm.
-        
-        Returns:
-            SubproblemManager: The initialized SubproblemManager instance
-            
-        Raises:
-            RuntimeError: If required managers or configs are not set
-        """
+    def _try_init_subproblem_manager(self) -> SubproblemManager:
+        """Initialize SubproblemManager and load algorithm."""
         if self.data_manager is None or self.feature_manager is None or self.config is None or self.config.subproblem is None:
             missing = []
             if self.data_manager is None:
@@ -151,19 +106,8 @@ class BundleChoice(HasComm, HasConfig):
         self.subproblem_manager.load()
         return self.subproblem_manager
     
-    def _try_init_row_generation_manager(self):
-        """
-        Initialize the RowGenerationSolver if not already present.
-        
-        This method creates a new RowGenerationSolver instance using the current
-        configuration and manager components.
-        
-        Returns:
-            RowGenerationSolver: The initialized RowGenerationSolver instance
-            
-        Raises:
-            RuntimeError: If required managers are not set
-        """
+    def _try_init_row_generation_manager(self) -> RowGenerationSolver:
+        """Initialize RowGenerationSolver."""
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
             missing = []
             if self.data_manager is None:
@@ -190,21 +134,8 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.row_generation_manager
 
-    
-
-    def _try_init_ellipsoid_manager(self):
-        """
-        Initialize the EllipsoidSolver if not already present.
-        
-        This method creates a new EllipsoidSolver instance using the current
-        configuration and manager components.
-        
-        Returns:
-            EllipsoidSolver: The initialized EllipsoidSolver instance
-            
-        Raises:
-            RuntimeError: If required managers are not set
-        """
+    def _try_init_ellipsoid_manager(self) -> EllipsoidSolver:
+        """Initialize EllipsoidSolver."""
         if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
             missing = []
             if self.data_manager is None:
@@ -231,19 +162,8 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.ellipsoid_manager
 
-    def _try_init_inequalities_manager(self):
-        """
-        Initialize the InequalitiesSolver if required managers are set.
-        
-        This method creates a new InequalitiesSolver instance using the current
-        configuration and managers.
-        
-        Returns:
-            InequalitiesSolver: The initialized inequalities solver instance
-            
-        Raises:
-            RuntimeError: If required managers are not initialized
-        """
+    def _try_init_inequalities_manager(self) -> InequalitiesSolver:
+        """Initialize InequalitiesSolver."""
         missing_managers = []
         if self.data_manager is None:
             missing_managers.append("DataManager")
@@ -269,93 +189,58 @@ class BundleChoice(HasComm, HasConfig):
         )
         return self.inequalities_manager
 
-    # --- Properties ---
+    # ============================================================================
+    # Property Accessors (Lazy Initialization)
+    # ============================================================================
+
     @property
-    def data(self):
-        """
-        Access the data manager component.
-        
-        Returns:
-            DataManager: The data manager instance
-        """
+    def data(self) -> DataManager:
+        """Access data manager (initialized on first access)."""
         if self.data_manager is None:
             self._try_init_data_manager()
-
         return self.data_manager
 
     @property
-    def features(self):
-        """
-        Access the feature manager component.
-        
-        Returns:
-            FeatureManager: The feature manager instance
-        """
+    def features(self) -> FeatureManager:
+        """Access feature manager (initialized on first access)."""
         if self.feature_manager is None:
             self._try_init_feature_manager()
         return self.feature_manager
 
     @property
-    def subproblems(self):
-        """
-        Access the subproblem manager component.
-        
-        Returns:
-            SubproblemManager: The subproblem manager instance
-        """
+    def subproblems(self) -> SubproblemManager:
+        """Access subproblem manager (initialized on first access)."""
         if self.subproblem_manager is None:
             self._try_init_subproblem_manager()
         return self.subproblem_manager
 
     @property
-    def row_generation(self):
-        """
-        Access the row generation manager component.
-        
-        Returns:
-            RowGenerationSolver: The row generation solver instance
-        """
+    def row_generation(self) -> RowGenerationSolver:
+        """Access row generation solver (initialized on first access)."""
         if self.row_generation_manager is None:
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
     @property
-    def ellipsoid(self):
-        """
-        Access the ellipsoid manager component.
-        
-        Returns:
-            EllipsoidSolver: The ellipsoid solver instance
-        """
+    def ellipsoid(self) -> EllipsoidSolver:
+        """Access ellipsoid solver (initialized on first access)."""
         if self.ellipsoid_manager is None:
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
         
     @property
-    def inequalities(self):
-        """
-        Access the inequalities manager component.
-        
-        Returns:
-            InequalitiesSolver: The inequalities solver instance
-        """
+    def inequalities(self) -> InequalitiesSolver:
+        """Access inequalities solver (initialized on first access)."""
         if self.inequalities_manager is None:
             self._try_init_inequalities_manager()
         return self.inequalities_manager
     
-    def validate_setup(self, for_method='row_generation'):
-        """
-        Validate that all components are initialized for the specified estimation method.
-        
-        Args:
-            for_method: Estimation method to validate for ('row_generation', 'ellipsoid', or 'inequalities')
-        
-        Raises:
-            RuntimeError: If setup is incomplete with helpful guidance
-        
-        Returns:
-            bool: True if setup is valid
-        """
+    # ============================================================================
+    # Setup Validation & Status
+    # ============================================================================
+
+    def validate_setup(self, for_method: str = 'row_generation') -> bool:
+        """Validate setup for estimation method. Raises RuntimeError if incomplete."""
         missing = []
         
         if self.config is None:
@@ -381,31 +266,8 @@ class BundleChoice(HasComm, HasConfig):
         logger.info("✅ Setup validated for %s", for_method)
         return True
     
-    def status(self) -> dict:
-        """
-        Get setup status summary.
-        
-        Returns a dictionary with initialization status of all components.
-        Useful for debugging setup issues without raising errors.
-        
-        Returns:
-            dict: Dictionary with status information including:
-                - config_loaded: Whether config is loaded
-                - data_loaded: Whether data is loaded
-                - features_set: Whether features oracle is set
-                - subproblems_ready: Whether subproblem solver is loaded
-                - dimensions: String representation of dimensions
-                - subproblem: Name of subproblem algorithm
-                - mpi_rank: Current MPI rank
-                - mpi_size: Total number of MPI processes
-        
-        Example:
-            >>> bc = BundleChoice()
-            >>> bc.load_config(cfg)
-            >>> status = bc.status()
-            >>> if not status['features_set']:
-            ...     bc.features.build_from_data()
-        """
+    def status(self) -> Dict[str, Any]:
+        """Get setup status dictionary. Returns component initialization state."""
         return {
             'config_loaded': self.config is not None,
             'data_loaded': self.data_manager is not None and self.data_manager.local_data is not None,
@@ -417,28 +279,8 @@ class BundleChoice(HasComm, HasConfig):
             'mpi_size': self.comm_size,
         }
     
-    def print_status(self):
-        """
-        Print formatted setup status.
-        
-        Displays a human-readable summary of the current setup state,
-        showing which components are initialized and key configuration values.
-        
-        Example:
-            >>> bc = BundleChoice()
-            >>> bc.load_config(cfg)
-            >>> bc.data.load_and_scatter(input_data)
-            >>> bc.print_status()
-            === BundleChoice Status ===
-            Config:      ✓
-            Data:        ✓
-            Features:    ✗
-            Subproblems: ✗
-            
-            Dimensions:  agents=100, items=20, features=5
-            Algorithm:   Greedy
-            MPI:         rank 0/10
-        """
+    def print_status(self) -> None:
+        """Print formatted setup status to stdout."""
         status = self.status()
         print("\n=== BundleChoice Status ===")
         print(f"Config:      {'✓' if status['config_loaded'] else '✗'}")
@@ -448,27 +290,23 @@ class BundleChoice(HasComm, HasConfig):
         print(f"\nDimensions:  {status['dimensions']}")
         print(f"Algorithm:   {status['subproblem']}")
         print(f"MPI:         rank {status['mpi_rank']}/{status['mpi_size']}")
-    
-    def generate_observations(self, theta_true):
+
+    # ============================================================================
+    # Workflow Methods
+    # ============================================================================
+
+    def generate_observations(self, theta_true: np.ndarray) -> Optional[np.ndarray]:
         """
-        Generate observed bundles from true parameters and reload data.
-        Handles the common workflow pattern automatically.
+        Generate observed bundles from true parameters, then reload data.
         
         Args:
-            theta_true: True parameter vector for generating observations
-        
+            theta_true: True parameter vector
+            
         Returns:
             Observed bundles (rank 0 only, None on other ranks)
-        
-        Example:
-            >>> bc.data.load_and_scatter(input_data)
-            >>> bc.features.build_from_data()
-            >>> bc.generate_observations(theta_true)
-            >>> theta_hat = bc.row_generation.solve()
         """
         obs_bundles = self.subproblems.init_and_solve(theta_true)
         
-        # Prepare input_data on rank 0
         if self.is_root():
             if self.data_manager.input_data is None:
                 raise RuntimeError("Cannot generate observations without input_data")
@@ -477,7 +315,6 @@ class BundleChoice(HasComm, HasConfig):
         else:
             updated_data = None
         
-        # All ranks participate in scatter
         self.data.load_and_scatter(updated_data)
         
         # Rebuild features if using auto-generated oracle
@@ -489,19 +326,8 @@ class BundleChoice(HasComm, HasConfig):
         return obs_bundles
     
     @contextmanager
-    def temp_config(self, **updates):
-        """
-        Temporarily modify configuration.
-        
-        Args:
-            **updates: Configuration updates to apply temporarily
-        
-        Example:
-            >>> with bc.temp_config(row_generation={'max_iters': 5}):
-            ...     quick_theta = bc.row_generation.solve()
-            >>> # Config restored to original
-            >>> final_theta = bc.row_generation.solve()
-        """
+    def temp_config(self, **updates: Dict[str, Any]):
+        """Temporarily modify configuration (restored after context)."""
         import copy
         original_config = copy.deepcopy(self.config)
         try:
@@ -510,23 +336,9 @@ class BundleChoice(HasComm, HasConfig):
         finally:
             self.config = original_config
     
-    def quick_setup(self, config, input_data, features_oracle=None):
-        """
-        Quick setup for common workflow.
-        Combines load_config, load_and_scatter, features, and subproblems.load().
-        
-        Args:
-            config: Configuration dict or YAML path
-            input_data: Input data dictionary
-            features_oracle: Feature function or None to auto-generate
-        
-        Returns:
-            self for method chaining
-        
-        Example:
-            >>> bc = BundleChoice().quick_setup(cfg, data, my_features)
-            >>> theta = bc.row_generation.solve()
-        """
+    def quick_setup(self, config: Union[Dict[str, Any], str], input_data: Dict[str, Any], 
+                   features_oracle: Optional[Callable] = None) -> 'BundleChoice':
+        """Quick setup: config + data + features + subproblems in one call."""
         self.load_config(config)
         self.data.load_and_scatter(input_data)
         
@@ -537,23 +349,13 @@ class BundleChoice(HasComm, HasConfig):
         
         self.subproblems.load()
         return self
+
+    # ============================================================================
+    # Configuration Management
+    # ============================================================================
         
-    def load_config(self, cfg):
-        """
-        Load configuration from a dictionary or YAML file.
-        
-        This method merges the new configuration with existing configuration,
-        preserving component references and only updating specified fields.
-        
-        Args:
-            cfg: Dictionary or YAML file path with configuration
-            
-        Returns:
-            BundleChoice: self for method chaining
-            
-        Raises:
-            ValueError: If cfg is not a dictionary or string
-        """
+    def load_config(self, cfg: Union[Dict[str, Any], str]) -> 'BundleChoice':
+        """Load configuration from dict or YAML file. Merges with existing config."""
         if isinstance(cfg, str):
             new_config = BundleChoiceConfig.from_yaml(cfg)
         elif isinstance(cfg, dict):
@@ -561,19 +363,14 @@ class BundleChoice(HasComm, HasConfig):
         else:
             raise ValueError("cfg must be a dictionary or a YAML path.")
 
-        # Merge with existing config instead of overwriting
         if self.config is None:
             self.config = new_config
         else:
             self.config.update_in_place(new_config)
         
-        # Validate configuration
         self.config.validate()
 
-        # Build informative configuration summary
         logger.info("BundleChoice configured:")
-        
-        # Add dimensions information
         if self.config.dimensions.num_agents is not None:
             logger.info(f"  • {self.config.dimensions.num_agents} agents")
         if self.config.dimensions.num_items is not None:
@@ -582,12 +379,8 @@ class BundleChoice(HasComm, HasConfig):
             logger.info(f"  • {self.config.dimensions.num_features} features")
         if self.config.dimensions.num_simuls > 1:
             logger.info(f"  • {self.config.dimensions.num_simuls} simulations")
-        
-        # Add algorithm information
         if self.config.subproblem.name:
             logger.info(f"  • Algorithm: {self.config.subproblem.name}")
-        
-        # Add solver information if configured
         if hasattr(self.config, 'row_generation') and self.config.row_generation.max_iters != float('inf'):
             logger.info(f"  • Max iterations: {self.config.row_generation.max_iters}")
         if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:

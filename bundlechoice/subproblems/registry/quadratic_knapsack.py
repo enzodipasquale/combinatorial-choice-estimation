@@ -1,22 +1,31 @@
+"""
+Quadratic knapsack subproblem solver using Gurobi.
+
+Solves max utility (with quadratic terms) subject to weight constraint.
+"""
+
 import numpy as np
 import gurobipy as gp
-from ..base import SerialSubproblemBase
-import logging
 from typing import Any
-from bundlechoice.utils import suppress_output
+from numpy.typing import NDArray
+from ..base import SerialSubproblemBase
+from bundlechoice.utils import suppress_output, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+
+# ============================================================================
+# Quadratic Knapsack Subproblem Solver
+# ============================================================================
 
 class QuadraticKnapsackSubproblem(SerialSubproblemBase):
-    """
-    Quadratic knapsack subproblem that handles both modular and quadratic features.
-    Maintains the knapsack constraint while supporting quadratic objective terms.
-    """
+    """Quadratic knapsack solver: max utility with quadratic terms, weight constraint."""
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-    def initialize(self, local_id):
+    def initialize(self, local_id: int) -> Any:
+        """Initialize Gurobi model with weight constraint."""
         with suppress_output():
             subproblem = gp.Model()
             subproblem.setParam('OutputFlag', 0)
@@ -32,24 +41,21 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
             subproblem.update()        
         return subproblem
 
-    def solve(self, local_id, theta, pb: Any):
+    def solve(self, local_id: int, theta: NDArray[np.float64], pb: Any) -> NDArray[np.bool_]:
+        """Solve quadratic knapsack: set linear + quadratic objective, optimize."""
         L_j = self._build_L_j(local_id, theta)
         Q_j_j = self._build_Q_j_j(local_id, theta)
         
         B_j = pb.getVars()
-        
-        # Set linear objective
         for j in range(len(B_j)):
             B_j[j].Obj = L_j[j]
         
-        # Add quadratic terms
         quad_expr = gp.QuadExpr()
         for i in range(self.num_items):
             for j in range(self.num_items):
                 if Q_j_j[i, j] != 0:
                     quad_expr.add(B_j[i] * B_j[j], Q_j_j[i, j])
         
-        # Set quadratic objective
         pb.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)) + quad_expr)
         pb.optimize()
         
@@ -57,34 +63,32 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         self._check_mip_gap(pb, local_id)
         return optimal_bundle
 
-    def _build_Q_j_j(self, local_id, theta):
-        """
-        Build the quadratic matrix Q_j_j for the given agent.
-        """
+    # ============================================================================
+    # Helper Methods
+    # ============================================================================
+
+    def _build_Q_j_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Build quadratic matrix Q_j_j from agent/item quadratic features."""
         agent_data = self.local_data.get("agent_data", {})
         item_data = self.local_data.get("item_data", {})
         
         Q_j_j = np.zeros((self.num_items, self.num_items))
         offset = 0
         
-        # Handle agent modular features
         if "modular" in agent_data:
             num_mod_agent = agent_data["modular"].shape[-1]
             offset += num_mod_agent
         
-        # Handle agent quadratic features
         if "quadratic" in agent_data:
             quadratic_agent = agent_data["quadratic"]
             num_quad_agent = quadratic_agent.shape[-1]
             Q_j_j += (quadratic_agent[local_id] @ theta[offset:offset + num_quad_agent])
             offset += num_quad_agent
         
-        # Handle item modular features
         if "modular" in item_data:
             num_mod_item = item_data["modular"].shape[-1]
             offset += num_mod_item
         
-        # Handle item quadratic features
         if "quadratic" in item_data:
             quadratic_item = item_data["quadratic"]
             num_quad_item = quadratic_item.shape[-1]
@@ -93,10 +97,8 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         
         return Q_j_j
 
-    def _build_L_j(self, local_id, theta):
-        """
-        Build the linear coefficients L_j for the given agent.
-        """
+    def _build_L_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Build linear coefficients L_j from agent/item modular features."""
         error_j = self.local_data["errors"][local_id]
         agent_data = self.local_data.get("agent_data", {})
         item_data = self.local_data.get("item_data", {})
@@ -104,14 +106,12 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         L_j = error_j.copy()
         offset = 0
         
-        # Handle agent modular features
         if "modular" in agent_data:
             modular_agent = agent_data["modular"]
             num_mod_agent = modular_agent.shape[-1]
             L_j += (modular_agent[local_id] @ theta[offset:offset + num_mod_agent])
             offset += num_mod_agent
         
-        # Handle item modular features
         if "modular" in item_data:
             modular_item = item_data["modular"]
             num_mod_item = modular_item.shape[-1]
@@ -120,10 +120,8 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         
         return L_j
 
-    def _check_mip_gap(self, subproblem, local_id):
-        """
-        Check MIP gap and log warnings if it exceeds tolerance.
-        """
+    def _check_mip_gap(self, subproblem: Any, local_id: int) -> None:
+        """Check MIP gap and warn if exceeds tolerance."""
         MIPGap_tol = self.config.settings.get("MIPGap_tol")
         if MIPGap_tol is not None:
             if subproblem.MIPGap > float(MIPGap_tol):

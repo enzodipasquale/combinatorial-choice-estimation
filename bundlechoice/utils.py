@@ -1,66 +1,53 @@
+"""
+Utility functions for logging and output suppression.
+"""
+
 import logging
 import os
 import sys
 from contextlib import contextmanager
+from typing import Optional
 try:
     from mpi4py import MPI
 except ImportError:
-    pass
+    MPI = None
+
+
+# ============================================================================
+# Logging Utilities
+# ============================================================================
 
 class MPIRankFilter(logging.Filter):
-    """
-    Logging filter that only allows messages from MPI rank 0.
+    """Logging filter: only allows messages from MPI rank 0."""
     
-    This filter ensures that logging output only comes from the root process
-    in MPI applications, preventing duplicate log messages from multiple ranks.
-    """
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         """Filter log records to only allow rank 0."""
+        if MPI is None:
+            return True
         return MPI.COMM_WORLD.Get_rank() == 0
 
 
-def get_logger(name=__name__):
-    """
-    Get a logger with MPI rank filtering.
-    
-    This function creates a logger that automatically filters messages
-    to only show output from MPI rank 0, preventing duplicate logging
-    in distributed applications.
-    
-    Args:
-        name: Logger name (defaults to module name)
-        
-    Returns:
-        logging.Logger: Configured logger instance
-    """
+def get_logger(name: str = __name__) -> logging.Logger:
+    """Get logger with MPI rank filtering (only rank 0 logs)."""
     logger = logging.getLogger(name)
-    # Add the rank 0 filter only once
     if not any(isinstance(f, MPIRankFilter) for f in logger.filters):
         logger.addFilter(MPIRankFilter())
     return logger
 
+# ============================================================================
+# Output Suppression
+# ============================================================================
+
 @contextmanager
 def suppress_output():
-    """
-    Context manager to suppress stdout and stderr output.
-    
-    This context manager temporarily redirects stdout and stderr to /dev/null,
-    useful for silencing verbose output from external libraries like Gurobi.
-    
-    Example:
-        with suppress_output():
-            # Code that produces unwanted output
-            solver.solve()
-    """
+    """Context manager: suppress stdout/stderr (useful for Gurobi output)."""
     with open(os.devnull, 'w') as devnull:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
-        # Also suppress logging output
         old_logging_level = logging.getLogger().level
         try:
             sys.stdout = devnull
             sys.stderr = devnull
-            # Temporarily set logging to ERROR level to suppress INFO messages
             logging.getLogger().setLevel(logging.ERROR)
             yield
         finally:

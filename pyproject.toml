@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bundlechoice"
-version = "0.2.0"
+version = "0.2.0"  # Note: __version__ in bundlechoice/__init__.py is the source of truth
 description = "Estimation toolkit for combinatorial discrete choice models"
 authors = [{name = "Enzo Di Pasquale", email = "ed2189@nyu.edu"}]
 readme = "README.md"

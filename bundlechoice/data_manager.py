@@ -5,49 +5,38 @@ from bundlechoice.config import DimensionsConfig
 from bundlechoice.base import HasDimensions, HasComm
 logger = get_logger(__name__)
 
+
+# ============================================================================
+# DataManager
+# ============================================================================
+
 class DataManager(HasDimensions, HasComm):
     """
-    Handles input data distribution and conversion for the bundle choice model.
-    Supports MPI-based data scattering and PyTorch conversion.
-
-    Expected input_data structure::
+    Handles input data distribution across MPI ranks.
+    
+    Expected input_data structure:
         {
             'item_data': dict[str, np.ndarray],
             'agent_data': dict[str, np.ndarray],
             'errors': np.ndarray,
             'obs_bundle': np.ndarray,
         }
-    Each chunk sent to a rank contains::
-        {
-            'agent_indices': np.ndarray,
-            'agent_data': dict[str, np.ndarray] or None,
-            'errors': np.ndarray or None
-        }
     """
 
     def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager) -> None:
-        """
-        Initialize the DataManager.
-
-        Args:
-            dimensions_cfg (DimensionsConfig): Configuration for problem dimensions.
-            comm_manager: Communication manager for MPI operations.
-        """
+        """Initialize DataManager with dimensions config and MPI communicator."""
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
-        self.input_data = None
+        self.input_data: Optional[Dict[str, Any]] = None
         self.local_data: Optional[Dict[str, Any]] = None
         self.num_local_agents: Optional[int] = None
-  
-    # --- Data loading ---
-    def load(self, input_data: Dict[str, Any]) -> None:
-        """
-        Load or update the input data dictionary after initialization.
-        Validates the input data structure and dimensions before loading.
 
-        Args:
-            input_data (dict): Dictionary of input data.
-        """
+    # ============================================================================
+    # Data Loading
+    # ============================================================================
+
+    def load(self, input_data: Dict[str, Any]) -> None:
+        """Load input data (validated, stored on rank 0 only)."""
         logger.info("Loading input data.")
         self._validate_input_data(input_data)
         if self.is_root():
@@ -55,33 +44,26 @@ class DataManager(HasDimensions, HasComm):
         else:
             self.input_data = None
 
-    def load_and_scatter(self, input_data: Dict[str, Any]) -> None:
-        """ 
-        Load input data and scatter it across MPI ranks.
-
-        Args:
-            input_data (dict): Dictionary of input data.
-        """
+    def load_and_scatter(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Load input data and scatter across MPI ranks."""
         self._validate_input_data(input_data)
         self.load(input_data)
         self.scatter()
-
         return self.local_data
 
-    # --- Data scattering ---
+    # ============================================================================
+    # Data Scattering (MPI)
+    # ============================================================================
 
     def scatter(self) -> None:
         """
-        Distribute input data across MPI ranks using buffer-based MPI (5-20x faster).
-        Sets up local and global data attributes for each rank.
-        Expects input_data to have keys: 'item_data', 'agent_data', 'errors', 'obs_bundle'.
-        Each chunk sent to a rank contains: 'agent_indices', 'agent_data', 'errors'.
-
-        Raises:
-            ValueError: If dimensions_cfg is not set, or if input_data is not set on rank 0.
-            RuntimeError: If no data chunk is received after scatter.
+        Distribute input data across MPI ranks using buffer-based MPI.
+        
+        Uses buffer operations (5-20x faster than pickle). Each rank receives:
+        - Local agent data chunk
+        - Local errors array
+        - Broadcast item_data (same on all ranks)
         """
-        # Prepare data and compute chunk indices on root
         if self.is_root():
             errors = self._prepare_errors(self.input_data.get("errors"))
             obs_bundles = self.input_data.get("obs_bundle")
@@ -209,21 +191,13 @@ class DataManager(HasDimensions, HasComm):
 
 
     def _validate_input_data(self, input_data: Dict[str, Any]) -> None:
-        """
-        Validate that input_data has the required structure and dimensions.
-        Uses comprehensive validation utilities for better error messages.
-
-        Args:
-            input_data (dict): Dictionary containing the input data to validate.
-        Raises:
-            ValidationError: If input_data structure or dimensions don't match expectations.
-        """ 
+        """Validate input_data structure and dimensions (rank 0 only)."""
         if self.is_root():
             from bundlechoice.validation import validate_input_data_comprehensive
             validate_input_data_comprehensive(input_data, self.dimensions_cfg)
 
-    def verify_feature_count(self):
-        """Verify that num_features in config matches data structure."""
+    def verify_feature_count(self) -> None:
+        """Verify num_features in config matches data structure."""
         if self.is_root():
             from bundlechoice.validation import validate_feature_count
             validate_feature_count(self.input_data, self.num_features)

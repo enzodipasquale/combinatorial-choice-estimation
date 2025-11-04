@@ -1,3 +1,9 @@
+"""
+Subproblem manager for bundle choice estimation.
+
+Manages initialization and solving of subproblems (batch or serial).
+"""
+
 from typing import Any, cast, Optional, Dict, List, Tuple, Union
 from .subproblem_registry import SUBPROBLEM_REGISTRY
 from .base import BaseSubproblem
@@ -8,34 +14,33 @@ from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.base import HasDimensions, HasData, HasComm
 
+
+# ============================================================================
+# SubproblemManager
+# ============================================================================
+
 class SubproblemManager(HasDimensions, HasComm, HasData):
-    """
-    Manages subproblem initialization and solving for both batch (vectorized) and serial (per-agent) solvers.
-    Provides a unified interface for initializing and solving subproblems across MPI ranks.
-    """
-    def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager, data_manager: DataManager, feature_manager: FeatureManager, subproblem_cfg: SubproblemConfig):
+    """Manages subproblem initialization and solving (batch or serial)."""
+    
+    def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager: Any, 
+                 data_manager: DataManager, feature_manager: FeatureManager, 
+                 subproblem_cfg: SubproblemConfig) -> None:
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
         self.demand_oracle: Optional[BaseSubproblem] = None
-        self._solve_times = []
+        self._solve_times: List[float] = []
         self._cache_enabled = False
-        self._result_cache = {}
+        self._result_cache: Dict[str, Any] = {}
+
+    # ============================================================================
+    # Subproblem Loading
+    # ============================================================================
 
     def load(self, subproblem: Optional[Union[str, type]] = None) -> BaseSubproblem:
-        """
-        Load and instantiate the subproblem class from the registry or directly.
-
-        Args:
-            subproblem (str, class, or callable, optional): Name, class, or callable for the subproblem. If None, uses subproblem_cfg.name.
-        Returns:
-            BaseSubproblem: Instantiated subproblem object.
-        Raises:
-            ValueError: If subproblem is unknown or invalid.
-        """
-        # If already loaded and no override requested, return existing (idempotent)
+        """Load and instantiate subproblem from registry or custom class."""
         if subproblem is None and self.demand_oracle is not None:
             return self.demand_oracle
         
@@ -44,7 +49,6 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if isinstance(subproblem, str):
             subproblem_cls = SUBPROBLEM_REGISTRY.get(subproblem)
             if subproblem_cls is None:
-                available = ', '.join(SUBPROBLEM_REGISTRY.keys())
                 raise ValueError(
                     f"Unknown subproblem algorithm: '{subproblem}'\n\n"
                     f"Available algorithms:\n" +
@@ -56,6 +60,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             subproblem_cls = subproblem
         else:
             raise ValueError("Subproblem must be a string or a callable/class.")
+        
         subproblem_instance = subproblem_cls(
             data_manager=self.data_manager,
             feature_manager=self.feature_manager,
@@ -65,16 +70,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.demand_oracle = cast(BaseSubproblem, subproblem_instance)
         return self.demand_oracle
 
-    def initialize_local(self) -> Optional[List[Any]]:
-        """
-        Initialize local subproblems for all local agents (serial) or all at once (batch).
+    # ============================================================================
+    # Initialization & Solving
+    # ============================================================================
 
-        Returns:
-            None for batch subproblems, or list of local subproblems for serial.
-        Raises:
-            RuntimeError: If subproblem is not initialized.
-        """
-        # Auto-load subproblem from config if not already loaded
+    def initialize_local(self) -> Optional[List[Any]]:
+        """Initialize local subproblems (returns None for batch, list for serial)."""
         if self.demand_oracle is None and self.subproblem_cfg and self.subproblem_cfg.name:
             self.load()
         
@@ -84,18 +85,8 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.local_subproblems = self.demand_oracle.initialize_all()
         return self.local_subproblems
 
-
     def solve_local(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Solve all local subproblems for the current rank.
-
-        Args:
-            theta: Parameter vector for subproblem solving.
-        Returns:
-            Array of bundle solutions for local agents.
-        Raises:
-            RuntimeError: If subproblem or local subproblems are not initialized.
-        """
+        """Solve all local subproblems for current rank."""
         if self.demand_oracle is None:
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
