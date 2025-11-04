@@ -79,11 +79,36 @@ def summarize_experiment(results_csv_path, output_csv_path=None):
     
     summary_df = pd.DataFrame(summary_rows)
     
+    # Compute objective consistency statistics (across all replications)
+    df_valid = df[df['method'] != 'ERROR'].copy()
+    if len(df_valid) > 0 and 'obj_diff_rg_1slack' in df_valid.columns:
+        # Group by replication to get unique objective differences
+        replications = df_valid['replication'].unique()
+        obj_diffs = df_valid.groupby('replication').first()  # All methods in same replication have same diff values
+        obj_close_pct = (obj_diffs['obj_close_all'].sum() / len(obj_diffs)) * 100 if 'obj_close_all' in obj_diffs.columns else 0
+        obj_diff_rg_1slack_mean = obj_diffs['obj_diff_rg_1slack'].mean() if 'obj_diff_rg_1slack' in obj_diffs.columns else np.nan
+        obj_diff_rg_ellipsoid_mean = obj_diffs['obj_diff_rg_ellipsoid'].mean() if 'obj_diff_rg_ellipsoid' in obj_diffs.columns else np.nan
+        obj_diff_1slack_ellipsoid_mean = obj_diffs['obj_diff_1slack_ellipsoid'].mean() if 'obj_diff_1slack_ellipsoid' in obj_diffs.columns else np.nan
+    else:
+        obj_close_pct = 0
+        obj_diff_rg_1slack_mean = np.nan
+        obj_diff_rg_ellipsoid_mean = np.nan
+        obj_diff_1slack_ellipsoid_mean = np.nan
+    
     # Print summary table
     print(f"\n{'='*80}")
     print(f"Experiment Summary: {subproblem}")
     print(f"  Agents: {num_agents}, Items: {num_items}, Features: {num_features}")
     print(f"{'='*80}\n")
+    
+    # Print objective consistency summary
+    if not np.isnan(obj_diff_rg_1slack_mean):
+        print(f"Objective Consistency (across all methods):")
+        print(f"  All methods close (within 1e-3): {obj_close_pct:.1f}% of replications")
+        print(f"  Mean |obj_rg - obj_1slack|: {obj_diff_rg_1slack_mean:.6e}")
+        print(f"  Mean |obj_rg - obj_ellipsoid|: {obj_diff_rg_ellipsoid_mean:.6e}")
+        print(f"  Mean |obj_1slack - obj_ellipsoid|: {obj_diff_1slack_ellipsoid_mean:.6e}")
+        print()
     
     for _, row in summary_df.iterrows():
         method = row['method']
