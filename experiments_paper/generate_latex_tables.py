@@ -147,7 +147,7 @@ def generate_table_for_size(df_size, methods, param_config, num_agents, num_item
 
 def generate_latex_table(experiment_type, results_data, output_file):
     """
-    Generate LaTeX tables for an experiment type.
+    Generate LaTeX tables in 3x3 grid format for an experiment type.
     
     Args:
         experiment_type: Type of experiment (Greedy, etc.)
@@ -158,191 +158,160 @@ def generate_latex_table(experiment_type, results_data, output_file):
     title = EXPERIMENT_TITLES.get(experiment_type, experiment_type)
     param_names = param_config['names']
     unique_params = sorted(set(param_names), key=lambda x: param_names.index(x))
-    num_unique = len(unique_params)
     
-    # Sort by num_agents
-    sorted_sizes = sorted(results_data.keys(), key=lambda x: x[0])
+    # Organize sizes into 3x3 grid
+    # Extract unique agent and item counts
+    agent_counts = sorted(set(n for n, m in results_data.keys()))
+    item_counts = sorted(set(m for n, m in results_data.keys()))
+    
+    # Ensure we have at least 3x3, pad with None if needed
+    while len(agent_counts) < 3:
+        agent_counts.append(None)
+    while len(item_counts) < 3:
+        item_counts.append(None)
+    
+    # Take first 3 of each
+    agent_counts = agent_counts[:3]
+    item_counts = item_counts[:3]
     
     lines = []
-    lines.append(f"\\begin{{frame}}{{Numerical Experiment: {title}}}")
-    lines.append("")
+    lines.append(f"\\begin{{table}}[htbp]")
+    lines.append("\\centering")
+    lines.append("\\footnotesize")
+    lines.append(f"\\caption{{Numerical Experiment: {title} (3$\\times$3 Grid: $N \\times M$)}}")
+    lines.append(f"\\label{{tab:{experiment_type.lower()}}}")
+    lines.append("\\begin{threeparttable}")
+    lines.append("\\begin{tabular}{l c c c c c c c c c}")
+    lines.append("\\toprule")
     
-    # Slide 1: Description
-    lines.append("\\only<1>{")
-    lines.append("")
-    lines.append("\\begin{itemize}")
+    # Header: M (Items) across top
+    header1 = "Method & \\multicolumn{9}{c}{$M$ (Items)} \\\\"
+    lines.append(header1)
+    lines.append("\\cmidrule(lr){2-10}")
     
-    # Add description based on experiment type
-    if experiment_type == 'Greedy':
-        lines.append("    \\item $J = 100$ items, $K = 5$ features: 4 modular, 1 gross substitutes.")
-        lines.append("    \\item Agent $i$'s utility for bundle $B$:")
-        lines.append("    \\[")
-        lines.append("    \\sum_{j \\in B} \\phi_{ij}^\\top \\theta_{\\text{MOD}} -|B|^2\\theta_{\\text{GS}} + \\varepsilon_{iB}.")
-        lines.append("    \\]")
-        lines.append("    \\item Modular component $\\phi_{ijk}$ drawn i.i.d. from half-normal distribution.")
-        lines.append("    \\item Modular errors: $\\varepsilon_{iB} = \\sum_{j \\in B} \\nu_{ij},\\; \\nu_{ij} \\sim \\mathcal{N}(0, \\sigma^2).$")
-    elif experiment_type == 'QuadSupermodularNetwork':
-        lines.append("    \\item $J = 100$ items, $K = 6$ features: 5 modular, 1 quadratic.")
-        lines.append("    \\item Agent $i$'s utility for bundle $B$:")
-        lines.append("    \\[")
-        lines.append("    -\\sum_{j \\in B} \\phi_{ij}^\\top \\theta_{\\text{MOD}} + \\sum_{\\substack{j < j' \\\\ j,j' \\in B}} \\phi_{jj'}^\\top \\theta_{\\text{QUAD}} + \\varepsilon_{iB}.")
-        lines.append("    \\]")
-        lines.append("    \\item Modular component $\\phi_{ijk}$ drawn i.i.d. from half-normal distribution.")
-        lines.append("    \\item Quadratic component $\\phi_{jj'}$ is i.i.d.\\ Bernoulli$(0.2)$.")
-        lines.append("    \\item Modular errors: $\\varepsilon_{iB} = \\sum_{j \\in B} \\nu_{ij},\\; \\nu_{ij} \\sim \\mathcal{N}(0, \\sigma^2).$")
-    elif experiment_type == 'LinearKnapsack':
-        lines.append("    \\item $J = 100$ items, $K = 5$ modular features.")
-        lines.append("    \\item Agent $i$'s utility for bundle $B$:")
-        lines.append("    \\[")
-        lines.append("    U_{{iB}} = \\sum_{{j \\in B}} \\phi_{{ij}}^\\top \\theta + \\varepsilon_{{iB}}.")
-        lines.append("    \\]")
-        lines.append("    \\item Choice set:")
-        lines.append("    \\[")
-        lines.append("    \\mathcal{{B}}_i = \\{{ B \\subseteq [J] \\;|\\; \\sum_{{j \\in B}} w_j \\leq W_i \\}}.")
-        lines.append("    \\]")
-        lines.append("    \\item Modular features $\\phi_{{ijk}}$ drawn from half-normal distribution.")
-        lines.append("    \\item Modular errors: $\\varepsilon_{{iB}} = \\sum_{{j \\in B}} \\nu_{{ij}},\\; \\nu_{{ij}} \\sim \\mathcal{{N}}(0, \\sigma^2).$")
-        lines.append("    \\item Item weights $w_j \\sim_{{i.i.d.}} \\text{{Uniform}}\\{{1,10\\}}$ and $W_i$ drawn around $\\tfrac{{1}}{{2}} \\sum_{{j \\in [J]}} w_j.$")
-    elif experiment_type == 'QuadKnapsack':
-        lines.append("    \\item $J = 100$ items, $K = 6$ features: 5 modular, 1 quadratic.")
-        lines.append("    \\item Agent $i$'s utility for bundle $B$ with knapsack constraint:")
-        lines.append("    \\[")
-        lines.append("    U_{{iB}} = \\sum_{{j \\in B}} \\phi_{{ij}}^\\top \\theta_{\\text{{MOD}}} + \\sum_{\\substack{{j < j' \\\\ j,j' \\in B}}}} \\phi_{{jj'}}^\\top \\theta_{\\text{{QUAD}}} + \\varepsilon_{{iB}}.")
-        lines.append("    \\]")
-        lines.append("    \\item Choice set: $\\mathcal{{B}}_i = \\{{ B \\subseteq [J] \\;|\\; \\sum_{{j \\in B}} w_j \\leq W_i \\}}$.")
-        lines.append("    \\item Modular and quadratic components drawn from half-normal and Bernoulli$(0.2)$ respectively.")
-        lines.append("    \\item Modular errors: $\\varepsilon_{{iB}} = \\sum_{{j \\in B}} \\nu_{{ij}},\\; \\nu_{{ij}} \\sim \\mathcal{{N}}(0, \\sigma^2).$")
+    # Header row 2: Item values
+    header2 = " & \\multicolumn{3}{c}{" + str(item_counts[0]) + "} & \\multicolumn{3}{c}{" + str(item_counts[1]) + "} & \\multicolumn{3}{c}{" + str(item_counts[2]) + "} \\\\"
+    lines.append(header2)
+    lines.append("\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}")
     
-    lines.append("\\end{itemize}")
-    lines.append("")
-    lines.append("}")
-    lines.append("")
+    # Header row 3: Agent values
+    header3 = " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
+    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
+    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$ \\\\"
+    lines.append(header3)
+    lines.append("\\midrule")
     
-    # Slide 2: Tables for each size
-    lines.append("\\only<2>{")
-    lines.append("")
-    
-    # Get all methods present across all sizes
+    # Get all methods
     all_methods = set()
     for df_size in results_data.values():
         all_methods.update(df_size['method'].unique())
     methods = sorted([m for m in ['row_generation', 'row_generation_1slack', 'ellipsoid'] if m in all_methods])
     
-    # Determine number of columns needed per size
-    num_cols_per_size = 1 + (2 * num_unique)  # Runtime + RMSE columns + Bias columns
-    total_cols = 1 + len(sorted_sizes) * num_cols_per_size
+    # Helper function to extract parameter label from LaTeX string
+    def extract_param_label(param_latex):
+        """Extract parameter label like 'MOD', 'GS', 'QUAD' from LaTeX string."""
+        # Handle LaTeX strings like \theta_{\text{MOD}}, \theta_{\text{GS}}, etc.
+        if 'MOD' in param_latex:
+            return 'MOD'
+        elif 'GS' in param_latex:
+            return 'GS'
+        elif 'QUAD' in param_latex:
+            return 'QUAD'
+        # Fallback: try to extract from structure
+        s = param_latex.replace('\\', '').replace('{', '').replace('}', '').replace('theta', '').replace('text', '').replace('_', '').strip()
+        return s if s else 'MOD'  # Default fallback
     
-    # Use landscape if table is very wide (more than 30 columns)
-    use_landscape = total_cols > 30
-    
-    # Start table - all sizes in one table
-    if use_landscape:
-        lines.append("\\begin{landscape}")
-        lines.append("\\begin{table}[htbp]")
-    else:
-        lines.append("\\begin{table}[htbp]")
-    lines.append("\\centering")
-    lines.append("\\small")
-    lines.append("\\begin{threeparttable}")
-    
-    # Build column specification
-    colspec = "l "  # Method column
-    for _ in sorted_sizes:
-        if num_unique == 1:
-            colspec += "r r r "  # Runtime, RMSE, Bias
-        else:
-            colspec += "r " + "r" * num_unique + " " + "r" * num_unique + " "  # Runtime + RMSE params + Bias params
-    
-    lines.append(f"\\begin{{tabular}}{{{colspec}}}")
-    lines.append("\\toprule")
-    
-    # Header row 1: Size labels (show both I and J)
-    header1 = "Method"
-    for num_agents, num_items in sorted_sizes:
-        if num_unique == 1:
-            header1 += f" & \\multicolumn{{3}}{{c}}{{$(I,J)=({num_agents},{num_items})$}}"
-        else:
-            header1 += f" & \\multicolumn{{{num_cols_per_size}}}{{c}}{{$(I,J)=({num_agents},{num_items})$}}"
-    header1 += " \\\\"
-    lines.append(header1)
-    
-    # Header row 2: Column types
-    header2 = " & "
-    for num_agents, num_items in sorted_sizes:
-        if num_unique == 1:
-            header2 += "Runtime (s) & RMSE & Bias & "
-        else:
-            header2 += "Runtime (s) & \\multicolumn{" + str(num_unique) + "}{c}{RMSE} & \\multicolumn{" + str(num_unique) + "}{c}{Bias} & "
-    header2 = header2.rstrip(" & ") + " \\\\"
-    lines.append(header2)
-    
-    # Header row 3: Parameter names (only for multi-param case)
-    if num_unique > 1:
-        header3 = " & "
-        for num_agents, num_items in sorted_sizes:
-            param_cols = " & ".join([f"${p}$" for p in unique_params])
-            header3 += f" & {param_cols} & {param_cols} & "
-        header3 = header3.rstrip(" & ") + " \\\\"
-        lines.append(header3)
+    # Helper function to get value for a (N, M) combination
+    def get_value(method, n, m, metric_type='runtime'):
+        """Get value for a specific method, size, and metric."""
+        key = (n, m)
+        if key not in results_data:
+            return "---"
         
-        # Cmidrules
-        cmidrule = "\\cmidrule(lr){2-" + str(1+num_cols_per_size) + "}"
-        for i, _ in enumerate(sorted_sizes[1:], 1):
-            start = 2 + i * num_cols_per_size
-            end = start + num_cols_per_size - 1
-            cmidrule += f" \\cmidrule(lr){{{start}-{end}}}"
-        lines.append(cmidrule)
-    else:
-        # Cmidrules for single param
-        cmidrule = "\\cmidrule(lr){2-4}"
-        for i in range(1, len(sorted_sizes)):
-            start = 2 + i * 3
-            cmidrule += f" \\cmidrule(lr){{{start}-{start+2}}}"
-        lines.append(cmidrule)
+        df_size = results_data[key]
+        df_method = df_size[df_size['method'] == method]
+        
+        if len(df_method) == 0:
+            return "---"
+        
+        if metric_type == 'runtime':
+            return format_number(df_method['time_s'].mean())
+        else:
+            aggregated = aggregate_parameters_by_type(df_method, param_config)
+            # metric_type is like 'rmse_MOD' or 'bias_GS'
+            parts = metric_type.split('_', 1)
+            if len(parts) != 2:
+                return "---"
+            metric, param_label = parts
+            # Find matching param type in aggregated (match by extracted label)
+            for param_type in aggregated.keys():
+                if extract_param_label(param_type) == param_label:
+                    idx = 0 if metric == 'rmse' else 1
+                    return format_number(aggregated[param_type][idx])
+            return "---"
     
-    lines.append("\\midrule")
-    
-    # Generate rows for each method
+    # Generate table: one section per metric type
+    # 1. Runtime
+    lines.append("\\multicolumn{10}{l}{\\textit{Runtime (s)}} \\\\")
     for method in methods:
         row_parts = [METHOD_NAMES.get(method, method)]
-        
-        for num_agents, num_items in sorted_sizes:
-            df_size = results_data[(num_agents, num_items)]
-            df_method = df_size[df_size['method'] == method]
-            
-            if len(df_method) == 0:
-                # No data for this method/size
-                if num_unique == 1:
-                    row_parts.extend(["---", "---", "---"])
+        for m in item_counts:
+            for n in agent_counts:
+                if n is None or m is None:
+                    row_parts.append("---")
                 else:
-                    row_parts.extend(["---"] + ["---"] * num_unique + ["---"] * num_unique)
-                continue
-            
-            runtime = df_method['time_s'].mean()
-            aggregated = aggregate_parameters_by_type(df_method, param_config)
-            
-            # Add runtime
-            row_parts.append(format_number(runtime))
-            
-            # Add RMSE and Bias for each unique parameter type
-            for param_type in unique_params:
-                row_parts.append(format_number(aggregated[param_type][0]))  # RMSE
-            for param_type in unique_params:
-                row_parts.append(format_number(aggregated[param_type][1]))  # Bias
-        
-        row = " & ".join(row_parts) + " \\\\"
-        lines.append(row)
+                    row_parts.append(get_value(method, n, m, 'runtime'))
+        lines.append(" & ".join(row_parts) + " \\\\")
+    lines.append("\\cmidrule(lr){1-10}")
+    
+    # 2. RMSE for each parameter type
+    for param_type in unique_params:
+        param_label = extract_param_label(param_type)
+        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
+        for method in methods:
+            row_parts = [METHOD_NAMES.get(method, method)]
+            for m in item_counts:
+                for n in agent_counts:
+                    if n is None or m is None:
+                        row_parts.append("---")
+                    else:
+                        row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
+            lines.append(" & ".join(row_parts) + " \\\\")
+        lines.append("\\cmidrule(lr){1-10}")
+    
+    # 3. Bias for each parameter type
+    for param_type in unique_params:
+        param_label = extract_param_label(param_type)
+        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
+        for method in methods:
+            row_parts = [METHOD_NAMES.get(method, method)]
+            for m in item_counts:
+                for n in agent_counts:
+                    if n is None or m is None:
+                        row_parts.append("---")
+                    else:
+                        row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
+            lines.append(" & ".join(row_parts) + " \\\\")
+        if param_type != unique_params[-1]:
+            lines.append("\\cmidrule(lr){1-10}")
     
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
+    lines.append("\\begin{tablenotes}")
+    lines.append("\\footnotesize")
+    available_sizes = sorted(results_data.keys())
+    size_str = ", ".join([f"({n},{m})" for n, m in available_sizes])
+    lines.append(f"\\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \\in \\{{{size_str}\\}}$.")
+    missing = []
+    for m in item_counts:
+        for n in agent_counts:
+            if n is not None and m is not None and (n, m) not in results_data:
+                missing.append(f"({n},{m})")
+    if missing:
+        lines.append(f"\\item Missing combinations: {', '.join(missing)}")
+    lines.append("\\end{tablenotes}")
     lines.append("\\end{threeparttable}")
     lines.append("\\end{table}")
-    if use_landscape:
-        lines.append("\\end{landscape}")
-    lines.append("")
-    
-    lines.append("}")
-    lines.append("\\end{frame}")
     lines.append("")
     
     return lines
