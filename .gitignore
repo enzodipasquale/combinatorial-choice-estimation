@@ -12,6 +12,7 @@ __pycache__/
 # Data and logs
 *.log
 *.out
+*.err
 *.mif
 *.mps
 *.ext3
