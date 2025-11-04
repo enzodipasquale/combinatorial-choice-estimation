@@ -1,0 +1,5 @@
+# Tiny test grid for debugging (2x2 = 4 sizes)
+sizes_grid:
+  agents: [5, 10]  # N: Low, Mid (for testing)
+  items: [10, 20]   # M: Low, Mid (for testing)
+
