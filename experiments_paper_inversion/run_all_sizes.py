@@ -21,8 +21,8 @@ def main():
     parser.add_argument('--sizes', type=str, default='sizes.yaml', 
                        help='Sizes config file (default: sizes.yaml)')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
-    parser.add_argument('--timeout', type=int, default=600,
-                       help='Timeout in seconds (default: 600 = 10 minutes)')
+    parser.add_argument('--timeout', type=int, default=None,
+                       help='Timeout in seconds for debugging (optional, uses timeout wrapper if provided)')
     
     args = parser.parse_args()
     
@@ -75,7 +75,7 @@ def main():
         results_path.unlink()
         print(f"Cleared existing results file")
     
-    # Run for each size with timeout
+    # Run for each size
     timeout_wrapper = base_dir / 'run_with_timeout.py'
     for size_name, num_agents, num_items in sizes_list:
         print(f"\n{'='*60}")
@@ -87,18 +87,22 @@ def main():
         env['NUM_AGENTS'] = str(num_agents)
         env['NUM_ITEMS'] = str(num_items)
         
-        # Use timeout wrapper
-        cmd = ['python', str(timeout_wrapper), 
-               '--timeout', str(args.timeout),
-               '--mpi', str(args.mpi),
-               str(run_script)]
+        # Use timeout wrapper only if timeout is specified (for debugging)
+        if args.timeout is not None:
+            cmd = ['python', str(timeout_wrapper), 
+                   '--timeout', str(args.timeout),
+                   '--mpi', str(args.mpi),
+                   str(run_script)]
+        else:
+            # Direct MPI command (no timeout)
+            cmd = ['mpirun', '-n', str(args.mpi), 'python', str(run_script)]
         
         try:
             result = subprocess.run(cmd, cwd=str(project_root), env=env, check=True)
             print(f"✓ Completed {size_name}")
         except subprocess.CalledProcessError as e:
             print(f"✗ Failed {size_name}: {e}")
-            if e.returncode == 124:
+            if args.timeout and e.returncode == 124:
                 print(f"  (Timed out after {args.timeout}s)")
             continue
     
