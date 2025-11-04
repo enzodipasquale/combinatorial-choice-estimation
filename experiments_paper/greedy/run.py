@@ -40,6 +40,8 @@ def main():
         # Add timing breakdown columns (universal across all methods)
         cols.extend(['timing_compute', 'timing_solve', 'timing_comm',
                     'timing_compute_pct', 'timing_solve_pct', 'timing_comm_pct'])
+        # Add objective consistency check columns
+        cols.extend(['obj_diff_rg_1slack', 'obj_diff_rg_ellipsoid', 'obj_diff_1slack_ellipsoid', 'obj_close_all'])
         # Add theta_true columns
         cols.extend([f'theta_true_{k}' for k in range(num_features)])
         # Add theta_est columns  
@@ -138,6 +140,19 @@ def main():
             results['ellipsoid'] = (theta_ell, time_ell, obj_ell, timing_ell)
 
             if rank == 0:
+                # Compute objective consistency checks (same for all methods in this replication)
+                th_rg, _, obj_rg, _ = results['row_generation']
+                th_r1, _, obj_r1, _ = results['row_generation_1slack']
+                th_el, _, obj_el, _ = results['ellipsoid']
+                
+                obj_diff_rg_1slack = abs(obj_rg - obj_r1)
+                obj_diff_rg_ellipsoid = abs(obj_rg - obj_el)
+                obj_diff_1slack_ellipsoid = abs(obj_r1 - obj_el)
+                obj_tolerance = 1e-3
+                obj_close_all = (obj_diff_rg_1slack < obj_tolerance and 
+                                obj_diff_rg_ellipsoid < obj_tolerance and 
+                                obj_diff_1slack_ellipsoid < obj_tolerance)
+                
                 # Write rows with theta_true, theta_est, and timing breakdown
                 rows = []
                 for method, (theta, elapsed, objv, timing_stats) in results.items():
@@ -175,6 +190,11 @@ def main():
                         row['timing_compute_pct'] = np.nan
                         row['timing_solve_pct'] = np.nan
                         row['timing_comm_pct'] = np.nan
+                    # Add objective consistency checks (same for all methods in replication)
+                    row['obj_diff_rg_1slack'] = obj_diff_rg_1slack
+                    row['obj_diff_rg_ellipsoid'] = obj_diff_rg_ellipsoid
+                    row['obj_diff_1slack_ellipsoid'] = obj_diff_1slack_ellipsoid
+                    row['obj_close_all'] = obj_close_all
                     # Add theta_true columns
                     for k in range(num_features):
                         row[f'theta_true_{k}'] = theta_true[k]
@@ -186,14 +206,13 @@ def main():
                 df.to_csv(results_path, mode='a', header=False, index=False)
 
                 # Print quick consistency checks
-                th_rg, _, obj_rg, _ = results['row_generation']
-                th_r1, _, obj_r1, _ = results['row_generation_1slack']
-                th_el, _, obj_el, _ = results['ellipsoid']
-                print(f"[rep {rep}] theta close rg vs 1slack: {np.allclose(th_rg, th_r1, atol=1e-2, rtol=0)}; obj close: {abs(obj_rg-obj_r1) < 1e-3}")
-                print(f"[rep {rep}] theta close rg vs ellipsoid: {np.allclose(th_rg, th_el, atol=1e-2, rtol=0)}; obj close: {abs(obj_rg-obj_el) < 1e-3}")
+                print(f"[rep {rep}] theta close rg vs 1slack: {np.allclose(th_rg, th_r1, atol=1e-2, rtol=0)}; obj diff: {obj_diff_rg_1slack:.6f} (close: {obj_diff_rg_1slack < obj_tolerance})")
+                print(f"[rep {rep}] theta close rg vs ellipsoid: {np.allclose(th_rg, th_el, atol=1e-2, rtol=0)}; obj diff: {obj_diff_rg_ellipsoid:.6f} (close: {obj_diff_rg_ellipsoid < obj_tolerance})")
+                print(f"[rep {rep}] obj close all methods: {obj_close_all} (tolerance: {obj_tolerance})")
         except Exception as e:
             if rank == 0:
-                df = pd.DataFrame([{
+                # Create error row with all required columns
+                error_row = {
                     'replication': rep,
                     'seed': seed,
                     'method': 'ERROR',
@@ -205,8 +224,23 @@ def main():
                     'num_simuls': num_simuls,
                     'sigma': sigma,
                     'subproblem': cfg['subproblem']['name'],
+                    'timing_compute': np.nan,
+                    'timing_solve': np.nan,
+                    'timing_comm': np.nan,
+                    'timing_compute_pct': np.nan,
+                    'timing_solve_pct': np.nan,
+                    'timing_comm_pct': np.nan,
+                    'obj_diff_rg_1slack': np.nan,
+                    'obj_diff_rg_ellipsoid': np.nan,
+                    'obj_diff_1slack_ellipsoid': np.nan,
+                    'obj_close_all': False,
                     'error': str(e)
-                }])
+                }
+                # Add theta columns
+                for k in range(num_features):
+                    error_row[f'theta_true_{k}'] = np.nan
+                    error_row[f'theta_{k}'] = np.nan
+                df = pd.DataFrame([error_row])
                 df.to_csv(results_path, mode='a', header=False, index=False)
             raise
 
