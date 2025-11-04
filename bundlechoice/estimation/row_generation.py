@@ -26,13 +26,13 @@ class RowGenerationSolver(BaseEstimationSolver):
     """
     def __init__(
                 self, 
-                comm_manager, 
-                dimensions_cfg, 
-                row_generation_cfg, 
-                data_manager, 
-                feature_manager, 
-                subproblem_manager,
-                theta_init=None):
+                comm_manager: Any,
+                dimensions_cfg: Any,
+                row_generation_cfg: Any,
+                data_manager: Any,
+                feature_manager: Any,
+                subproblem_manager: Any,
+                theta_init: Optional[NDArray[np.float64]] = None) -> None:
         """
         Initialize the RowGenerationSolver.
 
@@ -62,13 +62,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.slack_counter = None
         self.theta_init = theta_init
 
-    def _setup_gurobi_model_params(self):
-        """
-        Create and set up Gurobi model with parameters from configuration.
-        
-        Returns:
-            Gurobi model instance with configured parameters.
-        """    
+    def _setup_gurobi_model_params(self) -> Any:
+        """Create and set up Gurobi model with parameters from configuration."""    
         # Default values for parameters not specified in config
         defaults = {
             'Method': 0,
@@ -88,13 +83,8 @@ class RowGenerationSolver(BaseEstimationSolver):
                     model.setParam(param_name, value)
         return model
 
-    def _initialize_master_problem(self):
-        """
-        Create and configure the master problem (Gurobi model).
-        
-        Returns:
-            tuple: (master_model, master_variables, theta_val)
-        """
+    def _initialize_master_problem(self) -> None:
+        """Create and configure the master problem (Gurobi model)."""
         obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
@@ -128,17 +118,9 @@ class RowGenerationSolver(BaseEstimationSolver):
     
 
 
-    def _master_iteration(self, local_pricing_results, timing_dict):
-        """
-        Perform one iteration of the master problem in the row generation algorithm.
-
-        Args:
-            pricing_results (list of np.ndarray): List of bundle selection matrices from pricing subproblems.
-            timing_dict (dict): Dictionary to store timing information for this iteration.
-
-        Returns:
-            bool: Whether the stopping criterion is met.
-        """
+    def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
+                         timing_dict: Dict[str, float]) -> bool:
+        """Perform one iteration of master problem. Returns True if stopping criterion met."""
         t_mpi_gather_start = datetime.now()
         x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
         errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
@@ -329,13 +311,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.theta_hat = self.theta_val
         return self.theta_hat
 
-    def _enforce_slack_counter(self):
-        """
-        Update the slack counter for master problem constraints and remove those that have been slack for too long.
-
-        Returns:
-            int: Number of constraints removed.
-        """
+    def _enforce_slack_counter(self) -> int:
+        """Update slack counter and remove constraints that have been slack too long. Returns number removed."""
         if self.row_generation_cfg.max_slack_counter < float('inf'):
             to_remove = []
             for constr in self.master_model.getConstrs():
@@ -360,16 +337,9 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
 
-    def _log_timing_summary(self, init_time, total_time, num_iterations, timing_breakdown):
-        """
-        Log comprehensive timing summary showing bottlenecks.
-        
-        Args:
-            init_time: Time spent on initialization
-            total_time: Total elapsed time
-            num_iterations: Number of iterations completed
-            timing_breakdown: Dictionary of timing lists for each component
-        """
+    def _log_timing_summary(self, init_time: float, total_time: float, 
+                           num_iterations: int, timing_breakdown: Dict[str, List[float]]) -> None:
+        """Log comprehensive timing summary showing bottlenecks."""
         logger.info("=" * 70)
         logger.info("TIMING SUMMARY - Row Generation Performance Analysis")
         logger.info("=" * 70)
@@ -435,7 +405,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         
         logger.info("=" * 70)
 
-    def log_parameter(self):
+    def log_parameter(self) -> None:
+        """Log current parameter values (if parameters_to_log is set in config)."""
         feature_ids = self.row_generation_cfg.parameters_to_log
         precision = 3
         if feature_ids is not None:

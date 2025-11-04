@@ -106,61 +106,15 @@ class BundleChoice(HasComm, HasConfig):
         self.subproblem_manager.load()
         return self.subproblem_manager
     
-    def _try_init_row_generation_manager(self) -> RowGenerationSolver:
+    def _try_init_row_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> RowGenerationSolver:
         """Initialize RowGenerationSolver."""
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.row_generation is None:
-            missing = []
-            if self.data_manager is None:
-                missing.append("data (call bc.data.load_and_scatter(input_data))")
-            if self.feature_manager is None:
-                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
-            if self.subproblem_manager is None:
-                missing.append("subproblem (call bc.subproblems.load())")
-            if self.config is None or self.config.row_generation is None:
-                missing.append("row_generation config (add 'row_generation' to your config)")
-            raise RuntimeError(
-                "Cannot initialize row generation solver - missing setup:\n  " +
-                "\n  ".join(missing) +
-                "\n\nRun bc.validate_setup('row_generation') to check your configuration."
-            )
+        from .core._initialization import try_init_row_generation_manager
+        return try_init_row_generation_manager(self, theta_init)
 
-        self.row_generation_manager = RowGenerationSolver(
-            comm_manager=self.comm_manager,
-            dimensions_cfg=self.config.dimensions,
-            row_generation_cfg=self.config.row_generation,
-            data_manager=self.data_manager,
-            feature_manager=self.feature_manager,
-            subproblem_manager=self.subproblem_manager
-        )
-        return self.row_generation_manager
-
-    def _try_init_ellipsoid_manager(self) -> EllipsoidSolver:
+    def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> EllipsoidSolver:
         """Initialize EllipsoidSolver."""
-        if self.data_manager is None or self.feature_manager is None or self.subproblem_manager is None or self.config is None or self.config.ellipsoid is None:
-            missing = []
-            if self.data_manager is None:
-                missing.append("data (call bc.data.load_and_scatter(input_data))")
-            if self.feature_manager is None:
-                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
-            if self.subproblem_manager is None:
-                missing.append("subproblem (call bc.subproblems.load())")
-            if self.config is None or self.config.ellipsoid is None:
-                missing.append("ellipsoid config (add 'ellipsoid' to your config)")
-            raise RuntimeError(
-                "Cannot initialize ellipsoid solver - missing setup:\n  " +
-                "\n  ".join(missing) +
-                "\n\nRun bc.validate_setup('ellipsoid') to check your configuration."
-            )
-
-        self.ellipsoid_manager = EllipsoidSolver(
-            comm_manager=self.comm_manager,
-            dimensions_cfg=self.config.dimensions,
-            ellipsoid_cfg=self.config.ellipsoid,
-            data_manager=self.data_manager,
-            feature_manager=self.feature_manager,
-            subproblem_manager=self.subproblem_manager
-        )
-        return self.ellipsoid_manager
+        from .core._initialization import try_init_ellipsoid_manager
+        return try_init_ellipsoid_manager(self, theta_init)
 
     def _try_init_inequalities_manager(self) -> InequalitiesSolver:
         """Initialize InequalitiesSolver."""

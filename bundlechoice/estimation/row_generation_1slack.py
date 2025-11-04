@@ -5,6 +5,7 @@ This module implements a simplified row generation approach with a single scalar
 import numpy as np
 from datetime import datetime
 from typing import Tuple, List, Optional, Any, Dict
+from numpy.typing import NDArray
 import logging
 import gurobipy as gp
 from gurobipy import GRB
@@ -26,13 +27,14 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
     This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
     def __init__(
-                self, 
-                comm_manager, 
-                dimensions_cfg, 
-                row_generation_cfg, 
-                data_manager, 
-                feature_manager, 
-                subproblem_manager):
+                self,
+                comm_manager: Any,
+                dimensions_cfg: Any,
+                row_generation_cfg: Any,
+                data_manager: Any,
+                feature_manager: Any,
+                subproblem_manager: Any
+                ) -> None:
         """
         Initialize the RowGeneration1SlackSolver.
 
@@ -60,13 +62,8 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         self.slack_counter = None
         self.timing_stats = None  # Store detailed timing statistics
 
-    def _setup_gurobi_model_params(self):
-        """
-        Create and set up Gurobi model with parameters from configuration.
-        
-        Returns:
-            Gurobi model instance with configured parameters.
-        """    
+    def _setup_gurobi_model_params(self) -> Any:
+        """Create and set up Gurobi model with parameters from configuration."""    
         with suppress_output():
             model = gp.Model()
             Method = self.row_generation_cfg.gurobi_settings.get("Method", 0)
@@ -80,13 +77,8 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             model.setParam('OutputFlag', OutputFlag)
         return model
 
-    def _initialize_master_problem(self):
-        """
-        Create and configure the master problem (Gurobi model) with 1slack formulation.
-        
-        Returns:
-            tuple: (master_model, master_variables, theta_val)
-        """
+    def _initialize_master_problem(self) -> None:
+        """Create and configure master problem (Gurobi model) with 1slack formulation."""
         obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
@@ -105,17 +97,9 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
 
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
-    def _master_iteration(self, optimal_bundles, timing_dict):
-        """
-        Perform one iteration of the master problem in the row generation algorithm with 1slack formulation.
-
-        Args:
-            pricing_results (list of np.ndarray): List of bundle selection matrices from pricing subproblems.
-            timing_dict (dict): Dictionary to store timing information for this iteration.
-
-        Returns:
-            bool: Whether the stopping criterion is met.
-        """
+    def _master_iteration(self, optimal_bundles: NDArray[np.float64], 
+                         timing_dict: Dict[str, float]) -> bool:
+        """Perform one iteration of master problem (1slack). Returns True if stopping criterion met."""
         t_mpi_gather_start = datetime.now()
         x_sim = self.feature_manager.compute_gathered_features(optimal_bundles)
         errors_sim = self.feature_manager.compute_gathered_errors(optimal_bundles)
@@ -172,14 +156,8 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
         return stop
 
-    def solve(self):
-        """
-        Run the row generation algorithm with 1slack formulation to estimate model parameters.
-
-        Returns:
-            tuple: (theta_val)
-                - theta_val (np.ndarray): Estimated parameter vector.
-        """
+    def solve(self) -> NDArray[np.float64]:
+        """Run row generation with 1slack formulation. Returns estimated parameter vector."""
         logger.info("=== ROW GENERATION 1SLACK ===")
         tic = datetime.now()
         self.subproblem_manager.initialize_local()
@@ -277,13 +255,8 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         self.theta_hat = self.theta_val
         return self.theta_hat
 
-    def _enforce_slack_counter(self):
-        """
-        Update the slack counter for master problem constraints and remove those that have been slack for too long.
-
-        Returns:
-            int: Number of constraints removed.
-        """
+    def _enforce_slack_counter(self) -> int:
+        """Update slack counter and remove constraints that have been slack too long. Returns number removed."""
         if self.row_generation_cfg.max_slack_counter < float('inf'):
             to_remove = []
             for constr in self.master_model.getConstrs():
@@ -306,7 +279,8 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
         else:
             return 0
 
-    def log_parameter(self):
+    def log_parameter(self) -> None:
+        """Log current parameter values (if parameters_to_log is set in config)."""
         feature_ids = self.row_generation_cfg.parameters_to_log
         precision = 3
         if feature_ids is not None:
