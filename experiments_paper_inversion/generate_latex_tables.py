@@ -12,6 +12,10 @@ from collections import defaultdict
 
 # Parameter naming for different experiment types
 PARAM_NAMES = {
+    'greedy': {
+        'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{GS}}'],
+        'descriptions': '1 agent modular, 1 item modular, 1 gross substitutes'
+    },
     'greedy_naive': {
         'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{GS}}'],
         'descriptions': '1 agent modular, 1 item modular, 1 gross substitutes'
@@ -19,6 +23,10 @@ PARAM_NAMES = {
     'greedy_iv': {
         'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{GS}}'],
         'descriptions': '1 agent modular, 1 item modular, 1 gross substitutes'
+    },
+    'supermod': {
+        'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{QUAD1}}', '\\theta_{\\text{QUAD2}}'],
+        'descriptions': '1 agent modular, 1 item modular, 2 quadratic'
     },
     'supermod_naive': {
         'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{QUAD1}}', '\\theta_{\\text{QUAD2}}'],
@@ -28,6 +36,10 @@ PARAM_NAMES = {
         'names': ['\\theta_{\\text{AGENT}}', '\\theta_{\\text{ITEM}}', '\\theta_{\\text{QUAD1}}', '\\theta_{\\text{QUAD2}}'],
         'descriptions': '1 agent modular, 1 item modular, 2 quadratic'
     },
+    'knapsack': {
+        'names': ['\\theta_{\\text{MOD}}'] * 5,
+        'descriptions': '5 modular features'
+    },
     'knapsack_naive': {
         'names': ['\\theta_{\\text{MOD}}'] * 5,
         'descriptions': '5 modular features'
@@ -35,6 +47,10 @@ PARAM_NAMES = {
     'knapsack_iv': {
         'names': ['\\theta_{\\text{MOD}}'] * 5,
         'descriptions': '5 modular features'
+    },
+    'quadknapsack': {
+        'names': ['\\theta_{\\text{MOD}}'] * 4 + ['\\theta_{\\text{ITEM}}', '\\theta_{\\text{QUAD}}'],
+        'descriptions': '4 agent modular, 1 item modular, 1 quadratic'
     },
     'quadknapsack_naive': {
         'names': ['\\theta_{\\text{MOD}}'] * 4 + ['\\theta_{\\text{ITEM}}', '\\theta_{\\text{QUAD}}'],
@@ -54,12 +70,16 @@ METHOD_NAMES = {
 
 # Experiment type titles
 EXPERIMENT_TITLES = {
+    'greedy': 'Greedy (Naive vs IV)',
     'greedy_naive': 'Greedy - Naive',
     'greedy_iv': 'Greedy - IV',
+    'supermod': 'Supermodular (Naive vs IV)',
     'supermod_naive': 'Supermodular - Naive',
     'supermod_iv': 'Supermodular - IV',
+    'knapsack': 'Knapsack (Naive vs IV)',
     'knapsack_naive': 'Knapsack - Naive',
     'knapsack_iv': 'Knapsack - IV',
+    'quadknapsack': 'Quad Knapsack (Naive vs IV)',
     'quadknapsack_naive': 'Quad Knapsack - Naive',
     'quadknapsack_iv': 'Quad Knapsack - IV'
 }
@@ -144,7 +164,7 @@ def load_results_from_csv(results_csv_path):
 
 def generate_table(experiment_type, results_csv_path, output_path):
     """
-    Generate LaTeX table comparing naive vs IV methods across multiple sizes.
+    Generate LaTeX table in 3x3 grid format comparing naive vs IV methods.
     Professional formatting for top-tier journals (Econometrica, etc.)
     """
     results_by_size = load_results_from_csv(results_csv_path)
@@ -161,202 +181,279 @@ def generate_table(experiment_type, results_csv_path, output_path):
     
     param_names = param_config['names']
     unique_params = sorted(set(param_names), key=lambda x: param_names.index(x))
-    num_unique = len(unique_params)
     
-    # Sort sizes by num_agents, then num_items
-    sorted_sizes = sorted(results_by_size.keys(), key=lambda x: (x[0], x[1]))
+    # Organize sizes into 3x3 grid
+    # Extract unique agent and item counts
+    agent_counts = sorted(set(n for n, m in results_by_size.keys()))
+    item_counts = sorted(set(m for n, m in results_by_size.keys()))
     
-    # Get all methods present across all sizes
+    # Ensure we have at least 3x3, pad with None if needed
+    while len(agent_counts) < 3:
+        agent_counts.append(None)
+    while len(item_counts) < 3:
+        item_counts.append(None)
+    
+    # Take first 3 of each
+    agent_counts = agent_counts[:3]
+    item_counts = item_counts[:3]
+    
+    # Get all methods
     all_methods = set()
     for df_size in results_by_size.values():
         all_methods.update(df_size['method'].unique())
     methods = sorted([m for m in ['naive', 'iv'] if m in all_methods])
     
-    # Determine number of columns needed per size
-    num_cols_per_size = 1 + (2 * num_unique)  # Runtime + (RMSE + Bias) * unique_params
-    total_cols = 1 + len(sorted_sizes) * num_cols_per_size
+    # Helper function to extract parameter label from LaTeX string
+    def extract_param_label(param_latex):
+        """Extract parameter label like 'MOD', 'GS', 'QUAD1', 'QUAD2', 'AGENT', 'ITEM' from LaTeX string."""
+        # Handle specific cases
+        if 'QUAD1' in param_latex:
+            return 'QUAD1'
+        elif 'QUAD2' in param_latex:
+            return 'QUAD2'
+        elif 'AGENT' in param_latex:
+            return 'AGENT'
+        elif 'ITEM' in param_latex:
+            return 'ITEM'
+        elif 'GS' in param_latex:
+            return 'GS'
+        elif 'QUAD' in param_latex:
+            return 'QUAD'
+        elif 'MOD' in param_latex:
+            return 'MOD'
+        # Fallback: extract from structure
+        s = param_latex.replace('\\', '').replace('{', '').replace('}', '').replace('theta', '').replace('text', '').strip()
+        return s if s else 'MOD'
     
-    # Use landscape if table is very wide (more than 30 columns)
-    use_landscape = total_cols > 30
-    
-    # Build table content
-    lines = []
-    lines.append("\\begin{table}[htbp]")
-    if use_landscape:
-        lines.insert(-1, "\\begin{landscape}")
-    lines.append("\\centering")
-    lines.append("\\footnotesize")
-    lines.append(f"\\caption{{Inversion Experiment Results: {EXPERIMENT_TITLES.get(experiment_type, experiment_type)}}}")
-    lines.append(f"\\label{{tab:inversion_{experiment_type}}}")
-    lines.append("\\begin{threeparttable}")
-    
-    # Build column specification
-    colspec = "l "  # Method column
-    for _ in sorted_sizes:
-        colspec += "r " + "r" * num_unique + " " + "r" * num_unique + " "  # Runtime + RMSE params + Bias params
-    
-    lines.append(f"\\begin{{tabular}}{{{colspec}}}")
-    lines.append("\\toprule")
-    
-    # Header row 1: Size labels (show both I and J)
-    header1 = "Method"
-    for num_agents, num_items in sorted_sizes:
-        header1 += f" & \\multicolumn{{{num_cols_per_size}}}{{c}}{{$(I,J)=({num_agents},{num_items})$}}"
-    header1 += " \\\\"
-    lines.append(header1)
-    
-    # Header row 2: Column types
-    header2 = " & "
-    for num_agents, num_items in sorted_sizes:
-        header2 += f"Runtime (s) & \\multicolumn{{{num_unique}}}{{c}}{{RMSE}} & \\multicolumn{{{num_unique}}}{{c}}{{Bias}} & "
-    header2 = header2.rstrip(" & ") + " \\\\"
-    lines.append(header2)
-    
-    # Header row 3: Parameter names
-    header3 = " & "
-    for num_agents, num_items in sorted_sizes:
-        param_cols = " & ".join([f"${p}$" for p in unique_params])
-        header3 += f" & {param_cols} & {param_cols} & "
-    header3 = header3.rstrip(" & ") + " \\\\"
-    lines.append(header3)
-    
-    # Cmidrules
-    cmidrule = f"\\cmidrule(lr){{2-{1+num_cols_per_size}}}"
-    for i in range(1, len(sorted_sizes)):
-        start = 2 + i * num_cols_per_size
-        end = start + num_cols_per_size - 1
-        cmidrule += f" \\cmidrule(lr){{{start}-{end}}}"
-    lines.append(cmidrule)
-    
-    lines.append("\\midrule")
-    
-    # Generate rows for each method
-    for method in methods:
-        row_parts = [METHOD_NAMES.get(method, method.title())]
+    # Helper function to get value for a (N, M) combination
+    def get_value(method, n, m, metric_type='runtime'):
+        """Get value for a specific method, size, and metric."""
+        key = (n, m)
+        if key not in results_by_size:
+            return "---"
         
-        for num_agents, num_items in sorted_sizes:
-            df_size = results_by_size[(num_agents, num_items)]
-            df_method = df_size[df_size['method'] == method]
-            
-            if len(df_method) == 0:
-                # No data for this method/size
-                row_parts.extend(["---"] + ["---"] * num_unique + ["---"] * num_unique)
-                continue
-            
-            # Runtime
+        df_size = results_by_size[key]
+        df_method = df_size[df_size['method'] == method]
+        
+        if len(df_method) == 0:
+            return "---"
+        
+        if metric_type == 'runtime':
             runtime_mean = df_method['time_s'].mean()
             runtime_std = df_method['time_s'].std()
-            row_parts.append(f"${format_number(runtime_mean, 3)} \\pm {format_number(runtime_std, 3)}$")
-            
-            # Aggregate parameters by type
+            return f"${format_number(runtime_mean, 3)} \\pm {format_number(runtime_std, 3)}$"
+        else:
             aggregated = aggregate_parameters_by_type(df_method, param_config)
-            
-            # Add RMSE and Bias for each unique parameter type
-            for param_type in unique_params:
-                if param_type in aggregated:
-                    row_parts.append(f"${format_number(aggregated[param_type][0], 4)}$")
-                else:
+            # metric_type is like 'rmse_MOD' or 'bias_GS'
+            parts = metric_type.split('_', 1)
+            if len(parts) != 2:
+                return "---"
+            metric, param_label = parts
+            # Find matching param type in aggregated
+            for param_type in aggregated.keys():
+                if extract_param_label(param_type) == param_label:
+                    idx = 0 if metric == 'rmse' else 1
+                    return f"${format_number(aggregated[param_type][idx], 4)}$"
+            return "---"
+    
+    lines = []
+    lines.append("\\begin{table}[htbp]")
+    lines.append("\\centering")
+    lines.append("\\footnotesize")
+    lines.append(f"\\caption{{Inversion Experiment: {EXPERIMENT_TITLES.get(experiment_type, experiment_type)} (3$\\times$3 Grid: $N \\times M$)}}")
+    lines.append(f"\\label{{tab:inversion_{experiment_type}}}")
+    lines.append("\\begin{threeparttable}")
+    lines.append("\\begin{tabular}{l c c c c c c c c c}")
+    lines.append("\\toprule")
+    
+    # Header: M (Items) across top
+    header1 = "Method & \\multicolumn{9}{c}{$M$ (Items)} \\\\"
+    lines.append(header1)
+    lines.append("\\cmidrule(lr){2-10}")
+    
+    # Header row 2: Item values
+    header2 = " & \\multicolumn{3}{c}{" + str(item_counts[0]) + "} & \\multicolumn{3}{c}{" + str(item_counts[1]) + "} & \\multicolumn{3}{c}{" + str(item_counts[2]) + "} \\\\"
+    lines.append(header2)
+    lines.append("\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}")
+    
+    # Header row 3: Agent values
+    header3 = " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
+    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
+    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$ \\\\"
+    lines.append(header3)
+    lines.append("\\midrule")
+    
+    # Generate table: one section per metric type
+    # 1. Runtime
+    lines.append("\\multicolumn{10}{l}{\\textit{Runtime (s)}} \\\\")
+    for method in methods:
+        row_parts = [METHOD_NAMES.get(method, method.title())]
+        for m in item_counts:
+            for n in agent_counts:
+                if n is None or m is None:
                     row_parts.append("---")
-            
-            for param_type in unique_params:
-                if param_type in aggregated:
-                    row_parts.append(f"${format_number(aggregated[param_type][1], 4)}$")
                 else:
-                    row_parts.append("---")
-        
-        row = " & ".join(row_parts) + " \\\\"
-        lines.append(row)
+                    row_parts.append(get_value(method, n, m, 'runtime'))
+        lines.append(" & ".join(row_parts) + " \\\\")
+    lines.append("\\cmidrule(lr){1-10}")
+    
+    # 2. RMSE for each parameter type
+    for param_type in unique_params:
+        param_label = extract_param_label(param_type)
+        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
+        for method in methods:
+            row_parts = [METHOD_NAMES.get(method, method.title())]
+            for m in item_counts:
+                for n in agent_counts:
+                    if n is None or m is None:
+                        row_parts.append("---")
+                    else:
+                        row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
+            lines.append(" & ".join(row_parts) + " \\\\")
+        lines.append("\\cmidrule(lr){1-10}")
+    
+    # 3. Bias for each parameter type
+    for param_type in unique_params:
+        param_label = extract_param_label(param_type)
+        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
+        for method in methods:
+            row_parts = [METHOD_NAMES.get(method, method.title())]
+            for m in item_counts:
+                for n in agent_counts:
+                    if n is None or m is None:
+                        row_parts.append("---")
+                    else:
+                        row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
+            lines.append(" & ".join(row_parts) + " \\\\")
+        if param_type != unique_params[-1]:
+            lines.append("\\cmidrule(lr){1-10}")
     
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
-    
-    # Add regression coefficients row if available
-    has_regression = False
-    regression_row = " & Regression:"
-    for num_agents, num_items in sorted_sizes:
-        df_size = results_by_size[(num_agents, num_items)]
-        df_iv = df_size[df_size['method'] == 'iv']
-        if len(df_iv) > 0 and 'ols_coef_0' in df_iv.columns:
-            ols_coef = df_iv['ols_coef_0'].dropna().mean()
-            iv_coef = df_iv['iv_coef_0'].dropna().mean()
-            ols_se = df_iv['ols_se_0'].dropna().mean() if 'ols_se_0' in df_iv.columns else np.nan
-            iv_se = df_iv['iv_se_0'].dropna().mean() if 'iv_se_0' in df_iv.columns else np.nan
-            
-            if not np.isnan(ols_se):
-                regression_row += f" & OLS: ${format_number(ols_coef, 4)}$, IV: ${format_number(iv_coef, 4)}$"
-                regression_row += f" \\\\ \\textit{{(SE)}} & "
-                for _ in range(num_cols_per_size - 1):
-                    regression_row += " & "
-                regression_row += f" & OLS: $({format_number(ols_se, 4)})$, IV: $({format_number(iv_se, 4)})$"
-                has_regression = True
-                break
-    
-    if has_regression:
-        lines.append("\\midrule")
-        lines.append(regression_row + " \\\\")
-    
-    lines.append("\\end{threeparttable}")
     lines.append("\\begin{tablenotes}")
-    lines.append(f"\\footnotesize")
-    
+    lines.append("\\footnotesize")
+    available_sizes = sorted(results_by_size.keys())
+    size_str = ", ".join([f"({n},{m})" for n, m in available_sizes])
     # Count replications
-    first_size_df = list(results_by_size.values())[0]
-    num_replications = len(first_size_df[first_size_df['method'] == first_size_df['method'].iloc[0]])
-    
-    lines.append(f"\\item Results from {num_replications} replications per size.")
-    lines.append(f"\\item Runtime reported as mean $\\pm$ standard deviation in seconds.")
-    lines.append(f"\\item RMSE: Root Mean Squared Error. Bias: mean estimation error.")
-    if has_regression:
-        lines.append(f"\\item OLS and IV coefficients from second-stage regression of inverted $\\delta$ on item features.")
-        lines.append(f"\\item Standard errors (SE) in parentheses.")
+    if len(available_sizes) > 0:
+        first_size_df = results_by_size[available_sizes[0]]
+        num_replications = len(first_size_df[first_size_df['method'] == first_size_df['method'].iloc[0]]) if len(first_size_df) > 0 else 0
+        lines.append(f"\\item Results from {num_replications} replications per size.")
+    lines.append(f"\\item Runtime reported as mean $\\pm$ standard deviation in seconds. Each cell shows $(N,M)$ combination.")
+    lines.append(f"\\item Data available for $(N,M) \\in \\{{{size_str}\\}}$.")
+    missing = []
+    for m in item_counts:
+        for n in agent_counts:
+            if n is not None and m is not None and (n, m) not in results_by_size:
+                missing.append(f"({n},{m})")
+    if missing:
+        lines.append(f"\\item Missing combinations: {', '.join(missing)}")
+    lines.append("\\item RMSE: Root Mean Squared Error. Bias: mean estimation error.")
     lines.append("\\end{tablenotes}")
+    lines.append("\\end{threeparttable}")
     lines.append("\\end{table}")
-    if use_landscape:
-        lines.append("\\end{landscape}")
+    lines.append("")
     
     # Write to file
     with open(output_path, 'w') as f:
         f.write('\n'.join(lines))
     
     print(f"Generated LaTeX table: {output_path}")
-    print(f"  - {len(sorted_sizes)} sizes: {sorted_sizes}")
-    print(f"  - {num_replications} replications per size")
-    print(f"  - {num_unique} unique parameter types")
+    print(f"  - 3x3 grid: {len(agent_counts)} agents x {len(item_counts)} items")
+    print(f"  - Available sizes: {available_sizes}")
+    print(f"  - {len(unique_params)} unique parameter types")
 
 
 def main():
     parser = argparse.ArgumentParser(description='Generate LaTeX tables from inversion experiment results')
-    parser.add_argument('base_dir', type=str, help='Base directory containing experiment folders')
-    parser.add_argument('--experiment', type=str, required=True,
-                       choices=['greedy_naive', 'greedy_iv', 'supermod_naive', 'supermod_iv',
-                                'knapsack_naive', 'knapsack_iv', 'quadknapsack_naive', 'quadknapsack_iv'],
-                       help='Experiment type')
+    parser.add_argument('results_csv', type=str, nargs='?', default=None,
+                       help='Path to results CSV file (or base directory if using --experiment)')
+    parser.add_argument('--experiment', type=str, default=None,
+                       choices=['greedy', 'greedy_naive', 'greedy_iv', 'supermod', 'supermod_naive', 'supermod_iv',
+                                'knapsack', 'knapsack_naive', 'knapsack_iv', 'quadknapsack', 'quadknapsack_naive', 'quadknapsack_iv'],
+                       help='Experiment type (used if results_csv is a directory)')
     parser.add_argument('--output', '-o', type=str, default='tables.tex',
                        help='Output LaTeX file path')
     
     args = parser.parse_args()
     
-    base_dir = Path(args.base_dir)
-    exp_dir = base_dir / args.experiment
+    # Determine results path and experiment type
+    if args.results_csv is None and args.experiment is None:
+        print("Error: Must provide either results_csv path or --experiment")
+        return 1
     
-    # Find results file
-    import yaml
-    config_path = exp_dir / 'config.yaml'
-    if config_path.exists():
-        with open(config_path, 'r') as f:
-            cfg = yaml.safe_load(f)
-        results_csv = cfg.get('results_csv', 'results.csv')
+    if args.results_csv and Path(args.results_csv).is_file():
+        # Direct CSV file path
+        results_path = Path(args.results_csv)
+        # Determine experiment type from CSV or use provided
+        if args.experiment:
+            exp_type = args.experiment
+        else:
+            # Try to infer from CSV - read first row to get subproblem
+            df = pd.read_csv(results_path, nrows=1)
+            if 'subproblem' in df.columns:
+                subproblem = df['subproblem'].iloc[0]
+                # Map subproblem to experiment type
+                exp_type_map = {
+                    'Greedy': 'greedy',
+                    'QuadSupermodularNetwork': 'supermod',
+                    'LinearKnapsack': 'knapsack',
+                    'QuadKnapsack': 'quadknapsack'
+                }
+                exp_type = exp_type_map.get(subproblem, 'greedy')
+            else:
+                exp_type = 'greedy'  # Default
     else:
-        results_csv = 'results.csv'
-    
-    results_path = exp_dir / results_csv
+        # Directory path - use old style
+        base_dir = Path(args.results_csv) if args.results_csv else Path('.')
+        if not args.experiment:
+            print("Error: Must provide --experiment when results_csv is a directory")
+            return 1
+        
+        exp_dir = base_dir / args.experiment
+        exp_type = args.experiment
+        
+        # Find results file
+        import yaml
+        config_path = exp_dir / 'config.yaml'
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                cfg = yaml.safe_load(f)
+            results_csv = cfg.get('results_csv', 'results.csv')
+        else:
+            results_csv = 'results.csv'
+        
+        results_path = exp_dir / results_csv
     
     if not results_path.exists():
         print(f"Error: Results file not found: {results_path}")
         return 1
     
+    # Determine experiment type for parameter config
+    # If base name (greedy, supermod, etc.), check CSV for methods
+    if exp_type in ['greedy', 'supermod', 'knapsack', 'quadknapsack']:
+        # Check if CSV has both naive and IV methods
+        df_sample = pd.read_csv(results_path, nrows=100)
+        if 'method' in df_sample.columns:
+            methods_in_csv = df_sample['method'].dropna().unique()
+            # Filter out ERROR
+            methods_in_csv = [m for m in methods_in_csv if m != 'ERROR']
+            if 'naive' in methods_in_csv and 'iv' in methods_in_csv:
+                # Use base type - table generator will handle both methods
+                exp_type_for_params = exp_type
+            elif 'naive' in methods_in_csv:
+                exp_type_for_params = f"{exp_type}_naive"
+            elif 'iv' in methods_in_csv:
+                exp_type_for_params = f"{exp_type}_iv"
+            else:
+                exp_type_for_params = exp_type
+        else:
+            exp_type_for_params = exp_type
+    else:
+        exp_type_for_params = exp_type
+    
     output_path = Path(args.output)
-    generate_table(args.experiment, str(results_path), str(output_path))
+    generate_table(exp_type_for_params, str(results_path), str(output_path))
     
     return 0
 
