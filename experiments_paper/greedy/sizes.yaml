@@ -11,13 +11,7 @@
 #     num_agents: 20
 #     num_items: 20
 
-# Option 2: Grid of sizes for scaling analysis
-# 3x3 = 9 sizes gives comprehensive scaling but VERY wide table (46 cols, needs landscape)
-# Alternative: 6 selective sizes for cleaner presentation
+# Tiny test grid for debugging (2x2 = 4 sizes)
 sizes_grid:
-  agents: [5, 10, 20]
-  items: [10, 20]
-# Or uncomment for full 3x3 grid:
-# sizes_grid:
-#   agents: [10, 20, 30]
-#   items: [10, 20, 30]
+  agents: [5, 10]  # N: Low, Mid (for testing)
+  items: [10, 20]   # M: Low, Mid (for testing)

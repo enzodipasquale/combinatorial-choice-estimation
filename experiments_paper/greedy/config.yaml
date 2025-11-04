@@ -5,7 +5,7 @@ dimensions:
   num_simuls: 1
 
 sigma: 1.0
-num_replications: 1
+num_replications: 1  # Tiny test
 base_seed: 12345
 results_csv: results.csv
 
