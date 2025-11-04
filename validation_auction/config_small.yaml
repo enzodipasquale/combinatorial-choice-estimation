@@ -1,0 +1,20 @@
+dimensions:
+    num_agents: 20
+    num_items: 30
+    num_features: 34  # Will be updated from theta_true
+    num_simuls: 10
+
+subproblem: 
+    name: QuadKnapsack
+    settings:
+        TimeLimit: 3
+        MIPGap_tol: 1e-2
+row_generation:
+    max_iters: 100
+    theta_ubs: 1000
+    parameters_to_log: [0, -3,-2,-1]
+    max_slack_counter: 8
+    tolerance_optimality: 1e-4
+    gurobi_settings:
+        OutputFlag: 0
+
