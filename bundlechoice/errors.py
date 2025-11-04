@@ -1,36 +1,36 @@
 """
 Custom exceptions for BundleChoice framework.
 
-This module defines a hierarchy of exceptions that provide clear, actionable
-error messages to help users debug setup and configuration issues.
+Hierarchy of exceptions with helpful error messages for debugging.
 """
 
+from typing import Optional, Dict, List, Any
+
+
+# ============================================================================
+# Base Exception
+# ============================================================================
 
 class BundleChoiceError(Exception):
     """Base exception for all BundleChoice errors."""
     pass
 
 
+# ============================================================================
+# Setup & Validation Errors
+# ============================================================================
+
 class SetupError(BundleChoiceError):
-    """
-    Raised when setup/initialization is incomplete or invalid.
+    """Raised when setup/initialization is incomplete or invalid."""
     
-    This error indicates that required components haven't been initialized
-    in the correct order or are missing necessary configuration.
-    
-    Attributes:
-        suggestion (str): Suggested action to fix the error
-        missing (list): List of missing components
-        context (dict): Additional context about the error
-    """
-    
-    def __init__(self, message: str, suggestion: str = None, missing: list = None, context: dict = None):
+    def __init__(self, message: str, suggestion: Optional[str] = None, 
+                 missing: Optional[List[str]] = None, context: Optional[Dict[str, Any]] = None):
         self.suggestion = suggestion
         self.missing = missing or []
         self.context = context or {}
         super().__init__(self._format_message(message))
     
-    def _format_message(self, message):
+    def _format_message(self, message: str) -> str:
         """Format error message with helpful visual indicators."""
         msg = f"❌ {message}"
         
@@ -47,23 +47,15 @@ class SetupError(BundleChoiceError):
 
 
 class ValidationError(BundleChoiceError):
-    """
-    Raised when data or config validation fails.
+    """Raised when data or config validation fails."""
     
-    This error indicates that input data or configuration doesn't meet
-    the required structure, dimensions, or value constraints.
-    
-    Attributes:
-        details (dict): Detailed information about validation failures
-        suggestions (list): List of suggested fixes
-    """
-    
-    def __init__(self, message: str, details: dict = None, suggestions: list = None):
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None, 
+                 suggestions: Optional[List[str]] = None):
         self.details = details or {}
         self.suggestions = suggestions or []
         super().__init__(self._format_message(message))
     
-    def _format_message(self, message):
+    def _format_message(self, message: str) -> str:
         """Format validation error with detailed feedback."""
         msg = f"❌ {message}"
         
@@ -81,14 +73,10 @@ class ValidationError(BundleChoiceError):
 
 
 class DimensionMismatchError(ValidationError):
-    """
-    Raised when data dimensions don't match configuration.
+    """Raised when data dimensions don't match configuration."""
     
-    This specialized validation error occurs when array shapes or sizes
-    don't align with the configured problem dimensions.
-    """
-    
-    def __init__(self, message: str, expected: dict = None, actual: dict = None):
+    def __init__(self, message: str, expected: Optional[Dict[str, Any]] = None, 
+                 actual: Optional[Dict[str, Any]] = None):
         self.expected = expected or {}
         self.actual = actual or {}
         
@@ -102,14 +90,9 @@ class DimensionMismatchError(ValidationError):
 
 
 class DataError(ValidationError):
-    """
-    Raised when input data contains invalid values.
+    """Raised when input data contains invalid values (NaN, Inf, etc.)."""
     
-    This error occurs when data contains NaN, Inf, or other invalid values
-    that would cause numerical issues during estimation.
-    """
-    
-    def __init__(self, message: str, invalid_fields: dict = None):
+    def __init__(self, message: str, invalid_fields: Optional[Dict[str, str]] = None):
         self.invalid_fields = invalid_fields or {}
         
         details = {}
@@ -125,26 +108,21 @@ class DataError(ValidationError):
         super().__init__(message, details=details, suggestions=suggestions)
 
 
+# ============================================================================
+# Solver Errors
+# ============================================================================
+
 class SolverError(BundleChoiceError):
-    """
-    Raised when solver encounters issues during estimation.
+    """Raised when solver encounters issues during estimation."""
     
-    This error occurs during the optimization process, such as
-    convergence failures or numerical instability.
-    
-    Attributes:
-        solver_type (str): Type of solver that failed
-        iteration (int): Iteration at which error occurred
-        details (dict): Additional solver-specific details
-    """
-    
-    def __init__(self, message: str, solver_type: str = None, iteration: int = None, details: dict = None):
+    def __init__(self, message: str, solver_type: Optional[str] = None, 
+                 iteration: Optional[int] = None, details: Optional[Dict[str, Any]] = None):
         self.solver_type = solver_type
         self.iteration = iteration
         self.details = details or {}
         super().__init__(self._format_message(message))
     
-    def _format_message(self, message):
+    def _format_message(self, message: str) -> str:
         """Format solver error with diagnostic information."""
         msg = f"❌ {message}"
         
@@ -163,29 +141,23 @@ class SolverError(BundleChoiceError):
 
 
 class SubproblemError(SolverError):
-    """
-    Raised when subproblem solving fails.
-    
-    This error occurs when the optimization subproblem cannot be solved,
-    often due to infeasibility or numerical issues.
-    """
+    """Raised when subproblem solving fails (infeasibility, numerical issues)."""
     pass
 
+# ============================================================================
+# Configuration Errors
+# ============================================================================
 
 class ConfigurationError(BundleChoiceError):
-    """
-    Raised when configuration is invalid or inconsistent.
+    """Raised when configuration is invalid or inconsistent."""
     
-    This error occurs when configuration values are out of range,
-    incompatible with each other, or missing required fields.
-    """
-    
-    def __init__(self, message: str, config_field: str = None, suggestion: str = None):
+    def __init__(self, message: str, config_field: Optional[str] = None, 
+                 suggestion: Optional[str] = None):
         self.config_field = config_field
         self.suggestion = suggestion
         super().__init__(self._format_message(message))
     
-    def _format_message(self, message):
+    def _format_message(self, message: str) -> str:
         """Format configuration error."""
         msg = f"❌ {message}"
         

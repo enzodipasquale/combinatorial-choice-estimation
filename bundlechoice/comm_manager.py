@@ -1,16 +1,19 @@
 """
-Communication manager for MPI operations.
+MPI communication manager for distributed operations.
 
-This module provides a clean interface for MPI communication operations,
-wrapping the underlying MPI functionality to improve readability and scalability.
+Provides buffer-based and pickle-based communication primitives with optional profiling.
 """
 
-from typing import Any, Optional, Callable, List, Dict
+from typing import Any, Optional, Callable, List, Dict, Tuple
 import numpy as np
 from mpi4py import MPI
 from functools import wraps
 import time
 
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
 
 def _get_mpi_type(dtype: np.dtype) -> MPI.Datatype:
     """Map numpy dtype to MPI datatype."""
@@ -24,7 +27,7 @@ def _get_mpi_type(dtype: np.dtype) -> MPI.Datatype:
 
 
 def _mpi_error_handler(func: Callable) -> Callable:
-    """Decorator to handle MPI errors and optionally profile communication time."""
+    """Decorator: handles MPI errors and optionally profiles communication time."""
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         try:
@@ -41,40 +44,31 @@ def _mpi_error_handler(func: Callable) -> Callable:
     return wrapper
 
 
+# ============================================================================
+# CommManager
+# ============================================================================
+
 class CommManager:
-    """
-    Manager for MPI communication operations.
+    """MPI communication manager with buffer-based and pickle-based operations."""
     
-    This class provides a clean interface for common MPI operations like
-    scatter, broadcast, gather, and reduction operations. It wraps the
-    underlying MPI functionality to improve readability and maintainability.
-    
-    Attributes:
-        comm: The underlying MPI communicator
-        rank: Current process rank
-        size: Total number of processes
-    """
-    
-    def __init__(self, comm: MPI.Comm, enable_profiling: bool = False):
-        """
-        Initialize the communication manager.
-        
-        Args:
-            comm: MPI communicator to use for operations
-            enable_profiling: If True, track time spent in MPI operations
-        """
+    def __init__(self, comm: MPI.Comm, enable_profiling: bool = False) -> None:
+        """Initialize with MPI communicator and optional profiling."""
         self.comm = comm
         self.rank = comm.Get_rank()
         self.size = comm.Get_size()
         self.enable_profiling = enable_profiling
-        self._comm_times = {} if enable_profiling else None
-    
+        self._comm_times: Optional[Dict[str, float]] = {} if enable_profiling else None
+
+    # ============================================================================
+    # Helper Methods
+    # ============================================================================
+
     def is_root(self) -> bool:
         """Check if current rank is root (rank 0)."""
         return self.rank == 0
     
     def _compute_counts(self, total_size: int) -> List[int]:
-        """Compute balanced chunk sizes for scatter operations."""
+        """Compute balanced chunk sizes for scatter (last rank gets remainder)."""
         base = total_size // self.size
         counts = [base] * self.size
         counts[-1] += total_size % self.size
@@ -84,13 +78,15 @@ class CommManager:
         """Compute displacements for MPI vector operations."""
         return [0] + list(np.cumsum(counts)[:-1])
     
-    def _extract_dict_metadata(self, data_dict: Dict[str, np.ndarray]) -> tuple:
+    def _extract_dict_metadata(self, data_dict: Dict[str, np.ndarray]) -> Tuple[List[str], Dict[str, Tuple[int, ...]], Dict[str, np.dtype]]:
         """Extract keys, shapes, and dtypes from dictionary of arrays."""
         return (list(data_dict.keys()), 
                 {k: v.shape for k, v in data_dict.items()},
                 {k: v.dtype for k, v in data_dict.items()})
-    
-    # --- Pickle-based methods (flexible, works with any Python object) ---
+
+    # ============================================================================
+    # Pickle-Based Methods (Flexible, Works with Any Python Object)
+    # ============================================================================
     
     @_mpi_error_handler
     def scatter_from_root(self, data: Any, root: int = 0) -> Any:
@@ -128,11 +124,13 @@ class CommManager:
         """Synchronize all ranks at a barrier."""
         self.comm.Barrier()
     
-    def execute_at_root(self, func: callable, *args, **kwargs) -> Optional[Any]:
+    def execute_at_root(self, func: Callable, *args, **kwargs) -> Optional[Any]:
         """Execute function only on root rank."""
         return func(*args, **kwargs) if self.is_root() else None
-    
-    # --- Buffer-based methods (2-7x faster for numpy arrays) ---
+
+    # ============================================================================
+    # Buffer-Based Methods (2-20x Faster for NumPy Arrays)
+    # ============================================================================
     
     @_mpi_error_handler
     def broadcast_array(self, array: np.ndarray, root: int = 0) -> np.ndarray:
@@ -154,7 +152,6 @@ class CommManager:
         
         counts, dtype = self.comm.bcast((counts, dtype), root=root)
         
-        # Scatterv
         sendbuf = [send_array, counts, self._compute_displacements(counts), _get_mpi_type(dtype)] if self.is_root() else None
         recvbuf = np.empty(counts[self.rank], dtype=dtype)
         self.comm.Scatterv(sendbuf, recvbuf, root=root)
@@ -174,7 +171,6 @@ class CommManager:
         
         keys, shapes, dtypes, counts = self.comm.bcast((keys, shapes, dtypes, counts), root=root)
         
-        # Scatter each array
         result = {}
         for key in keys:
             shape = data_dict[key].shape if self.is_root() else shapes[key]
@@ -204,16 +200,13 @@ class CommManager:
         if local_array.dtype == np.bool_:
             return self.concatenate_at_root(local_array, root=root)
         
-        # Gather sizes using Allgather
         local_flat = local_array.ravel()
         all_sizes_array = np.empty(self.size, dtype=np.int64)
         self.comm.Allgather(np.array([local_flat.size], dtype=np.int64), all_sizes_array)
         all_sizes = all_sizes_array.tolist()
         
-        # Gather shapes (all ranks must participate before any return)
         all_shapes = self.comm.gather(local_array.shape, root=root)
         
-        # Gatherv
         recvbuf = [np.empty(sum(all_sizes), dtype=local_array.dtype), all_sizes, 
                    self._compute_displacements(all_sizes), _get_mpi_type(local_array.dtype)] if self.is_root() else None
         self.comm.Gatherv(local_flat, recvbuf, root=root)
@@ -221,10 +214,13 @@ class CommManager:
         if not self.is_root():
             return None
         
-        # Reshape result
         result = recvbuf[0]
         return result if local_array.ndim == 1 else result.reshape((sum(s[0] for s in all_shapes),) + all_shapes[0][1:])
-    
+
+    # ============================================================================
+    # Profiling
+    # ============================================================================
+
     def get_comm_profile(self) -> Optional[Dict[str, float]]:
         """Get communication profiling data (operation name → total time)."""
         return self._comm_times if self.enable_profiling else None
