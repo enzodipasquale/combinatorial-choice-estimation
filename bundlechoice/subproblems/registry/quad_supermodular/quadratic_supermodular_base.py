@@ -26,7 +26,7 @@ class QuadraticSupermodular(BatchSubproblemBase):
         self.has_quadratic_agent = "quadratic" in agent_data
         self.has_quadratic_item = "quadratic" in item_data
         self.has_errors = "errors" in self.local_data
-        self.has_constraint_mask = "constraint_mask" in self.local_data
+        self.has_constraint_mask = "constraint_mask" in agent_data
 
         if self.has_quadratic_agent:
             quadratic_agent = self.local_data["agent_data"]["quadratic"]    

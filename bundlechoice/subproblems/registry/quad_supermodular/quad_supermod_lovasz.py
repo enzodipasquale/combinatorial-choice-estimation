@@ -15,9 +15,12 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
     """
     def solve(self, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
         P_i_j_j = self.build_quadratic_matrix(theta)
+        agent_data = self.local_data.get("agent_data") or {}
+        constraint_mask = agent_data.get("constraint_mask") if self.has_constraint_mask else None
         optimal_bundles = np.zeros((self.num_local_agents, self.num_items), dtype=bool)
         for i in range(self.num_local_agents):
-            solver = QuadraticSOptLovaszSolver(P_i_j_j[i], self.constraint_mask[i], self.config.settings, self.errors[i])
+            mask_i = constraint_mask[i] if constraint_mask is not None else None
+            solver = QuadraticSOptLovaszSolver(P_i_j_j[i], mask_i, self.config.settings, self.errors[i])
             optimal_bundle = solver.solve()
             optimal_bundles[i] = optimal_bundle
         return optimal_bundles

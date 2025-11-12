@@ -24,11 +24,13 @@ class QuadraticSOptNetworkCached(QuadraticSupermodular):
         
         # Build solvers once with initial parameters
         P_i_j_j = self.build_quadratic_matrix(np.zeros(self.num_params))
-        constraint_mask = self.local_data.get("constraint_mask") if self.has_constraint_mask else [np.arange(self.num_items) for _ in range(self.num_local_agents)]
+        agent_data = self.local_data.get("agent_data") or {}
+        constraint_mask = agent_data.get("constraint_mask") if self.has_constraint_mask else None
         
         self._solvers = []
         for i in range(self.num_local_agents):
-            solver = MinCutSubmodularSolverCached(-P_i_j_j[i], constraint_mask[i])
+            mask_i = constraint_mask[i] if constraint_mask is not None else None
+            solver = MinCutSubmodularSolverCached(-P_i_j_j[i], mask_i)
             self._solvers.append(solver)
     
     def solve(self, theta: np.ndarray, pb: Optional[Any] = None) -> np.ndarray:
