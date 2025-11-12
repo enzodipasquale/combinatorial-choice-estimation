@@ -4,7 +4,7 @@ BundleChoice core module.
 This module contains the main BundleChoice orchestrator class and its components.
 """
 
-from typing import Optional
+from typing import Optional, Any
 from mpi4py import MPI
 
 from bundlechoice.config import BundleChoiceConfig
@@ -59,6 +59,7 @@ class BundleChoice(HasComm, HasConfig):
     row_generation_manager: Optional[RowGenerationSolver]
     ellipsoid_manager: Optional[EllipsoidSolver]
     inequalities_manager: Optional[InequalitiesSolver]
+    column_generation_manager: Optional[Any]
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
 
@@ -78,6 +79,7 @@ class BundleChoice(HasComm, HasConfig):
         self.row_generation_manager = None
         self.ellipsoid_manager = None
         self.inequalities_manager = None
+        self.column_generation_manager = None
 
     # --- Initialization methods (delegated to _initialization module) ---
     
@@ -98,6 +100,9 @@ class BundleChoice(HasComm, HasConfig):
     
     def _try_init_inequalities_manager(self):
         return init_module.try_init_inequalities_manager(self)
+
+    def _try_init_column_generation_manager(self, theta_init: Optional[Any] = None):
+        return init_module.try_init_column_generation_manager(self, theta_init)
 
     # --- Properties ---
     
@@ -164,6 +169,19 @@ class BundleChoice(HasComm, HasConfig):
             _ = self.subproblems
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
+
+    @property
+    def column_generation(self):
+        """
+        Access the column generation solver component.
+
+        Returns:
+            ColumnGenerationSolver: The column generation solver instance
+        """
+        if self.column_generation_manager is None:
+            _ = self.subproblems
+            self._try_init_column_generation_manager()
+        return self.column_generation_manager
         
     @property
     def inequalities(self):

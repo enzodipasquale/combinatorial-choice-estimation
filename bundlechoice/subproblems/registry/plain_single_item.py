@@ -25,13 +25,13 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
         self.has_modular_agent = "modular" in agent_data
         self.has_modular_item = "modular" in item_data
         self.has_errors = "errors" in self.local_data
-        self.has_constraint_mask = "constraint_mask" in self.local_data
+        self.has_constraint_mask = "constraint_mask" in agent_data
 
     def solve(self, theta: NDArray[np.float64], pb: Optional[Any] = None) -> NDArray[np.bool_]:
         """Select single item with max utility per agent (respects constraint_mask)."""
         U_i_j = self.build_utilities(theta)
         if self.has_constraint_mask:
-            U_i_j = np.where(self.local_data["constraint_mask"], U_i_j, -np.inf)
+            U_i_j = np.where(self.local_data["agent_data"]["constraint_mask"], U_i_j, -np.inf)
         j_star = np.argmax(U_i_j, axis=1)
         max_vals = U_i_j[np.arange(self.num_local_agents), j_star]
         optimal_bundles = (max_vals > 0)[:, None] & (np.arange(self.num_items) == j_star[:, None])

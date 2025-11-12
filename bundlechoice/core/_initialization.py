@@ -9,7 +9,7 @@ from typing import Any, Optional
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
-from bundlechoice.estimation import RowGenerationSolver
+from bundlechoice.estimation import ColumnGenerationSolver, RowGenerationSolver
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
 from bundlechoice.estimation.inequalities import InequalitiesSolver
 
@@ -184,4 +184,34 @@ def try_init_inequalities_manager(bc: Any) -> InequalitiesSolver:
         subproblem_manager=None
     )
     return bc.inequalities_manager
+
+
+def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None) -> ColumnGenerationSolver:
+    """Initialize ColumnGenerationSolver if not already present."""
+    if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
+        missing = []
+        if bc.data_manager is None:
+            missing.append("data (call bc.data.load_and_scatter(input_data))")
+        if bc.feature_manager is None:
+            missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
+        if bc.subproblem_manager is None:
+            missing.append("subproblem (call bc.subproblems.load())")
+        if bc.config is None or bc.config.row_generation is None:
+            missing.append("row_generation config (add 'row_generation' to your config)")
+        raise RuntimeError(
+            "Cannot initialize column generation solver - missing setup:\n  "
+            + "\n  ".join(missing)
+            + "\n\nRun bc.validate_setup('row_generation') to check your configuration."
+        )
+
+    bc.column_generation_manager = ColumnGenerationSolver(
+        comm_manager=bc.comm_manager,
+        dimensions_cfg=bc.config.dimensions,
+        row_generation_cfg=bc.config.row_generation,
+        data_manager=bc.data_manager,
+        feature_manager=bc.feature_manager,
+        subproblem_manager=bc.subproblem_manager,
+        theta_init=theta_init,
+    )
+    return bc.column_generation_manager
 

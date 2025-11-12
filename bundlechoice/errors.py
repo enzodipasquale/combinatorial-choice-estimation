@@ -75,18 +75,34 @@ class ValidationError(BundleChoiceError):
 class DimensionMismatchError(ValidationError):
     """Raised when data dimensions don't match configuration."""
     
-    def __init__(self, message: str, expected: Optional[Dict[str, Any]] = None, 
-                 actual: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        message: str,
+        expected: Optional[Dict[str, Any]] = None,
+        actual: Optional[Dict[str, Any]] = None,
+        suggestion: Optional[str] = None,
+        suggestions: Optional[List[str]] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
         self.expected = expected or {}
         self.actual = actual or {}
+        self.context = context or {}
         
         details = {}
         if expected and actual:
             for key in expected:
                 if key in actual and expected[key] != actual[key]:
                     details[key] = f"expected {expected[key]}, got {actual[key]}"
+        if self.context:
+            details.update({f"context[{k}]": v for k, v in self.context.items()})
         
-        super().__init__(message, details=details)
+        suggestion_list: List[str] = []
+        if suggestion:
+            suggestion_list.append(suggestion)
+        if suggestions:
+            suggestion_list.extend(suggestions)
+        
+        super().__init__(message, details=details, suggestions=suggestion_list)
 
 
 class DataError(ValidationError):

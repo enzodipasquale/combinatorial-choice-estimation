@@ -67,15 +67,20 @@ class DataManager(HasDimensions, HasComm):
         if self.is_root():
             errors = self._prepare_errors(self.input_data.get("errors"))
             obs_bundles = self.input_data.get("obs_bundle")
-            agent_data = self.input_data.get("agent_data")
+            agent_data = self.input_data.get("agent_data") or {}
             item_data = self.input_data.get("item_data")
+            
+            # Merge constraint_mask into agent_data if present
+            if "constraint_mask" in self.input_data and self.input_data["constraint_mask"] is not None:
+                agent_data = agent_data.copy() if agent_data else {}
+                agent_data["constraint_mask"] = self.input_data["constraint_mask"]
             
             # Compute agent indices for each rank
             idx_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
             counts = [len(idx) for idx in idx_chunks]
             
             # Prepare data for scattering
-            has_agent_data = agent_data is not None
+            has_agent_data = len(agent_data) > 0
             has_obs_bundles = obs_bundles is not None
             has_item_data = item_data is not None
         else:
@@ -126,24 +131,6 @@ class DataManager(HasDimensions, HasComm):
         else:
             local_obs_bundles = None
         
-        # Scatter constraint_mask if present
-        has_constraint_mask = self.is_root() and "constraint_mask" in self.input_data and self.input_data["constraint_mask"] is not None
-        if has_constraint_mask:
-            if self.is_root():
-                constraint_masks = self.input_data["constraint_mask"]
-                # constraint_mask is a list of arrays, one per agent
-                # Split into chunks for each rank
-                all_chunks = []
-                for chunk_indices in np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size):
-                    chunk_masks = [constraint_masks[idx % self.num_agents] for idx in chunk_indices]
-                    all_chunks.append(chunk_masks)
-            else:
-                all_chunks = None
-            # Scatter as a simple list (each rank gets its subset)
-            local_constraint_mask = self.comm_manager.comm.scatter(all_chunks, root=0)
-        else:
-            local_constraint_mask = None
-        
         # Scatter agent_data dict if present - use pickle scatter for flexibility
         if has_agent_data:
             # Create chunks the old way
@@ -174,10 +161,6 @@ class DataManager(HasDimensions, HasComm):
             "errors": local_errors,
             "obs_bundles": local_obs_bundles,
         }
-        
-        # Add constraint_mask if present
-        if has_constraint_mask:
-            self.local_data["constraint_mask"] = local_constraint_mask
         self.num_local_agents = num_local_agents 
 
     # --- Helper Methods ---
