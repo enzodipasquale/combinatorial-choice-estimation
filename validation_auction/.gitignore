@@ -1,9 +1,0 @@
-# Output files
-theta_hat_real.npy
-synthetic_data/
-results/
-*.out
-*.err
-slurm-*.out
-slurm-*.err
-

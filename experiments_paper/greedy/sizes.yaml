@@ -1,5 +1,0 @@
-# Minimal test sizes for debugging
-sizes_grid:
-  agents: [5]
-  items: [5]
-

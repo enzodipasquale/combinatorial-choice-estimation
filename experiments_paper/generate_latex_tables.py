@@ -19,8 +19,8 @@ PARAM_NAMES = {
         'descriptions': '4 modular, 1 gross substitutes'
     },
     'QuadSupermodularNetwork': {
-        'names': ['\\theta_{\\text{MOD}}'] * 5 + ['\\theta_{\\text{QUAD}}'],
-        'descriptions': '5 modular, 1 quadratic'
+        'names': ['\\theta_{\\text{MOD}}'] * 4 + ['\\theta_{\\text{QUAD}}'],
+        'descriptions': '4 modular, 1 quadratic'
     },
     'LinearKnapsack': {
         'names': ['\\theta_{\\text{MOD}}'],
@@ -65,8 +65,23 @@ def format_number(x, precision=4):
 
 def compute_aggregate_rmse_bias(df_group, param_idx):
     """Compute RMSE and Bias for a parameter across all replications."""
-    theta_true = df_group[f'theta_true_{param_idx}'].values
-    theta_est = df_group[f'theta_{param_idx}'].values
+    theta_true_col = f'theta_true_{param_idx}'
+    theta_est_col = f'theta_{param_idx}'
+    
+    if theta_true_col not in df_group.columns or theta_est_col not in df_group.columns:
+        return np.nan, np.nan
+    
+    # Convert to numeric, handling any string values
+    theta_true = pd.to_numeric(df_group[theta_true_col], errors='coerce').values
+    theta_est = pd.to_numeric(df_group[theta_est_col], errors='coerce').values
+    
+    # Filter out NaN values
+    valid_mask = ~(np.isnan(theta_true) | np.isnan(theta_est))
+    if valid_mask.sum() == 0:
+        return np.nan, np.nan
+    
+    theta_true = theta_true[valid_mask]
+    theta_est = theta_est[valid_mask]
     
     rmse = np.sqrt(np.mean((theta_est - theta_true) ** 2))
     bias = np.mean(theta_est - theta_true)
@@ -159,53 +174,68 @@ def generate_latex_table(experiment_type, results_data, output_file):
     param_names = param_config['names']
     unique_params = sorted(set(param_names), key=lambda x: param_names.index(x))
     
-    # Organize sizes into 3x3 grid
-    # Extract unique agent and item counts
+    # Organize sizes dynamically based on actual data
+    # Extract unique agent and item counts from actual results
     agent_counts = sorted(set(n for n, m in results_data.keys()))
     item_counts = sorted(set(m for n, m in results_data.keys()))
     
-    # Ensure we have at least 3x3, pad with None if needed
-    while len(agent_counts) < 3:
-        agent_counts.append(None)
-    while len(item_counts) < 3:
-        item_counts.append(None)
-    
-    # Take first 3 of each
-    agent_counts = agent_counts[:3]
-    item_counts = item_counts[:3]
+    # Use all available sizes, don't force 3x3 grid
+    # This makes the table flexible to show whatever data exists
     
     lines = []
     lines.append(f"\\begin{{table}}[htbp]")
     lines.append("\\centering")
     lines.append("\\footnotesize")
-    lines.append(f"\\caption{{Numerical Experiment: {title} (3$\\times$3 Grid: $N \\times M$)}}")
+    # Dynamic grid description
+    grid_desc = f"{len(agent_counts)}$\\times${len(item_counts)} Grid" if len(agent_counts) > 1 or len(item_counts) > 1 else "Single Size"
+    lines.append(f"\\caption{{Numerical Experiment: {title} ({grid_desc}: $N \\times M$)}}")
     lines.append(f"\\label{{tab:{experiment_type.lower()}}}")
     lines.append("\\begin{threeparttable}")
-    lines.append("\\begin{tabular}{l c c c c c c c c c}")
+    # Dynamic column specification based on actual data
+    num_cols = 1 + len(agent_counts) * len(item_counts)
+    col_spec = "l " + " ".join(["c"] * (num_cols - 1))
+    lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
     lines.append("\\toprule")
     
     # Header: M (Items) across top
-    header1 = "Method & \\multicolumn{9}{c}{$M$ (Items)} \\\\"
-    lines.append(header1)
-    lines.append("\\cmidrule(lr){2-10}")
-    
-    # Header row 2: Item values
-    header2 = " & \\multicolumn{3}{c}{" + str(item_counts[0]) + "} & \\multicolumn{3}{c}{" + str(item_counts[1]) + "} & \\multicolumn{3}{c}{" + str(item_counts[2]) + "} \\\\"
-    lines.append(header2)
-    lines.append("\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}")
-    
-    # Header row 3: Agent values
-    header3 = " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
-    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
-    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$ \\\\"
-    lines.append(header3)
+    if len(item_counts) > 0:
+        header1 = f"Method & \\multicolumn{{{num_cols - 1}}}{{c}}{{$M$ (Items)}} \\\\"
+        lines.append(header1)
+        lines.append(f"\\cmidrule(lr){{2-{num_cols}}}")
+        
+        # Header row 2: Item values (grouped by item count)
+        if len(item_counts) > 1:
+            header2_parts = []
+            for m in item_counts:
+                header2_parts.append(f"\\multicolumn{{{len(agent_counts)}}}{{c}}{{{m}}}")
+            header2 = " & " + " & ".join(header2_parts) + " \\\\"
+            lines.append(header2)
+            # Add cmidrules for each item group
+            cmidrules = []
+            for i in range(len(item_counts)):
+                start = 2 + i * len(agent_counts)
+                end = start + len(agent_counts) - 1
+                cmidrules.append(f"\\cmidrule(lr){{{start}-{end}}}")
+            lines.append(" ".join(cmidrules))
+        else:
+            # Single item count, no grouping needed
+            lines.append(f" & \\multicolumn{{{len(agent_counts)}}}{{c}}{{{item_counts[0]}}} \\\\")
+            lines.append(f"\\cmidrule(lr){{2-{num_cols}}}")
+        
+        # Header row 3: Agent values (repeated for each item count)
+        header3_parts = []
+        for m in item_counts:
+            for n in agent_counts:
+                header3_parts.append(f"$N={n}$")
+        header3 = " & " + " & ".join(header3_parts) + " \\\\"
+        lines.append(header3)
     lines.append("\\midrule")
     
     # Get all methods
     all_methods = set()
     for df_size in results_data.values():
         all_methods.update(df_size['method'].unique())
-    methods = sorted([m for m in ['row_generation', 'row_generation_1slack', 'ellipsoid'] if m in all_methods])
+    methods = sorted([m for m in ['row_generation', 'row_generation_1slack'] if m in all_methods])
     
     # Helper function to extract parameter label from LaTeX string
     def extract_param_label(param_latex):
@@ -252,48 +282,38 @@ def generate_latex_table(experiment_type, results_data, output_file):
     
     # Generate table: one section per metric type
     # 1. Runtime
-    lines.append("\\multicolumn{10}{l}{\\textit{Runtime (s)}} \\\\")
+    lines.append(f"\\multicolumn{{{num_cols}}}{{l}}{{\\textit{{Runtime (s)}}}} \\\\")
     for method in methods:
         row_parts = [METHOD_NAMES.get(method, method)]
         for m in item_counts:
             for n in agent_counts:
-                if n is None or m is None:
-                    row_parts.append("---")
-                else:
-                    row_parts.append(get_value(method, n, m, 'runtime'))
+                row_parts.append(get_value(method, n, m, 'runtime'))
         lines.append(" & ".join(row_parts) + " \\\\")
-    lines.append("\\cmidrule(lr){1-10}")
+    lines.append(f"\\cmidrule(lr){{1-{num_cols}}}")
     
     # 2. RMSE for each parameter type
     for param_type in unique_params:
         param_label = extract_param_label(param_type)
-        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
+        lines.append(f"\\multicolumn{{{num_cols}}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
         for method in methods:
             row_parts = [METHOD_NAMES.get(method, method)]
             for m in item_counts:
                 for n in agent_counts:
-                    if n is None or m is None:
-                        row_parts.append("---")
-                    else:
-                        row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
+                    row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
             lines.append(" & ".join(row_parts) + " \\\\")
-        lines.append("\\cmidrule(lr){1-10}")
+        lines.append(f"\\cmidrule(lr){{1-{num_cols}}}")
     
     # 3. Bias for each parameter type
     for param_type in unique_params:
         param_label = extract_param_label(param_type)
-        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
+        lines.append(f"\\multicolumn{{{num_cols}}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
         for method in methods:
             row_parts = [METHOD_NAMES.get(method, method)]
             for m in item_counts:
                 for n in agent_counts:
-                    if n is None or m is None:
-                        row_parts.append("---")
-                    else:
-                        row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
+                    row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
             lines.append(" & ".join(row_parts) + " \\\\")
-        if param_type != unique_params[-1]:
-            lines.append("\\cmidrule(lr){1-10}")
+        lines.append(f"\\cmidrule(lr){{1-{num_cols}}}")
     
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
@@ -302,13 +322,6 @@ def generate_latex_table(experiment_type, results_data, output_file):
     available_sizes = sorted(results_data.keys())
     size_str = ", ".join([f"({n},{m})" for n, m in available_sizes])
     lines.append(f"\\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \\in \\{{{size_str}\\}}$.")
-    missing = []
-    for m in item_counts:
-        for n in agent_counts:
-            if n is not None and m is not None and (n, m) not in results_data:
-                missing.append(f"({n},{m})")
-    if missing:
-        lines.append(f"\\item Missing combinations: {', '.join(missing)}")
     lines.append("\\end{tablenotes}")
     lines.append("\\end{threeparttable}")
     lines.append("\\end{table}")
@@ -321,16 +334,32 @@ def load_results_from_directory(directory):
     """Load all results CSV files from a directory."""
     results_data = defaultdict(dict)
     
-    for csv_file in Path(directory).glob("*/results.csv"):
+    # Try both patterns: subdirectories with results.csv, and also check for results_raw.csv in the directory itself
+    csv_files = list(Path(directory).glob("*/results.csv"))
+    # Also check if there's a results_raw.csv in the directory (for aggregated results)
+    results_raw = Path(directory) / "results_raw.csv"
+    if results_raw.exists():
+        csv_files.append(results_raw)
+    
+    for csv_file in csv_files:
         try:
-            df = pd.read_csv(csv_file)
+            # Read CSV with error handling for malformed rows
+            df = pd.read_csv(csv_file, on_bad_lines='skip', engine='python')
             df = df[df['method'] != 'ERROR'].copy()
             
             if len(df) == 0:
                 continue
             
             # Check if theta columns exist
-            num_features = int(df['num_features'].iloc[0])
+            # Convert to numeric, handling any string values
+            try:
+                num_features = int(pd.to_numeric(df['num_features'].iloc[0], errors='coerce'))
+            except (ValueError, TypeError):
+                print(f"Skipping {csv_file}: invalid num_features value")
+                continue
+            if pd.isna(num_features):
+                print(f"Skipping {csv_file}: num_features is NaN")
+                continue
             has_theta_cols = all(f'theta_{k}' in df.columns for k in range(num_features))
             has_theta_true_cols = all(f'theta_true_{k}' in df.columns for k in range(num_features))
             
@@ -388,7 +417,26 @@ def main():
     all_lines.append("")
     
     # Determine which experiments to generate
-    experiments_to_generate = [args.experiment] if args.experiment else sorted(results_data.keys())
+    # Map lowercase experiment names to actual keys
+    exp_name_map = {
+        'greedy': 'Greedy',
+        'supermod': 'QuadSupermodularNetwork',
+        'knapsack': 'LinearKnapsack',
+        'supermodknapsack': 'QuadKnapsack'
+    }
+    
+    if args.experiment:
+        # Try to map the argument to the actual key
+        exp_lower = args.experiment.lower()
+        if exp_lower in exp_name_map:
+            experiments_to_generate = [exp_name_map[exp_lower]]
+        elif args.experiment in results_data:
+            experiments_to_generate = [args.experiment]
+        else:
+            print(f"Error: Unknown experiment type: {args.experiment}")
+            return 1
+    else:
+        experiments_to_generate = sorted(results_data.keys())
     
     for exp_type in experiments_to_generate:
         if exp_type not in results_data:

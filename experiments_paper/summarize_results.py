@@ -25,8 +25,28 @@ def compute_metrics(df, method_name, num_features):
     
     # Compute RMSE and Bias for each parameter
     for k in range(num_features):
-        theta_true_k = method_df[f'theta_true_{k}'].values
-        theta_est_k = method_df[f'theta_{k}'].values
+        theta_true_col = f'theta_true_{k}'
+        theta_est_col = f'theta_{k}'
+        
+        # Check if columns exist
+        if theta_true_col not in method_df.columns or theta_est_col not in method_df.columns:
+            print(f"Warning: Missing theta columns for k={k}, skipping")
+            results[f'rmse_{k}'] = np.nan
+            results[f'bias_{k}'] = np.nan
+            continue
+        
+        theta_true_k = pd.to_numeric(method_df[theta_true_col], errors='coerce').values
+        theta_est_k = pd.to_numeric(method_df[theta_est_col], errors='coerce').values
+        
+        # Filter out NaN values
+        valid_mask = ~(np.isnan(theta_true_k) | np.isnan(theta_est_k))
+        if valid_mask.sum() == 0:
+            results[f'rmse_{k}'] = np.nan
+            results[f'bias_{k}'] = np.nan
+            continue
+        
+        theta_true_k = theta_true_k[valid_mask]
+        theta_est_k = theta_est_k[valid_mask]
         
         # RMSE
         rmse = np.sqrt(np.mean((theta_est_k - theta_true_k) ** 2))
@@ -47,7 +67,8 @@ def summarize_experiment(results_csv_path, output_csv_path=None):
         results_csv_path: Path to results CSV file
         output_csv_path: Optional path to save summary CSV
     """
-    df = pd.read_csv(results_csv_path)
+    # Read CSV with error handling for malformed rows
+    df = pd.read_csv(results_csv_path, on_bad_lines='skip', engine='python')
     
     # Filter out ERROR rows
     df = df[df['method'] != 'ERROR'].copy()
@@ -56,11 +77,29 @@ def summarize_experiment(results_csv_path, output_csv_path=None):
         print(f"No valid results found in {results_csv_path}")
         return None
     
+    # Validate that required columns exist
+    required_cols = ['num_features', 'num_agents', 'num_items', 'subproblem']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        print(f"Error: Missing required columns: {missing_cols}")
+        print(f"Available columns: {list(df.columns)}")
+        return None
+    
     # Get experiment metadata (should be same across rows)
-    num_features = int(df['num_features'].iloc[0])
-    num_agents = int(df['num_agents'].iloc[0])
-    num_items = int(df['num_items'].iloc[0])
-    subproblem = df['subproblem'].iloc[0]
+    # Convert to numeric, handling any string values
+    try:
+        num_features = int(pd.to_numeric(df['num_features'].iloc[0], errors='coerce'))
+        num_agents = int(pd.to_numeric(df['num_agents'].iloc[0], errors='coerce'))
+        num_items = int(pd.to_numeric(df['num_items'].iloc[0], errors='coerce'))
+        subproblem = str(df['subproblem'].iloc[0])
+    except (ValueError, TypeError) as e:
+        print(f"Error reading metadata from CSV: {e}")
+        print(f"First row values: num_features={df['num_features'].iloc[0]}, num_agents={df['num_agents'].iloc[0]}, num_items={df['num_items'].iloc[0]}")
+        return None
+    
+    if pd.isna(num_features) or pd.isna(num_agents) or pd.isna(num_items):
+        print(f"Error: Invalid metadata values (NaN detected)")
+        return None
     
     # Get unique methods
     methods = df['method'].unique()
@@ -103,11 +142,9 @@ def summarize_experiment(results_csv_path, output_csv_path=None):
     
     # Print objective consistency summary
     if not np.isnan(obj_diff_rg_1slack_mean):
-        print(f"Objective Consistency (across all methods):")
-        print(f"  All methods close (within 1e-3): {obj_close_pct:.1f}% of replications")
+        print(f"Objective Consistency (across methods):")
+        print(f"  Methods close (within 1e-3): {obj_close_pct:.1f}% of replications")
         print(f"  Mean |obj_rg - obj_1slack|: {obj_diff_rg_1slack_mean:.6e}")
-        print(f"  Mean |obj_rg - obj_ellipsoid|: {obj_diff_rg_ellipsoid_mean:.6e}")
-        print(f"  Mean |obj_1slack - obj_ellipsoid|: {obj_diff_1slack_ellipsoid_mean:.6e}")
         print()
     
     for _, row in summary_df.iterrows():
