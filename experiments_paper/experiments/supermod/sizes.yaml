@@ -1,0 +1,5 @@
+# Problem size configurations for large-scale experiments
+# 3x3 grid: 9 size combinations
+sizes_grid:
+  agents: [50, 100, 150]
+  items: [20, 30, 50]

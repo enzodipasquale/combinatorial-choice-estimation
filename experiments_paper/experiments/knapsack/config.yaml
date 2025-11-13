@@ -1,0 +1,22 @@
+dimensions:
+  num_agents: 10
+  num_items: 5
+  num_features: 5
+  num_simuls: 1
+
+sigma: 1.0
+num_replications: 2
+base_seed: 12345
+results_csv: results.csv
+
+subproblem:
+  name: LinearKnapsack
+
+row_generation:
+  max_iters: 10
+  min_iters: 1
+  tolerance_optimality: 0.001
+  gurobi_settings:
+    OutputFlag: 0
+  theta_ubs: 100
+

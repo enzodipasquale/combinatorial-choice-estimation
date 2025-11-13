@@ -10,6 +10,9 @@ import subprocess
 from pathlib import Path
 import argparse
 
+BASE_DIR = Path(__file__).parent
+EXPERIMENTS_DIR = BASE_DIR / "experiments"
+
 
 def load_yaml_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -22,20 +25,32 @@ def main():
     parser.add_argument('--sizes', type=str, default='sizes.yaml', 
                        help='Sizes config file (default: sizes.yaml)')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
-    parser.add_argument('--timeout', type=int, default=None,
-                       help='Timeout in seconds for debugging (optional, uses timeout wrapper if provided)')
     
     args = parser.parse_args()
     
-    exp_dir = Path(__file__).parent / args.experiment_dir
+    exp_dir = EXPERIMENTS_DIR / args.experiment_dir
     if not exp_dir.exists():
         print(f"Error: Experiment directory not found: {exp_dir}")
         return 1
     
-    sizes_path = exp_dir / args.sizes
+    base_dir = BASE_DIR
+    
+    sizes_arg = Path(args.sizes)
+    if sizes_arg.is_absolute():
+        sizes_path = sizes_arg
+    else:
+        candidate_exp = exp_dir / sizes_arg
+        candidate_base = base_dir / sizes_arg
+        if candidate_exp.exists():
+            sizes_path = candidate_exp
+        elif candidate_base.exists():
+            sizes_path = candidate_base
+        else:
+            sizes_path = candidate_exp
     if not sizes_path.exists():
         print(f"Error: Sizes config not found: {sizes_path}")
-        print("Creating default sizes.yaml...")
+        print(f"Creating default sizes file at {sizes_path}...")
+        sizes_path.parent.mkdir(parents=True, exist_ok=True)
         create_default_sizes(sizes_path)
     
     sizes_cfg = load_yaml_config(str(sizes_path))
@@ -70,9 +85,10 @@ def main():
         print(f"Cleared existing results file")
     
     # Run for each size
-    base_dir = Path(__file__).parent
     project_root = base_dir.parent
-    timeout_wrapper = base_dir / 'run_with_timeout.py'
+    
+    completed = []
+    failed = []
     
     for size_name, num_agents, num_items in sizes_list:
         print(f"\n{'='*60}")
@@ -85,30 +101,31 @@ def main():
         env['NUM_AGENTS'] = str(num_agents)
         env['NUM_ITEMS'] = str(num_items)
         
-        # Use timeout wrapper only if timeout is specified (for debugging)
-        if args.timeout is not None:
-            cmd = ['python', str(timeout_wrapper), 
-                   '--timeout', str(args.timeout),
-                   '--mpi', str(args.mpi),
-                   str(run_script)]
-        else:
-            # Direct MPI command (no timeout)
-            cmd = ['mpirun', '-n', str(args.mpi), 'python', str(run_script)]
+        # We're inside the Singularity container launched by srun
+        # srun has already allocated MPI processes - just run the Python script directly
+        # mpi4py will automatically detect and use the SLURM MPI allocation
+        # This matches the auction example pattern (no mpirun needed)
+        cmd = ['python', str(run_script)]
         
         try:
             result = subprocess.run(cmd, cwd=str(project_root), env=env, check=True)
             print(f"✓ Completed {size_name}")
+            completed.append(size_name)
         except subprocess.CalledProcessError as e:
             print(f"✗ Failed {size_name}: {e}")
-            if args.timeout and e.returncode == 124:
-                print(f"  (Timed out after {args.timeout}s)")
+            failed.append(size_name)
             continue
     
+    # Print summary
     print(f"\n{'='*60}")
-    print(f"All sizes completed. Results saved to: {results_path}")
+    print(f"Summary: {len(completed)} completed, {len(failed)} failed")
+    if failed:
+        print(f"Failed sizes: {', '.join(failed)}")
     print(f"{'='*60}")
+    print(f"Results saved to: {results_path}")
     
-    return 0
+    # Return non-zero if any failures occurred
+    return 1 if failed else 0
 
 
 def create_default_sizes(path: Path):

@@ -1,0 +1,5 @@
+# Small test configuration
+sizes_grid:
+  agents: [10]
+  items: [5]
+
