@@ -85,6 +85,9 @@ class RowGeneration1SlackSolver(BaseEstimationSolver):
             theta = self.master_model.addMVar(self.num_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 theta.lb = self.row_generation_cfg.theta_lbs
+            else:
+                # Default: non-negativity constraints (lb=0 for all variables)
+                theta.lb = 0.0
             u_bar = self.master_model.addVar(obj=1, name='utility')  # Single scalar utility variable
             
             self.master_model.optimize()

@@ -11,16 +11,21 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 
+BASE_DIR = Path(__file__).parent
+EXPERIMENTS_DIR = BASE_DIR / "experiments"
+ARTIFACTS_DIR = BASE_DIR / "__results"
+LOGS_DIR = BASE_DIR / "__logs_slurm"
+
 
 def load_yaml_config(path: str) -> dict:
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
 
-def create_output_directory(base_dir: Path, experiment_name: str) -> Path:
+def create_output_directory(experiment_name: str) -> Path:
     """Create timestamped output directory."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = base_dir / "outputs" / f"{experiment_name}_{timestamp}"
+    output_dir = ARTIFACTS_DIR / f"{experiment_name}_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Create README with experiment info
@@ -44,55 +49,74 @@ def main():
                        choices=['greedy', 'supermod', 'knapsack', 'quadknapsack'],
                        help='Experiment type to run (runs both naive and IV methods)')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
-    parser.add_argument('--output-dir', type=str, default=None, 
-                       help='Output directory (default: experiments_paper_inversion/outputs/experiment_timestamp)')
+    parser.add_argument('--output-dir', type=str, default=None, \
+                       help='Output directory (default: experiments_paper_inversion/__results/<experiment>_<timestamp>)')
     parser.add_argument('--skip-run', action='store_true', help='Skip experiment run, only generate tables')
     parser.add_argument('--config', type=str, default=None, help='Override config file path')
     parser.add_argument('--timeout', type=int, default=None,
                        help='Timeout per size in seconds for debugging (optional, passed to run_all_sizes.py)')
+    parser.add_argument('--sizes', type=str, default='sizes.yaml',
+                       help='Sizes config file name (default: sizes.yaml, e.g., sizes_large.yaml)')
     
     args = parser.parse_args()
     
     # Setup paths - use combined experiment directory
-    base_dir = Path(__file__).parent
-    exp_dir = base_dir / args.experiment
+    base_dir = BASE_DIR
+    artifacts_dir = ARTIFACTS_DIR
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    exp_dir_combined = EXPERIMENTS_DIR / args.experiment
     
-    # For backward compatibility, check if _naive or _iv directories exist
-    naive_dir = base_dir / f"{args.experiment}_naive"
-    iv_dir = base_dir / f"{args.experiment}_iv"
+    # Collect possible naive/iv directories (legacy and grouped structure)
+    naive_candidates = [
+        EXPERIMENTS_DIR / "naive" / args.experiment,
+        base_dir / f"{args.experiment}_naive",
+        base_dir / "02_estimations" / "naive" / args.experiment  # legacy path fallback
+    ]
+    iv_candidates = [
+        EXPERIMENTS_DIR / "iv" / args.experiment,
+        base_dir / f"{args.experiment}_iv",
+        base_dir / "02_estimations" / "iv" / args.experiment  # legacy path fallback
+    ]
     
-    if not exp_dir.exists() and not naive_dir.exists():
-        print(f"Error: Experiment directory not found: {exp_dir}")
-        print(f"  Also checked: {naive_dir}")
-        return 1
+    existing_naive = next((path for path in naive_candidates if path.exists()), None)
+    existing_iv = next((path for path in iv_candidates if path.exists()), None)
     
-    # If combined directory doesn't exist but separate ones do, use those
-    if not exp_dir.exists():
-        if naive_dir.exists() and iv_dir.exists():
-            print(f"Note: Using separate naive/IV directories. Running both methods...")
-            # We'll handle both directories
-            exp_dirs = [naive_dir, iv_dir]
-        else:
-            print(f"Error: Neither combined nor separate directories found")
-            return 1
+    if exp_dir_combined.exists():
+        exp_dirs = [exp_dir_combined]
+    elif existing_naive and existing_iv:
+        print("Note: Using grouped naive/IV directories.")
+        exp_dirs = [existing_naive, existing_iv]
+    elif existing_naive or existing_iv:
+        exp_dirs = [existing_naive or existing_iv]
     else:
-        exp_dirs = [exp_dir]
+        print(f"Error: Could not locate experiment directories for '{args.experiment}'.")
+        print(f"  Checked combined directory: {exp_dir_combined}")
+        for candidate in naive_candidates + iv_candidates:
+            print(f"  Checked: {candidate}")
+        return 1
+
+    exp_dir = exp_dirs[0]
     
     # Create or use output directory
     if args.output_dir:
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     else:
-        output_dir = create_output_directory(base_dir, args.experiment)
+        output_dir = create_output_directory(args.experiment)
     
     print(f"Output directory: {output_dir}")
     
+    primary_exp_dir = exp_dirs[0]
+    
     # Load config - use first available directory (optional if skipping run)
     cfg = {}
-    if len(exp_dirs) == 2:
-        config_path = args.config or (exp_dirs[0] / 'config.yaml')  # Use naive directory config
+    if args.config:
+        config_path = Path(args.config)
+        if not config_path.is_absolute():
+            config_path = base_dir / config_path
     else:
-        config_path = args.config or (exp_dir / 'config.yaml')
+        config_path = primary_exp_dir / 'config.yaml'
     
     if config_path.exists():
         cfg = load_yaml_config(str(config_path))
@@ -110,18 +134,26 @@ def main():
         print(f"{'='*70}")
         
         # Run both naive and IV if separate directories exist
+        python_cmd = sys.executable
         if len(exp_dirs) == 2:
             for exp_dir_to_run in exp_dirs:
-                method_name = "naive" if "_naive" in str(exp_dir_to_run) else "iv"
+                path_parts = {part.lower() for part in exp_dir_to_run.parts}
+                if any('naive' == part or part.endswith('_naive') for part in path_parts) or '_naive' in str(exp_dir_to_run):
+                    method_name = "naive"
+                elif any('iv' == part or part.endswith('_iv') for part in path_parts) or '_iv' in str(exp_dir_to_run):
+                    method_name = "iv"
+                else:
+                    method_name = exp_dir_to_run.name
                 print(f"\n--- Running {method_name.upper()} method ---")
                 
-                sizes_path = exp_dir_to_run / 'sizes.yaml'
+                sizes_path = exp_dir_to_run / args.sizes
                 if not sizes_path.exists():
                     print(f"Warning: Sizes config not found: {sizes_path}, skipping")
                     continue
                 
-                exp_name = exp_dir_to_run.name
-                cmd = ['python', str(base_dir / 'run_all_sizes.py'), exp_name, 
+                exp_rel_path = exp_dir_to_run.relative_to(base_dir)
+                cmd = [python_cmd, str(base_dir / 'run_all_sizes.py'), str(exp_rel_path), 
+                       '--sizes', args.sizes,
                        '--mpi', str(args.mpi)]
                 if args.timeout is not None:
                     cmd.extend(['--timeout', str(args.timeout)])
@@ -134,12 +166,15 @@ def main():
                         print(f"  (Timed out after {args.timeout}s)")
         else:
             # Single combined directory
-            sizes_path = exp_dir / 'sizes.yaml'
+            exp_dir_single = primary_exp_dir
+            sizes_path = exp_dir_single / args.sizes
             if not sizes_path.exists():
                 print(f"Error: Sizes config not found: {sizes_path}")
                 return 1
             
-            cmd = ['python', str(base_dir / 'run_all_sizes.py'), args.experiment, 
+            single_rel_path = exp_dir_single.relative_to(base_dir)
+            cmd = [python_cmd, str(base_dir / 'run_all_sizes.py'), str(single_rel_path), 
+                   '--sizes', args.sizes,
                    '--mpi', str(args.mpi)]
             if args.timeout is not None:
                 cmd.extend(['--timeout', str(args.timeout)])
@@ -160,7 +195,13 @@ def main():
     if len(exp_dirs) == 2:
         # Combine results from both naive and IV
         for exp_dir_source in exp_dirs:
-            method_name = "naive" if "_naive" in str(exp_dir_source) else "iv"
+            path_parts = {part.lower() for part in exp_dir_source.parts}
+            if any('naive' == part or part.endswith('_naive') for part in path_parts) or '_naive' in str(exp_dir_source):
+                method_name = "naive"
+            elif any('iv' == part or part.endswith('_iv') for part in path_parts) or '_iv' in str(exp_dir_source):
+                method_name = "iv"
+            else:
+                method_name = exp_dir_source.name
             config_source_path = exp_dir_source / 'config.yaml'
             if config_source_path.exists():
                 cfg_source = load_yaml_config(str(config_source_path))
@@ -183,7 +224,7 @@ def main():
             results_path = None
     else:
         # Single directory
-        results_path = exp_dir / cfg.get('results_csv', 'results.csv')
+        results_path = primary_exp_dir / cfg.get('results_csv', 'results.csv')
         if results_path.exists():
             shutil.copy(results_path, output_dir / 'results_raw.csv')
             print(f"✓ Copied raw results: {len(list(results_path.read_text().splitlines()))} lines")
@@ -197,7 +238,7 @@ def main():
         print("Generating summary statistics")
         print(f"{'='*70}")
         
-        cmd = ['python', str(base_dir / 'summarize_results.py'), 
+        cmd = [python_cmd, str(base_dir / 'summarize_results.py'), 
                str(results_path), '--output', str(output_dir / 'results_summary.csv')]
         try:
             subprocess.run(cmd, cwd=base_dir, check=True)
@@ -212,21 +253,9 @@ def main():
         print("Generating LaTeX tables")
         print(f"{'='*70}")
         
-        # Determine experiment type for table generation
-        # If we have combined results, use the base experiment name
-        exp_type_for_table = args.experiment
-        # Check if we should use _naive or _iv suffix based on available methods
-        if len(exp_dirs) == 2:
-            # Both methods exist - use base name, table generator will handle both
-            exp_type_for_table = f"{args.experiment}_combined"
-        elif naive_dir.exists():
-            exp_type_for_table = f"{args.experiment}_naive"
-        elif iv_dir.exists():
-            exp_type_for_table = f"{args.experiment}_iv"
-        
         # Generate table from combined results using the base experiment name
         # The table generator will detect both methods in the CSV
-        cmd = ['python', str(base_dir / 'generate_latex_tables.py'),
+        cmd = [python_cmd, str(base_dir / 'generate_latex_tables.py'),
                str(results_path), '--experiment', args.experiment,
                '--output', str(output_dir / 'tables.tex')]
         try:
@@ -240,14 +269,15 @@ def main():
     
     # Step 5: Copy config files
     import shutil
-    shutil.copy(config_path, output_dir / 'config.yaml')
+    if config_path.exists():
+        shutil.copy(config_path, output_dir / 'config.yaml')
     # Copy sizes.yaml from first available directory
     if len(exp_dirs) == 2:
-        sizes_source = exp_dirs[0] / 'sizes.yaml'
+        sizes_source = exp_dirs[0] / args.sizes
     else:
-        sizes_source = exp_dir / 'sizes.yaml'
+        sizes_source = primary_exp_dir / args.sizes
     if sizes_source.exists():
-        shutil.copy(sizes_source, output_dir / 'sizes.yaml')
+        shutil.copy(sizes_source, output_dir / args.sizes)
     
     # Summary
     print(f"\n{'='*70}")

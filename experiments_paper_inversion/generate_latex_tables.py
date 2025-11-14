@@ -182,20 +182,13 @@ def generate_table(experiment_type, results_csv_path, output_path):
     param_names = param_config['names']
     unique_params = sorted(set(param_names), key=lambda x: param_names.index(x))
     
-    # Organize sizes into 3x3 grid
-    # Extract unique agent and item counts
+    # Organize sizes dynamically based on actual results
+    # Extract unique agent and item counts from the results
     agent_counts = sorted(set(n for n, m in results_by_size.keys()))
     item_counts = sorted(set(m for n, m in results_by_size.keys()))
     
-    # Ensure we have at least 3x3, pad with None if needed
-    while len(agent_counts) < 3:
-        agent_counts.append(None)
-    while len(item_counts) < 3:
-        item_counts.append(None)
-    
-    # Take first 3 of each
-    agent_counts = agent_counts[:3]
-    item_counts = item_counts[:3]
+    # Use all available sizes (no padding or truncation)
+    # This ensures the table reflects exactly what was run
     
     # Get all methods
     all_methods = set()
@@ -256,77 +249,93 @@ def generate_table(experiment_type, results_csv_path, output_path):
                     return f"${format_number(aggregated[param_type][idx], 4)}$"
             return "---"
     
+    # Calculate dynamic table dimensions
+    num_agents = len(agent_counts)
+    num_items = len(item_counts)
+    num_cols = num_agents * num_items
+    total_cols = 1 + num_cols  # 1 for method column + data columns
+    
+    # Build column specification dynamically
+    col_spec = "l" + " c" * num_cols
+    
     lines = []
     lines.append("\\begin{table}[htbp]")
     lines.append("\\centering")
     lines.append("\\footnotesize")
-    lines.append(f"\\caption{{Inversion Experiment: {EXPERIMENT_TITLES.get(experiment_type, experiment_type)} (3$\\times$3 Grid: $N \\times M$)}}")
+    # Update caption to reflect actual grid size
+    lines.append(f"\\caption{{Inversion Experiment: {EXPERIMENT_TITLES.get(experiment_type, experiment_type)} ({num_agents}$\\times${num_items} Grid: $N \\times M$)}}")
     lines.append(f"\\label{{tab:inversion_{experiment_type}}}")
     lines.append("\\begin{threeparttable}")
-    lines.append("\\begin{tabular}{l c c c c c c c c c}")
+    lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
     lines.append("\\toprule")
     
     # Header: M (Items) across top
-    header1 = "Method & \\multicolumn{9}{c}{$M$ (Items)} \\\\"
+    header1 = f"Method & \\multicolumn{{{num_cols}}}{{c}}{{$M$ (Items)}} \\\\"
     lines.append(header1)
-    lines.append("\\cmidrule(lr){2-10}")
+    lines.append(f"\\cmidrule(lr){{2-{total_cols}}}")
     
-    # Header row 2: Item values
-    header2 = " & \\multicolumn{3}{c}{" + str(item_counts[0]) + "} & \\multicolumn{3}{c}{" + str(item_counts[1]) + "} & \\multicolumn{3}{c}{" + str(item_counts[2]) + "} \\\\"
+    # Header row 2: Item values (grouped by item count)
+    header2_parts = [" &"]
+    cmidrule_parts = []
+    col_start = 2
+    for i, item_count in enumerate(item_counts):
+        col_end = col_start + num_agents - 1
+        header2_parts.append(f"\\multicolumn{{{num_agents}}}{{c}}{{{item_count}}}")
+        if i < len(item_counts) - 1:
+            header2_parts.append(" &")
+        cmidrule_parts.append(f"\\cmidrule(lr){{{col_start}-{col_end}}}")
+        col_start = col_end + 1
+    header2 = "".join(header2_parts) + " \\\\"
     lines.append(header2)
-    lines.append("\\cmidrule(lr){2-4} \\cmidrule(lr){5-7} \\cmidrule(lr){8-10}")
+    if cmidrule_parts:
+        lines.append(" ".join(cmidrule_parts))
     
-    # Header row 3: Agent values
-    header3 = " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
-    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$"
-    header3 += " & $N=" + str(agent_counts[0]) + "$ & $N=" + str(agent_counts[1]) + "$ & $N=" + str(agent_counts[2]) + "$ \\\\"
+    # Header row 3: Agent values (repeated for each item count)
+    header3_parts = [" &"]
+    for item_count in item_counts:
+        for agent_count in agent_counts:
+            header3_parts.append(f"$N={agent_count}$")
+            if agent_count != agent_counts[-1] or item_count != item_counts[-1]:
+                header3_parts.append(" &")
+    header3 = "".join(header3_parts) + " \\\\"
     lines.append(header3)
     lines.append("\\midrule")
     
     # Generate table: one section per metric type
     # 1. Runtime
-    lines.append("\\multicolumn{10}{l}{\\textit{Runtime (s)}} \\\\")
+    lines.append(f"\\multicolumn{{{total_cols}}}{{l}}{{\\textit{{Runtime (s)}}}} \\\\")
     for method in methods:
         row_parts = [METHOD_NAMES.get(method, method.title())]
         for m in item_counts:
             for n in agent_counts:
-                if n is None or m is None:
-                    row_parts.append("---")
-                else:
-                    row_parts.append(get_value(method, n, m, 'runtime'))
+                row_parts.append(get_value(method, n, m, 'runtime'))
         lines.append(" & ".join(row_parts) + " \\\\")
-    lines.append("\\cmidrule(lr){1-10}")
+    lines.append(f"\\cmidrule(lr){{1-{total_cols}}}")
     
     # 2. RMSE for each parameter type
     for param_type in unique_params:
         param_label = extract_param_label(param_type)
-        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
+        lines.append(f"\\multicolumn{{{total_cols}}}{{l}}{{\\textit{{RMSE}} ${param_type}$}} \\\\")
         for method in methods:
             row_parts = [METHOD_NAMES.get(method, method.title())]
             for m in item_counts:
                 for n in agent_counts:
-                    if n is None or m is None:
-                        row_parts.append("---")
-                    else:
-                        row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
+                    row_parts.append(get_value(method, n, m, f'rmse_{param_label}'))
             lines.append(" & ".join(row_parts) + " \\\\")
-        lines.append("\\cmidrule(lr){1-10}")
+        lines.append(f"\\cmidrule(lr){{1-{total_cols}}}")
     
     # 3. Bias for each parameter type
     for param_type in unique_params:
         param_label = extract_param_label(param_type)
-        lines.append(f"\\multicolumn{{10}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
+        lines.append(f"\\multicolumn{{{total_cols}}}{{l}}{{\\textit{{Bias}} ${param_type}$}} \\\\")
         for method in methods:
             row_parts = [METHOD_NAMES.get(method, method.title())]
             for m in item_counts:
                 for n in agent_counts:
-                    if n is None or m is None:
-                        row_parts.append("---")
-                    else:
-                        row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
+                    row_parts.append(get_value(method, n, m, f'bias_{param_label}'))
             lines.append(" & ".join(row_parts) + " \\\\")
         if param_type != unique_params[-1]:
-            lines.append("\\cmidrule(lr){1-10}")
+            lines.append(f"\\cmidrule(lr){{1-{total_cols}}}")
     
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
@@ -341,10 +350,11 @@ def generate_table(experiment_type, results_csv_path, output_path):
         lines.append(f"\\item Results from {num_replications} replications per size.")
     lines.append(f"\\item Runtime reported as mean $\\pm$ standard deviation in seconds. Each cell shows $(N,M)$ combination.")
     lines.append(f"\\item Data available for $(N,M) \\in \\{{{size_str}\\}}$.")
+    # Check for missing combinations in the grid
     missing = []
     for m in item_counts:
         for n in agent_counts:
-            if n is not None and m is not None and (n, m) not in results_by_size:
+            if (n, m) not in results_by_size:
                 missing.append(f"({n},{m})")
     if missing:
         lines.append(f"\\item Missing combinations: {', '.join(missing)}")
@@ -359,7 +369,7 @@ def generate_table(experiment_type, results_csv_path, output_path):
         f.write('\n'.join(lines))
     
     print(f"Generated LaTeX table: {output_path}")
-    print(f"  - 3x3 grid: {len(agent_counts)} agents x {len(item_counts)} items")
+    print(f"  - Dynamic grid: {len(agent_counts)} agents x {len(item_counts)} items")
     print(f"  - Available sizes: {available_sizes}")
     print(f"  - {len(unique_params)} unique parameter types")
 
