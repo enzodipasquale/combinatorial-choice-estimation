@@ -16,6 +16,7 @@ from .data_generator import (
     DataGenerator,
     ModularAgentConfig,
     ModularItemConfig,
+    WeightConfig,
 )
 from . import utils
 
@@ -34,6 +35,7 @@ class LinearKnapsackParams:
     item_config: ModularItemConfig = field(
         default_factory=lambda: ModularItemConfig(apply_abs=True)
     )
+    weight_config: WeightConfig = field(default_factory=WeightConfig)
     capacity_config: CapacityConfig = field(default_factory=CapacityConfig)
     _random_capacity_low: Optional[int] = None
     _random_capacity_high: Optional[int] = None
@@ -80,18 +82,63 @@ class LinearKnapsackScenarioBuilder:
     def with_num_simuls(self, num_simuls: int) -> "LinearKnapsackScenarioBuilder":
         return LinearKnapsackScenarioBuilder(replace(self._params, num_simuls=num_simuls))
 
+    def with_weight_config(
+        self,
+        distribution: str = "uniform",
+        low: int = 1,
+        high: int = 10,
+        log_mean: float = 0.0,
+        log_std: float = 1.0,
+        exp_scale: float = 2.0,
+    ) -> "LinearKnapsackScenarioBuilder":
+        """Configure weight generation parameters.
+        
+        Args:
+            distribution: 'uniform', 'lognormal', or 'exponential' (default: 'uniform')
+            low: Minimum weight value
+            high: Maximum weight value
+            log_mean: Mean for log-normal distribution
+            log_std: Std for log-normal distribution
+            exp_scale: Scale for exponential distribution
+        """
+        weight_config = WeightConfig(
+            distribution=distribution,
+            low=low,
+            high=high,
+            log_mean=log_mean,
+            log_std=log_std,
+            exp_scale=exp_scale,
+        )
+        return LinearKnapsackScenarioBuilder(
+            replace(self._params, weight_config=weight_config)
+        )
+
     def with_capacity_config(
         self,
         mean_multiplier: float = 0.45,
         lower_multiplier: float = 0.85,
         upper_multiplier: float = 1.15,
     ) -> "LinearKnapsackScenarioBuilder":
-        """Configure capacity generation parameters."""
+        """Configure capacity generation using variance-based method (legacy)."""
         capacity_config = CapacityConfig(
             mean_multiplier=mean_multiplier,
             lower_multiplier=lower_multiplier,
             upper_multiplier=upper_multiplier,
         )
+        return LinearKnapsackScenarioBuilder(
+            replace(self._params, capacity_config=capacity_config)
+        )
+
+    def with_capacity_fraction(
+        self,
+        fraction: float,
+    ) -> "LinearKnapsackScenarioBuilder":
+        """Configure capacity as fixed fraction of total weight (most standard method).
+        
+        Args:
+            fraction: Fraction of total weight sum (e.g., 0.5 for 50%).
+        """
+        capacity_config = CapacityConfig(fraction=fraction)
         return LinearKnapsackScenarioBuilder(
             replace(self._params, capacity_config=capacity_config)
         )
@@ -138,6 +185,7 @@ class LinearKnapsackScenarioBuilder:
             spec: FeatureSpec,
             timeout: Optional[int],
             seed: Optional[int],
+            theta: Any,
         ) -> Dict[str, Dict[str, Any]]:
             rank = comm.Get_rank()
             generator = DataGenerator(seed=seed)
@@ -157,7 +205,7 @@ class LinearKnapsackScenarioBuilder:
                     (params.num_items, params.num_item_modular_features),
                     params.item_config,
                 )
-                item_weights = generator.generate_weights(params.num_items)
+                item_weights = generator.generate_weights(params.num_items, params.weight_config)
                 if params._random_capacity_low is not None:
                     agent_capacity = generator.generate_random_capacities(
                         params.num_agents, params._random_capacity_low, params._random_capacity_high
@@ -184,17 +232,7 @@ class LinearKnapsackScenarioBuilder:
             bc.data.load_and_scatter(generation_data if rank == 0 else None)
             spec.initializer(bc)
 
-            theta_star = params.theta_star
-
-            def solve() -> np.ndarray:
-                return bc.subproblems.init_and_solve(theta_star)
-
-            obs_bundles = utils.mpi_call_with_timeout(
-                comm,
-                solve,
-                timeout,
-                label=f"{params.num_agents}x{params.num_items}-linear-knapsack",
-            )
+            obs_bundles = bc.subproblems.init_and_solve(theta)
 
             estimation_data = None
             if rank == 0:
