@@ -3,31 +3,7 @@ import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation.ellipsoid import EllipsoidSolver
-
-
-def features_oracle(i_id, B_j, data):
-    """
-    Compute features for a given agent and bundle(s).
-    Supports both single (1D) and multiple (2D) bundles.
-    Returns array of shape (num_features,) for a single bundle,
-    or (num_features, m) for m bundles.
-    """
-    modular_agent = data["agent_data"]["modular"][i_id]
-
-    modular_agent = np.atleast_2d(modular_agent)
-
-    single_bundle = False
-    if B_j.ndim == 1:
-        B_j = B_j[:, None]
-        single_bundle = True
-    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-        agent_sum = modular_agent.T @ B_j
-    neg_sq = -np.sum(B_j, axis=0, keepdims=True) ** 2
-
-    features = np.vstack((agent_sum, neg_sq))
-    if single_bundle:
-        return features[:, 0]  # Return as 1D array for a single bundle
-    return features
+from bundlechoice.factory import ScenarioLibrary
 
 
 def test_ellipsoid_greedy():
@@ -36,59 +12,38 @@ def test_ellipsoid_greedy():
     num_items = 50
     num_features = 4
     num_simuls = 1
+    seed = 42
     
-    cfg = {
-        "dimensions": {
-            "num_agents": num_agents,
-            "num_items": num_items,
-            "num_features": num_features,
-            "num_simuls": num_simuls,
-        },
-        "subproblem": {
-            "name": "Greedy",
-        },
-        "ellipsoid": {
-            "num_iters": 100,
-            "initial_radius": 20 * np.sqrt(num_features),  # Ensure ellipsoid contains vector of all ones with margin
-            "verbose": False
-        }
-    }
+    # Use factory to generate data (matches manual: abs(normal(0,1)))
+    scenario = (
+        ScenarioLibrary.greedy()
+        .with_dimensions(num_agents=num_agents, num_items=num_items)
+        .with_num_features(num_features)
+        .with_num_simuls(num_simuls)
+        .with_sigma(1.0)
+        .build()
+    )
     
-    # Generate data on rank 0
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    if rank == 0:
-        modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
-        errors = np.random.normal(0, 1, size=(num_agents, num_items)) 
-        estimation_errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
-        agent_data = {"modular": modular}
-        input_data = {"agent_data": agent_data, "errors": errors}
-    else:
-        input_data = None
+    prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed)
+    theta_0 = prepared.theta_star
 
     # Initialize BundleChoice
     greedy_demo = BundleChoice()
-    greedy_demo.load_config(cfg)
-    greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.set_oracle(features_oracle)
+    prepared.apply(greedy_demo, comm=comm, stage="generation")
 
-    # Simulate theta_0 and generate observed bundles
-    theta_0 = np.ones(num_features)
+    # Generate observed bundles
     observed_bundles = greedy_demo.subproblems.init_and_solve(theta_0)
 
     # Estimate parameters using ellipsoid method
     if rank == 0:
         print(f"aggregate demands: {observed_bundles.sum(1).min()}, {observed_bundles.sum(1).max()}")
         print(f"aggregate: {observed_bundles.sum()}")
-        input_data["obs_bundle"] = observed_bundles
-        input_data["errors"] = estimation_errors
-    else:
-        input_data = None
 
-    greedy_demo.load_config(cfg)
-    greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.set_oracle(features_oracle)
+    # Apply estimation data
+    prepared.apply(greedy_demo, comm=comm, stage="estimation")
     greedy_demo.subproblems.load()
     theta_ = np.ones(num_features) 
     # theta_[0] = .99

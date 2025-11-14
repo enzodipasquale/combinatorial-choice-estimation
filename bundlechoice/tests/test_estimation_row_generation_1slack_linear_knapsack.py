@@ -3,6 +3,8 @@ import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGeneration1SlackSolver
+from bundlechoice.factory import ScenarioLibrary
+
 
 def test_row_generation_1slack_linear_knapsack():
     """Test RowGeneration1SlackSolver using observed bundles generated from linear knapsack subproblem manager."""
@@ -12,65 +14,35 @@ def test_row_generation_1slack_linear_knapsack():
     num_modular_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
+    seed = 42
     
-    cfg = {
-        "dimensions": {
-            "num_agents": num_agents,
-            "num_items": num_items,
-            "num_features": num_features,
-            "num_simuls": num_simuls
-        },
-        "subproblem": {
-            "name": "LinearKnapsack",
-            "settings": {"TimeLimit": 10, "MIPGap_tol": 0.01}
-        },
-        "row_generation": {
-            "max_iters": 100,
-            "tolerance_optimality": 0.0001,
-            "min_iters": 1,
-            "gurobi_settings": {
-                "OutputFlag": 0
-            }
-        }
-    }
+    # Use factory to generate data (matches manual: abs(normal), weights 1-10, random capacity 1-100)
+    scenario = (
+        ScenarioLibrary.linear_knapsack()
+        .with_dimensions(num_agents=num_agents, num_items=num_items)
+        .with_feature_counts(num_agent_features=num_modular_agent_features, num_item_features=num_modular_item_features)
+        .with_num_simuls(num_simuls)
+        .with_sigma(1.0)
+        .with_random_capacity(low=1, high=100)  # Match manual: random capacity
+        .build()
+    )
     
-    # Generate data on rank 0
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    if rank == 0:
-        input_data = {
-            "item_data": {
-                "modular": np.abs(np.random.normal(0, 1, (num_items, num_modular_item_features))),
-                "weights": np.random.randint(1, 10, size=num_items)
-            },
-            "agent_data": {
-                "modular": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))),
-                "capacity": np.random.randint(1, 100, size=num_agents)
-            },
-            "errors": np.random.normal(0, 1, (num_simuls, num_agents, num_items)),
-        }
-    else:
-        input_data = None
+    prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed)
+    theta_0 = prepared.theta_star
         
     knapsack_demo = BundleChoice()
-    knapsack_demo.load_config(cfg)
-    knapsack_demo.data.load_and_scatter(input_data)
-    knapsack_demo.features.build_from_data()
+    prepared.apply(knapsack_demo, comm=comm, stage="generation")
     
-    theta_0 = np.ones(num_features)
     observed_bundles = knapsack_demo.subproblems.init_and_solve(theta_0)
     
     if rank == 0 and observed_bundles is not None:
         print("Total demand:", observed_bundles.sum(1).min(), observed_bundles.sum(1).max())
-        input_data["obs_bundle"] = observed_bundles
-        input_data["errors"] = np.random.normal(0, 1, (num_simuls, num_agents, num_items))
-    else:
-        input_data = None
 
-    knapsack_demo.load_config(cfg)
-    knapsack_demo.data.load_and_scatter(input_data)
-    knapsack_demo.features.build_from_data()
+    # Apply estimation data
+    prepared.apply(knapsack_demo, comm=comm, stage="estimation")
     knapsack_demo.subproblems.load()
 
     # Use 1slack solver instead of regular row generation

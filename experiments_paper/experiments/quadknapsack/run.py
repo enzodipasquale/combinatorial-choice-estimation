@@ -29,7 +29,7 @@ def main():
     num_items = int(os.environ.get('NUM_ITEMS', cfg['dimensions']['num_items']))
     num_features = cfg['dimensions']['num_features']
     num_simuls = cfg['dimensions'].get('num_simuls', 1)
-    sigma = cfg.get('sigma', 5.0)
+    sigma = cfg.get('sigma', 5.0)  # Similar to supermod
     num_replications = cfg.get('num_replications', 1)
     base_seed = cfg.get('base_seed', 12345)
     timeout_seconds = cfg.get('timeout_seconds', 600)
@@ -51,30 +51,41 @@ def main():
         cols.extend([f'theta_{k}' for k in range(num_features)])
         pd.DataFrame([], columns=cols).to_csv(results_path, index=False)
 
-    modular_agent_features = cfg.get('modular_agent_features', num_features - 1)
-    quadratic_item_features = cfg.get('quadratic_item_features', 1)
+    # Feature counts - similar to supermod but with agent quadratic too
+    modular_agent_features = cfg.get('modular_agent_features', 5)
+    agent_quadratic_features = cfg.get('agent_quadratic_features', 1)
+    modular_item_features = cfg.get('modular_item_features', 0)
+    item_quadratic_features = cfg.get('item_quadratic_features', 1)
 
     for rep in range(num_replications):
         seed = int(base_seed + rep)
 
-        # Use factory to generate data (matches benchmarking/supermod/experiment.py)
+        # Use factory to generate data (similar to supermod but with knapsack constraints)
+        # Agent modular: abs(normal) to match original supermodknapsack
+        # Agent/item quadratic: binary choice similar to supermod
         scenario = (
-            ScenarioLibrary.quadratic_supermodular()
+            ScenarioLibrary.quadratic_knapsack()
             .with_dimensions(num_agents=num_agents, num_items=num_items)
             .with_feature_counts(
-                num_mod_agent=modular_agent_features,
-                num_mod_item=0,
-                num_quad_agent=0,
-                num_quad_item=quadratic_item_features,
+                num_agent_modular=modular_agent_features,
+                num_agent_quadratic=agent_quadratic_features,
+                num_item_modular=modular_item_features,
+                num_item_quadratic=item_quadratic_features,
             )
             .with_num_simuls(num_simuls)
             .with_sigma(sigma)
-            .with_agent_modular_config(multiplier=-5.0, mean=0.0, std=1.0)
-            .with_quadratic_method(
+            .with_agent_modular_config(multiplier=1.0, mean=0.0, std=1.0, apply_abs=True)  # abs(normal)
+            .with_agent_quadratic_config(
                 method=QuadraticGenerationMethod.BINARY_CHOICE,
                 binary_prob=0.2,
-                binary_value=1.0,
+                binary_value=0.3,  # Similar to supermod but adjusted for knapsack
             )
+            .with_item_quadratic_config(
+                method=QuadraticGenerationMethod.BINARY_CHOICE,
+                binary_prob=0.2,
+                binary_value=0.25,  # Similar to supermod but adjusted for knapsack
+            )
+            .with_capacity_config(mean_multiplier=0.5, lower_multiplier=0.85, upper_multiplier=1.15)
             .build()
         )
 
@@ -82,7 +93,7 @@ def main():
             return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed)
 
         prepared = mpi_call_with_timeout(
-            comm, prepare_scenario, timeout_seconds, f"supermod-prep-rep{rep}"
+            comm, prepare_scenario, timeout_seconds, f"quadknapsack-prep-rep{rep}"
         )
 
         theta_true = prepared.theta_star.copy()
@@ -96,7 +107,7 @@ def main():
             return bc.subproblems.init_and_solve(theta_true)
 
         obs_bundles = mpi_call_with_timeout(
-            comm, generate_bundles, timeout_seconds, f"supermod-bundles-rep{rep}"
+            comm, generate_bundles, timeout_seconds, f"quadknapsack-bundles-rep{rep}"
         )
 
         # Apply estimation data
@@ -112,7 +123,7 @@ def main():
 
             t0 = time.time()
             theta_row = mpi_call_with_timeout(
-                comm, solve_row_gen, timeout_seconds, f"supermod-rg-rep{rep}"
+                comm, solve_row_gen, timeout_seconds, f"quadknapsack-rg-rep{rep}"
             )
             time_row = time.time() - t0
             obj_row = bc.row_generation.objective(theta_row)
@@ -133,7 +144,7 @@ def main():
 
             t1 = time.time()
             theta_row1 = mpi_call_with_timeout(
-                comm, solve_row_gen_1slack, timeout_seconds, f"supermod-rg1-rep{rep}"
+                comm, solve_row_gen_1slack, timeout_seconds, f"quadknapsack-rg1-rep{rep}"
             )
             time_row1 = time.time() - t1
             obj_row1 = bc.row_generation.objective(theta_row1)

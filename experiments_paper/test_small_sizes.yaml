@@ -1,5 +1,4 @@
-# Small test configuration
-sizes_grid:
-  agents: [10]
-  items: [5]
-
+sizes:
+  small:
+    num_agents: 100
+    num_items: 50

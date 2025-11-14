@@ -7,13 +7,14 @@ dimensions:
 sigma: 1.0
 num_replications: 2
 base_seed: 12345
+timeout_seconds: 600
 results_csv: results.csv
 
 subproblem:
   name: Greedy
 
 row_generation:
-  max_iters: 10
+  max_iters: 100
   min_iters: 1
   tolerance_optimality: 0.001
   gurobi_settings:

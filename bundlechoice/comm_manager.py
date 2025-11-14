@@ -4,11 +4,15 @@ MPI communication manager for distributed operations.
 Provides buffer-based and pickle-based communication primitives with optional profiling.
 """
 
-from typing import Any, Optional, Callable, List, Dict, Tuple
+from typing import Any, Optional, Callable, List, Dict, Tuple, Iterator
 import numpy as np
 from mpi4py import MPI
 from functools import wraps
 import time
+import logging
+import traceback
+import sys
+from contextlib import contextmanager
 
 
 # ============================================================================
@@ -30,16 +34,16 @@ def _mpi_error_handler(func: Callable) -> Callable:
     """Decorator: handles MPI errors and optionally profiles communication time."""
     @wraps(func)
     def wrapper(self, *args, **kwargs):
+        profiling_enabled = self.enable_profiling
+        start = time.time() if profiling_enabled else None
         try:
-            if not self.enable_profiling:
-                return func(self, *args, **kwargs)
-            
-            t0 = time.time()
             result = func(self, *args, **kwargs)
-            self._comm_times[func.__name__] = self._comm_times.get(func.__name__, 0.0) + (time.time() - t0)
+            if profiling_enabled and self._comm_times is not None and start is not None:
+                elapsed = time.time() - start
+                self._comm_times[func.__name__] = self._comm_times.get(func.__name__, 0.0) + elapsed
             return result
         except Exception as e:
-            self.comm.Abort(1)
+            self._handle_failure(e, operation=func.__name__)
             raise e
     return wrapper
 
@@ -58,6 +62,12 @@ class CommManager:
         self.size = comm.Get_size()
         self.enable_profiling = enable_profiling
         self._comm_times: Optional[Dict[str, float]] = {} if enable_profiling else None
+        self._logger = logging.getLogger(__name__)
+        try:
+            self.comm.Set_errhandler(MPI.ERRORS_RETURN)
+        except Exception:
+            # Not all MPI implementations allow customizing the error handler.
+            pass
 
     # ============================================================================
     # Helper Methods
@@ -229,3 +239,59 @@ class CommManager:
         """Reset communication profiling counters."""
         if self.enable_profiling:
             self._comm_times = {}
+
+    # ============================================================================
+    # Failure Handling
+    # ============================================================================
+
+    def _handle_failure(self, exc: Exception, operation: Optional[str] = None, errorcode: int = 1) -> None:
+        """Log the local failure and abort all ranks."""
+        op = operation or "MPI operation"
+        formatted_traceback = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        message = (
+            f"Rank {self.rank}/{self.size} encountered an error during '{op}': {exc}\n"
+            f"{formatted_traceback}"
+        )
+        try:
+            if self._logger:
+                self._logger.error(message)
+            else:
+                sys.stderr.write(message)
+        finally:
+            sys.stderr.flush()
+            try:
+                self.comm.Abort(errorcode)
+            except Exception:
+                # As a last resort, ensure the process exits to avoid hanging.
+                sys.exit(errorcode)
+
+    @contextmanager
+    def fail_fast(self, operation: Optional[str] = None, errorcode: int = 1) -> Iterator[None]:
+        """
+        Context manager that aborts all ranks if an exception escapes the block.
+
+        Usage:
+            with comm_manager.fail_fast("setup phase"):
+                ...
+        """
+        try:
+            yield
+        except Exception as exc:
+            self._handle_failure(exc, operation=operation, errorcode=errorcode)
+            raise
+
+    def abort_all(self, message: Optional[str] = None, errorcode: int = 1) -> None:
+        """
+        Explicitly abort all ranks, propagating a message for diagnostics.
+        """
+        if message:
+            diagnostic = f"Rank {self.rank}/{self.size} aborting all ranks: {message}"
+            if self._logger:
+                self._logger.error(diagnostic)
+            else:
+                sys.stderr.write(diagnostic + "\n")
+                sys.stderr.flush()
+        try:
+            self.comm.Abort(errorcode)
+        except Exception:
+            sys.exit(errorcode)

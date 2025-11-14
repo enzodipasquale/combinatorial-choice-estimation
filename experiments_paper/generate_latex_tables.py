@@ -29,6 +29,10 @@ PARAM_NAMES = {
     'QuadKnapsack': {
         'names': ['\\theta_{\\text{MOD}}'] * 5 + ['\\theta_{\\text{QUAD}}'],
         'descriptions': '5 modular, 1 quadratic'
+    },
+    'PlainSingleItem': {
+        'names': ['\\theta_{\\text{MOD}}'] * 5,
+        'descriptions': '5 modular agent features'
     }
 }
 
@@ -44,7 +48,8 @@ EXPERIMENT_TITLES = {
     'Greedy': 'Gross Substitutes',
     'QuadSupermodularNetwork': 'Supermodular Setting',
     'LinearKnapsack': 'Linear Knapsack Setting',
-    'QuadKnapsack': 'Quadratic Knapsack Setting'
+    'QuadKnapsack': 'Quadratic Knapsack Setting',
+    'PlainSingleItem': 'Plain Single Item Setting'
 }
 
 
@@ -422,7 +427,8 @@ def main():
         'greedy': 'Greedy',
         'supermod': 'QuadSupermodularNetwork',
         'knapsack': 'LinearKnapsack',
-        'supermodknapsack': 'QuadKnapsack'
+        'quadknapsack': 'QuadKnapsack',
+        'plain_single_item': 'PlainSingleItem'
     }
     
     if args.experiment:

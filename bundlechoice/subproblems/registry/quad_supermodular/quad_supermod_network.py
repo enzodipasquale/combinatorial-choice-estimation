@@ -139,7 +139,8 @@ class MinCutSubmodularSolver:
         Returns:
             S: List of node indices on the source side of the min-cut (excluding 's')
         """
-        cut_value, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.edmonds_karp)
+        # Use push_relabel instead of edmonds_karp for better performance on dense graphs
+        cut_value, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.preflow_push)
         S,T = partition
         S = list(S - {'s'})
         

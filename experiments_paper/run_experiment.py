@@ -45,7 +45,7 @@ def create_output_directory(experiment_name: str) -> Path:
 
 def main():
     parser = argparse.ArgumentParser(description='Run complete experiment pipeline')
-    parser.add_argument('experiment', type=str, choices=['greedy', 'supermod', 'knapsack', 'supermodknapsack'],
+    parser.add_argument('experiment', type=str, choices=['greedy', 'supermod', 'knapsack', 'quadknapsack', 'plain_single_item'],
                        help='Experiment type to run')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
     parser.add_argument('--output-dir', type=str, default=None, 
