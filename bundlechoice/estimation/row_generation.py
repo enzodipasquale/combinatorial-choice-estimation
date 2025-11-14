@@ -94,6 +94,9 @@ class RowGenerationSolver(BaseEstimationSolver):
                 for k in range(self.num_features):
                     if k < len(self.row_generation_cfg.theta_lbs) and self.row_generation_cfg.theta_lbs[k] is not None:
                         theta[k].lb = float(self.row_generation_cfg.theta_lbs[k])
+            else:
+                # Default: non-negativity constraints (lb=0 for all variables)
+                theta.lb = 0.0
             
             # Apply warm start if provided
             if self.theta_init is not None:

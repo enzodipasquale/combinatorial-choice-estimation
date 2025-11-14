@@ -4,17 +4,15 @@ This directory contains scripts for running numerical experiments comparing naiv
 
 ## Structure
 
-Each experiment type runs both naive and IV methods:
-- `greedy/` - Greedy subproblem (runs both naive and IV)
-- `supermod/` - Quadratic Supermodular Network (runs both naive and IV)
-- `knapsack/` - Linear Knapsack (runs both naive and IV)
-- `quadknapsack/` - Quadratic Knapsack (runs both naive and IV)
+Top-level organization highlights the most important folders:
+- `00_logs/` – Centralized SLURM outputs (`*.out`, `*.err`)
+- `01_outputs/` – Timestamped experiment outputs created by the pipeline
+- `02_estimations/` – All estimation code grouped by method
+  - `naive/<experiment>/`
+  - `iv/<experiment>/`
+  (Legacy names such as `greedy_naive` are still auto-detected by the scripts if present.)
 
-For backward compatibility, separate directories exist:
-- `greedy_naive/`, `greedy_iv/` - Separate directories for greedy
-- `supermod_naive/`, `supermod_iv/` - Separate directories for supermodular
-- `knapsack_naive/`, `knapsack_iv/` - Separate directories for knapsack
-- `quadknapsack_naive/`, `quadknapsack_iv/` - Separate directories for quad knapsack
+If a combined directory like `greedy/` is provided, the pipeline will use it directly; otherwise it pairs the naive and IV folders from `02_estimations/`.
 
 Each directory contains:
 - `config.yaml` - Experiment configuration (optional)
@@ -38,17 +36,17 @@ This will:
 3. Copy raw results to a timestamped output directory
 4. Generate summary statistics
 5. Generate LaTeX tables (3x3 grid format comparing naive vs IV)
-6. Save all outputs in `experiments_paper_inversion/outputs/greedy_YYYYMMDD_HHMMSS/`
+6. Save all outputs in `experiments_paper_inversion/01_outputs/greedy_YYYYMMDD_HHMMSS/`
 
 ### Running Multiple Sizes
 
 ```bash
-python experiments_paper_inversion/run_all_sizes.py greedy_naive --mpi 10 --timeout 600
+python experiments_paper_inversion/run_all_sizes.py experiments/naive/greedy --mpi 10 --timeout 600
 ```
 
 Or for a specific experiment directory:
 ```bash
-python experiments_paper_inversion/run_all_sizes.py greedy_iv --mpi 10 --timeout 600
+python experiments_paper_inversion/run_all_sizes.py experiments/iv/greedy --mpi 10 --timeout 600
 ```
 
 ### Generating Tables Only
@@ -94,7 +92,7 @@ python experiments_paper_inversion/generate_latex_tables.py results.csv --experi
 
 ### Timestamped Outputs
 
-The `run_experiment.py` script creates organized outputs in `experiments_paper_inversion/outputs/experiment_YYYYMMDD_HHMMSS/`:
+The `run_experiment.py` script creates organized outputs in `experiments_paper_inversion/01_outputs/experiment_YYYYMMDD_HHMMSS/`:
 - `results_raw.csv`: Combined results from both naive and IV methods
 - `results_summary.csv`: Aggregated statistics
 - `tables.tex`: LaTeX tables (3x3 grid format)

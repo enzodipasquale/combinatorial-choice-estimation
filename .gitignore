@@ -43,3 +43,5 @@ examples/
 greedy_benchmarking/
 applications/gravity/
 config.yaml.backup
+validation_auction/
+experiments_paper_wellipsoid/

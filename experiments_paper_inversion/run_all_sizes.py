@@ -9,6 +9,9 @@ import subprocess
 from pathlib import Path
 import argparse
 
+BASE_DIR = Path(__file__).parent
+EXPERIMENTS_DIR = BASE_DIR / "experiments"
+
 
 def load_yaml_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -17,7 +20,7 @@ def load_yaml_config(path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description='Run experiments for all sizes')
-    parser.add_argument('experiment_dir', type=str, help='Experiment directory (e.g., greedy_naive)')
+    parser.add_argument('experiment_dir', type=str, help='Experiment directory (e.g., experiments/naive/greedy)')
     parser.add_argument('--sizes', type=str, default='sizes.yaml', 
                        help='Sizes config file (default: sizes.yaml)')
     parser.add_argument('--mpi', type=int, default=10, help='Number of MPI processes (default: 10)')
@@ -26,8 +29,9 @@ def main():
     
     args = parser.parse_args()
     
-    base_dir = Path(__file__).parent
-    exp_dir = base_dir / args.experiment_dir
+    base_dir = BASE_DIR
+    exp_arg = Path(args.experiment_dir)
+    exp_dir = exp_arg if exp_arg.is_absolute() else base_dir / exp_arg
     if not exp_dir.exists():
         print(f"Error: Experiment directory not found: {exp_dir}")
         return 1
@@ -87,15 +91,35 @@ def main():
         env['NUM_AGENTS'] = str(num_agents)
         env['NUM_ITEMS'] = str(num_items)
         
+        # Adjust MPI processes: use min(num_agents, requested_mpi) to avoid deadlocks
+        # with small agent counts
+        effective_mpi = min(num_agents, args.mpi)
+        if effective_mpi != args.mpi:
+            print(f"Note: Using {effective_mpi} MPI processes (limited by {num_agents} agents)")
+        
+        # Check if running under SLURM and launched via srun
+        in_slurm = 'SLURM_JOB_ID' in os.environ
+        launched_via_srun = 'SLURM_PROCID' in os.environ
+        
         # Use timeout wrapper only if timeout is specified (for debugging)
         if args.timeout is not None:
-            cmd = ['python', str(timeout_wrapper), 
+            cmd = [sys.executable, str(timeout_wrapper), 
                    '--timeout', str(args.timeout),
-                   '--mpi', str(args.mpi),
+                   '--mpi', str(effective_mpi),
                    str(run_script)]
         else:
-            # Direct MPI command (no timeout)
-            cmd = ['mpirun', '-n', str(args.mpi), 'python', str(run_script)]
+            # Direct execution (no timeout)
+            if launched_via_srun:
+                # Launched via srun - MPI processes are already set up by SLURM
+                # Just run the Python script directly, mpi4py will use the existing MPI processes
+                cmd = [sys.executable, str(run_script)]
+            elif in_slurm:
+                # Under SLURM but not via srun - use mpirun
+                # SLURM sets OMPI_COMM_WORLD_SIZE automatically, so we don't need to specify -n
+                cmd = ['mpirun', sys.executable, str(run_script)]
+            else:
+                # Local execution - specify number of processes
+                cmd = ['mpirun', '-n', str(effective_mpi), sys.executable, str(run_script)]
         
         try:
             result = subprocess.run(cmd, cwd=str(project_root), env=env, check=True)
