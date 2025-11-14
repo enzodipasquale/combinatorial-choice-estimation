@@ -89,17 +89,17 @@ class CapacityConfig:
     """Configuration for agent capacity generation (knapsack).
     
     Supports two methods:
-    1. Fixed fraction (most standard): capacity = int(fraction * sum(weights))
-    2. Variance-based: capacity = random in [lower_mult * mean, upper_mult * mean]
-       where mean = mean_multiplier * sum(weights)
+    1. Fixed fraction: capacity = int(fraction * sum(weights)) - deterministic, same for all agents
+    2. Variance-based (default): capacity = random in [lower_mult * mean, upper_mult * mean]
+       where mean = mean_multiplier * sum(weights) - random per agent
     
-    Default uses variance-based method with mean_multiplier=0.45 for backward compatibility.
+    Default uses variance-based method with mean_multiplier=0.45 for randomness.
     """
 
-    # Method 1: Fixed fraction (most standard)
+    # Method 1: Fixed fraction (deterministic)
     fraction: Optional[float] = None  # If set, use fixed fraction of total weight
     
-    # Method 2: Variance-based (legacy, default)
+    # Method 2: Variance-based (default, random)
     mean_multiplier: Optional[float] = None  # Multiplier for mean capacity (default 0.45 if fraction not set)
     lower_multiplier: float = 0.85  # Lower bound multiplier
     upper_multiplier: float = 1.15  # Upper bound multiplier
@@ -107,7 +107,7 @@ class CapacityConfig:
     def __post_init__(self):
         """Set default mean_multiplier if fraction not specified."""
         if self.fraction is None and self.mean_multiplier is None:
-            # Default to variance-based with 0.45 for backward compatibility
+            # Default to variance-based with 0.45 for randomness
             object.__setattr__(self, 'mean_multiplier', 0.45)
         elif self.fraction is not None and self.mean_multiplier is not None:
             raise ValueError("Cannot specify both 'fraction' and 'mean_multiplier'. Choose one method.")

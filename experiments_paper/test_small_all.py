@@ -102,8 +102,8 @@ def check_results_csv(csv_path, experiment_name):
     return True
 
 
-def run_experiment(experiment_name):
-    """Run a single experiment with small sizes."""
+def run_experiment(experiment_name, num_agents=None, num_items=None):
+    """Run a single experiment with specified sizes."""
     print(f"\n{'='*70}")
     print(f"Testing: {experiment_name}")
     print(f"{'='*70}")
@@ -113,20 +113,20 @@ def run_experiment(experiment_name):
         print(f"✗ Experiment directory not found: {exp_dir}")
         return False
     
-    # Clear existing results
+    # Clear existing results only on first run
     results_path = exp_dir / 'results.csv'
-    if results_path.exists():
+    if results_path.exists() and num_agents is None:
         results_path.unlink()
         print(f"  Cleared existing results.csv")
     
-    # Set environment variables for small test
-    sizes_cfg = BASE_DIR / 'test_small_sizes.yaml'
-    with open(sizes_cfg, 'r') as f:
-        sizes = yaml.safe_load(f)
-    
-    size_def = sizes['sizes']['small']
-    num_agents = size_def['num_agents']
-    num_items = size_def['num_items']
+    # Get sizes - use provided or from config
+    if num_agents is None or num_items is None:
+        sizes_cfg = BASE_DIR / 'test_small_sizes.yaml'
+        with open(sizes_cfg, 'r') as f:
+            sizes = yaml.safe_load(f)
+        size_def = sizes['sizes']['small']
+        num_agents = size_def['num_agents']
+        num_items = size_def['num_items']
     
     env = os.environ.copy()
     env['NUM_AGENTS'] = str(num_agents)
@@ -264,22 +264,46 @@ def main():
     parser = argparse.ArgumentParser(description='Test small experiments without MPI')
     parser.add_argument('experiment', type=str, nargs='?', choices=EXPERIMENTS + ['all'],
                        default='all', help='Experiment to test (default: all)')
+    parser.add_argument('--sizes', type=str, nargs='+', default=None,
+                       help='Agent sizes to test (e.g., --sizes 100 200). Items fixed at 50.')
     args = parser.parse_args()
     
     experiments_to_run = EXPERIMENTS if args.experiment == 'all' else [args.experiment]
     
-    print("Testing small experiments without MPI")
+    # Determine sizes to run
+    if args.sizes:
+        agent_sizes = [int(s) for s in args.sizes]
+        item_size = 50  # Fixed at 50 items
+        sizes_to_run = [(a, item_size) for a in agent_sizes]
+    else:
+        # Default: use test_small_sizes.yaml
+        sizes_to_run = [(None, None)]  # Will use config file
+    
+    print("Testing experiments without MPI")
     print("=" * 70)
+    if args.sizes:
+        print(f"Running sizes: {sizes_to_run}")
+    print()
     
     results = {}
     
     for exp in experiments_to_run:
-        success = run_experiment(exp)
-        if success:
+        exp_results = {}
+        for num_agents, num_items in sizes_to_run:
+            size_key = f"{num_agents}_{num_items}" if num_agents else "default"
+            print(f"\n{'='*70}")
+            print(f"Running {exp} - Agents: {num_agents}, Items: {num_items}")
+            print(f"{'='*70}")
+            
+            success = run_experiment(exp, num_agents=num_agents, num_items=num_items)
+            exp_results[size_key] = success
+        
+        # Test table generation after all sizes are run
+        if any(exp_results.values()):
             table_success = test_table_generation(exp)
-            results[exp] = {'run': success, 'table': table_success}
+            results[exp] = {'run': all(exp_results.values()), 'table': table_success, 'sizes': exp_results}
         else:
-            results[exp] = {'run': False, 'table': False}
+            results[exp] = {'run': False, 'table': False, 'sizes': exp_results}
     
     # Summary
     print(f"\n{'='*70}")
@@ -290,6 +314,10 @@ def main():
     for exp, res in results.items():
         status = "✓" if (res['run'] and res['table']) else "✗"
         print(f"{status} {exp:20s} - Run: {res['run']}, Table: {res['table']}")
+        if 'sizes' in res:
+            for size_key, size_success in res['sizes'].items():
+                size_status = "✓" if size_success else "✗"
+                print(f"    {size_status} Size {size_key}: {size_success}")
         if not (res['run'] and res['table']):
             all_passed = False
     

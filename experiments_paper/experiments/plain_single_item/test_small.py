@@ -9,7 +9,6 @@ from datetime import datetime
 from bundlechoice.core import BundleChoice
 from bundlechoice.factory import ScenarioLibrary
 from bundlechoice.estimation import RowGeneration1SlackSolver
-from bundlechoice.factory.utils import mpi_call_with_timeout
 
 
 def main():
@@ -45,18 +44,11 @@ def main():
 
     # Prepare with theta_true to avoid generating bundles twice
     # This generates bundles internally and returns them in estimation_data
-    def prepare_scenario():
-        return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
-
-    prepared = mpi_call_with_timeout(
-        comm, prepare_scenario, timeout_seconds, "plain_single_item-prep-test"
-    )
+    prepared = scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
 
     # Get observed bundles from prepare() (already computed with theta_true) - only on rank 0
     if rank == 0:
         obs_bundles = prepared.estimation_data["obs_bundle"]
-        print(f"  Aggregate demands: {obs_bundles.sum(1).min()} to {obs_bundles.sum(1).max()}")
-        print(f"  Total aggregate: {obs_bundles.sum()}")
     else:
         obs_bundles = None
 
@@ -70,12 +62,7 @@ def main():
         print("\nRunning row generation...")
         tic = datetime.now()
 
-    def solve_row_gen():
-        return bc.row_generation.solve()
-
-    theta_row = mpi_call_with_timeout(
-        comm, solve_row_gen, timeout_seconds, "plain_single_item-rg-test"
-    )
+    theta_row = bc.row_generation.solve()
 
     if rank == 0:
         elapsed = (datetime.now() - tic).total_seconds()
@@ -97,12 +84,7 @@ def main():
         subproblem_manager=bc.subproblem_manager,
     )
 
-    def solve_row_gen_1slack():
-        return rg1.solve()
-
-    theta_row1 = mpi_call_with_timeout(
-        comm, solve_row_gen_1slack, timeout_seconds, "plain_single_item-rg1-test"
-    )
+    theta_row1 = rg1.solve()
 
     if rank == 0:
         elapsed = (datetime.now() - tic).total_seconds()

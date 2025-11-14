@@ -37,7 +37,6 @@ class DataManager(HasDimensions, HasComm):
 
     def load(self, input_data: Dict[str, Any]) -> None:
         """Load input data (validated, stored on rank 0 only)."""
-        logger.info("Loading input data.")
         self._validate_input_data(input_data)
         if self.is_root():
             self.input_data = input_data
@@ -83,6 +82,18 @@ class DataManager(HasDimensions, HasComm):
             has_agent_data = len(agent_data) > 0
             has_obs_bundles = obs_bundles is not None
             has_item_data = item_data is not None
+            
+            # Print summary header
+            print("=" * 70)
+            print("DATA SCATTER")
+            print("=" * 70)
+            total_agents = self.num_simuls * self.num_agents
+            sim_info = f" ({self.num_simuls} simuls × {self.num_agents} agents)" if self.num_simuls > 1 else ""
+            print(f"  Scattering: {total_agents} agents{sim_info} → {self.comm_size} ranks")
+            if len(set(counts)) == 1:
+                print(f"  Distribution: {counts[0]} agents/rank (balanced)")
+            else:
+                print(f"  Distribution: {min(counts)}-{max(counts)} agents/rank (min={min(counts)}, max={max(counts)})")
         else:
             errors = None
             obs_bundles = None
@@ -105,6 +116,9 @@ class DataManager(HasDimensions, HasComm):
         # Scatter errors using buffer-based method (5-20x faster than pickle)
         # Need to multiply counts by num_items for 2D arrays (shape: [agents, items])
         flat_counts = [c * self.num_items for c in counts]
+        if self.is_root():
+            print("  Arrays:")
+            print(f"    Errors: shape=({self.num_simuls * self.num_agents}, {self.num_items})")
         local_errors_flat = self.comm_manager.scatter_array(
             send_array=errors, counts=flat_counts, root=0, 
             dtype=errors.dtype if self.is_root() else np.float64
@@ -113,6 +127,8 @@ class DataManager(HasDimensions, HasComm):
         
         # Scatter obs_bundles if present - use buffer scatter_array for speed
         if has_obs_bundles:
+            if self.is_root():
+                print(f"    Obs_bundles: shape=({self.num_agents}, {self.num_items})")
             if self.is_root():
                 # Create obs_chunks the old way
                 obs_chunks = []
@@ -133,8 +149,12 @@ class DataManager(HasDimensions, HasComm):
         
         # Scatter agent_data dict if present - use pickle scatter for flexibility
         if has_agent_data:
-            # Create chunks the old way
             if self.is_root():
+                # Print "Dictionaries:" header before first dictionary
+                print("  Dictionaries:")
+                keys_str = ", ".join(agent_data.keys())
+                print(f"    Agent_data: {len(agent_data)} keys [{keys_str}], {self.num_agents} agents")
+                # Create chunks the old way
                 agent_data_chunks = []
                 for idx in idx_chunks:
                     chunk_dict = {
@@ -150,6 +170,12 @@ class DataManager(HasDimensions, HasComm):
         
         # Broadcast item_data (already optimized with buffer-based broadcast_dict)
         if has_item_data:
+            if self.is_root():
+                # Print "Dictionaries:" header only if agent_data wasn't printed (so this is first)
+                if not has_agent_data:
+                    print("  Dictionaries:")
+                keys_str = ", ".join(item_data.keys())
+                print(f"    Item_data: {len(item_data)} keys [{keys_str}], {self.num_items} items")
             item_data = self.comm_manager.broadcast_dict(item_data, root=0)
         else:
             item_data = None
@@ -161,7 +187,10 @@ class DataManager(HasDimensions, HasComm):
             "errors": local_errors,
             "obs_bundles": local_obs_bundles,
         }
-        self.num_local_agents = num_local_agents 
+        self.num_local_agents = num_local_agents
+        if self.is_root():
+            print(f"  Complete: {num_local_agents} local agents/rank")
+            print()  # Blank line to separate from next section 
 
     # --- Helper Methods ---
     def _prepare_errors(self, errors: Optional[np.ndarray]) -> Optional[np.ndarray]:

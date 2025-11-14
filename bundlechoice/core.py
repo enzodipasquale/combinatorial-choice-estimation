@@ -324,19 +324,47 @@ class BundleChoice(HasComm, HasConfig):
         
         self.config.validate()
 
-        logger.info("BundleChoice configured:")
-        if self.config.dimensions.num_agents is not None:
-            logger.info(f"  • {self.config.dimensions.num_agents} agents")
-        if self.config.dimensions.num_items is not None:
-            logger.info(f"  • {self.config.dimensions.num_items} items")
-        if self.config.dimensions.num_features is not None:
-            logger.info(f"  • {self.config.dimensions.num_features} features")
-        if self.config.dimensions.num_simuls > 1:
-            logger.info(f"  • {self.config.dimensions.num_simuls} simulations")
-        if self.config.subproblem.name:
-            logger.info(f"  • Algorithm: {self.config.subproblem.name}")
-        if hasattr(self.config, 'row_generation') and self.config.row_generation.max_iters != float('inf'):
-            logger.info(f"  • Max iterations: {self.config.row_generation.max_iters}")
-        if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:
-            logger.info(f"  • Ellipsoid iterations: {self.config.ellipsoid.max_iterations}")
+        # Use print for configuration to avoid logging prefix clutter
+        if self.is_root():
+            print("=" * 70)
+            print("BUNDLECHOICE CONFIGURATION")
+            print("=" * 70)
+            
+            # Problem dimensions
+            print("Problem Dimensions:")
+            if self.config.dimensions.num_agents is not None:
+                print(f"  • Agents: {self.config.dimensions.num_agents}")
+            if self.config.dimensions.num_items is not None:
+                print(f"  • Items: {self.config.dimensions.num_items}")
+            if self.config.dimensions.num_features is not None:
+                print(f"  • Features: {self.config.dimensions.num_features}")
+            if self.config.dimensions.num_simuls > 1:
+                print(f"  • Simulations: {self.config.dimensions.num_simuls}")
+            
+            # Subproblem configuration
+            if self.config.subproblem.name:
+                print("\nSubproblem:")
+                print(f"  • Algorithm: {self.config.subproblem.name}")
+                settings = self.config.subproblem.settings
+                if settings:
+                    if 'TimeLimit' in settings:
+                        print(f"  • TimeLimit: {settings['TimeLimit']}s")
+                    if 'MIPGap_tol' in settings:
+                        print(f"  • MIPGap tolerance: {settings['MIPGap_tol']}")
+                    if 'OutputFlag' in settings:
+                        print(f"  • Gurobi output: {'enabled' if settings['OutputFlag'] == 1 else 'disabled'}")
+            
+            # Ellipsoid configuration
+            if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:
+                print("\nEllipsoid:")
+                print(f"  • Max iterations: {self.config.ellipsoid.max_iterations}")
+                if self.config.ellipsoid.tolerance != 1e-6:
+                    print(f"  • Tolerance: {self.config.ellipsoid.tolerance}")
+            
+            # MPI information
+            if self.comm_manager is not None:
+                print("\nParallelization:")
+                print(f"  • MPI workers: {self.comm_manager.comm.Get_size()}")
+            
+            print()  # Blank line to separate from next section
         return self
