@@ -1,4 +1,4 @@
 sizes:
   small:
-    num_agents: 100
-    num_items: 50
+    num_agents: 50
+    num_items: 25
