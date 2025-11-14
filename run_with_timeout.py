@@ -8,31 +8,38 @@ import sys
 TIMEOUT_SECONDS = 60
 
 
-def timeout_handler(signum, frame):
-    """Handle timeout."""
-    print(f"\n❌ TIMEOUT after {TIMEOUT_SECONDS} seconds", flush=True)
-    sys.exit(124)
-
-
 def main():
     """Run command with timeout."""
     if len(sys.argv) < 2:
-        print("Usage: python run_with_timeout.py <command> [args...]")
+        print("Usage: python run_with_timeout.py [--timeout=SECONDS] <command> [args...]")
         sys.exit(1)
 
-    # Parse timeout if provided as first arg
+    # Parse timeout
     timeout = TIMEOUT_SECONDS
+    cmd_start = 1
+    
     if sys.argv[1].startswith("--timeout="):
         timeout = int(sys.argv[1].split("=")[1])
-        cmd = sys.argv[2:]
-    else:
-        cmd = sys.argv[1:]
+        cmd_start = 2
+    elif sys.argv[1] == "--timeout" and len(sys.argv) > 2:
+        timeout = int(sys.argv[2])
+        cmd_start = 3
+    
+    if cmd_start >= len(sys.argv):
+        print("Error: No command provided", file=sys.stderr)
+        sys.exit(1)
+    
+    cmd = sys.argv[cmd_start:]
+
+    def timeout_handler(signum, frame):
+        """Handle timeout."""
+        print(f"\n❌ TIMEOUT after {timeout} seconds", flush=True)
+        sys.exit(124)
 
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
 
     try:
-        # Join command and run
         full_cmd = " ".join(cmd)
         result = subprocess.run(full_cmd, shell=True)
         signal.alarm(0)
