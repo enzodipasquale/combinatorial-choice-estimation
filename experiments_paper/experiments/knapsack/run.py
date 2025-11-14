@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
+from bundlechoice.factory import ScenarioLibrary
 from bundlechoice.estimation import RowGeneration1SlackSolver, EllipsoidSolver
+from bundlechoice.factory.utils import mpi_call_with_timeout
 
 
 def load_yaml_config(path: str) -> dict:
@@ -29,6 +31,7 @@ def main():
     sigma = cfg.get('sigma', 1.0)
     num_replications = cfg.get('num_replications', 1)
     base_seed = cfg.get('base_seed', 12345)
+    timeout_seconds = cfg.get('timeout_seconds', 600)
 
     results_path = os.path.join(base_dir, cfg.get('results_csv', 'results.csv'))
 
@@ -52,62 +55,59 @@ def main():
 
     for rep in range(num_replications):
         seed = int(base_seed + rep)
-        np.random.seed(seed)
 
-        if rank == 0:
-            modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, modular_agent_features)))
-            modular_item = np.abs(np.random.normal(0, 1, (num_items, modular_item_features)))
-            weights = np.random.randint(1, 11, num_items)
+        # Use factory to generate data (matches benchmarking/knapsack/experiment.py)
+        scenario = (
+            ScenarioLibrary.linear_knapsack()
+            .with_dimensions(num_agents=num_agents, num_items=num_items)
+            .with_feature_counts(
+                num_agent_features=modular_agent_features,
+                num_item_features=modular_item_features,
+            )
+            .with_num_simuls(num_simuls)
+            .with_sigma(sigma)
+            .with_capacity_config(mean_multiplier=0.5, lower_multiplier=0.85, upper_multiplier=1.15)
+            .build()
+        )
 
-            mean_capacity = int(0.5 * weights.sum())
-            lo = int(0.85 * mean_capacity)
-            hi = int(1.15 * mean_capacity)
-            capacity = np.random.randint(lo, hi + 1, size=num_agents)
+        def prepare_scenario():
+            return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed)
 
-            agent_data = {"modular": modular_agent, "capacity": capacity}
-            item_data = {"modular": modular_item, "weights": weights}
-            errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items))
-            estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
-            data = {"agent_data": agent_data, "item_data": item_data, "errors": errors}
-        else:
-            data = None
+        prepared = mpi_call_with_timeout(
+            comm, prepare_scenario, timeout_seconds, f"knapsack-prep-rep{rep}"
+        )
 
-        # Setup BundleChoice
+        theta_true = prepared.theta_star.copy()
+
+        # Initialize BundleChoice
         bc = BundleChoice()
-        # Override dimensions if set via environment variables
-        cfg_override = cfg.copy()
-        if 'dimensions' in cfg_override:
-            cfg_override['dimensions'] = cfg_override['dimensions'].copy()
-            cfg_override['dimensions']['num_agents'] = num_agents
-            cfg_override['dimensions']['num_items'] = num_items
-        bc.load_config(cfg_override)
-        bc.data.load_and_scatter(data)
-        bc.features.build_from_data()
+        prepared.apply(bc, comm=comm, stage="generation")
+
+        # Generate observed bundles
+        def generate_bundles():
+            return bc.subproblems.init_and_solve(theta_true)
+
+        obs_bundles = mpi_call_with_timeout(
+            comm, generate_bundles, timeout_seconds, f"knapsack-bundles-rep{rep}"
+        )
+
+        # Apply estimation data
+        prepared.apply(bc, comm=comm, stage="estimation")
         bc.subproblems.load()
-
-        theta_true = np.ones(num_features)
-        _ = bc.generate_observations(theta_true)
-
-        if rank == 0:
-            bc.data.input_data["errors"] = estimation_errors
-        bc.data.load_and_scatter(bc.data.input_data if rank == 0 else None)
-
-        # Ensure num_simuls for estimation - need to override again
-        cfg_dims_est = cfg.get('dimensions', {}).copy()
-        cfg_dims_est['num_agents'] = num_agents
-        cfg_dims_est['num_items'] = num_items
-        cfg_dims_est['num_simuls'] = num_simuls
-        bc.load_config({"dimensions": cfg_dims_est})
 
         # Run solvers and time them
         try:
             results = {}
 
+            def solve_row_gen():
+                return bc.row_generation.solve()
+
             t0 = time.time()
-            theta_row = bc.row_generation.solve()
+            theta_row = mpi_call_with_timeout(
+                comm, solve_row_gen, timeout_seconds, f"knapsack-rg-rep{rep}"
+            )
             time_row = time.time() - t0
             obj_row = bc.row_generation.objective(theta_row)
-            # Extract timing stats
             timing_rg = bc.row_generation.timing_stats if bc.row_generation.timing_stats else None
             results['row_generation'] = (theta_row, time_row, obj_row, timing_rg)
 
@@ -119,11 +119,16 @@ def main():
                 feature_manager=bc.feature_manager,
                 subproblem_manager=bc.subproblem_manager,
             )
+
+            def solve_row_gen_1slack():
+                return rg1.solve()
+
             t1 = time.time()
-            theta_row1 = rg1.solve()
+            theta_row1 = mpi_call_with_timeout(
+                comm, solve_row_gen_1slack, timeout_seconds, f"knapsack-rg1-rep{rep}"
+            )
             time_row1 = time.time() - t1
             obj_row1 = bc.row_generation.objective(theta_row1)
-            # Extract timing stats
             timing_rg1 = rg1.timing_stats if rg1.timing_stats else None
             results['row_generation_1slack'] = (theta_row1, time_row1, obj_row1, timing_rg1)
 
@@ -139,17 +144,17 @@ def main():
             )
 
             if rank == 0:
-                # Compute objective consistency checks (same for all methods in this replication)
+                # Compute objective consistency checks
                 th_rg, _, obj_rg, _ = results['row_generation']
                 th_r1, _, obj_r1, _ = results['row_generation_1slack']
                 
                 obj_diff_rg_1slack = abs(obj_rg - obj_r1)
-                obj_diff_rg_ellipsoid = np.nan  # Ellipsoid method not used
-                obj_diff_1slack_ellipsoid = np.nan  # Ellipsoid method not used
+                obj_diff_rg_ellipsoid = np.nan
+                obj_diff_1slack_ellipsoid = np.nan
                 obj_tolerance = 1e-3
                 obj_close_all = (obj_diff_rg_1slack < obj_tolerance)
                 
-                # Write rows with theta_true, theta_est, and timing breakdown
+                # Write rows
                 rows = []
                 for method, (theta, elapsed, objv, timing_stats) in results.items():
                     row = {
@@ -165,10 +170,7 @@ def main():
                         'sigma': sigma,
                         'subproblem': cfg['subproblem']['name']
                     }
-                    # Add timing breakdown (map different methods to common fields)
                     if timing_stats:
-                        # Row generation: pricing_time -> compute, master_time -> solve, mpi_time -> comm
-                        # Ellipsoid: gradient_time -> compute, update_time -> solve, mpi_time -> comm
                         row['timing_compute'] = timing_stats.get('pricing_time', 
                                                                  timing_stats.get('gradient_time', np.nan))
                         row['timing_solve'] = timing_stats.get('master_time',
@@ -186,27 +188,22 @@ def main():
                         row['timing_compute_pct'] = np.nan
                         row['timing_solve_pct'] = np.nan
                         row['timing_comm_pct'] = np.nan
-                    # Add objective consistency checks (same for all methods in replication)
                     row['obj_diff_rg_1slack'] = obj_diff_rg_1slack
                     row['obj_diff_rg_ellipsoid'] = obj_diff_rg_ellipsoid
                     row['obj_diff_1slack_ellipsoid'] = obj_diff_1slack_ellipsoid
                     row['obj_close_all'] = obj_close_all
-                    # Add theta_true columns
                     for k in range(num_features):
                         row[f'theta_true_{k}'] = theta_true[k]
-                    # Add theta_est columns
                     for k in range(num_features):
                         row[f'theta_{k}'] = theta[k]
                     rows.append(row)
                 df = pd.DataFrame(rows)
                 df.to_csv(results_path, mode='a', header=False, index=False)
 
-                # Print quick consistency checks
                 print(f"[rep {rep}] theta close rg vs 1slack: {np.allclose(th_rg, th_r1, atol=1e-2, rtol=0)}; obj diff: {obj_diff_rg_1slack:.6f} (close: {obj_diff_rg_1slack < obj_tolerance})")
                 print(f"[rep {rep}] obj close all methods: {obj_close_all} (tolerance: {obj_tolerance})")
         except Exception as e:
             if rank == 0:
-                # Create error row with all required columns
                 error_row = {
                     'replication': rep,
                     'seed': seed,
@@ -231,7 +228,6 @@ def main():
                     'obj_close_all': False,
                     'error': str(e)
                 }
-                # Add theta columns
                 for k in range(num_features):
                     error_row[f'theta_true_{k}'] = np.nan
                     error_row[f'theta_{k}'] = np.nan
@@ -242,5 +238,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

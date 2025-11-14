@@ -2,10 +2,9 @@ import numpy as np
 import pytest
 import time
 from mpi4py import MPI
-from bundlechoice import estimation
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGeneration1SlackSolver
-from bundlechoice.subproblems.registry.plain_single_item import PlainSingleItemSubproblem
+from bundlechoice.factory import ScenarioLibrary
 
 
 def test_row_generation_1slack_plain_single_item():
@@ -17,62 +16,40 @@ def test_row_generation_1slack_plain_single_item():
     num_features = num_modular_agent_features + num_modular_item_features
     num_simuls = 1
     sigma = 1
+    seed = 42
     
-    cfg = {
-        "dimensions": {
-            "num_agents": num_agents,
-            "num_items": num_items,
-            "num_features": num_features,
-            "num_simuls": num_simuls
-        },
-        "subproblem": {
-            "name": "PlainSingleItem",
-            "settings": {}
-        },
-        "row_generation": {
-            "max_iters": 100,
-            "tolerance_optimality": .0001,
-            "min_iters": 1,
-            "gurobi_settings": {
-                "OutputFlag": 0
-            }
-        }
-    }
+    # Use factory to generate data (no correlation in this test)
+    scenario = (
+        ScenarioLibrary.plain_single_item()
+        .with_dimensions(num_agents=num_agents, num_items=num_items)
+        .with_feature_counts(num_agent_features=num_modular_agent_features, num_item_features=num_modular_item_features)
+        .with_num_simuls(num_simuls)
+        .with_sigma(sigma)
+        .with_correlation(enabled=False)  # No correlation in this test
+        .build()
+    )
     
-    # Generate data on rank 0
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    if rank == 0:
-        errors = sigma * np.random.normal(0, 1, (num_agents, num_items))
-        estimation_errors = sigma * np.random.normal(0, 1, (num_simuls, num_agents, num_items))
-        input_data = {
-            "item_data": {"modular": np.random.normal(0, 1, (num_items, num_modular_item_features))},
-            "agent_data": {"modular": np.random.normal(0, 1, (num_agents, num_items, num_modular_agent_features))},
-            "errors": errors,
-        }
-    else:
-        input_data = None
+    prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed)
+    theta_0 = prepared.theta_star
         
     demo = BundleChoice()
-    demo.load_config(cfg)
-    demo.data.load_and_scatter(input_data)
-    demo.features.build_from_data()
+    prepared.apply(demo, comm=comm, stage="generation")
     
-    theta_0 = np.ones(num_features)
     observed_bundles = demo.subproblems.init_and_solve(theta_0)
     
     # Check that observed_bundles is not None
     if rank == 0:
         assert observed_bundles is not None, "observed_bundles is None!"
-        assert input_data["errors"] is not None, "input_data['errors'] is None!"
         assert observed_bundles.shape == (num_agents, num_items)
         assert np.all(observed_bundles.sum(axis=1) <= 1), "Each agent should select at most one item."
-        no_selection = np.where(observed_bundles.sum(axis=1) == 0)[0]
-
-        modular_agent = input_data["agent_data"]["modular"]
-        modular_item = input_data["item_data"]["modular"]
-        errors = input_data["errors"]
+        
+        # Verify utility maximization
+        modular_agent = prepared.generation_data["agent_data"]["modular"]
+        modular_item = prepared.generation_data["item_data"]["modular"]
+        errors = prepared.generation_data["errors"]
         agent_util = np.einsum('aij,j->ai', modular_agent, theta_0[:num_modular_agent_features])
         item_util = np.dot(modular_item, theta_0[num_modular_agent_features:])
         total_util = agent_util + item_util + errors
@@ -83,14 +60,9 @@ def test_row_generation_1slack_plain_single_item():
             else:
                 assert np.all(total_util[i, :] <= 0), f"Agent {i} made no selection, but has positive utility: {total_util[i, :]}"
         print("theta_0:\n", theta_0)
-        input_data["obs_bundle"] = observed_bundles
-        input_data["errors"] = estimation_errors
-    else:
-        input_data = None
 
-    demo.load_config(cfg)
-    demo.data.load_and_scatter(input_data)
-    demo.features.build_from_data()
+    # Apply estimation data
+    prepared.apply(demo, comm=comm, stage="estimation")
     demo.subproblems.load()
     
     tic = time.time()

@@ -23,7 +23,7 @@ class QuadraticSOptNetworkCached(QuadraticSupermodular):
         super().initialize()
         
         # Build solvers once with initial parameters
-        P_i_j_j = self.build_quadratic_matrix(np.zeros(self.num_params))
+        P_i_j_j = self.build_quadratic_matrix(np.zeros(self.num_features))
         agent_data = self.local_data.get("agent_data") or {}
         constraint_mask = agent_data.get("constraint_mask") if self.has_constraint_mask else None
         
@@ -176,7 +176,8 @@ class MinCutSubmodularSolverCached(MinCutSubmodularSolver):
         """
         Solve the min-cut problem (same as base class for consistency).
         """
-        cut_value, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.edmonds_karp)
+        # Use push_relabel instead of edmonds_karp for better performance on dense graphs
+        cut_value, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.preflow_push)
         S, T = partition
         S = list(S - {'s'})
         return S, cut_value

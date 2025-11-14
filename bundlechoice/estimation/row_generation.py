@@ -90,7 +90,10 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.master_model = self._setup_gurobi_model_params()    
             theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
-                theta.lb = self.row_generation_cfg.theta_lbs
+                # Set bounds per variable, None means unbounded (don't set)
+                for k in range(self.num_features):
+                    if k < len(self.row_generation_cfg.theta_lbs) and self.row_generation_cfg.theta_lbs[k] is not None:
+                        theta[k].lb = float(self.row_generation_cfg.theta_lbs[k])
             
             # Apply warm start if provided
             if self.theta_init is not None:
@@ -109,7 +112,11 @@ class RowGenerationSolver(BaseEstimationSolver):
             self.master_model.optimize()
             logger.info("Master Initialized")
             self.master_variables = (theta, u)
-            self.theta_val = theta.X
+            if self.master_model.Status == GRB.OPTIMAL:
+                self.theta_val = theta.X
+            else:
+                logger.warning("Master problem not optimal at initialization, status=%s", self.master_model.Status)
+                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
             self.log_parameter()
         else:
             self.theta_val = np.empty(self.num_features, dtype=np.float64)

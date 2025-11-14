@@ -9,10 +9,12 @@ from .base import BaseEstimationSolver
 from .row_generation import RowGenerationSolver
 from .row_generation_1slack import RowGeneration1SlackSolver
 from .ellipsoid import EllipsoidSolver
+from .column_generation import ColumnGenerationSolver
 
 __all__ = [
     'BaseEstimationSolver',
     'RowGenerationSolver', 
     'RowGeneration1SlackSolver',
-    'EllipsoidSolver'
+    'EllipsoidSolver',
+    'ColumnGenerationSolver'
 ]

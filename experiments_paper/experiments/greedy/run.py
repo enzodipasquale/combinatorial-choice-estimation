@@ -5,7 +5,9 @@ import pandas as pd
 from mpi4py import MPI
 from datetime import datetime
 from bundlechoice.core import BundleChoice
+from bundlechoice.factory import ScenarioLibrary
 from bundlechoice.estimation import RowGeneration1SlackSolver
+from bundlechoice.factory.utils import mpi_call_with_timeout
 
 
 def load_yaml_config(path: str) -> dict:
@@ -30,6 +32,7 @@ def main():
     sigma = cfg.get('sigma', 1.0)
     num_replications = cfg.get('num_replications', 1)
     base_seed = cfg.get('base_seed', 12345)
+    timeout_seconds = cfg.get('timeout_seconds', 600)  # 10 minutes default
 
     results_path = os.path.join(base_dir, cfg.get('results_csv', 'results.csv'))
 
@@ -50,65 +53,54 @@ def main():
 
     for rep in range(num_replications):
         seed = int(base_seed + rep)
-        np.random.seed(seed)
 
-        # Prepare random data on rank 0
-        if rank == 0:
-            modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features - 1)))
-            errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items))
-            estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
-            agent_data = {"modular": modular_agent}
-            data = {"agent_data": agent_data, "errors": errors}
-        else:
-            data = None
+        # Use factory to generate data (matches benchmarking/greedy/experiment.py)
+        scenario = (
+            ScenarioLibrary.greedy()
+            .with_dimensions(num_agents=num_agents, num_items=num_items)
+            .with_num_features(num_features)
+            .with_num_simuls(num_simuls)
+            .with_sigma(sigma)
+            .build()
+        )
 
-        # Build features oracle
-        def features_oracle(i_id, bundle, data_dict):
-            modular_i = data_dict["agent_data"]["modular"][i_id]
-            if bundle.ndim == 1:
-                return np.concatenate((modular_i.T @ bundle, [-bundle.sum() ** 2]))
-            return np.concatenate((modular_i.T @ bundle, -np.sum(bundle, axis=0, keepdims=True) ** 2), axis=0)
+        def prepare_scenario():
+            return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed)
 
-        # Setup BundleChoice
+        prepared = mpi_call_with_timeout(
+            comm, prepare_scenario, timeout_seconds, f"greedy-prep-rep{rep}"
+        )
+
+        theta_true = prepared.theta_star.copy()
+        theta_true[-1] = 0.1  # Custom theta for greedy (matches benchmarking)
+
+        # Initialize BundleChoice
         bc = BundleChoice()
-        # Override dimensions if set via environment variables
-        cfg_override = cfg.copy()
-        if 'dimensions' in cfg_override:
-            cfg_override['dimensions'] = cfg_override['dimensions'].copy()
-            cfg_override['dimensions']['num_agents'] = num_agents
-            cfg_override['dimensions']['num_items'] = num_items
-        bc.load_config(cfg_override)
-        bc.data.load_and_scatter(data)
-        bc.features.set_oracle(features_oracle)
+        prepared.apply(bc, comm=comm, stage="generation")
+
+        # Generate observed bundles
+        def generate_bundles():
+            return bc.subproblems.init_and_solve(theta_true)
+
+        obs_bundles = mpi_call_with_timeout(
+            comm, generate_bundles, timeout_seconds, f"greedy-bundles-rep{rep}"
+        )
+
+        # Apply estimation data
+        prepared.apply(bc, comm=comm, stage="estimation")
         bc.subproblems.load()
-
-        # Generate observations with true theta (without rebuilding features)
-        theta_true = np.ones(num_features)
-        theta_true[-1] = 0.1
-        obs_bundles = bc.subproblems.init_and_solve(theta_true)
-        if rank == 0:
-            input_data = bc.data.input_data if bc.data.input_data is not None else {}
-            input_data["agent_data"] = input_data.get("agent_data", {})
-            input_data["agent_data"]["modular"] = agent_data["modular"]
-            input_data["errors"] = estimation_errors
-            input_data["obs_bundle"] = obs_bundles
-        else:
-            input_data = None
-        bc.data.load_and_scatter(input_data)
-
-        # Ensure num_simuls for estimation - need to override again
-        cfg_dims_est = cfg.get('dimensions', {}).copy()
-        cfg_dims_est['num_agents'] = num_agents
-        cfg_dims_est['num_items'] = num_items
-        cfg_dims_est['num_simuls'] = num_simuls
-        bc.load_config({"dimensions": cfg_dims_est})
 
         # Run solvers and time them
         try:
             results = {}
 
+            def solve_row_gen():
+                return bc.row_generation.solve()
+
             t0 = time.time()
-            theta_row = bc.row_generation.solve()
+            theta_row = mpi_call_with_timeout(
+                comm, solve_row_gen, timeout_seconds, f"greedy-rg-rep{rep}"
+            )
             time_row = time.time() - t0
             obj_row = bc.row_generation.objective(theta_row)
             # Extract timing stats
@@ -123,8 +115,14 @@ def main():
                 feature_manager=bc.feature_manager,
                 subproblem_manager=bc.subproblem_manager,
             )
+
+            def solve_row_gen_1slack():
+                return rg1.solve()
+
             t1 = time.time()
-            theta_row1 = rg1.solve()
+            theta_row1 = mpi_call_with_timeout(
+                comm, solve_row_gen_1slack, timeout_seconds, f"greedy-rg1-rep{rep}"
+            )
             time_row1 = time.time() - t1
             obj_row1 = bc.row_generation.objective(theta_row1)
             # Extract timing stats
@@ -160,8 +158,6 @@ def main():
                     }
                     # Add timing breakdown (map different methods to common fields)
                     if timing_stats:
-                        # Row generation: pricing_time -> compute, master_time -> solve, mpi_time -> comm
-                        # Ellipsoid: gradient_time -> compute, update_time -> solve, mpi_time -> comm
                         row['timing_compute'] = timing_stats.get('pricing_time', 
                                                                  timing_stats.get('gradient_time', np.nan))
                         row['timing_solve'] = timing_stats.get('master_time',
@@ -235,5 +231,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
