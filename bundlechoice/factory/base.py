@@ -108,7 +108,7 @@ class SyntheticScenario:
     config_factory: Callable[[], Dict[str, Any]]
     feature_spec: FeatureSpec
     payload_factory: Callable[
-        [BundleChoice, MPI.Comm, FeatureSpec, Optional[int], Optional[int]],
+        [BundleChoice, MPI.Comm, FeatureSpec, Optional[int], Optional[int], Any],
         Dict[str, Dict[str, Any]],
     ]
     theta_factory: Callable[[], Any]
@@ -120,14 +120,22 @@ class SyntheticScenario:
         comm: MPI.Comm = MPI.COMM_WORLD,
         timeout_seconds: Optional[int] = None,
         seed: Optional[int] = None,
+        theta: Optional[Any] = None,
     ) -> PreparedScenario:
         """
         Materialize the scenario by generating both the simulation and
         estimation datasets.  Returns a ``PreparedScenario``.
+        
+        Args:
+            comm: MPI communicator
+            timeout_seconds: Timeout for operations
+            seed: Random seed for data generation
+            theta: Optional theta vector to use for bundle generation. 
+                   If None, uses default theta_star (all ones).
         """
 
         config = self.config_factory()
-        theta_star = self.theta_factory()
+        theta_star = theta if theta is not None else self.theta_factory()
 
         bc = BundleChoice()
         bc.load_config(config)
@@ -138,6 +146,7 @@ class SyntheticScenario:
             self.feature_spec,
             timeout_seconds,
             seed,
+            theta_star,
         )
 
         generation_data = payload.get("generation")
