@@ -17,7 +17,7 @@ modular_item_features: 2
 subproblem:
   name: LinearKnapsack
   settings:
-    TimeLimit: 10
+    TimeLimit: 90
     MIPGap_tol: 0.01
 
 row_generation:

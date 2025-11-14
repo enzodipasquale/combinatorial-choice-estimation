@@ -132,18 +132,27 @@ def run_experiment(experiment_name):
     env['NUM_AGENTS'] = str(num_agents)
     env['NUM_ITEMS'] = str(num_items)
     
+    # Temporarily modify config to set num_replications to 1 and adjust timeout
+    config_path = exp_dir / 'config.yaml'
+    backup_path = config_path.with_suffix('.yaml.backup')
+    
+    if backup_path.exists():
+        shutil.copy(backup_path, config_path)
+    else:
+        shutil.copy(config_path, backup_path)
+    
+    cfg = yaml.safe_load(open(config_path))
+    original_replications = cfg.get('num_replications', 1)
+    original_timeout = cfg.get('timeout_seconds', 600)
+    
+    cfg['num_replications'] = 1  # Set to 1 for small tests
+    
     # Increase timeout for quadknapsack (it's computationally expensive)
     if experiment_name == 'quadknapsack':
-        # Temporarily modify config to increase timeout
-        config_path = exp_dir / 'config.yaml'
-        backup_path = config_path.with_suffix('.yaml.backup')
-        if backup_path.exists():
-            shutil.copy(backup_path, config_path)
-        else:
-            shutil.copy(config_path, backup_path)
-        
-        cfg = yaml.safe_load(open(config_path))
         cfg['timeout_seconds'] = 1200  # 20 minutes for small test
+    
+    # Only write if we actually changed something
+    if cfg.get('num_replications', 1) != original_replications or cfg.get('timeout_seconds', 600) != original_timeout:
         with open(config_path, 'w') as f:
             yaml.dump(cfg, f)
     
@@ -180,12 +189,11 @@ def run_experiment(experiment_name):
         return False
     
     # Restore config if we modified it
-    if experiment_name == 'quadknapsack':
-        config_path = exp_dir / 'config.yaml'
-        backup_path = config_path.with_suffix('.yaml.backup')
-        if backup_path.exists():
-            shutil.copy(backup_path, config_path)
-            backup_path.unlink()
+    config_path = exp_dir / 'config.yaml'
+    backup_path = config_path.with_suffix('.yaml.backup')
+    if backup_path.exists():
+        shutil.copy(backup_path, config_path)
+        backup_path.unlink()
     
     # Check results
     if not check_results_csv(results_path, experiment_name):
@@ -252,12 +260,20 @@ def test_table_generation(experiment_name):
 
 
 def main():
-    print("Testing all small experiments without MPI")
+    import argparse
+    parser = argparse.ArgumentParser(description='Test small experiments without MPI')
+    parser.add_argument('experiment', type=str, nargs='?', choices=EXPERIMENTS + ['all'],
+                       default='all', help='Experiment to test (default: all)')
+    args = parser.parse_args()
+    
+    experiments_to_run = EXPERIMENTS if args.experiment == 'all' else [args.experiment]
+    
+    print("Testing small experiments without MPI")
     print("=" * 70)
     
     results = {}
     
-    for exp in EXPERIMENTS:
+    for exp in experiments_to_run:
         success = run_experiment(exp)
         if success:
             table_success = test_table_generation(exp)
