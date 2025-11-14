@@ -40,9 +40,6 @@ prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed, theta=the
 # Get observed bundles from prepare() (already computed with theta_0) - only on rank 0
 if rank == 0:
     obs_bundles = prepared.estimation_data["obs_bundle"]
-    print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
-    print(f"aggregate: {obs_bundles.sum()}")
-    print(f"demand_j: {obs_bundles.sum(0)}")
     # Save data files
     agent_data = prepared.generation_data["agent_data"]
     pd.DataFrame(obs_bundles.astype(int)).to_csv(os.path.join(SAVE_PATH, "obs_bundles.csv"), index=False, header=False)
@@ -59,7 +56,6 @@ obj_at_estimate = greedy_experiment.row_generation.objective(lambda_k_iter)
 obj_at_star = greedy_experiment.row_generation.objective(theta_0)
 # Save estimation results as CSV
 if rank == 0:
-    print(f"estimation results:{lambda_k_iter}")
     print(f"obj at estimate: {obj_at_estimate}")
     print(f"obj at star: {obj_at_star}")
     row = {

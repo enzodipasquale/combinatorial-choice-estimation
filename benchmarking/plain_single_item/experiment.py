@@ -40,9 +40,6 @@ prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed, theta=the
 # Get observed bundles from prepare() (already computed with theta_0) - only on rank 0
 if rank == 0:
     obs_bundles = prepared.estimation_data["obs_bundle"]
-    print(f"aggregate demands: {obs_bundles.sum(1).min()}, {obs_bundles.sum(1).max()}")
-    print(f"aggregate: {obs_bundles.sum()}")
-    print(f"demand_j: {obs_bundles.sum(0)}")
     
     # Create directory if it doesn't exist
     os.makedirs(SAVE_PATH, exist_ok=True)
@@ -64,7 +61,6 @@ obj_at_star = plain_single_item_experiment.row_generation.objective(theta_0)
 
 # Save estimation results as CSV
 if rank == 0:
-    print(f"estimation results:{lambda_k_iter}")
     print(f"obj at estimate: {obj_at_estimate}")
     print(f"obj at star: {obj_at_star}")
     row = {

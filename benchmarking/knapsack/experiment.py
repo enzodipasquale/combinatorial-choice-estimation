@@ -44,7 +44,6 @@ prepared = scenario.prepare(comm=comm, timeout_seconds=300, seed=seed, theta=the
 # Get observed bundles from prepare() (already computed with theta_0) - only on rank 0
 if rank == 0:
     obs_bundles = prepared.estimation_data["obs_bundle"]
-    print(f"aggregate demands: {obs_bundles.sum(1).min()},{obs_bundles.sum(1).mean()} , {obs_bundles.sum(1).max()}")
     
     # Save data files
     agent_data = prepared.generation_data["agent_data"]
@@ -67,8 +66,6 @@ obj_at_star = knapsack_experiment.row_generation.objective(theta_0)
 
 # Save estimation results as CSV
 if rank == 0:
-    print(theta_hat)
-    print(theta_0)
     print(f"obj at estimate: {obj_at_estimate}")
     print(f"obj at star: {obj_at_star}")
 

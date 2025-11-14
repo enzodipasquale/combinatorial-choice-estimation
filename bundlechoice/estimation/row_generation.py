@@ -204,7 +204,26 @@ class RowGenerationSolver(BaseEstimationSolver):
         Returns:
             np.ndarray: Estimated parameter vector.
         """
-        logger.info("=== ROW GENERATION ===")
+        if self.is_root():
+            print("=" * 70)
+            print("ROW GENERATION")
+            print("=" * 70)
+            print()  # Blank line after header
+            print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
+            if self.dimensions_cfg.num_simuls > 1:
+                print(f"  Simulations: {self.dimensions_cfg.num_simuls}")
+            print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
+            print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
+            print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
+            if self.row_generation_cfg.max_slack_counter < float('inf'):
+                print(f"  Max slack counter: {self.row_generation_cfg.max_slack_counter}")
+            if self.row_generation_cfg.tol_row_generation > 0:
+                print(f"  Row generation tolerance: {self.row_generation_cfg.tol_row_generation}")
+            if self.row_generation_cfg.row_generation_decay > 0:
+                print(f"  Tolerance decay: {self.row_generation_cfg.row_generation_decay}")
+            print()  # Blank line before starting
+            print("  Starting row generation algorithm...")
+            print()  # Blank line before iterations
         tic = datetime.now()
         
         t_init = datetime.now()
@@ -212,8 +231,6 @@ class RowGenerationSolver(BaseEstimationSolver):
         self._initialize_master_problem()        
         self.slack_counter = {}
         init_time = (datetime.now() - t_init).total_seconds()
-        
-        logger.info("Starting row generation loop.")
         iteration = 0
         
         # Detailed timing tracking
@@ -261,8 +278,8 @@ class RowGenerationSolver(BaseEstimationSolver):
                 elapsed = (datetime.now() - tic).total_seconds()
                 if self.is_root():
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
-                    logger.info(f"ObjVal: {self.master_model.ObjVal}")
-                    self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown)
+                    obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+                    self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
                 
                 # Store timing statistics
                 if self.is_root():
@@ -293,7 +310,8 @@ class RowGenerationSolver(BaseEstimationSolver):
         elapsed = (datetime.now() - tic).total_seconds()
         if iteration >= self.row_generation_cfg.max_iters and self.is_root():
             logger.info("Row generation reached max iterations (%d) in %.2f seconds.", iteration, elapsed)
-            self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown)
+            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown, obj_val, self.theta_val)
         
         # Store timing statistics for access later
         if self.is_root():
@@ -348,72 +366,74 @@ class RowGenerationSolver(BaseEstimationSolver):
 
 
     def _log_timing_summary(self, init_time: float, total_time: float, 
-                           num_iterations: int, timing_breakdown: Dict[str, List[float]]) -> None:
+                           num_iterations: int, timing_breakdown: Dict[str, List[float]],
+                           obj_val: Optional[float] = None, theta: Optional[NDArray[np.float64]] = None) -> None:
         """Log comprehensive timing summary showing bottlenecks."""
-        logger.info("=" * 70)
-        logger.info("TIMING SUMMARY - Row Generation Performance Analysis")
-        logger.info("=" * 70)
-        logger.info(f"Total iterations: {num_iterations}")
-        logger.info(f"Total time: {total_time:.2f}s")
-        logger.info(f"Initialization time: {init_time:.3f}s ({100*init_time/total_time:.1f}%)")
-        logger.info("-" * 70)
-        
-        # Calculate totals and percentages for each component
-        component_stats = []
-        total_accounted = init_time
-        
-        for component, times in timing_breakdown.items():
-            if len(times) > 0:
-                total = np.sum(times)
-                mean = np.mean(times)
-                std = np.std(times)
-                min_t = np.min(times)
-                max_t = np.max(times)
-                pct = 100 * total / total_time
-                total_accounted += total
-                component_stats.append({
-                    'name': component,
-                    'total': total,
-                    'mean': mean,
-                    'std': std,
-                    'min': min_t,
-                    'max': max_t,
-                    'pct': pct
-                })
-        
-        # Sort by total time (descending) to show bottlenecks first
-        component_stats.sort(key=lambda x: x['total'], reverse=True)
-        
-        logger.info("Component breakdown (sorted by total time):")
-        for stat in component_stats:
-            logger.info(
-                f"  {stat['name']:16s}: {stat['total']:7.2f}s ({stat['pct']:5.1f}%) | "
-                f"avg: {stat['mean']:.3f}s ± {stat['std']:.3f}s | "
-                f"range: [{stat['min']:.3f}s, {stat['max']:.3f}s]"
-            )
-        
-        logger.info("-" * 70)
-        
-        # Combined metrics
-        total_pricing = np.sum(timing_breakdown.get('pricing', [0]))
-        total_mpi = np.sum(timing_breakdown.get('mpi_gather', [0])) + np.sum(timing_breakdown.get('mpi_broadcast', [0]))
-        total_master_work = (np.sum(timing_breakdown.get('master_prep', [0])) + 
-                            np.sum(timing_breakdown.get('master_update', [0])) + 
-                            np.sum(timing_breakdown.get('master_optimize', [0])))
-        
-        logger.info("Aggregated metrics:")
-        logger.info(f"  Total pricing time:        {total_pricing:7.2f}s ({100*total_pricing/total_time:5.1f}%)")
-        logger.info(f"  Total MPI communication:   {total_mpi:7.2f}s ({100*total_mpi/total_time:5.1f}%)")
-        logger.info(f"  Total master problem work: {total_master_work:7.2f}s ({100*total_master_work/total_time:5.1f}%)")
-        
-        if num_iterations > 0:
-            logger.info(f"  Avg time per iteration:    {total_time/num_iterations:.3f}s")
-        
-        unaccounted = total_time - total_accounted
-        if abs(unaccounted) > 0.01:
-            logger.info(f"  Unaccounted time:          {unaccounted:7.2f}s ({100*unaccounted/total_time:5.1f}%)")
-        
-        logger.info("=" * 70)
+        # Use print for statistics to avoid logging prefix clutter
+        if self.is_root():
+            print("=" * 70)
+            print("ROW GENERATION SUMMARY")
+            print("=" * 70)
+            
+            # Show solution results
+            if obj_val is not None:
+                print(f"Objective value at solution: {obj_val:.6f}")
+            if theta is not None:
+                # For high-dimensional theta, show compact representation
+                if len(theta) <= 10:
+                    # Show all values if small
+                    print(f"Theta at solution: {np.array2string(theta, precision=6, suppress_small=True)}")
+                else:
+                    # Show summary for high-dimensional theta
+                    print(f"Theta at solution (dim={len(theta)}):")
+                    print(f"  First 5: {np.array2string(theta[:5], precision=6, suppress_small=True)}")
+                    print(f"  Last 5:  {np.array2string(theta[-5:], precision=6, suppress_small=True)}")
+                    print(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
+            
+            print(f"Total iterations: {num_iterations}")
+            print(f"Total time: {total_time:.2f}s")
+            print()
+            print("Timing Statistics:")
+            
+            # Calculate totals and percentages for each component
+            component_stats = []
+            total_accounted = init_time
+            
+            for component, times in timing_breakdown.items():
+                if len(times) > 0:
+                    total = np.sum(times)
+                    mean = np.mean(times)
+                    std = np.std(times)
+                    min_t = np.min(times)
+                    max_t = np.max(times)
+                    pct = 100 * total / total_time
+                    total_accounted += total
+                    component_stats.append({
+                        'name': component,
+                        'total': total,
+                        'mean': mean,
+                        'std': std,
+                        'min': min_t,
+                        'max': max_t,
+                        'pct': pct
+                    })
+            
+            # Sort by total time (descending) to show bottlenecks first
+            component_stats.sort(key=lambda x: x['total'], reverse=True)
+            
+            print("  Component breakdown (sorted by total time):")
+            for stat in component_stats:
+                print(
+                    f"  {stat['name']:16s}: {stat['total']:7.2f}s ({stat['pct']:5.1f}%) | "
+                    f"avg: {stat['mean']:.3f}s ± {stat['std']:.3f}s | "
+                    f"range: [{stat['min']:.3f}s, {stat['max']:.3f}s]"
+                )
+            
+            unaccounted = total_time - total_accounted
+            if abs(unaccounted) > 0.01:
+                print(f"  Unaccounted time:          {unaccounted:7.2f}s ({100*unaccounted/total_time:5.1f}%)")
+            
+            print()  # Blank line to separate from next section
 
     def log_parameter(self) -> None:
         """Log current parameter values (if parameters_to_log is set in config)."""

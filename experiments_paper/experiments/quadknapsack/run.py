@@ -7,7 +7,6 @@ from bundlechoice.core import BundleChoice
 from bundlechoice.factory import ScenarioLibrary
 from bundlechoice.factory.data_generator import QuadraticGenerationMethod
 from bundlechoice.estimation import RowGeneration1SlackSolver, EllipsoidSolver
-from bundlechoice.factory.utils import mpi_call_with_timeout
 
 
 def load_yaml_config(path: str) -> dict:
@@ -94,12 +93,7 @@ def main():
 
         # Prepare with theta_true to avoid generating bundles twice
         # This generates bundles internally and returns them in estimation_data
-        def prepare_scenario():
-            return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
-
-        prepared = mpi_call_with_timeout(
-            comm, prepare_scenario, timeout_seconds, f"quadknapsack-prep-rep{rep}"
-        )
+        prepared = scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
 
         # Get observed bundles from prepare() (already computed with theta_true) - only on rank 0
         if rank == 0:
@@ -116,13 +110,8 @@ def main():
         try:
             results = {}
 
-            def solve_row_gen():
-                return bc.row_generation.solve()
-
             t0 = time.time()
-            theta_row = mpi_call_with_timeout(
-                comm, solve_row_gen, timeout_seconds, f"quadknapsack-rg-rep{rep}"
-            )
+            theta_row = bc.row_generation.solve()
             time_row = time.time() - t0
             obj_row = bc.row_generation.objective(theta_row)
             timing_rg = bc.row_generation.timing_stats if bc.row_generation.timing_stats else None
@@ -137,13 +126,8 @@ def main():
                 subproblem_manager=bc.subproblem_manager,
             )
 
-            def solve_row_gen_1slack():
-                return rg1.solve()
-
             t1 = time.time()
-            theta_row1 = mpi_call_with_timeout(
-                comm, solve_row_gen_1slack, timeout_seconds, f"quadknapsack-rg1-rep{rep}"
-            )
+            theta_row1 = rg1.solve()
             time_row1 = time.time() - t1
             obj_row1 = bc.row_generation.objective(theta_row1)
             timing_rg1 = rg1.timing_stats if rg1.timing_stats else None

@@ -13,6 +13,9 @@ from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.base import HasDimensions, HasData, HasComm
+from bundlechoice.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 # ============================================================================
@@ -140,6 +143,30 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.initialize_local()
         local_bundles = self.solve_local(theta)
         bundles = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
+        
+        # Log bundle statistics on root rank (using print to avoid logging prefix clutter)
+        if self.is_root() and bundles is not None:
+            bundle_sizes = bundles.sum(axis=1)  # Size of each bundle (number of items selected per agent)
+            item_demands = bundles.sum(axis=0)  # Demand for each item across all agents
+            num_items = bundles.shape[1]
+            num_agents_total = bundles.shape[0]
+            max_possible = num_agents_total * num_items
+            
+            print("=" * 70)
+            print("BUNDLE GENERATION STATISTICS")
+            print("=" * 70)
+            print(f"  Bundle sizes: min={bundle_sizes.min()}, max={bundle_sizes.max()}, mean={bundle_sizes.mean():.2f}, std={bundle_sizes.std():.2f}")
+            print(f"  Aggregate demands: min={item_demands.min()}, max={item_demands.max()}, mean={item_demands.mean():.2f}")
+            print(f"  Total items selected: {bundles.sum()} out of {max_possible}")
+            
+            # Check for edge cases and print warnings
+            if bundle_sizes.max() == 0:
+                print("\n  ⚠️  WARNING: All agents have empty bundles (no items selected)!")
+            elif bundle_sizes.min() == num_items:
+                print(f"\n  ⚠️  WARNING: All agents have full bundles (all {num_items} items selected)!")
+            
+            print()  # Blank line to separate from next section
+        
         if return_values:
             utilities = self.feature_manager.compute_gathered_utilities(local_bundles, theta)
             return bundles, utilities

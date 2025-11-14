@@ -44,13 +44,11 @@ scenario = (
     .with_num_simuls(num_simuls)
     .with_sigma(sigma)
     .with_weight_config(
-        distribution='lognormal',  # More heterogeneity: many small, few large
+        distribution='uniform',  # Uniform distribution (standard for knapsack benchmarks)
         low=1,
-        high=100,  # Wider range for more heterogeneity
-        log_mean=0.0,
-        log_std=2.0,  # Higher std = more heterogeneity
+        high=100,
     )
-    .with_capacity_fraction(0.3)  # Standard: capacity = 30% of total weight
+    # Capacity uses default random variance-based method (random per agent)
     .with_subproblem_settings(OutputFlag=1, TimeLimit=60)  # Enable Gurobi output, 1 minute timeout
     .build()
 )
