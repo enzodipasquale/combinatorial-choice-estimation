@@ -106,8 +106,6 @@ class ColumnGenerationSolver(BaseEstimationSolver):
             self.has_columns = False
             self.alpha_vars = []
             self.beta_vars = []
-            self.alpha_vars = []
-            self.beta_vars = []
 
             for k in range(self.num_features):
                 expr = gp.LinExpr()
@@ -135,8 +133,6 @@ class ColumnGenerationSolver(BaseEstimationSolver):
                 self.beta_vars.append(beta_var)
 
                 rhs = float(obs_features[k] * max(1, self.num_simuls))
-                # Use inequality (>=) when we want to enforce theta[k] >= 0 in the dual
-                # This corresponds to non-negativity constraint on theta in the primal
                 if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
                     constr = self.master_model.addConstr(expr >= rhs, name=f"feature_match[{k}]")
                 else:
@@ -164,26 +160,15 @@ class ColumnGenerationSolver(BaseEstimationSolver):
         dual_prices: NDArray[np.float64],
         agent_penalties: NDArray[np.float64],
     ) -> Tuple[Optional[NDArray[np.bool_]], Optional[NDArray[np.float64]], Optional[NDArray[np.float64]], float]:
-        """
-        Solve pricing problems on local ranks and gather results.
-        """
-        # Extract theta from dual prices:
-        # For >= constraint in maximize: dual_price <= 0 when binding, so theta = -dual_price >= 0
-        # For == constraint: dual_price is free, so theta = -dual_price
+        """Solve pricing problems on local ranks and gather results."""
         modified_theta = np.zeros(len(dual_prices), dtype=np.float64)
         for k in range(len(dual_prices)):
             if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
-                # Inequality constraint: theta[k] >= 0
-                # For >= constraint: dual_price <= 0, so theta = -dual_price >= 0
                 modified_theta[k] = max(self.theta_lower[k], -dual_prices[k])
             else:
-                # Equality constraint: theta[k] = -dual_prices[k] (free)
                 modified_theta[k] = -dual_prices[k]
         
         modified_theta = np.clip(modified_theta, self.theta_lower, self.theta_upper)
-        
-        if self.is_root():
-            logger.debug("Pricing: dual_prices=%s, modified_theta=%s", dual_prices, modified_theta)
         
         try:
             local_bundles = self.subproblem_manager.solve_local(modified_theta)
@@ -354,20 +339,12 @@ class ColumnGenerationSolver(BaseEstimationSolver):
                         if idx < num_si:
                             agent_penalties[idx] = pi_val
                 
-                # Extract theta from dual prices:
-                # For >= constraint in maximize: when binding, increasing RHS decreases objective,
-                # so shadow price (dual_price) is <= 0. But we want theta >= 0, so theta = -dual_price
-                # For == constraint: dual_price is free, so theta = -dual_price (free)
                 self.theta_val = np.zeros(self.num_features, dtype=np.float64)
                 for k in range(self.num_features):
                     if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
-                        # Inequality constraint: theta[k] >= 0
-                        # For >= constraint: dual_price <= 0, so theta = -dual_price >= 0
                         self.theta_val[k] = max(self.theta_lower[k], -dual_prices[k])
                     else:
-                        # Equality constraint: theta[k] = -dual_prices[k] (free)
                         self.theta_val[k] = -dual_prices[k]
-                # Final clip to bounds
                 self.theta_val = np.clip(self.theta_val, self.theta_lower, self.theta_upper)
             else:
                 dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.num_features, dtype=np.float64)
