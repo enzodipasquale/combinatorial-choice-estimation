@@ -114,7 +114,7 @@ def validate_linear_knapsack(seed: int) -> Tuple[bool, str]:
     modular_item_factory = generator.generate_modular_item(
         (num_items, modular_item_features), item_config
     )
-    weights_factory = generator.generate_weights(num_items)
+    weights_factory = generator.generate_weights(num_items)  # Uses default WeightConfig
     capacity_factory = generator.generate_capacities(num_agents, weights_factory, capacity_config)
     errors_factory = generator.generate_errors((num_agents, num_items), sigma)
 

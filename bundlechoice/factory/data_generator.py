@@ -65,12 +65,52 @@ class QuadraticItemConfig:
 
 
 @dataclass
-class CapacityConfig:
-    """Configuration for agent capacity generation (knapsack)."""
+class WeightConfig:
+    """Configuration for item weight generation (knapsack).
+    
+    Supports different distributions for heterogeneity, all producing integers:
+    - 'uniform': Uniform random integers [low, high] (default, least heterogeneous)
+    - 'lognormal': Log-normal distribution, truncated and rounded to integers (more heterogeneous)
+    - 'exponential': Exponential distribution, truncated and rounded to integers
+    """
 
-    mean_multiplier: float = 0.45  # Multiplier for mean capacity (0.5 in manual, 0.45 in factory)
+    distribution: str = "uniform"  # 'uniform', 'lognormal', or 'exponential'
+    low: int = 1  # Lower bound for weight range (min value)
+    high: int = 10  # Upper bound for weight range (max value)
+    # For lognormal:
+    log_mean: float = 0.0  # Mean of underlying normal distribution
+    log_std: float = 1.0  # Std of underlying normal distribution
+    # For exponential:
+    exp_scale: float = 2.0  # Scale parameter (mean = scale)
+
+
+@dataclass
+class CapacityConfig:
+    """Configuration for agent capacity generation (knapsack).
+    
+    Supports two methods:
+    1. Fixed fraction (most standard): capacity = int(fraction * sum(weights))
+    2. Variance-based: capacity = random in [lower_mult * mean, upper_mult * mean]
+       where mean = mean_multiplier * sum(weights)
+    
+    Default uses variance-based method with mean_multiplier=0.45 for backward compatibility.
+    """
+
+    # Method 1: Fixed fraction (most standard)
+    fraction: Optional[float] = None  # If set, use fixed fraction of total weight
+    
+    # Method 2: Variance-based (legacy, default)
+    mean_multiplier: Optional[float] = None  # Multiplier for mean capacity (default 0.45 if fraction not set)
     lower_multiplier: float = 0.85  # Lower bound multiplier
     upper_multiplier: float = 1.15  # Upper bound multiplier
+    
+    def __post_init__(self):
+        """Set default mean_multiplier if fraction not specified."""
+        if self.fraction is None and self.mean_multiplier is None:
+            # Default to variance-based with 0.45 for backward compatibility
+            object.__setattr__(self, 'mean_multiplier', 0.45)
+        elif self.fraction is not None and self.mean_multiplier is not None:
+            raise ValueError("Cannot specify both 'fraction' and 'mean_multiplier'. Choose one method.")
 
 
 class DataGenerator:
@@ -191,11 +231,30 @@ class DataGenerator:
         weights: np.ndarray,
         config: CapacityConfig,
     ) -> np.ndarray:
-        """Generate agent capacities for knapsack."""
-        mean_capacity = int(config.mean_multiplier * weights.sum())
-        lower = max(1, int(config.lower_multiplier * mean_capacity))
-        upper = max(lower + 1, int(config.upper_multiplier * mean_capacity))
-        return self.rng.integers(lower, upper + 1, size=num_agents)
+        """Generate agent capacities for knapsack.
+        
+        Supports two methods:
+        1. Fixed fraction (most standard): capacity = int(fraction * sum(weights))
+        2. Variance-based: capacity = random in [lower_mult * mean, upper_mult * mean]
+        
+        Args:
+            num_agents: Number of agents
+            weights: Array of item weights
+            config: CapacityConfig specifying generation method
+        
+        Returns:
+            Array of integer capacities.
+        """
+        if config.fraction is not None:
+            # Method 1: Fixed fraction (most standard)
+            capacity = int(config.fraction * weights.sum())
+            return np.full(num_agents, capacity, dtype=np.int64)
+        else:
+            # Method 2: Variance-based (legacy)
+            mean_capacity = int(config.mean_multiplier * weights.sum())
+            lower = max(1, int(config.lower_multiplier * mean_capacity))
+            upper = max(lower + 1, int(config.upper_multiplier * mean_capacity))
+            return self.rng.integers(lower, upper + 1, size=num_agents)
 
     def generate_random_capacities(
         self,
@@ -209,11 +268,51 @@ class DataGenerator:
     def generate_weights(
         self,
         num_items: int,
-        low: int = 1,
-        high: int = 11,
+        config: Optional[WeightConfig] = None,
     ) -> np.ndarray:
-        """Generate item weights."""
-        return self.rng.integers(low, high, size=num_items)
+        """Generate item weights as random integers.
+        
+        Supports different distributions for heterogeneity, all producing integers:
+        - 'uniform': Uniform random integers [low, high]
+        - 'lognormal': Log-normal distribution, truncated to [low, high] and rounded
+        - 'exponential': Exponential distribution, truncated to [low, high] and rounded
+        
+        Args:
+            num_items: Number of items
+            config: WeightConfig specifying distribution and parameters. If None, uses default (uniform 1-10).
+        
+        Returns:
+            Array of integer weights in range [config.low, config.high] (inclusive).
+        """
+        if config is None:
+            config = WeightConfig()
+        
+        if config.distribution == "uniform":
+            weights = self.rng.integers(config.low, config.high + 1, size=num_items)
+        elif config.distribution == "lognormal":
+            # Generate log-normal, scale to [low, high], round to integers
+            log_weights = self.rng.lognormal(config.log_mean, config.log_std, size=num_items)
+            # Scale to [low, high] range
+            log_min, log_max = log_weights.min(), log_weights.max()
+            if log_max > log_min:
+                weights = config.low + (log_weights - log_min) / (log_max - log_min) * (config.high - config.low)
+            else:
+                weights = np.full(num_items, config.low)
+            weights = np.clip(np.round(weights).astype(int), config.low, config.high)
+        elif config.distribution == "exponential":
+            # Generate exponential, scale to [low, high], round to integers
+            exp_weights = self.rng.exponential(config.exp_scale, size=num_items)
+            # Scale to [low, high] range
+            exp_min, exp_max = exp_weights.min(), exp_weights.max()
+            if exp_max > exp_min:
+                weights = config.low + (exp_weights - exp_min) / (exp_max - exp_min) * (config.high - config.low)
+            else:
+                weights = np.full(num_items, config.low)
+            weights = np.clip(np.round(weights).astype(int), config.low, config.high)
+        else:
+            raise ValueError(f"Unknown weight distribution: {config.distribution}")
+        
+        return weights
 
     def generate_errors(
         self,
@@ -263,6 +362,7 @@ __all__ = [
     "QuadraticItemConfig",
     "QuadraticGenerationMethod",
     "CorrelationConfig",
+    "WeightConfig",
     "CapacityConfig",
 ]
 

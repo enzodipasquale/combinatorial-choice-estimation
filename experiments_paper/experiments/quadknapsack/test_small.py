@@ -53,38 +53,33 @@ def main():
         .build()
     )
 
-    def prepare_scenario():
-        return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed)
-
-    prepared = mpi_call_with_timeout(
-        comm, prepare_scenario, timeout_seconds, "quadknapsack-prep-test"
-    )
-
-    theta_true = prepared.theta_star.copy()
+    # Create custom theta before prepare
+    theta_true = np.ones(num_features)
     theta_true[-1] = 0.1  # Custom theta like working test
 
     if rank == 0:
         print(f"\nTheta_0: {theta_true}")
 
-    # Initialize BundleChoice
-    bc = BundleChoice()
-    prepared.apply(bc, comm=comm, stage="generation")
+    # Prepare with custom theta to avoid generating bundles twice
+    # This generates bundles internally and returns them in estimation_data
+    def prepare_scenario():
+        return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
 
-    # Generate observed bundles - no timeout wrapper here like working test
+    prepared = mpi_call_with_timeout(
+        comm, prepare_scenario, timeout_seconds, "quadknapsack-prep-test"
+    )
+
+    # Get observed bundles from prepare() (already computed with theta_true) - only on rank 0
     if rank == 0:
-        print("\nGenerating observed bundles...")
-        tic = datetime.now()
-
-    obs_bundles = bc.subproblems.init_and_solve(theta_true)
-
-    if rank == 0:
-        elapsed = (datetime.now() - tic).total_seconds()
-        print(f"✓ Bundle generation completed in {elapsed:.4f} seconds")
+        obs_bundles = prepared.estimation_data["obs_bundle"]
         print(f"  Aggregate demands: {obs_bundles.sum(1).min()} to {obs_bundles.sum(1).max()}")
         print(f"  Total aggregate: {obs_bundles.sum()}")
         print(f"  Mean demand per agent: {obs_bundles.sum(1).mean():.2f}")
+    else:
+        obs_bundles = None
 
-    # Apply estimation data
+    # Create BundleChoice for estimation (only when needed)
+    bc = BundleChoice()
     prepared.apply(bc, comm=comm, stage="estimation")
     bc.subproblems.load()
 

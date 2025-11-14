@@ -19,7 +19,7 @@ item_quadratic_features: 1
 subproblem:
   name: QuadKnapsack
   settings:
-    TimeLimit: 10
+    TimeLimit: 90
     MIPGap_tol: 0.01
 
 row_generation:

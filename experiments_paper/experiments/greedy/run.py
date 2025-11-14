@@ -64,29 +64,27 @@ def main():
             .build()
         )
 
+        # Create custom theta before prepare
+        theta_true = np.ones(num_features)
+        theta_true[-1] = 0.1  # Custom theta for greedy (matches benchmarking)
+
+        # Prepare with custom theta to avoid generating bundles twice
+        # This generates bundles internally and returns them in estimation_data
         def prepare_scenario():
-            return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed)
+            return scenario.prepare(comm=comm, timeout_seconds=timeout_seconds, seed=seed, theta=theta_true)
 
         prepared = mpi_call_with_timeout(
             comm, prepare_scenario, timeout_seconds, f"greedy-prep-rep{rep}"
         )
 
-        theta_true = prepared.theta_star.copy()
-        theta_true[-1] = 0.1  # Custom theta for greedy (matches benchmarking)
+        # Get observed bundles from prepare() (already computed with theta_true) - only on rank 0
+        if rank == 0:
+            obs_bundles = prepared.estimation_data["obs_bundle"]
+        else:
+            obs_bundles = None
 
-        # Initialize BundleChoice
+        # Create BundleChoice for estimation (only when needed)
         bc = BundleChoice()
-        prepared.apply(bc, comm=comm, stage="generation")
-
-        # Generate observed bundles
-        def generate_bundles():
-            return bc.subproblems.init_and_solve(theta_true)
-
-        obs_bundles = mpi_call_with_timeout(
-            comm, generate_bundles, timeout_seconds, f"greedy-bundles-rep{rep}"
-        )
-
-        # Apply estimation data
         prepared.apply(bc, comm=comm, stage="estimation")
         bc.subproblems.load()
 

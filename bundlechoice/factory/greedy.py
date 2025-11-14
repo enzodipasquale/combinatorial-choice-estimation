@@ -102,6 +102,7 @@ class GreedyScenarioBuilder:
             spec: FeatureSpec,
             timeout: Optional[int],
             seed: Optional[int],
+            theta: Any,
         ) -> Dict[str, Dict[str, Any]]:
             rank = comm.Get_rank()
 
@@ -123,12 +124,7 @@ class GreedyScenarioBuilder:
             bc.data.load_and_scatter(generation_data if rank == 0 else None)
             spec.initializer(bc)
 
-            def solve() -> np.ndarray:
-                return bc.subproblems.init_and_solve(params.theta_star)
-
-            obs_bundles = utils.mpi_call_with_timeout(
-                comm, solve, timeout, label=f"{params.num_agents}x{params.num_items}-greedy"
-            )
+            obs_bundles = bc.subproblems.init_and_solve(theta)
 
             estimation_data = None
             if rank == 0:
