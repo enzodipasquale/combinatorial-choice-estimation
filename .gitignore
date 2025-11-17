@@ -38,12 +38,11 @@ Makefile
 # Other
 /_tests/
 bundlechoice/_legacy/
-applications/firms_export/clean_data/datasets/
+/applications/
 singularity.txt
 /benchmarking/
 /examples/
 /greedy_benchmarking/
-applications/gravity/
 config.yaml.backup
 /validation_auction/
 /experiments_paper_wellipsoid/
