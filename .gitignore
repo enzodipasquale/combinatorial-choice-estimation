@@ -33,6 +33,7 @@ __pycache__/
 
 # Shell scripts (utility scripts)
 timeout_wrapper.sh
+Makefile
 
 # Other
 /_tests/
