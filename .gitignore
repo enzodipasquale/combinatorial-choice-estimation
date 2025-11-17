@@ -48,6 +48,7 @@ config.yaml.backup
 /experiments_paper_wellipsoid/
 experiments/_others/
 experiments/BLP/
+experiments/testing_quadsupermod/
 
 # Experiment results (local only, not synced)
 experiments_paper/__results/*
