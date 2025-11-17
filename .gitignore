@@ -50,3 +50,4 @@ experiments_paper_wellipsoid/
 # Experiment results (local only, not synced)
 experiments_paper/__results/*
 !experiments_paper/__results/.gitkeep
+paper/_table1/
