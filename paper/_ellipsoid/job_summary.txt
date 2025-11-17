@@ -1,0 +1,19 @@
+=== Large-Scale Experiments Submitted ===
+
+Configuration:
+  - Agents: 150, 500, 1000
+  - Items: 100, 200, 300  
+  - Replications: 50
+  - MPI tasks: 152 (4 nodes × 38 tasks/node)
+  - Total runs per experiment: 9 × 50 × 3 = 1,350 runs
+
+Time Limits (Conservative):
+  - greedy/knapsack: 3 days (72 hours)
+  - supermod/supermodknapsack: 5 days (120 hours)
+  - Per-size timeout: 30 min (greedy/knapsack), 60 min (supermod)
+
+Monitor with:
+  squeue -u ed2189
+  tail -f slurm_logs/*_*.out
+
+Once complete, tables will be auto-generated in outputs/ directories.
