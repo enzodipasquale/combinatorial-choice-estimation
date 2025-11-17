@@ -1,3 +1,0 @@
-# This file ensures the slurm_logs directory is tracked by git
-# SLURM output files (*.out, *.err) are ignored but this directory structure is kept
-
