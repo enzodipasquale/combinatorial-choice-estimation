@@ -39,7 +39,7 @@ _tests/
 bundlechoice/_legacy/
 applications/firms_export/clean_data/datasets/
 singularity.txt
-benchmarking/
+/benchmarking/
 examples/
 greedy_benchmarking/
 applications/gravity/

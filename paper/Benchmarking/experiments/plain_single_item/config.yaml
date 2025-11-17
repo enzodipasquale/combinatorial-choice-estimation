@@ -1,0 +1,31 @@
+dimensions:
+  num_agents: 10
+  num_items: 5
+  num_features: 5  # agent features only
+  num_simuls: 1
+
+sigma: 1.0
+num_replications: 2
+base_seed: 12345
+timeout_seconds: 600
+results_csv: results.csv
+
+# Feature counts for factory
+num_agent_features: 5
+num_item_features: 0
+
+subproblem:
+  name: PlainSingleItem
+
+row_generation:
+  max_iters: 100
+  min_iters: 1
+  tolerance_optimality: 0.001
+  gurobi_settings:
+    OutputFlag: 0
+  theta_ubs: 100
+
+ellipsoid:
+  max_iters: 1000
+  tolerance: 1e-6
+
