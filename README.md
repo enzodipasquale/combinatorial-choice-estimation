@@ -1,6 +1,6 @@
 # BundleChoice
 
-MPI-parallelized estimation for combinatorial discrete choice models using row generation (requires Gurobi) or the ellipsoid method.
+MPI-parallelized estimation for combinatorial discrete choice models using row generation (requires Gurobi).
 
 ## Install
 
