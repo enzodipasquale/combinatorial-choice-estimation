@@ -1,4 +1,4 @@
-experiment_table1/
+/experiment_table1/
 # Virtual environments
 .bundle/
 
@@ -35,17 +35,17 @@ __pycache__/
 timeout_wrapper.sh
 
 # Other
-_tests/
+/_tests/
 bundlechoice/_legacy/
 applications/firms_export/clean_data/datasets/
 singularity.txt
 /benchmarking/
-examples/
-greedy_benchmarking/
+/examples/
+/greedy_benchmarking/
 applications/gravity/
 config.yaml.backup
-validation_auction/
-experiments_paper_wellipsoid/
+/validation_auction/
+/experiments_paper_wellipsoid/
 
 # Experiment results (local only, not synced)
 experiments_paper/__results/*
