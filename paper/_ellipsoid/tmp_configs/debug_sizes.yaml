@@ -1,0 +1,3 @@
+sizes_grid:
+  agents: [64]
+  items: [40]

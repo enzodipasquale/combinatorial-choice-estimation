@@ -1,0 +1,190 @@
+% Generated LaTeX tables from experiment results
+% Use with beamer document class
+
+\section{Numerical Experiments}
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Numerical Experiment: Gross Substitutes (3$\times$3 Grid: $N \times M$)}
+\label{tab:greedy}
+\begin{threeparttable}
+\begin{tabular}{l c c c c c c c c c}
+\toprule
+Method & \multicolumn{9}{c}{$M$ (Items)} \\
+\cmidrule(lr){2-10}
+ & \multicolumn{3}{c}{5} & \multicolumn{3}{c}{10} & \multicolumn{3}{c}{20} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & $N=5$ & $N=10$ & $N=20$ & $N=5$ & $N=10$ & $N=20$ & $N=5$ & $N=10$ & $N=20$ \\
+\midrule
+\multicolumn{10}{l}{\textit{Runtime (s)}} \\
+Ellipsoid & 0.2924 & --- & --- & --- & 0.3062 & 0.4383 & --- & 0.4060 & 0.6105 \\
+Row Gen & 0.2082 & --- & --- & --- & 0.2182 & 0.0510 & --- & 0.0653 & 0.0717 \\
+Row Gen (1-Slack) & 0.0220 & --- & --- & --- & 0.0808 & 0.1263 & --- & 0.1265 & 0.1915 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{MOD}}$} \\
+Ellipsoid & 0.7535 & --- & --- & --- & 0.8633 & 0.8833 & --- & 0.9237 & 0.9550 \\
+Row Gen & 0.7535 & --- & --- & --- & 0.8633 & 0.8833 & --- & 0.9237 & 0.9550 \\
+Row Gen (1-Slack) & 0.7535 & --- & --- & --- & 0.8633 & 0.8833 & --- & 0.9237 & 0.9550 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{GS}}$} \\
+Ellipsoid & 0.6577 & --- & --- & --- & 0.4538 & 0.2754 & --- & 0.3203 & 0.1947 \\
+Row Gen & 464.43 & --- & --- & --- & 0.6365 & 0.2641 & --- & 0.3693 & 0.1968 \\
+Row Gen (1-Slack) & 641.23 & --- & --- & --- & 0.6365 & 0.2641 & --- & 0.3693 & 0.1968 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{MOD}}$} \\
+Ellipsoid & 0.2794 & --- & --- & --- & 0.4700 & 0.5457 & --- & 0.5343 & 0.5406 \\
+Row Gen & 0.2794 & --- & --- & --- & 0.4700 & 0.5457 & --- & 0.5343 & 0.5406 \\
+Row Gen (1-Slack) & 0.2794 & --- & --- & --- & 0.4700 & 0.5457 & --- & 0.5343 & 0.5406 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{GS}}$} \\
+Ellipsoid & -0.0632 & --- & --- & --- & -0.2164 & -0.1292 & --- & 0.0534 & 0.0150 \\
+Row Gen & 266.13 & --- & --- & --- & -0.0354 & -0.0427 & --- & 0.0917 & 0.0196 \\
+Row Gen (1-Slack) & 451.82 & --- & --- & --- & -0.0354 & -0.0427 & --- & 0.0917 & 0.0196 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \in \{(5,5), (10,10), (10,20), (20,10), (20,20), (50,30), (50,50), (50,100), (100,30), (100,50), (100,100), (500,30), (500,50), (500,100)\}$.
+\item Missing combinations: (10,5), (20,5), (5,10), (5,20)
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Numerical Experiment: Linear Knapsack Setting (3$\times$3 Grid: $N \times M$)}
+\label{tab:linearknapsack}
+\begin{threeparttable}
+\begin{tabular}{l c c c c c c c c c}
+\toprule
+Method & \multicolumn{9}{c}{$M$ (Items)} \\
+\cmidrule(lr){2-10}
+ & \multicolumn{3}{c}{5} & \multicolumn{3}{c}{10} & \multicolumn{3}{c}{30} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & $N=5$ & $N=10$ & $N=50$ & $N=5$ & $N=10$ & $N=50$ & $N=5$ & $N=10$ & $N=50$ \\
+\midrule
+\multicolumn{10}{l}{\textit{Runtime (s)}} \\
+Ellipsoid & 0.2683 & --- & --- & --- & 31.076 & --- & --- & --- & 0.6085 \\
+Row Gen & 0.1656 & --- & --- & --- & 1.425 & --- & --- & --- & 0.2277 \\
+Row Gen (1-Slack) & 0.0177 & --- & --- & --- & 4.259 & --- & --- & --- & 0.2109 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{MOD}}$} \\
+Ellipsoid & 0.7865 & --- & --- & --- & 1.153 & --- & --- & --- & 1.0000 \\
+Row Gen & 7.190 & --- & --- & --- & 1.153 & --- & --- & --- & 1.0000 \\
+Row Gen (1-Slack) & 11.652 & --- & --- & --- & 1.153 & --- & --- & --- & 1.0000 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{MOD}}$} \\
+Ellipsoid & 0.7688 & --- & --- & --- & 0.7902 & --- & --- & --- & 1.0000 \\
+Row Gen & 6.820 & --- & --- & --- & 0.7902 & --- & --- & --- & 1.0000 \\
+Row Gen (1-Slack) & 11.632 & --- & --- & --- & 0.7902 & --- & --- & --- & 1.0000 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \in \{(5,5), (10,10), (50,30), (50,50), (50,100), (100,30), (100,50), (100,100), (500,30), (500,50), (500,100)\}$.
+\item Missing combinations: (10,5), (50,5), (5,10), (50,10), (5,30), (10,30)
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Numerical Experiment: Quadratic Knapsack Setting (3$\times$3 Grid: $N \times M$)}
+\label{tab:quadknapsack}
+\begin{threeparttable}
+\begin{tabular}{l c c c c c c c c c}
+\toprule
+Method & \multicolumn{9}{c}{$M$ (Items)} \\
+\cmidrule(lr){2-10}
+ & \multicolumn{3}{c}{5} & \multicolumn{3}{c}{20} & \multicolumn{3}{c}{30} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & $N=5$ & $N=20$ & $N=50$ & $N=5$ & $N=20$ & $N=50$ & $N=5$ & $N=20$ & $N=50$ \\
+\midrule
+\multicolumn{10}{l}{\textit{Runtime (s)}} \\
+Ellipsoid & 0.6478 & --- & --- & --- & 9.947 & --- & --- & --- & 91.557 \\
+Row Gen & 0.1693 & --- & --- & --- & 0.5319 & --- & --- & --- & 3.179 \\
+Row Gen (1-Slack) & 0.0216 & --- & --- & --- & 2.660 & --- & --- & --- & 14.416 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{MOD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & 1.813 \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & 1.813 \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & 1.828 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{QUAD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & 0.0384 \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & 0.0371 \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & 0.1092 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{MOD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & -1.020 \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & -1.020 \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & -1.035 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{QUAD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & -0.0384 \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & -0.0371 \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & -0.1092 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \in \{(5,5), (20,20), (50,30), (100,100)\}$.
+\item Missing combinations: (20,5), (50,5), (5,20), (50,20), (5,30), (20,30)
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Numerical Experiment: Supermodular Setting (3$\times$3 Grid: $N \times M$)}
+\label{tab:quadsupermodularnetwork}
+\begin{threeparttable}
+\begin{tabular}{l c c c c c c c c c}
+\toprule
+Method & \multicolumn{9}{c}{$M$ (Items)} \\
+\cmidrule(lr){2-10}
+ & \multicolumn{3}{c}{5} & \multicolumn{3}{c}{30} & \multicolumn{3}{c}{50} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+ & $N=5$ & $N=50$ & $N=100$ & $N=5$ & $N=50$ & $N=100$ & $N=5$ & $N=50$ & $N=100$ \\
+\midrule
+\multicolumn{10}{l}{\textit{Runtime (s)}} \\
+Ellipsoid & 16.664 & --- & --- & --- & 6.627 & 12.146 & --- & 11.944 & 44.415 \\
+Row Gen & 0.5976 & --- & --- & --- & 0.3054 & 0.2074 & --- & 0.2057 & 0.5751 \\
+Row Gen (1-Slack) & 0.1012 & --- & --- & --- & 1.137 & 2.394 & --- & 2.059 & 9.642 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{MOD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{RMSE} $\theta_{\text{QUAD}}$} \\
+Ellipsoid & 0.9700 & --- & --- & --- & 1.836 & 0.4894 & --- & 0.5337 & 0.2904 \\
+Row Gen & 58.725 & --- & --- & --- & 1.836 & 0.4894 & --- & 0.5337 & 0.2904 \\
+Row Gen (1-Slack) & 74.236 & --- & --- & --- & 1.836 & 0.4894 & --- & 0.5337 & 0.2904 \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{MOD}}$} \\
+Ellipsoid & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+Row Gen & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+Row Gen (1-Slack) & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+\cmidrule(lr){1-10}
+\multicolumn{10}{l}{\textit{Bias} $\theta_{\text{QUAD}}$} \\
+Ellipsoid & 0.9700 & --- & --- & --- & 0.9459 & -0.2093 & --- & 0.2572 & -0.0434 \\
+Row Gen & -48.731 & --- & --- & --- & 0.9459 & -0.2093 & --- & 0.2572 & -0.0434 \\
+Row Gen (1-Slack) & -74.235 & --- & --- & --- & 0.9459 & -0.2093 & --- & 0.2572 & -0.0434 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item Runtime in seconds. Each cell shows $(N,M)$ combination. Data available for $(N,M) \in \{(5,5), (50,30), (50,50), (50,100), (100,30), (100,50), (100,100), (500,30), (500,50)\}$.
+\item Missing combinations: (50,5), (100,5), (5,30), (5,50)
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
