@@ -51,4 +51,4 @@ config.yaml.backup
 experiments_paper/__results/*
 !experiments_paper/__results/.gitkeep
 paper/_table1/
-/_ellipsoid/
+paper/_ellipsoid/
