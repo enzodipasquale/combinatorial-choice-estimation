@@ -7,14 +7,14 @@ Iteratively adds items with highest marginal value until no improvement.
 import numpy as np
 from typing import Any, Optional
 from numpy.typing import NDArray
-from ..base import SerialSubproblemBase
+from ..base import BaseSerialSubproblem
 
 
 # ============================================================================
 # Greedy Subproblem Solver
 # ============================================================================
 
-class GreedySubproblem(SerialSubproblemBase):
+class GreedySubproblem(BaseSerialSubproblem):
     """Greedy subproblem solver: iteratively adds best items."""
     
     def __init__(self, *args, **kwargs) -> None:
@@ -22,7 +22,7 @@ class GreedySubproblem(SerialSubproblemBase):
         self._supports_vectorized_features: Optional[bool] = None
     
     def initialize(self, local_id: int) -> None:
-        """Initialize greedy solver and check vectorized feature support."""
+        """Initialize greedy solver."""
         self._check_vectorized_feature_support(local_id)
         return None
     
@@ -34,20 +34,53 @@ class GreedySubproblem(SerialSubproblemBase):
         
         bundle = np.zeros(num_items, dtype=bool)
         items_left = np.arange(num_items)
-        base_features = self.features_oracle(local_id, bundle, self.local_data)
         
         while len(items_left) > 0:
-            best_item, best_val = self._find_best_item_cached(
-                local_id, bundle, items_left, theta, error_j, base_features
+            base_features = self.features_oracle(local_id, bundle, self.local_data)
+            base_value = base_features @ theta
+
+            best_item, best_val = self.find_best_item(
+                local_id, bundle, items_left, theta, error_j
             )
-            if best_val <= 0:
+            if best_val <= base_value:
                 break
                 
             bundle[best_item] = True
-            base_features = self.features_oracle(local_id, bundle, self.local_data)
+            
             items_left = items_left[items_left != best_item]
         
         return bundle
+
+
+    def find_best_item(
+        self, local_id: int, base_bundle: NDArray[np.bool_], items_left: NDArray[np.int_], 
+        theta: NDArray[np.float64], error_j: NDArray[np.float64]
+    ) -> tuple[int, float]:
+      
+        if self._supports_vectorized_features and len(items_left) > 1:
+            bundles = np.repeat(base_bundle[:, None], len(items_left), axis=1)
+            bundles[items_left, np.arange(len(items_left))] = True
+            vectorized_features = self.features_oracle(local_id, bundles, self.local_data)
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                values = theta @ vectorized_features  + error_j[items_left]
+            best_idx = np.argmax(values)
+            return items_left[best_idx], values[best_idx]
+        else:
+            best_val = -np.inf
+            best_item = -1
+            
+            for j in items_left:
+                base_bundle[j] = True
+                features_with_j = self.features_oracle(local_id, base_bundle, self.local_data)
+                value = error_j[j] + features_with_j  @ theta
+                base_bundle[j] = False
+                
+                if value > best_val:
+                    best_val = value
+                    best_item = j
+            
+            return best_item, best_val
+    
 
     def _check_vectorized_feature_support(self, local_id: int) -> None:
         """Check if features_oracle supports vectorized computation."""
@@ -56,7 +89,8 @@ class GreedySubproblem(SerialSubproblemBase):
             test_bundles[0, 0] = True
             test_bundles[1, 1] = True
             
-            vectorized_result = self.features_oracle(local_id, test_bundles, self.local_data)
+            data_to_use = self.local_data if self.local_data is not None else None
+            vectorized_result = self.features_oracle(local_id, test_bundles, data_to_use)
             
             self._supports_vectorized_features = (
                 isinstance(vectorized_result, np.ndarray) and 
@@ -65,83 +99,3 @@ class GreedySubproblem(SerialSubproblemBase):
             )
         except (TypeError, ValueError, AttributeError, IndexError):
             self._supports_vectorized_features = False
-    
-    def _get_vectorized_features(self, local_id: int, base_bundle: NDArray[np.bool_], 
-                                 items_to_add: NDArray[np.int_]) -> NDArray[np.float64]:
-        """Get features for multiple items vectorized (creates bundles with each item added to base)."""
-        bundles = np.repeat(base_bundle[:, None], len(items_to_add), axis=1)
-        bundles[items_to_add, np.arange(len(items_to_add))] = True
-        return self.features_oracle(local_id, bundles, self.local_data)
-
-    def _find_best_item(
-        self, local_id: int, bundle: NDArray[np.bool_], items_left: NDArray[np.int_], 
-        theta: NDArray[np.float64], error_j: NDArray[np.float64]
-    ) -> tuple[int, float]:
-        """Find best item to add (uses vectorized if supported)."""
-        if self._supports_vectorized_features and len(items_left) > 1:
-            return self._find_best_item_vectorized(local_id, bundle, items_left, theta, error_j)
-        return self._find_best_item_standard(local_id, bundle, items_left, theta, error_j)
-    
-    def _find_best_item_cached(
-        self, local_id: int, bundle: NDArray[np.bool_], items_left: NDArray[np.int_], 
-        theta: NDArray[np.float64], error_j: NDArray[np.float64], base_features: NDArray[np.float64]
-    ) -> tuple[int, float]:
-        """Find best item using cached base features (optimized)."""
-        if self._supports_vectorized_features and len(items_left) > 1:
-            vectorized_features = self._get_vectorized_features(local_id, bundle, items_left)
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
-            best_idx = np.argmax(marginal_values)
-            return items_left[best_idx], float(marginal_values[best_idx])
-        else:
-            best_val = -np.inf
-            best_item = -1
-            
-            for j in items_left:
-                bundle[j] = True
-                new_x_k = self.features_oracle(local_id, bundle, self.local_data)
-                marginal_j = float(error_j[j]) + float((new_x_k - base_features) @ theta)
-                bundle[j] = False
-                
-                if marginal_j > best_val:
-                    best_val = marginal_j
-                    best_item = j
-            
-            return best_item, best_val
-    
-    def _find_best_item_vectorized(
-        self, local_id: int, bundle: NDArray[np.bool_], items_left: NDArray[np.int_], 
-        theta: NDArray[np.float64], error_j: NDArray[np.float64]
-    ) -> tuple[int, float]:
-        """Find best item using vectorized approach."""
-        base_features = self.features_oracle(local_id, bundle, self.local_data)
-        vectorized_features = self._get_vectorized_features(local_id, bundle, items_left)
-        
-        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-            marginal_values = theta @ vectorized_features - theta @ base_features + error_j[items_left]
-        
-        best_idx = np.argmax(marginal_values)
-        return items_left[best_idx], float(marginal_values[best_idx])
-
-    def _find_best_item_standard(
-        self, local_id: int, bundle: NDArray[np.bool_], items_left: NDArray[np.int_], 
-        theta: NDArray[np.float64], error_j: NDArray[np.float64]
-    ) -> tuple[int, float]:
-        """Find best item using standard (non-vectorized) approach."""
-        base_features = self.features_oracle(local_id, bundle, self.local_data)
-        best_val = -np.inf
-        best_item = -1
-        
-        for j in items_left:
-            bundle[j] = True
-            new_x_k = self.features_oracle(local_id, bundle, self.local_data)
-            marginal_j = float(error_j[j])
-            if base_features is not None and new_x_k is not None:
-                marginal_j += float((new_x_k - base_features) @ theta)
-            bundle[j] = False
-            
-            if marginal_j > best_val:
-                best_val = marginal_j
-                best_item = j
-                
-        return best_item, best_val

@@ -69,21 +69,17 @@ class DataManager(HasDimensions, HasComm):
             agent_data = self.input_data.get("agent_data") or {}
             item_data = self.input_data.get("item_data")
             
-            # Merge constraint_mask into agent_data if present
             if "constraint_mask" in self.input_data and self.input_data["constraint_mask"] is not None:
                 agent_data = agent_data.copy() if agent_data else {}
                 agent_data["constraint_mask"] = self.input_data["constraint_mask"]
             
-            # Compute agent indices for each rank
             idx_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
             counts = [len(idx) for idx in idx_chunks]
             
-            # Prepare data for scattering
             has_agent_data = len(agent_data) > 0
             has_obs_bundles = obs_bundles is not None
             has_item_data = item_data is not None
             
-            # Print summary header
             print("=" * 70)
             print("DATA SCATTER")
             print("=" * 70)
@@ -93,7 +89,7 @@ class DataManager(HasDimensions, HasComm):
             if len(set(counts)) == 1:
                 print(f"  Distribution: {counts[0]} agents/rank (balanced)")
             else:
-                print(f"  Distribution: {min(counts)}-{max(counts)} agents/rank (min={min(counts)}, max={max(counts)})")
+                print(f"  Distribution: {min(counts)}-{max(counts)} agents/rank")
         else:
             errors = None
             obs_bundles = None
@@ -105,16 +101,12 @@ class DataManager(HasDimensions, HasComm):
             has_obs_bundles = False
             has_item_data = False
         
-        # Broadcast metadata flags and counts (small, pickle is fine)
         counts, has_agent_data, has_obs_bundles, has_item_data = self.comm_manager.broadcast_from_root(
             (counts, has_agent_data, has_obs_bundles, has_item_data), root=0
         )
         
-        # Get local count for this rank
         num_local_agents = counts[self.comm_manager.rank]
         
-        # Scatter errors using buffer-based method (5-20x faster than pickle)
-        # Need to multiply counts by num_items for 2D arrays (shape: [agents, items])
         flat_counts = [c * self.num_items for c in counts]
         if self.is_root():
             print("  Arrays:")
@@ -125,16 +117,13 @@ class DataManager(HasDimensions, HasComm):
         )
         local_errors = local_errors_flat.reshape(num_local_agents, self.num_items)
         
-        # Scatter obs_bundles if present - use buffer scatter_array for speed
         if has_obs_bundles:
             if self.is_root():
                 print(f"    Obs_bundles: shape=({self.num_agents}, {self.num_items})")
             if self.is_root():
-                # Create obs_chunks the old way
                 obs_chunks = []
                 for idx in idx_chunks:
                     obs_chunks.append(obs_bundles[idx % self.num_agents])
-                # Concatenate for scatter_array
                 indexed_obs_bundles = np.concatenate(obs_chunks, axis=0)
             else:
                 indexed_obs_bundles = None
@@ -147,31 +136,28 @@ class DataManager(HasDimensions, HasComm):
         else:
             local_obs_bundles = None
         
-        # Scatter agent_data dict if present - use pickle scatter for flexibility
         if has_agent_data:
             if self.is_root():
-                # Print "Dictionaries:" header before first dictionary
                 print("  Dictionaries:")
                 keys_str = ", ".join(agent_data.keys())
                 print(f"    Agent_data: {len(agent_data)} keys [{keys_str}], {self.num_agents} agents")
-                # Create chunks the old way
-                agent_data_chunks = []
-                for idx in idx_chunks:
-                    chunk_dict = {
-                        k: array[idx % self.num_agents] for k, array in agent_data.items()
-                    }
-                    agent_data_chunks.append(chunk_dict)
+                # Prepare agent_data for buffer-based scatter: repeat arrays across simulations
+                agent_data_expanded = {}
+                for k, array in agent_data.items():
+                    # Repeat agent data across simulations if needed
+                    if self.num_simuls > 1:
+                        agent_data_expanded[k] = np.tile(array, (self.num_simuls, 1) + (1,) * (array.ndim - 2))
+                    else:
+                        agent_data_expanded[k] = array
             else:
-                agent_data_chunks = None
+                agent_data_expanded = None
             
-            local_agent_data = self.comm_manager.comm.scatter(agent_data_chunks, root=0)
+            local_agent_data = self.comm_manager.scatter_dict(agent_data_expanded, counts=counts, root=0)
         else:
             local_agent_data = None
         
-        # Broadcast item_data (already optimized with buffer-based broadcast_dict)
         if has_item_data:
             if self.is_root():
-                # Print "Dictionaries:" header only if agent_data wasn't printed (so this is first)
                 if not has_agent_data:
                     print("  Dictionaries:")
                 keys_str = ", ".join(item_data.keys())
@@ -180,7 +166,6 @@ class DataManager(HasDimensions, HasComm):
         else:
             item_data = None
         
-        # Build local data structure
         self.local_data = {
             "item_data": item_data,
             "agent_data": local_agent_data,
@@ -190,7 +175,7 @@ class DataManager(HasDimensions, HasComm):
         self.num_local_agents = num_local_agents
         if self.is_root():
             print(f"  Complete: {num_local_agents} local agents/rank")
-            print()  # Blank line to separate from next section 
+            print() 
 
     # --- Helper Methods ---
     def _prepare_errors(self, errors: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -213,3 +198,62 @@ class DataManager(HasDimensions, HasComm):
         if self.is_root():
             from bundlechoice.validation import validate_feature_count
             validate_feature_count(self.input_data, self.num_features)
+
+    def get_data_info(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Get boolean flags and feature dimensions for data components.
+        
+        Args:
+            data: Data dictionary to check (defaults to local_data).
+                 Can be input_data or local_data structure.
+        
+        Returns:
+            Dictionary with flags and dimensions:
+            - has_modular_agent: bool
+            - has_modular_item: bool
+            - has_quadratic_agent: bool
+            - has_quadratic_item: bool
+            - has_errors: bool
+            - has_constraint_mask: bool
+            - num_modular_agent: int (0 if not present)
+            - num_modular_item: int (0 if not present)
+            - num_quadratic_agent: int (0 if not present)
+            - num_quadratic_item: int (0 if not present)
+        """
+        if data is None:
+            data = self.local_data
+        
+        if data is None:
+            return {
+                "has_modular_agent": False,
+                "has_modular_item": False,
+                "has_quadratic_agent": False,
+                "has_quadratic_item": False,
+                "has_errors": False,
+                "has_constraint_mask": False,
+                "num_modular_agent": 0,
+                "num_modular_item": 0,
+                "num_quadratic_agent": 0,
+                "num_quadratic_item": 0,
+            }
+        
+        agent_data = data.get("agent_data") or {}
+        item_data = data.get("item_data") or {}
+        
+        has_modular_agent = "modular" in agent_data
+        has_modular_item = "modular" in item_data
+        has_quadratic_agent = "quadratic" in agent_data
+        has_quadratic_item = "quadratic" in item_data
+        
+        return {
+            "has_modular_agent": has_modular_agent,
+            "has_modular_item": has_modular_item,
+            "has_quadratic_agent": has_quadratic_agent,
+            "has_quadratic_item": has_quadratic_item,
+            "has_errors": "errors" in data,
+            "has_constraint_mask": "constraint_mask" in agent_data or "constraint_mask" in data,
+            "num_modular_agent": agent_data["modular"].shape[-1] if has_modular_agent else 0,
+            "num_modular_item": item_data["modular"].shape[-1] if has_modular_item else 0,
+            "num_quadratic_agent": agent_data["quadratic"].shape[-1] if has_quadratic_agent else 0,
+            "num_quadratic_item": item_data["quadratic"].shape[-1] if has_quadratic_item else 0,
+        }

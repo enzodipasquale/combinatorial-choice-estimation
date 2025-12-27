@@ -6,12 +6,11 @@ from mpi4py import MPI
 from typing import Optional, Callable, Any, Dict, Union
 import numpy as np
 from bundlechoice.utils import get_logger
-from bundlechoice.estimation import RowGenerationSolver
-from bundlechoice.estimation.ellipsoid import EllipsoidSolver
-from bundlechoice.estimation.inequalities import InequalitiesSolver
+from bundlechoice.estimation import RowGenerationManager
+from bundlechoice.estimation.ellipsoid import EllipsoidManager
+from bundlechoice.estimation.inequalities import InequalitiesManager
 from bundlechoice.base import HasComm, HasConfig
 from .comm_manager import CommManager
-from contextlib import contextmanager
 logger = get_logger(__name__)
 
 
@@ -37,9 +36,9 @@ class BundleChoice(HasComm, HasConfig):
     data_manager: Optional[DataManager]
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
-    row_generation_manager: Optional[RowGenerationSolver]
-    ellipsoid_manager: Optional[EllipsoidSolver]
-    inequalities_manager: Optional[InequalitiesSolver]
+    row_generation_manager: Optional[RowGenerationManager]
+    ellipsoid_manager: Optional[EllipsoidManager]
+    inequalities_manager: Optional[InequalitiesManager]
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
 
@@ -92,7 +91,7 @@ class BundleChoice(HasComm, HasConfig):
                 missing.append("subproblem config (add 'subproblem' to your config)")
             raise RuntimeError(
                 "Cannot initialize subproblem manager - missing setup:\n  " +
-                "\n  ".join(f"✗ {m}" for m in missing) +
+                "\n  ".join(f"- {m}" for m in missing) +
                 "\n\nRun bc.print_status() to see your current setup state."
             )
 
@@ -106,18 +105,18 @@ class BundleChoice(HasComm, HasConfig):
         self.subproblem_manager.load()
         return self.subproblem_manager
     
-    def _try_init_row_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> RowGenerationSolver:
-        """Initialize RowGenerationSolver."""
-        from .core._initialization import try_init_row_generation_manager
-        return try_init_row_generation_manager(self, theta_init)
+    def _try_init_row_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> RowGenerationManager:
+        """Initialize RowGenerationManager."""
+        from bundlechoice._initialization import try_init_row_generation_manager
+        return try_init_row_generation_manager(self)
 
-    def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> EllipsoidSolver:
-        """Initialize EllipsoidSolver."""
-        from .core._initialization import try_init_ellipsoid_manager
+    def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> EllipsoidManager:
+        """Initialize EllipsoidManager."""
+        from bundlechoice._initialization import try_init_ellipsoid_manager
         return try_init_ellipsoid_manager(self, theta_init)
 
-    def _try_init_inequalities_manager(self) -> InequalitiesSolver:
-        """Initialize InequalitiesSolver."""
+    def _try_init_inequalities_manager(self) -> InequalitiesManager:
+        """Initialize InequalitiesManager."""
         missing_managers = []
         if self.data_manager is None:
             missing_managers.append("DataManager")
@@ -134,7 +133,7 @@ class BundleChoice(HasComm, HasConfig):
                 f"{', '.join(missing_managers)}"
             )
 
-        self.inequalities_manager = InequalitiesSolver(
+        self.inequalities_manager = InequalitiesManager(
             comm_manager=self.comm_manager,
             dimensions_cfg=self.config.dimensions,
             data_manager=self.data_manager,
@@ -149,101 +148,64 @@ class BundleChoice(HasComm, HasConfig):
 
     @property
     def data(self) -> DataManager:
-        """Access data manager (initialized on first access)."""
         if self.data_manager is None:
             self._try_init_data_manager()
         return self.data_manager
 
     @property
     def features(self) -> FeatureManager:
-        """Access feature manager (initialized on first access)."""
         if self.feature_manager is None:
             self._try_init_feature_manager()
         return self.feature_manager
 
     @property
     def subproblems(self) -> SubproblemManager:
-        """Access subproblem manager (initialized on first access)."""
         if self.subproblem_manager is None:
             self._try_init_subproblem_manager()
         return self.subproblem_manager
 
     @property
-    def row_generation(self) -> RowGenerationSolver:
-        """Access row generation solver (initialized on first access)."""
+    def row_generation(self) -> RowGenerationManager:
         if self.row_generation_manager is None:
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
     @property
-    def ellipsoid(self) -> EllipsoidSolver:
-        """Access ellipsoid solver (initialized on first access)."""
+    def ellipsoid(self) -> EllipsoidManager:
         if self.ellipsoid_manager is None:
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
         
     @property
-    def inequalities(self) -> InequalitiesSolver:
-        """Access inequalities solver (initialized on first access)."""
+    def inequalities(self) -> InequalitiesManager:
         if self.inequalities_manager is None:
             self._try_init_inequalities_manager()
         return self.inequalities_manager
     
     # ============================================================================
-    # Setup Validation & Status
+    # Setup Status
     # ============================================================================
-
-    def validate_setup(self, for_method: str = 'row_generation') -> bool:
-        """Validate setup for estimation method. Raises RuntimeError if incomplete."""
-        missing = []
-        
-        if self.config is None:
-            missing.append("config (call bc.load_config(...))")
-        if self.data_manager is None:
-            missing.append("data (call bc.data.load_and_scatter(input_data))")
-        if self.feature_manager is None or self.feature_manager._features_oracle is None:
-            missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
-        if self.subproblem_manager is None and for_method in ['row_generation', 'ellipsoid']:
-            missing.append("subproblem (call bc.subproblems.load())")
-        
-        if for_method == 'row_generation' and (self.config is None or self.config.row_generation is None):
-            missing.append("row_generation config (add 'row_generation' to your config)")
-        elif for_method == 'ellipsoid' and (self.config is None or self.config.ellipsoid is None):
-            missing.append("ellipsoid config (add 'ellipsoid' to your config)")
-        
-        if missing:
-            raise RuntimeError(
-                f"Setup incomplete for {for_method}:\n  " +
-                "\n  ".join(f"- {m}" for m in missing)
-            )
-        
-        logger.info("✅ Setup validated for %s", for_method)
-        return True
-    
-    def status(self) -> Dict[str, Any]:
-        """Get setup status dictionary. Returns component initialization state."""
-        return {
-            'config_loaded': self.config is not None,
-            'data_loaded': self.data_manager is not None and self.data_manager.local_data is not None,
-            'features_set': self.feature_manager is not None and self.feature_manager._features_oracle is not None,
-            'subproblems_ready': self.subproblem_manager is not None and self.subproblem_manager.demand_oracle is not None,
-            'dimensions': f"agents={self.config.dimensions.num_agents}, items={self.config.dimensions.num_items}, features={self.config.dimensions.num_features}" if self.config and self.config.dimensions else 'Not set',
-            'subproblem': self.config.subproblem.name if self.config and self.config.subproblem and self.config.subproblem.name else 'Not set',
-            'mpi_rank': self.rank,
-            'mpi_size': self.comm_size,
-        }
     
     def print_status(self) -> None:
         """Print formatted setup status to stdout."""
-        status = self.status()
         print("\n=== BundleChoice Status ===")
-        print(f"Config:      {'✓' if status['config_loaded'] else '✗'}")
-        print(f"Data:        {'✓' if status['data_loaded'] else '✗'}")
-        print(f"Features:    {'✓' if status['features_set'] else '✗'}")
-        print(f"Subproblems: {'✓' if status['subproblems_ready'] else '✗'}")
-        print(f"\nDimensions:  {status['dimensions']}")
-        print(f"Algorithm:   {status['subproblem']}")
-        print(f"MPI:         rank {status['mpi_rank']}/{status['mpi_size']}")
+        print(f"Config:      {'OK' if self.config is not None else 'Not set'}")
+        print(f"Data:        {'OK' if self.data_manager is not None and self.data_manager.local_data is not None else 'Not set'}")
+        print(f"Features:    {'OK' if self.feature_manager is not None and self.feature_manager._features_oracle is not None else 'Not set'}")
+        print(f"Subproblems: {'OK' if self.subproblem_manager is not None and self.subproblem_manager.subproblem_instance is not None else 'Not set'}")
+        
+        if self.config and self.config.dimensions:
+            dimensions_str = f"agents={self.config.dimensions.num_agents}, items={self.config.dimensions.num_items}, features={self.config.dimensions.num_features}"
+        else:
+            dimensions_str = 'Not set'
+        print(f"\nDimensions:  {dimensions_str}")
+        
+        if self.config and self.config.subproblem and self.config.subproblem.name:
+            subproblem_str = self.config.subproblem.name
+        else:
+            subproblem_str = 'Not set'
+        print(f"Algorithm:   {subproblem_str}")
+        print(f"MPI:         rank {self.rank}/{self.comm_size}")
 
     # ============================================================================
     # Workflow Methods
@@ -278,31 +240,6 @@ class BundleChoice(HasComm, HasConfig):
                 self.features.build_from_data()
         
         return obs_bundles
-    
-    @contextmanager
-    def temp_config(self, **updates: Dict[str, Any]):
-        """Temporarily modify configuration (restored after context)."""
-        import copy
-        original_config = copy.deepcopy(self.config)
-        try:
-            self.load_config(updates)
-            yield self
-        finally:
-            self.config = original_config
-    
-    def quick_setup(self, config: Union[Dict[str, Any], str], input_data: Dict[str, Any], 
-                   features_oracle: Optional[Callable] = None) -> 'BundleChoice':
-        """Quick setup: config + data + features + subproblems in one call."""
-        self.load_config(config)
-        self.data.load_and_scatter(input_data)
-        
-        if features_oracle is not None:
-            self.features.set_oracle(features_oracle)
-        else:
-            self.features.build_from_data()
-        
-        self.subproblems.load()
-        return self
 
     # ============================================================================
     # Configuration Management

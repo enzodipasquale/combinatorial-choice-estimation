@@ -10,14 +10,14 @@ import logging
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
-from .base import BaseEstimationSolver
+from .base import BaseEstimationManager
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGeneration1SlackSolver(BaseEstimationSolver):
+class RowGeneration1SlackManager(BaseEstimationManager):
     """
     Implements the row generation algorithm with 1slack formulation for parameter estimation in modular bundle choice models.
 

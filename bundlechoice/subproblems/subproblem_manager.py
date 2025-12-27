@@ -33,10 +33,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         self.data_manager = data_manager
         self.feature_manager = feature_manager
         self.subproblem_cfg = subproblem_cfg
-        self.demand_oracle: Optional[BaseSubproblem] = None
-        self._solve_times: List[float] = []
-        self._cache_enabled = False
-        self._result_cache: Dict[str, Any] = {}
+        self.subproblem_instance: Optional[BaseSubproblem] = None
 
     # ============================================================================
     # Subproblem Loading
@@ -44,20 +41,18 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
 
     def load(self, subproblem: Optional[Union[str, type]] = None) -> BaseSubproblem:
         """Load and instantiate subproblem from registry or custom class."""
-        if subproblem is None and self.demand_oracle is not None:
-            return self.demand_oracle
+        if subproblem is None and self.subproblem_instance is not None:
+            return self.subproblem_instance
         
         if subproblem is None:
             subproblem = getattr(self.subproblem_cfg, 'name', None)
         if isinstance(subproblem, str):
             subproblem_cls = SUBPROBLEM_REGISTRY.get(subproblem)
             if subproblem_cls is None:
+                available = ", ".join(SUBPROBLEM_REGISTRY.keys())
                 raise ValueError(
-                    f"Unknown subproblem algorithm: '{subproblem}'\n\n"
-                    f"Available algorithms:\n" +
-                    "\n".join(f"  - {name}" for name in SUBPROBLEM_REGISTRY.keys()) +
-                    "\n\nTo use: bc.subproblems.load('{list(SUBPROBLEM_REGISTRY.keys())[0]}')\n"
-                    "Or provide a custom class inheriting from BaseSubproblem."
+                    f"Unknown subproblem algorithm: '{subproblem}'. "
+                    f"Available: {available}"
                 )
         elif callable(subproblem):
             subproblem_cls = subproblem
@@ -70,8 +65,8 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             subproblem_cfg=self.subproblem_cfg,
             dimensions_cfg=self.dimensions_cfg
         )
-        self.demand_oracle = cast(BaseSubproblem, subproblem_instance)
-        return self.demand_oracle
+        self.subproblem_instance = cast(BaseSubproblem, subproblem_instance)
+        return self.subproblem_instance
 
     # ============================================================================
     # Initialization & Solving
@@ -79,62 +74,32 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
 
     def initialize_local(self) -> Optional[List[Any]]:
         """Initialize local subproblems (returns None for batch, list for serial)."""
-        if self.demand_oracle is None and self.subproblem_cfg and self.subproblem_cfg.name:
+        if self.subproblem_instance is None and self.subproblem_cfg and self.subproblem_cfg.name:
             self.load()
         
-        if self.demand_oracle is None:
+        if self.subproblem_instance is None:
             raise RuntimeError("Subproblem is not initialized.")
         
-        self.local_subproblems = self.demand_oracle.initialize_all()
+        self.local_subproblems = self.subproblem_instance.initialize_all()
         return self.local_subproblems
 
-    def solve_local(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Solve all local subproblems for current rank."""
-        if self.demand_oracle is None:
+    def solve_local(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Solve all local subproblems for current rank. Returns bool array of bundles."""
+        if self.subproblem_instance is None:
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
         
-        # Check cache
-        if self._cache_enabled:
-            theta_key = theta.tobytes()
-            if theta_key in self._result_cache:
-                return self._result_cache[theta_key]
-        
-        # Solve with timing
-        import time
-        t0 = time.time()
-        result = self.demand_oracle.solve_all(theta, self.local_subproblems)
-        elapsed = time.time() - t0
-        self._solve_times.append(elapsed)
-        
-        # Cache result
-        if self._cache_enabled:
-            self._result_cache[theta_key] = result
-        
-        return result
+        return self.subproblem_instance.solve_all(theta, self.local_subproblems)
 
     def init_and_solve(self, theta: NDArray[np.float64], return_values: bool = False) -> Optional[Union[NDArray[np.float64], Tuple[NDArray[np.float64], NDArray[np.float64]]]]:
-        """
-        Initialize and solve local subproblems, then gather results at rank 0.
-
-        Args:
-            theta: Parameters for subproblem solving.
-            return_values: If True, also return utility values.
-        Returns:
-            At rank 0: bundles array, or (bundles, utilities) tuple if return_values=True.
-            At other ranks: None.
-        Raises:
-            RuntimeError: If MPI communicator is not set.
-        """
+        """Initialize and solve local subproblems, then gather results at rank 0."""
         if self.comm_manager is None:
             raise RuntimeError("Communication manager is not set in SubproblemManager.")
         
-        # Auto-load subproblem from config if not already loaded
-        if self.demand_oracle is None and self.subproblem_cfg and self.subproblem_cfg.name:
+        if self.subproblem_instance is None and self.subproblem_cfg and self.subproblem_cfg.name:
             self.load()
         
-        # Broadcast theta using fast buffer-based method (2-7x faster)
         if self.is_root():
             theta = np.asarray(theta, dtype=np.float64)
         else:
@@ -144,10 +109,9 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         local_bundles = self.solve_local(theta)
         bundles = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
         
-        # Log bundle statistics on root rank (using print to avoid logging prefix clutter)
         if self.is_root() and bundles is not None:
-            bundle_sizes = bundles.sum(axis=1)  # Size of each bundle (number of items selected per agent)
-            item_demands = bundles.sum(axis=0)  # Demand for each item across all agents
+            bundle_sizes = bundles.sum(axis=1)
+            item_demands = bundles.sum(axis=0)
             num_items = bundles.shape[1]
             num_agents_total = bundles.shape[0]
             max_possible = num_agents_total * num_items
@@ -159,13 +123,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             print(f"  Aggregate demands: min={item_demands.min()}, max={item_demands.max()}, mean={item_demands.mean():.2f}")
             print(f"  Total items selected: {bundles.sum()} out of {max_possible}")
             
-            # Check for edge cases and print warnings
             if bundle_sizes.max() == 0:
-                print("\n  ⚠️  WARNING: All agents have empty bundles (no items selected)!")
+                print("\n  WARNING: All agents have empty bundles (no items selected)!")
             elif bundle_sizes.min() == num_items:
-                print(f"\n  ⚠️  WARNING: All agents have full bundles (all {num_items} items selected)!")
+                print(f"\n  WARNING: All agents have full bundles (all {num_items} items selected)!")
             
-            print()  # Blank line to separate from next section
+            print()
         
         if return_values:
             utilities = self.feature_manager.compute_gathered_utilities(local_bundles, theta)
@@ -174,20 +137,7 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             return bundles
 
     def brute_force(self, theta: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
-        """
-        Find the maximum bundle value for each local agent using brute force.
-        Iterates over all possible bundles (2^num_items combinations) for each local agent.
-        Gathers results at rank 0.
-
-        Args:
-            theta: Parameter vector for computing bundle values.
-        Returns:
-            At rank 0: tuple (best_bundles, max_values).
-            At other ranks: (None, None).
-        Raises:
-            RuntimeError: If num_items is not set.
-        """
-        # Broadcast theta using fast buffer-based method (2-7x faster)
+        """Find maximum bundle value for each local agent using brute force."""
         if self.is_root():
             theta = np.asarray(theta, dtype=np.float64)
         else:
@@ -219,40 +169,25 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         all_best_bundles = self.comm_manager.concatenate_array_at_root_fast(best_bundles, root=0)
         return all_best_bundles, all_max_values
     
-    def get_stats(self) -> Dict[str, float]:
-        """
-        Get solving statistics for profiling.
+    # ============================================================================
+    # Settings Management
+    # ============================================================================
+    
+    def update_settings(self, settings: Dict[str, Any]) -> None:
+        """Update subproblem settings and apply to initialized models."""
+        self.subproblem_cfg.settings.update(settings)
         
-        Returns:
-            Dictionary with statistics including num_solves, total_time, mean_time, max_time.
-        """
-        if not self._solve_times:
-            return {
-                'num_solves': 0,
-                'total_time': 0.0,
-                'mean_time': 0.0,
-                'max_time': 0.0,
-            }
-        
-        return {
-            'num_solves': len(self._solve_times),
-            'total_time': sum(self._solve_times),
-            'mean_time': np.mean(self._solve_times),
-            'max_time': max(self._solve_times),
-        }
-    
-    def enable_cache(self):
-        """Enable result caching for repeated solves (useful for sensitivity analysis)."""
-        self._cache_enabled = True
-    
-    def disable_cache(self):
-        """Disable result caching and clear cache."""
-        self._cache_enabled = False
-        self._result_cache.clear()
-    
-    def clear_stats(self):
-        """Clear solve time statistics."""
-        self._solve_times.clear()
+        if hasattr(self, 'local_subproblems') and self.local_subproblems is not None:
+            if isinstance(self.local_subproblems, list):
+                import gurobipy as gp
+                for model in self.local_subproblems:
+                    if model is not None and hasattr(model, 'setParam'):
+                        for param_name, value in settings.items():
+                            if value is not None:
+                                model.setParam(param_name, value)
+                            else:
+                                if param_name == "TimeLimit":
+                                    model.setParam(param_name, gp.GRB.INFINITY)
 
 
 

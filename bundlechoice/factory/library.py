@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import greedy, linear_knapsack, plain_single_item, quadratic_knapsack, supermodular
+from . import airline, greedy, gentzkow, linear_knapsack, plain_single_item, quadratic_knapsack, supermodular
 
 
 class ScenarioLibrary:
@@ -27,6 +27,14 @@ class ScenarioLibrary:
     @staticmethod
     def quadratic_supermodular():
         return supermodular.build()
+
+    @staticmethod
+    def gentzkow():
+        return gentzkow.build()
+
+    @staticmethod
+    def airline():
+        return airline.build()
 
 
 __all__ = ["ScenarioLibrary"]

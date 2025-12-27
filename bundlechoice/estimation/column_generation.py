@@ -15,12 +15,12 @@ from gurobipy import GRB
 from numpy.typing import NDArray
 
 from bundlechoice.utils import get_logger, suppress_output
-from .base import BaseEstimationSolver
+from .base import BaseEstimationManager
 
 logger = get_logger(__name__)
 
 
-class ColumnGenerationSolver(BaseEstimationSolver):
+class ColumnGenerationManager(BaseEstimationManager):
     """
     Column generation algorithm for the dual formulation of bundle choice estimation.
 

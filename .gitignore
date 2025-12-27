@@ -38,7 +38,7 @@ Makefile
 # Other
 /_tests/
 bundlechoice/_legacy/
-/applications/
+/applications/firms_export/
 singularity.txt
 /benchmarking/
 /examples/
@@ -46,9 +46,8 @@ singularity.txt
 config.yaml.backup
 /validation_auction/
 /experiments_paper_wellipsoid/
-experiments/_others/
-experiments/BLP/
-experiments/testing_quadsupermod/
+experiments/
+paper/
 
 # Experiment results (local only, not synced)
 experiments_paper/__results/*

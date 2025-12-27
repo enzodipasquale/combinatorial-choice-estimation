@@ -88,6 +88,8 @@ class PreparedScenario:
 
         if stage == "estimation":
             bc.subproblems.load()
+            # Re-run initializer to install any post-load optimizations (e.g., optimized find_best_item)
+            self.feature_spec.initializer(bc)
 
 
 class ScenarioBuilder(Protocol):

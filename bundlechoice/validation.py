@@ -27,7 +27,7 @@ def check_component(bc, component: str) -> bool:
         'config': lambda: bc.config is not None,
         'data': lambda: bc.data_manager is not None and bc.data_manager.local_data is not None,
         'features': lambda: bc.feature_manager is not None and bc.feature_manager._features_oracle is not None,
-        'subproblems': lambda: bc.subproblem_manager is not None and bc.subproblem_manager.demand_oracle is not None,
+        'subproblems': lambda: bc.subproblem_manager is not None and bc.subproblem_manager.subproblem_instance is not None,
         'obs_bundles': lambda: (bc.data_manager is not None and bc.data_manager.local_data is not None 
                                 and bc.data_manager.local_data.get('obs_bundles') is not None),
     }

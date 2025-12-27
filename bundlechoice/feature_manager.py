@@ -138,14 +138,13 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         self.data_manager.verify_feature_count()
         
         if self.is_root():
-            input_data = self.input_data
-            agent_data = input_data.get("agent_data")
-            item_data = input_data.get("item_data")
-            has_modular_agent = "modular" in agent_data if agent_data else None
-            has_quadratic_agent = "quadratic" in agent_data if agent_data else None
-            has_modular_item = "modular" in item_data if item_data else None
-            has_quadratic_item = "quadratic" in item_data if item_data else None
-            flags = (has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item)
+            data_info = self.data_manager.get_data_info(self.input_data)
+            flags = (
+                data_info["has_modular_agent"],
+                data_info["has_quadratic_agent"],
+                data_info["has_modular_item"],
+                data_info["has_quadratic_item"]
+            )
         else:
             flags = None
         

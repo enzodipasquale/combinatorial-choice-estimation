@@ -7,17 +7,17 @@ from numpy.typing import NDArray
 from datetime import datetime
 from typing import Optional, Tuple, Callable, Dict, Any
 import math
-from .base import BaseEstimationSolver
+from .base import BaseEstimationManager
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-class EllipsoidSolver(BaseEstimationSolver):
+class EllipsoidManager(BaseEstimationManager):
     """
     Implements the ellipsoid method for parameter estimation in modular bundle choice models.
 
-    This solver uses the ellipsoid method to iteratively refine parameter estimates
+    This manager uses the ellipsoid method to iteratively refine parameter estimates
     based on gradient information and constraint violations.
     """
     
@@ -32,7 +32,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         theta_init: Optional[NDArray[np.float64]] = None
     ) -> None:
         """
-        Initialize the EllipsoidSolver.
+        Initialize the EllipsoidManager.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -237,5 +237,5 @@ class EllipsoidSolver(BaseEstimationSolver):
                 logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")
 
 
-
-   
+# Backward compatibility alias
+EllipsoidSolver = EllipsoidManager

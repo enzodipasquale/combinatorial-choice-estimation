@@ -1,13 +1,13 @@
 import numpy as np
 import gurobipy as gp
-from ..base import SerialSubproblemBase
+from ..base import BaseSerialSubproblem
 import logging
 from typing import Any
 from bundlechoice.utils import suppress_output
 
 logger = logging.getLogger(__name__)
 
-class LinearKnapsackSubproblem(SerialSubproblemBase):
+class LinearKnapsackSubproblem(BaseSerialSubproblem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
