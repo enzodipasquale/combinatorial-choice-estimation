@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 from mpi4py import MPI
@@ -14,6 +14,7 @@ from .base import FeatureSpec, SyntheticScenario
 from .data_generator import (
     CapacityConfig,
     DataGenerator,
+    EndogeneityConfig,
     ModularAgentConfig,
     ModularItemConfig,
     WeightConfig,
@@ -39,6 +40,7 @@ class LinearKnapsackParams:
     capacity_config: CapacityConfig = field(default_factory=CapacityConfig)
     _random_capacity_low: Optional[int] = None
     _random_capacity_high: Optional[int] = None
+    endogeneity_config: Optional[EndogeneityConfig] = None
 
     @property
     def num_features(self) -> int:
@@ -154,6 +156,37 @@ class LinearKnapsackScenarioBuilder:
             replace(self._params, _random_capacity_low=low, _random_capacity_high=high)
         )
 
+    def with_endogeneity(
+        self,
+        endogenous_feature_indices: list[int],
+        num_instruments: int,
+        *,
+        pi_matrix: Optional[np.ndarray] = None,
+        pi_config: Optional[dict] = None,
+        lambda_matrix: Optional[np.ndarray] = None,
+        lambda_config: Optional[dict] = None,
+        xi_cov: Optional[Union[float, np.ndarray]] = None,
+        instrument_cov: Optional[np.ndarray] = None,
+        instrument_config: Optional[ModularItemConfig] = None,
+        ensure_full_rank: bool = True,
+    ) -> "LinearKnapsackScenarioBuilder":
+        """Enable endogeneity in modular item features following BLP structure."""
+        endogeneity_config = EndogeneityConfig(
+            endogenous_feature_indices=endogenous_feature_indices,
+            num_instruments=num_instruments,
+            pi_matrix=pi_matrix,
+            pi_config=pi_config,
+            lambda_matrix=lambda_matrix,
+            lambda_config=lambda_config,
+            xi_cov=xi_cov,
+            instrument_cov=instrument_cov,
+            instrument_config=instrument_config,
+            ensure_full_rank=ensure_full_rank,
+        )
+        return LinearKnapsackScenarioBuilder(
+            replace(self._params, endogeneity_config=endogeneity_config)
+        )
+
     def build(self) -> SyntheticScenario:
         params = self._params
 
@@ -163,7 +196,7 @@ class LinearKnapsackScenarioBuilder:
                     "num_agents": params.num_agents,
                     "num_items": params.num_items,
                     "num_features": params.num_features,
-                    "num_simuls": params.num_simuls,
+                    "num_simuls": 1,  # Always 1 for generation stage
                 },
                 "subproblem": {
                     "name": "LinearKnapsack",
@@ -201,10 +234,33 @@ class LinearKnapsackScenarioBuilder:
                     ),
                     params.agent_config,
                 )
-                item_modular = generator.generate_modular_item(
+                # Generate base modular item features
+                base_item_modular = generator.generate_modular_item(
                     (params.num_items, params.num_item_modular_features),
                     params.item_config,
                 )
+                
+                # Apply endogeneity if configured
+                endogeneity_metadata = {}
+                if params.endogeneity_config:
+                    item_modular, instruments, xi, v = generator.generate_endogenous_modular_item(
+                        base_item_modular, params.endogeneity_config
+                    )
+                    errors = generator.generate_errors_with_endogeneity(
+                        (params.num_agents, params.num_items), params.sigma, xi
+                    )
+                    # Store for IV regression
+                    endogeneity_metadata = {
+                        "instruments": instruments,
+                        "xi": xi,
+                        "original_modular_item": base_item_modular.copy(),
+                    }
+                else:
+                    item_modular = base_item_modular
+                    errors = generator.generate_errors(
+                        (params.num_agents, params.num_items), params.sigma
+                    )
+                
                 item_weights = generator.generate_weights(params.num_items, params.weight_config)
                 if params._random_capacity_low is not None:
                     agent_capacity = generator.generate_random_capacities(
@@ -214,9 +270,6 @@ class LinearKnapsackScenarioBuilder:
                     agent_capacity = generator.generate_capacities(
                         params.num_agents, item_weights, params.capacity_config
                     )
-                errors = generator.generate_errors(
-                    (params.num_simuls, params.num_agents, params.num_items), params.sigma
-                )
                 generation_data = {
                     "item_data": {
                         "modular": item_modular,
@@ -228,6 +281,8 @@ class LinearKnapsackScenarioBuilder:
                     },
                     "errors": errors,
                 }
+                # Add endogeneity metadata if present
+                generation_data.update(endogeneity_metadata)
 
             bc.data.load_and_scatter(generation_data if rank == 0 else None)
             spec.initializer(bc)

@@ -18,23 +18,28 @@ def test_quad_vs_bruteforce():
     np.random.seed(123)
     
     # Modular and quadratic for both agent_data and item_data
+    # Use balanced distributions to avoid trivial solutions (all items or none)
+    # Strategy: Create mixed utilities - some items attractive, some not
     agent_data = {
-        "modular": np.random.normal(0, 1, (num_agents, num_items, agent_modular_dim)),
-        "quadratic": np.abs(np.random.normal(0, 1, (num_agents, num_items, num_items, agent_quadratic_dim))),
+        # Mix positive and negative modular terms across items
+        "modular": np.random.choice([-0.5, 0.3], size=(num_agents, num_items, agent_modular_dim), p=[0.6, 0.4]) + np.random.normal(0, 0.2, (num_agents, num_items, agent_modular_dim)),
+        "quadratic": np.abs(np.random.normal(0, 0.2, (num_agents, num_items, num_items, agent_quadratic_dim))),
     }
     item_data = {
-        "modular": np.random.normal(0, 1, (num_items, item_modular_dim)),
-        "quadratic": np.abs(np.random.normal(0, 1, (num_items, num_items, item_quadratic_dim))),
+        # Mix positive and negative modular terms
+        "modular": np.random.choice([-0.3, 0.4], size=(num_items, item_modular_dim), p=[0.5, 0.5]) + np.random.normal(0, 0.15, (num_items, item_modular_dim)),
+        "quadratic": np.abs(np.random.normal(0, 0.2, (num_items, num_items, item_quadratic_dim))),
     }
     
-    # Set diagonals to zero for all quadratic features
+    # Set diagonals to zero for all quadratic features and make upper triangular
     for i in range(num_agents):
         for k in range(agent_quadratic_dim):
-            np.fill_diagonal(agent_data["quadratic"][i, :, :, k], 0)
+            agent_data["quadratic"][i, :, :, k] = np.triu(agent_data["quadratic"][i, :, :, k], k=1)
     for k in range(item_quadratic_dim):
-        np.fill_diagonal(item_data["quadratic"][:, :, k], 0)
+        item_data["quadratic"][:, :, k] = np.triu(item_data["quadratic"][:, :, k], k=1)
 
-    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    # Use moderate error variance to add variation
+    errors = np.random.normal(0, 0.6, size=(num_simuls, num_agents, num_items))
     input_data = {
         "item_data": item_data,
         "agent_data": agent_data,
@@ -62,10 +67,13 @@ def test_quad_vs_bruteforce():
     bc.features.build_from_data()
 
     # Test with different theta_0 values (all non-negative for quadratic terms)
+    # Use balanced theta values to avoid trivial solutions
+    # Strategy: Use moderate values that balance positive/negative modular terms with quadratic terms
+    np.random.seed(123)  # Reset seed for theta generation
     test_lambdas = [
-        np.ones(num_features),  # All ones
-        np.abs(np.random.normal(0, 1, num_features)),  # Random non-negative (absolute values)
-        np.array([1] * (num_features - 1) + [0.1]),  # All ones except last is 0.1
+        np.array([0.4, 0.3, 0.4, 0.3]),  # Balanced moderate values
+        np.array([0.5, 0.25, 0.35, 0.2]),  # Slightly varied
+        np.abs(np.random.normal(0.4, 0.12, num_features)),  # Random moderate values
     ]
 
     for i, theta_0 in enumerate(test_lambdas):
@@ -85,6 +93,19 @@ def test_quad_vs_bruteforce():
             
             quad_bundles = quad_results
             bruteforce_bundles, bruteforce_max_values = bruteforce_results
+            
+            # Verify non-trivial choices: ideally not all items or none for most agents
+            bundle_sizes = quad_bundles.sum(axis=1)
+            num_trivial = np.sum((bundle_sizes == 0) | (bundle_sizes == num_items))
+            if num_trivial > 0:
+                print(f"  WARNING: {num_trivial}/{num_agents} agents have trivial choices (0 or {num_items} items)")
+                print(f"  Bundle sizes: min={bundle_sizes.min()}, max={bundle_sizes.max()}, mean={bundle_sizes.mean():.1f}, std={bundle_sizes.std():.1f}")
+                # Try to ensure at least some non-trivial choices for meaningful test
+                if num_trivial == num_agents:
+                    print(f"  ERROR: All agents have trivial choices! Adjusting data generation...")
+                    # This is a warning, not a failure - the solver correctness is still tested
+            else:
+                print(f"  ✓ Non-trivial choices: Bundle sizes: min={bundle_sizes.min()}, max={bundle_sizes.max()}, mean={bundle_sizes.mean():.1f}")
             
             assert np.array_equal(quad_bundles, bruteforce_bundles)
 

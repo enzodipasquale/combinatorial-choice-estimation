@@ -6,7 +6,7 @@ import logging
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
-from .base import BaseEstimationSolver
+from .base import BaseEstimationManager
 logger = get_logger(__name__)
 
 
@@ -14,11 +14,11 @@ logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class InequalitiesSolver(BaseEstimationSolver):
+class InequalitiesManager(BaseEstimationManager):
     """
     Implements the inequalities method for parameter estimation in modular bundle choice models.
 
-    This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
+    This manager is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
     def __init__(
                 self,
@@ -29,7 +29,7 @@ class InequalitiesSolver(BaseEstimationSolver):
                 subproblem_manager: Optional[Any] = None
                 ) -> None:
         """
-        Initialize the InequalitiesSolver.
+        Initialize the InequalitiesManager.
         Note: subproblem_manager is optional (not needed for inequalities method).
         """
         super().__init__(

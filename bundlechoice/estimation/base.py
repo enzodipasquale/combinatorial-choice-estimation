@@ -1,7 +1,7 @@
 """
-Base estimation solver for bundle choice estimation.
+Base estimation manager for bundle choice estimation.
 
-Provides common functionality for row generation, ellipsoid, and other solvers.
+Provides common functionality for row generation, ellipsoid, and other estimation methods.
 """
 
 import numpy as np
@@ -14,11 +14,11 @@ logger = get_logger(__name__)
 
 
 # ============================================================================
-# Base Estimation Solver
+# Base Estimation Manager
 # ============================================================================
 
-class BaseEstimationSolver(HasDimensions, HasData, HasComm):
-    """Base class for estimation solvers (row generation, ellipsoid, etc.)."""
+class BaseEstimationManager(HasDimensions, HasData, HasComm):
+    """Base class for estimation managers (row generation, ellipsoid, etc.)."""
     
     def __init__(self, comm_manager: Any, dimensions_cfg: Any, data_manager: Any,
                  feature_manager: Any, subproblem_manager: Any) -> None:

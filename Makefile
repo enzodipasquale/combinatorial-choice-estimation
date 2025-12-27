@@ -7,13 +7,13 @@ supermod_experiment:
 
 
 greedy:
-	mpirun -n 10 python3 benchmarking/greedy/experiment.py
+	mpirun -n 10 python3 experiments/_deprecated/benchmarking_with_score/greedy/experiment.py
 supermod:
-	mpirun -n 10 python3 benchmarking/supermod/experiment.py
+	mpirun -n 10 python3 experiments/_deprecated/benchmarking_with_score/supermod/experiment.py
 knapsack:
-	mpirun -n 10 python3 benchmarking/knapsack/experiment.py
+	mpirun -n 10 python3 experiments/_deprecated/benchmarking_with_score/knapsack/experiment.py
 plain:
-	mpirun -n 1 python3 benchmarking/plain_single_item/experiment.py
+	mpirun -n 1 python3 experiments/_deprecated/benchmarking_with_score/plain_single_item/experiment.py
 
 
 greedy_benchmark:

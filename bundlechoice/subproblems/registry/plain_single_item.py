@@ -4,7 +4,7 @@ Plain single-item subproblem solver.
 Selects the single item with maximum utility per agent.
 """
 
-from bundlechoice.subproblems.base import BatchSubproblemBase
+from bundlechoice.subproblems.base import BaseBatchSubproblem
 import numpy as np
 from typing import Optional, Any
 from numpy.typing import NDArray
@@ -14,18 +14,17 @@ from numpy.typing import NDArray
 # Plain Single Item Subproblem Solver
 # ============================================================================
 
-class PlainSingleItemSubproblem(BatchSubproblemBase):
+class PlainSingleItemSubproblem(BaseBatchSubproblem):
     """Selects single item with maximum utility per agent."""
     
     def initialize(self) -> None:
         """Check available features and data."""
-        agent_data = {} if self.local_data["agent_data"] is None else self.local_data["agent_data"]
-        item_data = {} if self.local_data["item_data"] is None else self.local_data["item_data"]
-
-        self.has_modular_agent = "modular" in agent_data
-        self.has_modular_item = "modular" in item_data
-        self.has_errors = "errors" in self.local_data
-        self.has_constraint_mask = "constraint_mask" in agent_data
+        info = self.data_manager.get_data_info()
+        
+        self.has_modular_agent = info["has_modular_agent"]
+        self.has_modular_item = info["has_modular_item"]
+        self.has_errors = info["has_errors"]
+        self.has_constraint_mask = info["has_constraint_mask"]
 
     def solve(self, theta: NDArray[np.float64], pb: Optional[Any] = None) -> NDArray[np.bool_]:
         """Select single item with max utility per agent (respects constraint_mask)."""
@@ -39,18 +38,17 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
 
     def build_utilities(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build utility matrix U_i_j for all agents and items."""
+        info = self.data_manager.get_data_info()
         U_i_j = np.zeros((self.num_local_agents, self.num_items))
         offset = 0
         if self.has_modular_agent:
             modular_agent = self.local_data["agent_data"]["modular"]
-            num_mod_agent = modular_agent.shape[-1]
-            U_i_j += modular_agent @ theta[offset:offset + num_mod_agent]
-            offset += num_mod_agent
+            U_i_j += modular_agent @ theta[offset:offset + info["num_modular_agent"]]
+            offset += info["num_modular_agent"]
         if self.has_modular_item:
             modular_item = self.local_data["item_data"]["modular"]
-            num_mod_item = modular_item.shape[-1]
-            U_i_j += modular_item @ theta[offset:offset + num_mod_item]
-            offset += num_mod_item
+            U_i_j += modular_item @ theta[offset:offset + info["num_modular_item"]]
+            offset += info["num_modular_item"]
         if self.has_errors:
             U_i_j += self.local_data["errors"]
         return U_i_j

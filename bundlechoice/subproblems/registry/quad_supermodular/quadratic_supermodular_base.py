@@ -5,10 +5,10 @@ Base class for quadratic supermodular minimization subproblems.
 Handles common initialization and matrix building logic shared by different solvers.
 """
 import numpy as np
-from typing import Any, Optional
-from ...base import BatchSubproblemBase
+from typing import Any, Optional, Tuple
+from ...base import BaseBatchSubproblem
 
-class QuadraticSupermodular(BatchSubproblemBase):
+class QuadraticSupermodular(BaseBatchSubproblem):
     """
     Base class for quadratic supermodular minimization subproblems.
     Handles common initialization and matrix building logic.
@@ -18,74 +18,66 @@ class QuadraticSupermodular(BatchSubproblemBase):
         Prepare all agent/item data and precompute slices for efficient solving.
         Handles missing modular/quadratic agent/item data gracefully.
         """
-        agent_data = self.local_data.get("agent_data") or {}
-        item_data = self.local_data.get("item_data") or {}
+        info = self.data_manager.get_data_info()
+        self.info = info
+        self.has_modular_agent = info["has_modular_agent"]
+        self.has_modular_item = info["has_modular_item"]
+        self.has_quadratic_agent = info["has_quadratic_agent"]
+        self.has_quadratic_item = info["has_quadratic_item"]
+        self.has_errors = info["has_errors"]
+        self.has_constraint_mask = info["has_constraint_mask"]
 
-        self.has_modular_agent = "modular" in agent_data
-        self.has_modular_item = "modular" in item_data
-        self.has_quadratic_agent = "quadratic" in agent_data
-        self.has_quadratic_item = "quadratic" in item_data
-        self.has_errors = "errors" in self.local_data
-        self.has_constraint_mask = "constraint_mask" in agent_data
-
+        offset = 0
+        if self.has_modular_agent:
+            self.modular_agent = self.local_data["agent_data"]["modular"]
+            self.modular_agent_slice = slice(offset, offset + info["num_modular_agent"])
+            offset += info["num_modular_agent"]
         if self.has_quadratic_agent:
-            quadratic_agent = self.local_data["agent_data"]["quadratic"]    
-            assert np.all(np.diagonal(quadratic_agent, axis1=1, axis2=2) == 0), f"Matrix has non-zero diagonal"
-            assert np.all(quadratic_agent >= 0), f"Matrix has off-diagonal negative values"
+            self.quadratic_agent = self.local_data["agent_data"]["quadratic"]
+            self.quadratic_agent_slice = slice(offset, offset + info["num_quadratic_agent"])
+            offset += info["num_quadratic_agent"]
+        if self.has_modular_item:
+            self.modular_item = self.local_data["item_data"]["modular"]
+            self.modular_item_slice = slice(offset, offset + info["num_modular_item"])
+            offset += info["num_modular_item"]
         if self.has_quadratic_item:
-            quadratic_item = self.local_data["item_data"]["quadratic"]
-            assert np.all(np.diagonal(quadratic_item, axis1=0, axis2=1) == 0), f"Matrix has non-zero diagonal"
-            assert np.all(quadratic_item >= 0), f"Matrix has off-diagonal negative values"
+            self.quadratic_item = self.local_data["item_data"]["quadratic"]
+            self.quadratic_item_slice = slice(offset, offset + info["num_quadratic_item"])
+            offset += info["num_quadratic_item"]
+        if self.has_errors:
+            self.errors = self.local_data["errors"]
 
-    def build_quadratic_matrix(self, theta: np.ndarray) -> np.ndarray:
+        if self.has_quadratic_agent: 
+            assert np.all(np.diagonal(self.quadratic_agent, axis1=1, axis2=2) == 0), f"Matrix has non-zero diagonal"
+            assert np.all(self.quadratic_agent >= 0), f"Matrix has off-diagonal negative values"
+        if self.has_quadratic_item:
+            assert np.all(np.diagonal(self.quadratic_item, axis1=0, axis2=1) == 0), f"Matrix has non-zero diagonal"
+            assert np.all(self.quadratic_item >= 0), f"Matrix has off-diagonal negative values"
+
+
+    def build_quadratic_matrix(self, theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Build the quadratic matrix for all agents.
+        Build linear and quadratic matrices for all agents.
         Args:
             theta: Parameter vector
         Returns:
-            agents_matrices: Upper Triangular Quadratic matrices for all agents (num_local_agents, num_items, num_items)
+            Tuple of (linear, quadratic) where:
+            - linear: (num_local_agents, num_items) linear/diagonal terms
+            - quadratic: (num_local_agents, num_items, num_items) off-diagonal quadratic terms
         """
-        agents_matrices = np.zeros((self.num_local_agents, self.num_items, self.num_items))
-        offset = 0
+        linear = np.zeros((self.num_local_agents, self.num_items))
+        quadratic = np.zeros((self.num_local_agents, self.num_items, self.num_items))
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             # Build diagonal contributions
-            diagonal_contributions = np.zeros((self.num_local_agents, self.num_items))
-            
             if self.has_modular_agent:
-                modular_agent = self.local_data["agent_data"]["modular"]
-                num_mod_agent = modular_agent.shape[-1]
-                diagonal_contributions += (modular_agent @ theta[offset:offset + num_mod_agent])
-                offset += num_mod_agent
-
+                linear += (self.modular_agent @ theta[self.modular_agent_slice])
             if self.has_quadratic_agent:
-                quadratic_agent = self.local_data["agent_data"]["quadratic"]
-                num_quad_agent = quadratic_agent.shape[-1]
-                agents_matrices += (quadratic_agent @ theta[offset:offset + num_quad_agent])
-                offset += num_quad_agent
-
+                quadratic += (self.quadratic_agent @ theta[self.quadratic_agent_slice])
             if self.has_modular_item:
-                modular_item = self.local_data["item_data"]["modular"]
-                num_mod_item = modular_item.shape[-1]
-                diagonal_contributions += (modular_item @ theta[offset:offset + num_mod_item])
-                offset += num_mod_item
-
+                linear += (self.modular_item @ theta[self.modular_item_slice])
             if self.has_quadratic_item:
-                quadratic_item = self.local_data["item_data"]["quadratic"]
-                num_quad_item = quadratic_item.shape[-1]
-                agents_matrices += (quadratic_item @ theta[offset:offset + num_quad_item])
-                offset += num_quad_item
-
+                quadratic += (self.quadratic_item @ theta[self.quadratic_item_slice])
             if self.has_errors:
-                diagonal_contributions += self.local_data["errors"]
+                linear += self.errors
         
-        # Apply diagonal contributions
-        agents_matrices[:, np.arange(self.num_items), np.arange(self.num_items)] += diagonal_contributions
-        agents_matrices = np.triu(agents_matrices, k = 0) + np.tril(agents_matrices, k = -1).transpose(0, 2, 1)
-        
-        # assert upper triangular
-        assert np.all(np.triu(agents_matrices) == agents_matrices), f"agents_matrices is not upper triangular"
-        # assert lower triangular
-        # if any of the entry of P is nan give error
-        if np.any(np.isnan(agents_matrices)):
-            raise ValueError(f"agents_matrices contains nan, theta: {theta}")
-        return agents_matrices 
+        return linear, quadratic

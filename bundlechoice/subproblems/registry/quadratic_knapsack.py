@@ -10,18 +10,17 @@ import logging
 from typing import Any
 from contextlib import nullcontext
 from numpy.typing import NDArray
-from ..base import SerialSubproblemBase
+from ..base import BaseSerialSubproblem
 from bundlechoice.utils import suppress_output, get_logger
 
 logger = get_logger(__name__)
-_null_context = nullcontext
 
 
 # ============================================================================
 # Quadratic Knapsack Subproblem Solver
 # ============================================================================
 
-class QuadraticKnapsackSubproblem(SerialSubproblemBase):
+class QuadraticKnapsackSubproblem(BaseSerialSubproblem):
     """Quadratic knapsack solver: max utility with quadratic terms, weight constraint."""
     
     def __init__(self, *args, **kwargs) -> None:
@@ -30,9 +29,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     def initialize(self, local_id: int) -> Any:
         """Initialize Gurobi model with weight constraint."""
         output_flag = self.config.settings.get("OutputFlag", 0)
-        # Only suppress output if OutputFlag is 0
-        context = suppress_output() if output_flag == 0 else _null_context()
-        # Suppress gurobipy logger when showing Gurobi output to avoid duplicate messages
+        context = suppress_output() if output_flag == 0 else nullcontext()
         gurobi_logger = logging.getLogger("gurobipy")
         old_gurobi_level = gurobi_logger.level if output_flag == 1 else None
         try:
@@ -59,7 +56,6 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     def solve(self, local_id: int, theta: NDArray[np.float64], pb: Any) -> NDArray[np.bool_]:
         """Solve quadratic knapsack: set linear + quadratic objective, optimize."""
         output_flag = self.config.settings.get("OutputFlag", 0)
-        # Suppress gurobipy logger when showing Gurobi output to avoid duplicate messages
         gurobi_logger = logging.getLogger("gurobipy")
         old_gurobi_level = None
         if output_flag == 1:
@@ -97,36 +93,34 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
 
     def _build_Q_j_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build quadratic matrix Q_j_j from agent/item quadratic features."""
+        info = self.data_manager.get_data_info()
         agent_data = self.local_data.get("agent_data", {})
         item_data = self.local_data.get("item_data", {})
         
         Q_j_j = np.zeros((self.num_items, self.num_items))
         offset = 0
         
-        if "modular" in agent_data:
-            num_mod_agent = agent_data["modular"].shape[-1]
-            offset += num_mod_agent
+        if info["has_modular_agent"]:
+            offset += info["num_modular_agent"]
         
-        if "quadratic" in agent_data:
+        if info["has_quadratic_agent"]:
             quadratic_agent = agent_data["quadratic"]
-            num_quad_agent = quadratic_agent.shape[-1]
-            Q_j_j += (quadratic_agent[local_id] @ theta[offset:offset + num_quad_agent])
-            offset += num_quad_agent
+            Q_j_j += (quadratic_agent[local_id] @ theta[offset:offset + info["num_quadratic_agent"]])
+            offset += info["num_quadratic_agent"]
         
-        if "modular" in item_data:
-            num_mod_item = item_data["modular"].shape[-1]
-            offset += num_mod_item
+        if info["has_modular_item"]:
+            offset += info["num_modular_item"]
         
-        if "quadratic" in item_data:
+        if info["has_quadratic_item"]:
             quadratic_item = item_data["quadratic"]
-            num_quad_item = quadratic_item.shape[-1]
-            Q_j_j += (quadratic_item @ theta[offset:offset + num_quad_item])
-            offset += num_quad_item
+            Q_j_j += (quadratic_item @ theta[offset:offset + info["num_quadratic_item"]])
+            offset += info["num_quadratic_item"]
         
         return Q_j_j
 
     def _build_L_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build linear coefficients L_j from agent/item modular features."""
+        info = self.data_manager.get_data_info()
         error_j = self.local_data["errors"][local_id]
         agent_data = self.local_data.get("agent_data", {})
         item_data = self.local_data.get("item_data", {})
@@ -134,17 +128,15 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
         L_j = error_j.copy()
         offset = 0
         
-        if "modular" in agent_data:
+        if info["has_modular_agent"]:
             modular_agent = agent_data["modular"]
-            num_mod_agent = modular_agent.shape[-1]
-            L_j += (modular_agent[local_id] @ theta[offset:offset + num_mod_agent])
-            offset += num_mod_agent
+            L_j += (modular_agent[local_id] @ theta[offset:offset + info["num_modular_agent"]])
+            offset += info["num_modular_agent"]
         
-        if "modular" in item_data:
+        if info["has_modular_item"]:
             modular_item = item_data["modular"]
-            num_mod_item = modular_item.shape[-1]
-            L_j += (modular_item @ theta[offset:offset + num_mod_item])
-            offset += num_mod_item
+            L_j += (modular_item @ theta[offset:offset + info["num_modular_item"]])
+            offset += info["num_modular_item"]
         
         return L_j
 

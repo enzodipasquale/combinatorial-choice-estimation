@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, fields
-from typing import Optional, List, Any, Dict, Union
+from typing import Optional, List, Any, Dict, Union, Callable
 from pathlib import Path
 import numpy as np
 import yaml
@@ -38,7 +38,12 @@ class DimensionsConfig(AutoUpdateMixin):
     num_agents: Optional[int] = None
     num_items: Optional[int] = None
     num_features: Optional[int] = None
-    num_simuls: int = 1
+    num_simulations: int = 1
+    # Backward compatibility alias
+    @property
+    def num_simuls(self) -> int:
+        """Backward compatibility alias for num_simulations."""
+        return self.num_simulations
 
 
 @dataclass
@@ -61,6 +66,7 @@ class RowGenerationConfig(AutoUpdateMixin):
     theta_ubs: Any = 1000
     theta_lbs: Any = None
     parameters_to_log: Optional[List[int]] = None
+    subproblem_callback: Optional[Callable[[int, Any, Optional[Any]], None]] = None
 
 
 @dataclass
@@ -91,8 +97,13 @@ class BundleChoiceConfig(AutoUpdateMixin):
     @classmethod
     def from_dict(cls, cfg: Dict[str, Any]) -> 'BundleChoiceConfig':
         """Create configuration from dictionary."""
+        dims_cfg = cfg.get("dimensions", {})
+        # Backward compatibility: convert num_simuls to num_simulations
+        if "num_simuls" in dims_cfg and "num_simulations" not in dims_cfg:
+            dims_cfg = dims_cfg.copy()
+            dims_cfg["num_simulations"] = dims_cfg.pop("num_simuls")
         return cls(
-            dimensions=DimensionsConfig(**cfg.get("dimensions", {})),
+            dimensions=DimensionsConfig(**dims_cfg),
             subproblem=SubproblemConfig(**cfg.get("subproblem", {})),
             row_generation=RowGenerationConfig(**cfg.get("row_generation", {})),
             ellipsoid=EllipsoidConfig(**cfg.get("ellipsoid", {})),
@@ -127,8 +138,8 @@ class BundleChoiceConfig(AutoUpdateMixin):
             raise ValueError("num_items must be positive")
         if self.dimensions.num_features is not None and self.dimensions.num_features <= 0:
             raise ValueError("num_features must be positive")
-        if self.dimensions.num_simuls <= 0:
-            raise ValueError("num_simuls must be positive")
+        if self.dimensions.num_simulations <= 0:
+            raise ValueError("num_simulations must be positive")
         
         if self.row_generation.tolerance_optimality <= 0:
             raise ValueError("tolerance_optimality must be positive")

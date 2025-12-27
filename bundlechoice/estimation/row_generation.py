@@ -11,18 +11,18 @@ import logging
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
-from .base import BaseEstimationSolver
+from .base import BaseEstimationManager
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
-class RowGenerationSolver(BaseEstimationSolver):
+class RowGenerationManager(BaseEstimationManager):
     """
     Implements the row generation algorithm for parameter estimation in modular bundle choice models.
 
-    This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
+    This manager is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
     def __init__(
                 self, 
@@ -31,10 +31,10 @@ class RowGenerationSolver(BaseEstimationSolver):
                 row_generation_cfg: Any,
                 data_manager: Any,
                 feature_manager: Any,
-                subproblem_manager: Any,
-                theta_init: Optional[NDArray[np.float64]] = None) -> None:
+                subproblem_manager: Any
+    ) -> None:
         """
-        Initialize the RowGenerationSolver.
+        Initialize the RowGenerationManager.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -43,7 +43,6 @@ class RowGenerationSolver(BaseEstimationSolver):
             data_manager: DataManager instance
             feature_manager: FeatureManager instance
             subproblem_manager: SubproblemManager instance
-            theta_init: Optional initial theta for warm start
         """
         super().__init__(
             comm_manager=comm_manager,
@@ -60,7 +59,7 @@ class RowGenerationSolver(BaseEstimationSolver):
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
-        self.theta_init = theta_init
+        self.constraint_bundles = {}
 
     def _setup_gurobi_model_params(self) -> Any:
         """Create and set up Gurobi model with parameters from configuration."""    
@@ -83,8 +82,13 @@ class RowGenerationSolver(BaseEstimationSolver):
                     model.setParam(param_name, value)
         return model
 
-    def _initialize_master_problem(self) -> None:
-        """Create and configure the master problem (Gurobi model)."""
+    def _initialize_master_problem(self, initial_constraints: Optional[Dict[str, NDArray]] = None) -> None:
+        """
+        Create and configure the master problem (Gurobi model).
+        
+        Args:
+            initial_constraints: Optional dict with keys 'indices' and 'bundles' for warm-starting
+        """
         obs_features = self.get_obs_features()
         if self.is_root():
             self.master_model = self._setup_gurobi_model_params()    
@@ -98,20 +102,29 @@ class RowGenerationSolver(BaseEstimationSolver):
                 # Default: non-negativity constraints (lb=0 for all variables)
                 theta.lb = 0.0
             
-            # Apply warm start if provided
-            if self.theta_init is not None:
-                for k in range(self.num_features):
-                    theta[k].Start = self.theta_init[k]
-            
+
             u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
-            # errors = self.input_data["errors"].reshape(-1, self.num_items)
-            # self.master_model.addConstrs((
-            #     u[si] >=
-            #     errors[si] @ self.input_data["obs_bundle"][si % self.num_agents] +
-            #     self.agents_obs_features[si % self.num_agents, :] @ theta
-            #     for si in range(self.num_simuls * self.num_agents)
-            # ))
+            # Add initial constraints if provided (warm-starting)
+            if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
+                indices = initial_constraints['indices']
+                bundles = initial_constraints['bundles']
+                for i, idx in enumerate(indices):
+                    agent_id = idx % self.num_agents
+                    sim_id = idx // self.num_agents
+                    bundle = bundles[i]  # Accept any dtype, convert as needed
+                    bundle_float = bundle.astype(np.float64)  # Convert to float64 for feature computation
+                    
+                    # Compute features and errors
+                    features = self.feature_manager.features_oracle(agent_id, bundle_float, self.input_data)
+                    error = (self.input_data["errors"][sim_id, agent_id] * bundle_float).sum()
+                    
+                    constr_name = f"rowgen_{idx}"
+                    constr = self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
+                    self.constraint_bundles[constr] = bundle.astype(np.bool_)
+                
+                logger.info("Added %d initial constraints for warm-start", len(indices))
+
             self.master_model.optimize()
             logger.info("Master Initialized")
             self.master_variables = (theta, u)
@@ -128,12 +141,13 @@ class RowGenerationSolver(BaseEstimationSolver):
     
 
 
-    def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
+    def _master_iteration(self, local_pricing_results: NDArray[np.bool_], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
         t_mpi_gather_start = datetime.now()
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
+        bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results.astype(np.float64))
+        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results.astype(np.float64))
         timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         
         stop = False
@@ -144,7 +158,7 @@ class RowGenerationSolver(BaseEstimationSolver):
                 u_sim = x_sim @ theta.X + errors_sim
             u_master = u.X
 
-            violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-6, atol = 1e-6) * (u_master > u_sim))[0]
+            violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-5, atol = 1e-5) * (u_master > u_sim))[0]
             if len(violations) > 0:
                 logger.warning(
                     "Possible failure of demand oracle at agents ids: %s, "
@@ -156,14 +170,24 @@ class RowGenerationSolver(BaseEstimationSolver):
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
+            # Check if we're in suboptimal cuts mode (set by callback)
+            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
             if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
-                stop = True
+                if not suboptimal_mode:
+                    stop = True
+                else:
+                    logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
             rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
             timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
             
             t_master_update_start = datetime.now()
-            self.master_model.addConstr(u[rows_to_add]  >= errors_sim[rows_to_add] + x_sim[rows_to_add] @ theta)
+            if len(rows_to_add) > 0 and bundles_sim is not None:
+                for idx in rows_to_add:
+                    bundle_bool = bundles_sim[idx].astype(np.bool_)
+                    constr_name = f"rowgen_{idx}"
+                    constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
+                    self.constraint_bundles[constr] = bundle_bool
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
@@ -247,6 +271,15 @@ class RowGenerationSolver(BaseEstimationSolver):
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
             iter_timing = {}
+            
+            # Subproblem callback (if configured) - called before pricing phase
+            if self.row_generation_cfg.subproblem_callback is not None:
+                master_model = self.master_model if self.is_root() else None
+                self.row_generation_cfg.subproblem_callback(
+                    iteration, 
+                    self.subproblem_manager, 
+                    master_model
+                )
             
             # Pricing phase
             t_pricing = datetime.now()
@@ -357,6 +390,7 @@ class RowGenerationSolver(BaseEstimationSolver):
             for constr in to_remove:
                 self.master_model.remove(constr)
                 self.slack_counter.pop(constr, None)
+                self.constraint_bundles.pop(constr, None)
             num_removed = len(to_remove)
             logger.info("Removed constraints: %d", num_removed)
             return num_removed
@@ -443,3 +477,108 @@ class RowGenerationSolver(BaseEstimationSolver):
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
         else:
             logger.info("Parameters: %s", np.round(self.theta_val, precision))
+
+    def add_constraints(self, indices: NDArray[np.int64], bundles: NDArray[np.float64]) -> None:
+        """
+        Add constraints to the initialized master problem.
+        
+        Args:
+            indices: Array of u variable indices (agent-simulation pairs)
+            bundles: Array of bundles, shape (len(indices), num_items)
+        """
+        if not self.is_root() or self.master_model is None:
+            return
+        
+        if len(indices) == 0:
+            return
+        
+        theta, u = self.master_variables
+        
+        # Compute features and errors for each constraint
+        for i, idx in enumerate(indices):
+            agent_id = idx % self.num_agents
+            sim_id = idx // self.num_agents
+            bundle = bundles[i]  # Accept any dtype, convert as needed
+            bundle_float = bundle.astype(np.float64)  # Convert to float64 for feature computation
+            
+            # Compute features and errors
+            features = self.feature_manager.features_oracle(agent_id, bundle_float, self.input_data)
+            error = (self.input_data["errors"][sim_id, agent_id] * bundle_float).sum()
+            
+            constr_name = f"rowgen_{idx}"
+            constr = self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
+            self.constraint_bundles[constr] = bundle.astype(np.bool_)
+        
+        logger.info("Added %d constraints to master problem", len(indices))
+
+    def get_constraints(self) -> Optional[Dict[str, NDArray]]:
+        """
+        Extract constraints from the Gurobi model using stored bundle dict.
+        
+        Returns:
+            Dict with keys 'indices', 'bundles' containing numpy arrays,
+            or None if not on root process or model not initialized.
+        """
+        if not self.is_root() or self.master_model is None:
+            return None
+        
+        indices = []
+        bundles = []
+        
+        for constr in self.master_model.getConstrs():
+            if constr.ConstrName and constr.ConstrName.startswith("rowgen_") and constr in self.constraint_bundles:
+                try:
+                    idx = int(constr.ConstrName.split("_")[1])
+                    bundle = self.constraint_bundles[constr].astype(np.float64)
+                    if len(bundle) == self.num_items:
+                        indices.append(idx)
+                        bundles.append(bundle)
+                except (ValueError, IndexError):
+                    continue
+        
+        if len(indices) == 0:
+            return {'indices': np.array([], dtype=np.int64),
+                    'bundles': np.array([], dtype=np.float64).reshape(0, self.num_items)}
+        
+        return {
+            'indices': np.array(indices, dtype=np.int64),
+            'bundles': np.array(bundles, dtype=np.float64)
+        }
+
+    def get_binding_constraints(self, tolerance: float = 1e-6) -> Optional[Dict[str, NDArray]]:
+        """
+        Extract only binding constraints (slack ≈ 0) from the Gurobi model.
+        
+        Args:
+            tolerance: Tolerance for considering a constraint binding (default: 1e-6)
+        
+        Returns:
+            Dict with keys 'indices', 'bundles' containing numpy arrays,
+            or None if not on root process or model not initialized.
+        """
+        if not self.is_root() or self.master_model is None:
+            return None
+        
+        indices = []
+        bundles = []
+        
+        for constr in self.master_model.getConstrs():
+            if (constr.ConstrName and constr.ConstrName.startswith("rowgen_") and 
+                abs(constr.Slack) <= tolerance and constr in self.constraint_bundles):
+                try:
+                    idx = int(constr.ConstrName.split("_")[1])
+                    bundle = self.constraint_bundles[constr].astype(np.float64)
+                    if len(bundle) == self.num_items:
+                        indices.append(idx)
+                        bundles.append(bundle)
+                except (ValueError, IndexError):
+                    continue
+        
+        if len(indices) == 0:
+            return {'indices': np.array([], dtype=np.int64),
+                    'bundles': np.array([], dtype=np.float64).reshape(0, self.num_items)}
+        
+        return {
+            'indices': np.array(indices, dtype=np.int64),
+            'bundles': np.array(bundles, dtype=np.float64)
+        }
