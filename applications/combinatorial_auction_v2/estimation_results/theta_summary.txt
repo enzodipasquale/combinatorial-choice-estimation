@@ -1,0 +1,13 @@
+Estimation Results Summary
+==================================================
+
+Total features: 497
+  - Modular agent features: 1
+  - Modular item features (fixed effects): 493
+  - Quadratic item features: 3
+
+Theta statistics:
+  Min: 1.602833
+  Max: 559.455850
+  Mean: 4.674978
+  Std: 26.436237
