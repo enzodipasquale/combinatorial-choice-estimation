@@ -199,6 +199,33 @@ class DataManager(HasDimensions, HasComm):
             from bundlechoice.validation import validate_feature_count
             validate_feature_count(self.input_data, self.num_features)
 
+    def update_errors(self, errors: np.ndarray) -> None:
+        """
+        Update errors in local_data by scattering from rank 0.
+        
+        Args:
+            errors: Array of shape (num_agents, num_items) on rank 0, None on other ranks.
+        """
+        if self.is_root():
+            errors_flat = errors.reshape(-1)  # Flatten to (num_agents * num_items,)
+            dtype = errors_flat.dtype
+            size = self.comm_manager.comm.Get_size()
+            idx_chunks = np.array_split(np.arange(self.num_agents), size)
+            counts = [len(chunk) * self.num_items for chunk in idx_chunks]
+        else:
+            errors_flat = None
+            dtype = np.float64
+            counts = None
+        
+        local_errors_flat = self.comm_manager.scatter_array(
+            errors_flat, counts=counts, root=0, dtype=dtype
+        )
+        
+        if self.num_local_agents == 0:
+            self.local_data["errors"] = np.empty((0, self.num_items), dtype=dtype)
+        else:
+            self.local_data["errors"] = local_errors_flat.reshape(self.num_local_agents, self.num_items)
+
     def get_data_info(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Get boolean flags and feature dimensions for data components.

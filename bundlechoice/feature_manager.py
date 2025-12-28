@@ -93,6 +93,9 @@ class FeatureManager(HasDimensions, HasComm, HasData):
 
     def compute_rank_features(self, local_bundles: NDArray[np.float64]) -> NDArray[np.float64]:
         """Compute features for all local agents on this rank. Uses batch if supported."""
+        if self.num_local_agents == 0 or len(local_bundles) == 0:
+            return np.empty((0, self.num_features), dtype=np.float64)
+        
         assert self.num_local_agents == len(local_bundles), \
             f"num_local_agents ({self.num_local_agents}) != len(local_bundles) ({len(local_bundles)})"
         

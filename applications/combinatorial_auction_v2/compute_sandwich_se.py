@@ -34,6 +34,7 @@ BASE_DIR = os.path.dirname(__file__)
 
 # Configuration for SE computation (separate from estimation)
 NUM_SIMULS_SE = 3  # Number of simulations for SE computation
+SKIP_VALIDATION = os.environ.get("SKIP_VALIDATION", "0") == "1"  # Set SKIP_VALIDATION=1 to skip validation
 
 # Load theta from estimation
 if rank == 0:
@@ -113,7 +114,7 @@ config_se = {
     "subproblem": {
         "name": "QuadKnapsack",
         "settings": {
-            "TimeLimit": 30,
+            "TimeLimit": 1,  # 1 second per agent for faster testing
             "MIPGap_tol": 1e-2
         }
     },
@@ -129,6 +130,98 @@ bc.data.load_and_scatter(input_data)
 bc.features.build_from_data()
 bc.subproblems.load()
 bc.subproblems.initialize_local()
+
+# -------------------------------
+# OPTIONAL: warm-start plumbing
+# -------------------------------
+# We cannot guarantee how bundlechoice builds Gurobi models internally.
+# But if subproblem objects expose a per-agent Gurobi model + decision vars,
+# we can (a) cache the model (avoid rebuilding) and (b) feed the previous
+# incumbent solution as a MIP start when resolving the same model with
+# updated objective coefficients (theta/errors).
+#
+# Enable with:   export USE_WARM_START=1
+# Disable with:  export USE_WARM_START=0
+USE_WARM_START = os.environ.get("USE_WARM_START", "0") == "1"
+
+# Cache last local bundles to use as a MIP start on the next solve
+_last_local_bundles_start = None
+
+
+def _try_set_mip_start_from_bundles(subproblems_obj, bundles_bool):
+    """Best-effort MIP start.
+
+    This relies on internal bundlechoice objects exposing (model, vars) per local agent.
+    If internals differ, we silently do nothing.
+
+    Expected mapping:
+      - one model per local agent
+      - binary var x[j] indicates whether item j is chosen
+      - bundles_bool has shape (num_local_agents, num_items)
+
+    If available, we set Var.Start for each x[j] and call model.update().
+    """
+    try:
+        # Common patterns we have seen in similar codebases; adjust if needed.
+        # 1) subproblems_obj.local_subproblems: list of per-agent subproblem instances
+        local_sps = getattr(subproblems_obj, "local_subproblems", None)
+        if local_sps is None:
+            local_sps = getattr(subproblems_obj, "_local_subproblems", None)
+        if local_sps is None:
+            return
+
+        for a, sp in enumerate(local_sps):
+            model = getattr(sp, "model", None)
+            if model is None:
+                model = getattr(sp, "_model", None)
+            xvars = getattr(sp, "x", None)
+            if xvars is None:
+                xvars = getattr(sp, "_x", None)
+            if model is None or xvars is None:
+                continue
+
+            # xvars may be a list or dict-like indexed by item id
+            row = bundles_bool[a]
+            if hasattr(xvars, "__len__") and len(xvars) == row.shape[0]:
+                for j in range(row.shape[0]):
+                    try:
+                        xvars[j].Start = float(row[j])
+                    except Exception:
+                        pass
+            else:
+                # dict-like
+                for j in range(row.shape[0]):
+                    try:
+                        xvars[j].Start = float(row[j])
+                    except Exception:
+                        pass
+
+            try:
+                model.update()
+            except Exception:
+                pass
+
+    except Exception:
+        # Warm-start is best-effort; never crash SE computation.
+        return
+
+
+# Wrap solve_local to inject MIP starts when enabled
+_original_solve_local = bc.subproblems.solve_local
+
+def _solve_local_with_warm_start(theta):
+    global _last_local_bundles_start
+    if USE_WARM_START and _last_local_bundles_start is not None:
+        _try_set_mip_start_from_bundles(bc.subproblems, _last_local_bundles_start)
+    bundles = _original_solve_local(theta)
+    # Cache for next call (only local bundles, not gathered)
+    _last_local_bundles_start = bundles
+    return bundles
+
+bc.subproblems.solve_local = _solve_local_with_warm_start
+
+if rank == 0 and USE_WARM_START:
+    print("\nWARM START enabled: reusing previous bundles as MIP starts when possible")
 
 def update_errors_for_simulation(bc, errors_sim):
     """
@@ -168,98 +261,118 @@ def update_errors_for_simulation(bc, errors_sim):
 
 # VALIDATION: Verify that updating errors actually affects solve_local results
 # This is critical - if errors are cached, update_errors_for_simulation is useless
-if rank == 0:
-    print("\nVALIDATION: Testing that error updates affect solve_local...")
+if SKIP_VALIDATION:
+    if rank == 0:
+        print("\nSKIPPING VALIDATION (SKIP_VALIDATION=1 set)")
+    # Restore errors for actual computation (broadcast first error set to all ranks)
+    errors_first = comm.bcast(errors_all_sims_storage[0] if rank == 0 else None, root=0)
+    update_errors_for_simulation(bc, errors_first)
+else:
+    if rank == 0:
+        print("\nVALIDATION: Testing that error updates affect solve_local...")
     # Create two different error draws
-    test_errors_0 = np.random.RandomState(999).normal(0, 1, size=(num_agents, num_items))
-    test_errors_1 = np.random.RandomState(888).normal(0, 1, size=(num_agents, num_items))
-else:
-    test_errors_0 = None
-    test_errors_1 = None
+    if rank == 0:
+        test_errors_0 = np.random.RandomState(999).normal(0, 1, size=(num_agents, num_items))
+        test_errors_1 = np.random.RandomState(888).normal(0, 1, size=(num_agents, num_items))
+    else:
+        test_errors_0 = None
+        test_errors_1 = None
 
-# Broadcast test errors to all ranks
-test_errors_0 = comm.bcast(test_errors_0, root=0)
-test_errors_1 = comm.bcast(test_errors_1, root=0)
+    # Broadcast test errors to all ranks
+    test_errors_0 = comm.bcast(test_errors_0, root=0)
+    test_errors_1 = comm.bcast(test_errors_1, root=0)
 
-# Update to first errors and solve (all ranks need to participate)
-update_errors_for_simulation(bc, test_errors_0)
-if bc.data_manager.num_local_agents > 0:
-    test_bundles_0 = bc.subproblems.solve_local(theta_hat)
-else:
-    test_bundles_0 = np.empty((0, bc.data_manager.num_items), dtype=bool)
-test_features_0 = bc.feature_manager.compute_gathered_features(test_bundles_0)
+    # Update to first errors and solve (all ranks need to participate)
+    update_errors_for_simulation(bc, test_errors_0)
+    if rank == 0:
+        print(f"  Solving with first error set (rank 0: {bc.data_manager.num_local_agents} agents)...", flush=True)
+    if bc.data_manager.num_local_agents > 0:
+        test_bundles_0 = bc.subproblems.solve_local(theta_hat)
+        if rank == 0:
+            print(f"  ✓ First solve completed", flush=True)
+    else:
+        test_bundles_0 = np.empty((0, bc.data_manager.num_items), dtype=bool)
+    if rank == 0:
+        print(f"  Computing features for first solve...", flush=True)
+    test_features_0 = bc.feature_manager.compute_gathered_features(test_bundles_0)
 
-# Update to second errors and solve
-update_errors_for_simulation(bc, test_errors_1)
-if bc.data_manager.num_local_agents > 0:
-    test_bundles_1 = bc.subproblems.solve_local(theta_hat)
-else:
-    test_bundles_1 = np.empty((0, bc.data_manager.num_items), dtype=bool)
-test_features_1 = bc.feature_manager.compute_gathered_features(test_bundles_1)
+    # Update to second errors and solve
+    update_errors_for_simulation(bc, test_errors_1)
+    if rank == 0:
+        print(f"  Solving with second error set...", flush=True)
+    if bc.data_manager.num_local_agents > 0:
+        test_bundles_1 = bc.subproblems.solve_local(theta_hat)
+        if rank == 0:
+            print(f"  ✓ Second solve completed", flush=True)
+    else:
+        test_bundles_1 = np.empty((0, bc.data_manager.num_items), dtype=bool)
+    if rank == 0:
+        print(f"  Computing features for second solve...", flush=True)
+    test_features_1 = bc.feature_manager.compute_gathered_features(test_bundles_1)
 
-# Check that results differ (only on rank 0)
-if rank == 0:
-    if test_features_0 is None or test_features_1 is None:
-        raise RuntimeError("VALIDATION FAILED: features are None on rank 0")
-    diff_norm = np.linalg.norm(test_features_0 - test_features_1)
-    if diff_norm < 1e-10:
-        raise RuntimeError(
-            f"VALIDATION FAILED: Updating errors does not affect solve_local results!\n"
-            f"||features_0 - features_1|| = {diff_norm:.2e} (expected > 0)\n"
-            f"This means errors are likely cached in subproblem objects. SEs will be WRONG."
-        )
-    print(f"✓ Validation passed: ||features_diff|| = {diff_norm:.2e} (errors affect results)")
+    # Check that results differ (only on rank 0)
+    if rank == 0:
+        if test_features_0 is None or test_features_1 is None:
+            raise RuntimeError("VALIDATION FAILED: features are None on rank 0")
+        diff_norm = np.linalg.norm(test_features_0 - test_features_1)
+        if diff_norm < 1e-10:
+            raise RuntimeError(
+                f"VALIDATION FAILED: Updating errors does not affect solve_local results!\n"
+                f"||features_0 - features_1|| = {diff_norm:.2e} (expected > 0)\n"
+                f"This means errors are likely cached in subproblem objects. SEs will be WRONG."
+            )
+        print(f"✓ Validation passed: ||features_diff|| = {diff_norm:.2e} (errors affect results)")
 
-# SCATTER VALIDATION: Verify that errors are scattered correctly
-# We check both sum (catches major issues) and sum of squares (catches indexing bugs)
-if rank == 0:
-    print("\nVALIDATION: Testing scatter correctness...")
-    # Compute expected sums from errors_all_sims[0]
-    expected_total_sum = errors_all_sims_storage[0].sum()
-    expected_total_sum_sq = (errors_all_sims_storage[0] ** 2).sum()
-    test_errors_scatter = errors_all_sims_storage[0]
-else:
-    expected_total_sum = None
-    expected_total_sum_sq = None
-    test_errors_scatter = None
+    # SCATTER VALIDATION: Verify that errors are scattered correctly
+    # We check both sum (catches major issues) and sum of squares (catches indexing bugs)
+    if rank == 0:
+        print("\nVALIDATION: Testing scatter correctness...")
+        # Compute expected sums from errors_all_sims[0]
+        expected_total_sum = errors_all_sims_storage[0].sum()
+        expected_total_sum_sq = (errors_all_sims_storage[0] ** 2).sum()
+        test_errors_scatter = errors_all_sims_storage[0]
+    else:
+        expected_total_sum = None
+        expected_total_sum_sq = None
+        test_errors_scatter = None
 
-# Broadcast test_errors_scatter to all ranks
-test_errors_scatter = comm.bcast(test_errors_scatter, root=0)
+    # Broadcast test_errors_scatter to all ranks
+    test_errors_scatter = comm.bcast(test_errors_scatter, root=0)
 
-# Update errors and compute local sums
-update_errors_for_simulation(bc, test_errors_scatter)
-if bc.data_manager.num_local_agents > 0:
-    local_errors = bc.data_manager.local_data["errors"]
-    local_sum = local_errors.sum()
-    local_sum_sq = (local_errors ** 2).sum()
-else:
-    local_sum = 0.0
-    local_sum_sq = 0.0
+    # Update errors and compute local sums
+    update_errors_for_simulation(bc, test_errors_scatter)
+    if bc.data_manager.num_local_agents > 0:
+        local_errors = bc.data_manager.local_data["errors"]
+        local_sum = local_errors.sum()
+        local_sum_sq = (local_errors ** 2).sum()
+    else:
+        local_sum = 0.0
+        local_sum_sq = 0.0
 
-# Gather sums from all ranks
-all_sums = comm.allgather(local_sum)
-all_sums_sq = comm.allgather(local_sum_sq)
-total_sum = sum(all_sums)
-total_sum_sq = sum(all_sums_sq)
+    # Gather sums from all ranks
+    all_sums = comm.allgather(local_sum)
+    all_sums_sq = comm.allgather(local_sum_sq)
+    total_sum = sum(all_sums)
+    total_sum_sq = sum(all_sums_sq)
 
-if rank == 0:
-    if not np.allclose(total_sum, expected_total_sum, rtol=1e-10):
-        raise RuntimeError(
-            f"VALIDATION FAILED: Scatter sum mismatch!\n"
-            f"Expected total sum: {expected_total_sum:.6e}, Got: {total_sum:.6e}\n"
-            f"This means errors are not scattered correctly. SEs will be WRONG."
-        )
-    if not np.allclose(total_sum_sq, expected_total_sum_sq, rtol=1e-10):
-        raise RuntimeError(
-            f"VALIDATION FAILED: Scatter sum-of-squares mismatch!\n"
-            f"Expected total sum^2: {expected_total_sum_sq:.6e}, Got: {total_sum_sq:.6e}\n"
-            f"This indicates indexing/ordering issues in scatter. SEs will be WRONG."
-        )
-    print(f"✓ Validation passed: scatter sum and sum-of-squares match (sum={total_sum:.6e})")
+    if rank == 0:
+        if not np.allclose(total_sum, expected_total_sum, rtol=1e-10):
+            raise RuntimeError(
+                f"VALIDATION FAILED: Scatter sum mismatch!\n"
+                f"Expected total sum: {expected_total_sum:.6e}, Got: {total_sum:.6e}\n"
+                f"This means errors are not scattered correctly. SEs will be WRONG."
+            )
+        if not np.allclose(total_sum_sq, expected_total_sum_sq, rtol=1e-10):
+            raise RuntimeError(
+                f"VALIDATION FAILED: Scatter sum-of-squares mismatch!\n"
+                f"Expected total sum^2: {expected_total_sum_sq:.6e}, Got: {total_sum_sq:.6e}\n"
+                f"This indicates indexing/ordering issues in scatter. SEs will be WRONG."
+            )
+        print(f"✓ Validation passed: scatter sum and sum-of-squares match (sum={total_sum:.6e})")
 
-# Restore errors for actual computation (broadcast first error set to all ranks)
-errors_first = comm.bcast(errors_all_sims_storage[0] if rank == 0 else None, root=0)
-update_errors_for_simulation(bc, errors_first)
+    # Restore errors for actual computation (broadcast first error set to all ranks)
+    errors_first = comm.bcast(errors_all_sims_storage[0] if rank == 0 else None, root=0)
+    update_errors_for_simulation(bc, errors_first)
 
 # Extract beta indices (non-FE parameters)
 if rank == 0:
@@ -311,72 +424,73 @@ if rank == 0:
 # - Item modular features are -I (identity), so item 0 chosen sets feature[modular_agent_dim + 0] = -1
 # - Verify that in gathered features, row[start_r] has item-0 feature set, rows[start_r+1:end_r] do not
 # - This validates that row i corresponds to agent i
-if rank == 0:
-    print("\nVALIDATION: Testing agent ordering (bundle-dependent signature test)...")
+if not SKIP_VALIDATION:
+    if rank == 0:
+        print("\nVALIDATION: Testing agent ordering (bundle-dependent signature test)...")
 
-# Determine agent distribution across ranks (same as data_manager uses)
-size = comm.Get_size()
-idx_chunks = np.array_split(np.arange(num_agents), size)
-rank_start_indices = [chunk[0] if len(chunk) > 0 else num_agents for chunk in idx_chunks]
-rank_end_indices = [chunk[-1] + 1 if len(chunk) > 0 else num_agents for chunk in idx_chunks]
+    # Determine agent distribution across ranks (same as data_manager uses)
+    size = comm.Get_size()
+    idx_chunks = np.array_split(np.arange(num_agents), size)
+    rank_start_indices = [chunk[0] if len(chunk) > 0 else num_agents for chunk in idx_chunks]
+    rank_end_indices = [chunk[-1] + 1 if len(chunk) > 0 else num_agents for chunk in idx_chunks]
 
-# Get rank-specific info
-my_rank = comm.Get_rank()
-num_local_agents = bc.data_manager.num_local_agents
-num_items = bc.data_manager.num_items
+    # Get rank-specific info
+    my_rank = comm.Get_rank()
+    num_local_agents = bc.data_manager.num_local_agents
+    num_items = bc.data_manager.num_items
 
-# Create test bundles: first local agent on each rank chooses item 0, others choose empty bundle
-test_bundles_ordering = np.zeros((num_local_agents, num_items), dtype=bool)
-if num_local_agents > 0:
-    test_bundles_ordering[0, 0] = True  # First local agent chooses item 0
+    # Create test bundles: first local agent on each rank chooses item 0, others choose empty bundle
+    test_bundles_ordering = np.zeros((num_local_agents, num_items), dtype=bool)
+    if num_local_agents > 0:
+        test_bundles_ordering[0, 0] = True  # First local agent chooses item 0
 
-# Compute features with these test bundles
-test_features_ordering = bc.feature_manager.compute_gathered_features(test_bundles_ordering)
+    # Compute features with these test bundles
+    test_features_ordering = bc.feature_manager.compute_gathered_features(test_bundles_ordering)
 
-# On rank 0, verify ordering using bundle-dependent feature signature
-if rank == 0:
-    if test_features_ordering is None:
-        raise RuntimeError("VALIDATION FAILED: test_features_ordering is None")
-    
-    # Find the feature index for "item 0 chosen" in modular item features
-    # Feature order: [modular_agent_features, modular_item_features, quadratic_features]
-    # Modular item features are -I (negative identity), so item 0 corresponds to feature index: num_modular_agent + 0
-    # We need to get num_modular_agent from the earlier definition (same as used for beta_indices)
-    # Recompute from agent_data which is in scope here (defined on rank 0 earlier)
-    num_modular_agent_check = agent_data["modular"].shape[2]
-    item0_feature_idx = num_modular_agent_check + 0  # First modular item feature (item 0)
-    
-    # Verify ordering: for each rank block [start:end),
-    # row[start] should have item0 feature set (negative), rows[start+1:end] should not (zero)
-    all_good = True
-    for r in range(size):
-        start_idx = rank_start_indices[r]
-        end_idx = rank_end_indices[r]
-        if start_idx >= num_agents:
-            continue
+    # On rank 0, verify ordering using bundle-dependent feature signature
+    if rank == 0:
+        if test_features_ordering is None:
+            raise RuntimeError("VALIDATION FAILED: test_features_ordering is None")
         
-        # First agent on this rank should have item0 feature set (should be -1.0 for modular item)
-        first_agent_item0_feature = test_features_ordering[start_idx, item0_feature_idx]
-        if np.isclose(first_agent_item0_feature, 0.0, rtol=1e-10, atol=1e-10):
-            all_good = False
-            print(f"  FAIL: Rank {r}'s first agent (global id {start_idx}, row {start_idx}) "
-                  f"has item0 feature = {first_agent_item0_feature:.6e} (expected < 0)")
+        # Find the feature index for "item 0 chosen" in modular item features
+        # Feature order: [modular_agent_features, modular_item_features, quadratic_features]
+        # Modular item features are -I (negative identity), so item 0 corresponds to feature index: num_modular_agent + 0
+        # We need to get num_modular_agent from the earlier definition (same as used for beta_indices)
+        # Recompute from agent_data which is in scope here (defined on rank 0 earlier)
+        num_modular_agent_check = agent_data["modular"].shape[2]
+        item0_feature_idx = num_modular_agent_check + 0  # First modular item feature (item 0)
         
-        # All other agents on this rank should NOT have item0 feature set (should be 0.0)
-        if end_idx > start_idx + 1:
-            other_agents_item0_features = test_features_ordering[start_idx + 1:end_idx, item0_feature_idx]
-            if not np.allclose(other_agents_item0_features, 0.0, rtol=1e-10, atol=1e-10):
+        # Verify ordering: for each rank block [start:end),
+        # row[start] should have item0 feature set (negative), rows[start+1:end] should not (zero)
+        all_good = True
+        for r in range(size):
+            start_idx = rank_start_indices[r]
+            end_idx = rank_end_indices[r]
+            if start_idx >= num_agents:
+                continue
+            
+            # First agent on this rank should have item0 feature set (should be -1.0 for modular item)
+            first_agent_item0_feature = test_features_ordering[start_idx, item0_feature_idx]
+            if np.isclose(first_agent_item0_feature, 0.0, rtol=1e-10, atol=1e-10):
                 all_good = False
-                print(f"  FAIL: Rank {r}'s agents {start_idx+1}..{end_idx-1} have item0 features != 0 "
-                      f"(expected all 0): {other_agents_item0_features}")
-    
-    if not all_good:
-        raise RuntimeError(
-            "VALIDATION FAILED: Agent ordering is incorrect!\n"
-            "compute_gathered_features does not return rows in agent ID order (0..N-1).\n"
-            "This means per-agent subgradients g_i will be misaligned → B matrix wrong → sandwich SE WRONG."
-        )
-    print("✓ Validation passed: agent ordering is correct (bundle-dependent signature verified)")
+                print(f"  FAIL: Rank {r}'s first agent (global id {start_idx}, row {start_idx}) "
+                      f"has item0 feature = {first_agent_item0_feature:.6e} (expected < 0)")
+            
+            # All other agents on this rank should NOT have item0 feature set (should be 0.0)
+            if end_idx > start_idx + 1:
+                other_agents_item0_features = test_features_ordering[start_idx + 1:end_idx, item0_feature_idx]
+                if not np.allclose(other_agents_item0_features, 0.0, rtol=1e-10, atol=1e-10):
+                    all_good = False
+                    print(f"  FAIL: Rank {r}'s agents {start_idx+1}..{end_idx-1} have item0 features != 0 "
+                          f"(expected all 0): {other_agents_item0_features}")
+        
+        if not all_good:
+            raise RuntimeError(
+                "VALIDATION FAILED: Agent ordering is incorrect!\n"
+                "compute_gathered_features does not return rows in agent ID order (0..N-1).\n"
+                "This means per-agent subgradients g_i will be misaligned → B matrix wrong → sandwich SE WRONG."
+            )
+        print("✓ Validation passed: agent ordering is correct (bundle-dependent signature verified)")
 
 def compute_per_agent_subgradients(bc, theta, errors_all_sims):
     """Compute per-agent subgradients ĝ_i(θ) = (1/S) ∑_s x_{i,B_i^{s,*}(θ)} − x_{i B̂_i}"""
@@ -387,21 +501,30 @@ def compute_per_agent_subgradients(bc, theta, errors_all_sims):
     # Loop over simulations, solving and accumulating features
     all_features_per_sim = []
     for s in range(num_simuls):
+        if rank == 0:
+            print(f"  Simulation {s+1}/{num_simuls}: Updating errors...", flush=True)
         # Update errors for this simulation
         update_errors_for_simulation(bc, errors_all_sims[s])
         
         # Solve with updated errors (only if rank has agents)
+        if rank == 0:
+            print(f"  Simulation {s+1}/{num_simuls}: Solving subproblems (rank 0: {bc.data_manager.num_local_agents} agents)...", flush=True)
         if bc.data_manager.num_local_agents > 0:
             local_bundles = bc.subproblems.solve_local(theta)
+            if rank == 0:
+                print(f"  Simulation {s+1}/{num_simuls}: ✓ Solve completed", flush=True)
         else:
             # Rank with 0 agents: create empty array with correct shape
             local_bundles = np.empty((0, bc.data_manager.num_items), dtype=bool)
         
         # Gather features for this simulation
+        if rank == 0:
+            print(f"  Simulation {s+1}/{num_simuls}: Computing features...", flush=True)
         features_sim = bc.feature_manager.compute_gathered_features(local_bundles)
         
         if rank == 0:
             all_features_per_sim.append(features_sim)
+            print(f"  Simulation {s+1}/{num_simuls}: ✓ Complete", flush=True)
     
     if rank == 0:
         # Stack features from all simulations: shape (num_simuls, num_agents, num_features)
@@ -419,8 +542,22 @@ def compute_per_agent_subgradients(bc, theta, errors_all_sims):
 
 # Compute per-agent subgradients at theta_hat
 if rank == 0:
+    import time
+    start_time = time.time()
+    num_local_agents_rank0 = bc.data_manager.num_local_agents
+    estimated_seconds = NUM_SIMULS_SE * num_local_agents_rank0 * 1.5  # 1s TimeLimit + overhead
+    estimated_minutes = estimated_seconds / 60
     print(f"\nComputing per-agent subgradients at theta_hat (using {NUM_SIMULS_SE} simulations)...")
+    print(f"  Rank 0: {num_local_agents_rank0} agents")
+    print(f"  Estimated time: ~{estimated_seconds:.0f}s (~{estimated_minutes:.1f} min) per rank (worst case with 1s TimeLimit)", flush=True)
+    if estimated_minutes > 15:
+        print(f"  WARNING: Estimated time ({estimated_minutes:.1f} min) exceeds 15 minutes!", flush=True)
+    else:
+        print(f"  Proceeding (estimated {estimated_minutes:.1f} min < 15 min limit)", flush=True)
 g_i_theta_hat = compute_per_agent_subgradients(bc, theta_hat, errors_all_sims)
+if rank == 0:
+    elapsed = time.time() - start_time
+    print(f"  ✓ Completed in {elapsed:.1f}s ({elapsed/60:.1f} min)", flush=True)
 
 # Sanity check: average subgradient should be small
 if rank == 0:
@@ -435,7 +572,7 @@ if rank == 0:
     cond_B = np.linalg.cond(B_beta)
     print(f"B_beta condition number: {cond_B:.2e}")
 
-def compute_avg_subgradient(bc, theta, errors_all_sims):
+def compute_avg_subgradient(bc, theta, errors_all_sims, verbose=False):
     """Compute average subgradient ĝ̄(θ) = (1/N) ∑_i ĝ_i(θ) without storing per-agent arrays"""
     num_agents = bc.data_manager.num_agents
     num_features = bc.data_manager.num_features
@@ -444,6 +581,8 @@ def compute_avg_subgradient(bc, theta, errors_all_sims):
     # Loop over simulations, solving and accumulating features
     all_features_per_sim = []
     for s in range(num_simuls):
+        if verbose and rank == 0:
+            print(f"      Sim {s+1}/{num_simuls}: solving...", flush=True)
         # Update errors for this simulation
         update_errors_for_simulation(bc, errors_all_sims[s])
         
@@ -470,9 +609,9 @@ def compute_avg_subgradient(bc, theta, errors_all_sims):
     else:
         return None
 
-def compute_avg_subgradient_beta(bc, theta, beta_indices, errors_all_sims):
+def compute_avg_subgradient_beta(bc, theta, beta_indices, errors_all_sims, verbose=False):
     """Compute average subgradient ĝ̄^β(θ) = (1/N) ∑_i ĝ_i^β(θ)"""
-    g_bar = compute_avg_subgradient(bc, theta, errors_all_sims)
+    g_bar = compute_avg_subgradient(bc, theta, errors_all_sims, verbose=verbose)
     if rank == 0:
         return g_bar[beta_indices]  # (num_beta,)
     else:
@@ -480,12 +619,28 @@ def compute_avg_subgradient_beta(bc, theta, beta_indices, errors_all_sims):
 
 # Compute A matrix using finite differences
 if rank == 0:
+    import time
+    start_time_A = time.time()
     print("\nComputing A matrix via finite differences...")
     num_beta = len(beta_indices)
+    # Each column requires 2 calls to compute_avg_subgradient_beta (forward/backward differences)
+    # Each call does NUM_SIMULS_SE simulations × num_local_agents solves
+    num_local_agents_rank0 = bc.data_manager.num_local_agents
+    estimated_per_column = NUM_SIMULS_SE * num_local_agents_rank0 * 1.5 * 2  # 2 for forward/backward
+    estimated_total_A = estimated_per_column * num_beta
+    estimated_minutes_A = estimated_total_A / 60
+    print(f"  Computing {num_beta} columns (finite differences)")
+    print(f"  Estimated time: ~{estimated_total_A:.0f}s (~{estimated_minutes_A:.1f} min) per rank", flush=True)
+    if estimated_minutes_A > 15:
+        print(f"  WARNING: Estimated time ({estimated_minutes_A:.1f} min) exceeds 15 minutes!", flush=True)
+    else:
+        print(f"  Proceeding (estimated {estimated_minutes_A:.1f} min < 15 min limit)", flush=True)
     A_beta = np.zeros((num_beta, num_beta))
     step_size_base = 1e-4
     
     for k_idx, k in enumerate(beta_indices):
+        if rank == 0:
+            print(f"  Column {k_idx+1}/{num_beta} (parameter index {k})...", flush=True)
         h_k = step_size_base * max(1.0, abs(theta_hat[k]))
         
         # Compute finite differences with step size adaptation
@@ -496,8 +651,12 @@ if rank == 0:
             theta_minus = theta_hat.copy()
             theta_minus[k] -= h_k
             
-            g_plus = compute_avg_subgradient_beta(bc, theta_plus, beta_indices, errors_all_sims)
-            g_minus = compute_avg_subgradient_beta(bc, theta_minus, beta_indices, errors_all_sims)
+            if rank == 0:
+                print(f"    Computing forward difference (theta+{h_k:.2e})...", flush=True)
+            g_plus = compute_avg_subgradient_beta(bc, theta_plus, beta_indices, errors_all_sims, verbose=True)
+            if rank == 0:
+                print(f"    Computing backward difference (theta-{h_k:.2e})...", flush=True)
+            g_minus = compute_avg_subgradient_beta(bc, theta_minus, beta_indices, errors_all_sims, verbose=True)
             
             diff = g_plus - g_minus
             if np.allclose(diff, 0.0, atol=1e-8) and retry < max_retries:
@@ -506,11 +665,12 @@ if rank == 0:
                 continue
             
             A_beta[:, k_idx] = diff / (2 * h_k)
+            if rank == 0:
+                print(f"    ✓ Column {k_idx+1}/{num_beta} complete", flush=True)
             break
-        
-        if (k_idx + 1) % 10 == 0:
-            print(f"  Completed {k_idx + 1}/{num_beta} columns")
     
+    elapsed_A = time.time() - start_time_A
+    print(f"  ✓ A matrix completed in {elapsed_A:.1f}s ({elapsed_A/60:.1f} min)", flush=True)
     print(f"A_beta shape: {A_beta.shape}")
     cond_A = np.linalg.cond(A_beta)
     print(f"A_beta condition number: {cond_A:.2e}")

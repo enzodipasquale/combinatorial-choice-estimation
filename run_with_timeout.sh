@@ -17,6 +17,7 @@ import signal
 import sys
 
 timeout_sec = ${TIMEOUT_SECONDS}
+args = sys.argv[1:]
 
 def timeout_handler(signum, frame):
     print(f'\n❌ TIMEOUT after {timeout_sec} seconds', flush=True)
@@ -26,7 +27,7 @@ signal.signal(signal.SIGALRM, timeout_handler)
 signal.alarm(timeout_sec)
 
 try:
-    result = subprocess.run('$@', shell=True)
+    result = subprocess.run(args)
     signal.alarm(0)
     sys.exit(result.returncode)
 except KeyboardInterrupt:
