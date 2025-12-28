@@ -7,7 +7,7 @@ Solves max utility (with quadratic terms) subject to weight constraint.
 import numpy as np
 import gurobipy as gp
 import logging
-from typing import Any
+from typing import Any, Optional
 from contextlib import nullcontext
 from numpy.typing import NDArray
 from ..base import BaseSerialSubproblem
@@ -25,6 +25,7 @@ class QuadraticKnapsackSubproblem(BaseSerialSubproblem):
     
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self._last_bundles: Optional[NDArray[np.bool_]] = None  # Cache last solutions for MIP starts
 
     def initialize(self, local_id: int) -> Any:
         """Initialize Gurobi model with weight constraint."""
@@ -66,21 +67,45 @@ class QuadraticKnapsackSubproblem(BaseSerialSubproblem):
             L_j = self._build_L_j(local_id, theta)
             Q_j_j = self._build_Q_j_j(local_id, theta)
             
-            B_j = pb.getVars()
-            for j in range(len(B_j)):
-                B_j[j].Obj = L_j[j]
+            # Use setMObjective for faster quadratic objective setting (matrix-based)
+            # This is much faster than building QuadExpr term-by-term for large problems
+            # setMObjective(Q, c, constant, sense) where Q is quadratic matrix, c is linear coefficients
+            pb.setMObjective(Q_j_j, L_j, 0.0, sense=gp.GRB.MAXIMIZE)
             
-            quad_expr = gp.QuadExpr()
-            for i in range(self.num_items):
-                for j in range(self.num_items):
-                    if Q_j_j[i, j] != 0:
-                        quad_expr.add(B_j[i] * B_j[j], Q_j_j[i, j])
+            # Set MIP start from cached solution if available
+            B_j = pb.getVars()  # Need vars for MIP start
+            if self._last_bundles is not None and local_id < len(self._last_bundles):
+                last_bundle = self._last_bundles[local_id]
+                for j in range(len(B_j)):
+                    B_j[j].Start = float(last_bundle[j])
+                pb.update()
             
-            pb.setObjective(gp.quicksum(L_j[j] * B_j[j] for j in range(self.num_items)) + quad_expr)
             pb.optimize()
             
-            optimal_bundle = np.array(pb.x, dtype=bool)
+            # Handle case where Gurobi times out or has no solution
+            # Use MIP start if available, otherwise use current solution
+            try:
+                if pb.status in (gp.GRB.OPTIMAL, gp.GRB.TIME_LIMIT, gp.GRB.SUBOPTIMAL):
+                    optimal_bundle = np.array(pb.x, dtype=bool)
+                else:
+                    # No solution available, use MIP start if available
+                    if self._last_bundles is not None and local_id < len(self._last_bundles):
+                        optimal_bundle = self._last_bundles[local_id].copy()
+                    else:
+                        optimal_bundle = np.zeros(self.num_items, dtype=bool)
+            except (gp.GurobiError, AttributeError):
+                # Gurobi has no solution (e.g., timeout before any solution found)
+                if self._last_bundles is not None and local_id < len(self._last_bundles):
+                    optimal_bundle = self._last_bundles[local_id].copy()
+                else:
+                    optimal_bundle = np.zeros(self.num_items, dtype=bool)
+            
             self._check_mip_gap(pb, local_id)
+            
+            # Cache solution for next solve
+            if self._last_bundles is None:
+                self._last_bundles = np.zeros((self.num_local_agents, self.num_items), dtype=bool)
+            self._last_bundles[local_id] = optimal_bundle
         finally:
             if output_flag == 1 and old_gurobi_level is not None:
                 gurobi_logger.setLevel(old_gurobi_level)
