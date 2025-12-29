@@ -58,52 +58,21 @@ class BundleChoice(HasComm, HasConfig):
     # ============================================================================
     def _try_init_data_manager(self) -> DataManager:
         """Initialize DataManager from dimensions config."""
-        if self.config is None or self.config.dimensions is None:
-            raise ValueError("dimensions_cfg must be set in config before initializing data manager.")
-        
-        self.data_manager = DataManager(
-            dimensions_cfg=self.config.dimensions,
-            comm_manager=self.comm_manager
-        )
-        return self.data_manager
+        from bundlechoice._initialization import try_init_data_manager
+        return try_init_data_manager(self)
         
     def _try_init_feature_manager(self) -> FeatureManager:
         """Initialize FeatureManager from dimensions config."""
-        if self.config is None or self.config.dimensions is None:
-            raise ValueError("dimensions_cfg must be set in config before initializing feature manager.")
-        
-        self.feature_manager = FeatureManager(
-            dimensions_cfg=self.config.dimensions,
-            comm_manager=self.comm_manager,
-            data_manager=self.data_manager
-        )
-        return self.feature_manager
+        from bundlechoice._initialization import try_init_feature_manager
+        return try_init_feature_manager(self)
         
     def _try_init_subproblem_manager(self) -> SubproblemManager:
         """Initialize SubproblemManager and load algorithm."""
-        if self.data_manager is None or self.feature_manager is None or self.config is None or self.config.subproblem is None:
-            missing = []
-            if self.data_manager is None:
-                missing.append("data (call bc.data.load_and_scatter(input_data))")
-            if self.feature_manager is None:
-                missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
-            if self.config is None or self.config.subproblem is None:
-                missing.append("subproblem config (add 'subproblem' to your config)")
-            raise RuntimeError(
-                "Cannot initialize subproblem manager - missing setup:\n  " +
-                "\n  ".join(f"- {m}" for m in missing) +
-                "\n\nRun bc.print_status() to see your current setup state."
-            )
-
-        self.subproblem_manager = SubproblemManager(
-            dimensions_cfg=self.config.dimensions,
-            comm_manager=self.comm_manager,
-            data_manager=self.data_manager,
-            feature_manager=self.feature_manager,
-            subproblem_cfg=self.config.subproblem
-        )
-        self.subproblem_manager.load()
-        return self.subproblem_manager
+        from bundlechoice._initialization import try_init_subproblem_manager
+        manager = try_init_subproblem_manager(self)
+        # Auto-load subproblem on initialization (consistent with original behavior)
+        manager.load()
+        return manager
     
     def _try_init_row_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> RowGenerationManager:
         """Initialize RowGenerationManager."""
@@ -117,30 +86,8 @@ class BundleChoice(HasComm, HasConfig):
 
     def _try_init_inequalities_manager(self) -> InequalitiesManager:
         """Initialize InequalitiesManager."""
-        missing_managers = []
-        if self.data_manager is None:
-            missing_managers.append("DataManager")
-        if self.feature_manager is None:
-            missing_managers.append("FeatureManager")
-        if self.subproblem_manager is None:
-            missing_managers.append("SubproblemManager")
-        if self.config is None or self.config.dimensions is None:
-            missing_managers.append("DimensionsConfig")
-        if missing_managers:
-            raise RuntimeError(
-                "DataManager, FeatureManager, SubproblemManager, and DimensionsConfig must be set in config "
-                "before initializing inequalities manager. Missing managers: "
-                f"{', '.join(missing_managers)}"
-            )
-
-        self.inequalities_manager = InequalitiesManager(
-            comm_manager=self.comm_manager,
-            dimensions_cfg=self.config.dimensions,
-            data_manager=self.data_manager,
-            feature_manager=self.feature_manager,
-            subproblem_manager=None
-        )
-        return self.inequalities_manager
+        from bundlechoice._initialization import try_init_inequalities_manager
+        return try_init_inequalities_manager(self)
 
     # ============================================================================
     # Property Accessors (Lazy Initialization)
@@ -275,8 +222,8 @@ class BundleChoice(HasComm, HasConfig):
                 print(f"  • Items: {self.config.dimensions.num_items}")
             if self.config.dimensions.num_features is not None:
                 print(f"  • Features: {self.config.dimensions.num_features}")
-            if self.config.dimensions.num_simuls > 1:
-                print(f"  • Simulations: {self.config.dimensions.num_simuls}")
+            if self.config.dimensions.num_simulations > 1:
+                print(f"  • Simulations: {self.config.dimensions.num_simulations}")
             
             # Subproblem configuration
             if self.config.subproblem.name:

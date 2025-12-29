@@ -3,14 +3,14 @@ import pytest
 import time
 from bundlechoice.core import BundleChoice
 
-def generate_test_data(num_agents, num_items, agent_modular_dim, item_modular_dim, num_simuls):
+def generate_test_data(num_agents, num_items, agent_modular_dim, item_modular_dim, num_simulations):
     """Generate test data for agents and items."""
     item_data = {"modular": np.random.normal(0, 1, (num_items, item_modular_dim))}
     agent_data = {
         "modular": np.random.normal(0, 1, (num_agents, num_items, agent_modular_dim)),
         "capacity": np.random.randint(1, 100, size=num_agents),
     }
-    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    errors = np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
     input_data = {"item_data": item_data, "agent_data": agent_data, "errors": errors}
     
     num_features = agent_modular_dim + item_modular_dim + 1
@@ -18,7 +18,7 @@ def generate_test_data(num_agents, num_items, agent_modular_dim, item_modular_di
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls
+        "num_simulations": num_simulations
     }
     
     return input_data, dimensions_cfg
@@ -52,11 +52,11 @@ def features_oracle(i_id, B_j, data):
 
 def test_greedy_vs_bruteforce():
     """Test that greedy solver finds the same optimal bundles as brute force."""
-    num_agents, num_items, num_simuls = 20, 12, 2
+    num_agents, num_items, num_simulations = 20, 12, 2
     agent_modular_dim, item_modular_dim = 2, 3
     
     input_data, dimensions_cfg = generate_test_data(
-        num_agents, num_items, agent_modular_dim, item_modular_dim, num_simuls
+        num_agents, num_items, agent_modular_dim, item_modular_dim, num_simulations
     )
 
     cfg = {

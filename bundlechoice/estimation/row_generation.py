@@ -10,12 +10,10 @@ from typing import Tuple, List, Optional, Any, Dict, Callable
 import logging
 import gurobipy as gp
 from gurobipy import GRB
-from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.utils import get_logger, suppress_output, time_operation
+from bundlechoice.constants import DEFAULT_CONSTRAINT_TOLERANCE, DEFAULT_BINDING_TOLERANCE, DEFAULT_SLACK_TOLERANCE
 from .base import BaseEstimationManager
 logger = get_logger(__name__)
-
-# Ensure root logger is configured for INFO level output
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
 class RowGenerationManager(BaseEstimationManager):
@@ -102,8 +100,11 @@ class RowGenerationManager(BaseEstimationManager):
                 # Default: non-negativity constraints (lb=0 for all variables)
                 theta.lb = 0.0
             
+            # Set start value if theta_init was provided
+            if hasattr(self, '_theta_init_for_start') and self._theta_init_for_start is not None:
+                theta.Start = self._theta_init_for_start
 
-            u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
+            u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
             
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
@@ -144,57 +145,52 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.bool_], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        t_mpi_gather_start = datetime.now()
-        bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results.astype(np.float64))
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results.astype(np.float64))
-        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
+        with time_operation('mpi_gather', timing_dict):
+            bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+            x_sim, errors_sim = self.feature_manager.compute_gathered_features_and_errors(local_pricing_results.astype(np.float64))
         
         stop = False
         if self.is_root():
-            t_master_prep_start = datetime.now()
-            theta, u = self.master_variables
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                u_sim = x_sim @ theta.X + errors_sim
-            u_master = u.X
+            with time_operation('master_prep', timing_dict):
+                theta, u = self.master_variables
+                with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                    u_sim = x_sim @ theta.X + errors_sim
+                u_master = u.X
 
-            violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-5, atol = 1e-5) * (u_master > u_sim))[0]
-            if len(violations) > 0:
-                logger.warning(
-                    "Possible failure of demand oracle at agents ids: %s, "
-                    "u_sim: %s, u_master: %s",
-                    violations, u_sim[violations], u_master[violations]
-                )
+                violations = np.where(~np.isclose(u_master, u_sim, rtol=DEFAULT_CONSTRAINT_TOLERANCE, atol=DEFAULT_CONSTRAINT_TOLERANCE) * (u_master > u_sim))[0]
+                if len(violations) > 0:
+                    logger.warning(
+                        "Possible failure of demand oracle at agents ids: %s, "
+                        "u_sim: %s, u_master: %s",
+                        violations, u_sim[violations], u_master[violations]
+                    )
 
-            self.log_parameter()
-            logger.info(f"ObjVal: {self.master_model.ObjVal}")
-            max_reduced_cost = np.max(u_sim - u_master)
-            logger.info("Reduced cost: %s", max_reduced_cost)
-            # Check if we're in suboptimal cuts mode (set by callback)
-            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
-            if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
-                if not suboptimal_mode:
-                    stop = True
-                else:
-                    logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
-            rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
-            logger.info("New constraints: %d", len(rows_to_add))
-            timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+                self.log_parameter()
+                logger.info(f"ObjVal: {self.master_model.ObjVal}")
+                max_reduced_cost = np.max(u_sim - u_master)
+                logger.info("Reduced cost: %s", max_reduced_cost)
+                # Check if we're in suboptimal cuts mode (set by callback)
+                suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
+                if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
+                    if not suboptimal_mode:
+                        stop = True
+                    else:
+                        logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
+                rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
+                logger.info("New constraints: %d", len(rows_to_add))
             
-            t_master_update_start = datetime.now()
-            if len(rows_to_add) > 0 and bundles_sim is not None:
-                for idx in rows_to_add:
-                    bundle_bool = bundles_sim[idx].astype(np.bool_)
-                    constr_name = f"rowgen_{idx}"
-                    constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
-                    self.constraint_bundles[constr] = bundle_bool
-            self._enforce_slack_counter()
-            logger.info("Number of constraints: %d", self.master_model.NumConstrs)
-            timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
+            with time_operation('master_update', timing_dict):
+                if len(rows_to_add) > 0 and bundles_sim is not None:
+                    for idx in rows_to_add:
+                        bundle_bool = bundles_sim[idx].astype(np.bool_)
+                        constr_name = f"rowgen_{idx}"
+                        constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
+                        self.constraint_bundles[constr] = bundle_bool
+                self._enforce_slack_counter()
+                logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             
-            t_master_optimize_start = datetime.now()
-            self.master_model.optimize()
-            timing_dict['master_optimize'] = (datetime.now() - t_master_optimize_start).total_seconds()
+            with time_operation('master_optimize', timing_dict):
+                self.master_model.optimize()
             
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
@@ -207,13 +203,13 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_optimize'] = 0.0
         
         # Broadcast theta and stop flag using buffer-based operations (no pickle)
-        t_mpi_broadcast_start = datetime.now()
-        self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
-        timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
+        with time_operation('mpi_broadcast', timing_dict):
+            self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
         
         return stop
 
-    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+              theta_init: Optional[NDArray[np.float64]] = None) -> NDArray[np.float64]:
         """
         Run the row generation algorithm to estimate model parameters.
 
@@ -225,6 +221,8 @@ class RowGenerationManager(BaseEstimationManager):
                      - 'objective': Current objective value (float)
                      - 'pricing_time': Time spent solving subproblems in seconds (float)
                      - 'master_time': Time spent on master problem in seconds (float)
+            theta_init: Optional initial theta. If provided, subproblems are solved at this
+                       theta and constraints added before the first iteration.
         
         Returns:
             np.ndarray: Estimated parameter vector.
@@ -235,8 +233,8 @@ class RowGenerationManager(BaseEstimationManager):
             print("=" * 70)
             print()  # Blank line after header
             print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
-            if self.dimensions_cfg.num_simuls > 1:
-                print(f"  Simulations: {self.dimensions_cfg.num_simuls}")
+            if self.dimensions_cfg.num_simulations > 1:
+                print(f"  Simulations: {self.dimensions_cfg.num_simulations}")
             print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
             print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
             print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
@@ -253,7 +251,36 @@ class RowGenerationManager(BaseEstimationManager):
         
         t_init = datetime.now()
         self.subproblem_manager.initialize_local()
-        self._initialize_master_problem()        
+        
+        # Initialize with theta_init if provided
+        initial_constraints = None
+        if theta_init is not None:
+            if self.is_root():
+                logger.info("Initializing with provided theta (warm start)")
+                self.theta_val = np.asarray(theta_init, dtype=np.float64).copy()
+            else:
+                self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
+            
+            # Solve subproblems at initial theta to get initial constraints
+            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            
+            # Gather bundles - all processes must participate
+            bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+            
+            if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
+                indices = np.arange(self.num_simulations * self.num_agents, dtype=np.int64)
+                initial_constraints = {
+                    'indices': indices,
+                    'bundles': bundles_sim.astype(np.float64)
+                }
+                logger.info("Pre-computed %d initial constraints from theta_init", len(indices))
+        
+        # Store theta_init for use in _initialize_master_problem
+        self._theta_init_for_start = theta_init if theta_init is not None else None
+        
+        self._initialize_master_problem(initial_constraints=initial_constraints)
+        
         self.slack_counter = {}
         init_time = (datetime.now() - t_init).total_seconds()
         iteration = 0
@@ -283,9 +310,8 @@ class RowGenerationManager(BaseEstimationManager):
                 )
             
             # Pricing phase
-            t_pricing = datetime.now()
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            iter_timing['pricing'] = (datetime.now() - t_pricing).total_seconds()
+            with time_operation('pricing', iter_timing):
+                local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             
             # Master iteration (with internal timing)
             stop = self._master_iteration(local_pricing_results, iter_timing) 
@@ -297,16 +323,17 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Callback phase
             if callback:
-                t_callback = datetime.now()
-                if self.is_root():
-                    callback({
-                        'iteration': iteration + 1,
-                        'theta': self.theta_val.copy() if self.theta_val is not None else None,
-                        'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
-                        'pricing_time': iter_timing['pricing'],
-                        'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
-                    })
-                timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
+                with time_operation('callback', iter_timing):
+                    if self.is_root():
+                        callback({
+                            'iteration': iteration + 1,
+                            'theta': self.theta_val.copy() if self.theta_val is not None else None,
+                            'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
+                            'pricing_time': iter_timing['pricing'],
+                            'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
+                        })
+                if 'callback' in iter_timing:
+                    timing_breakdown['callback'].append(iter_timing['callback'])
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
@@ -378,14 +405,14 @@ class RowGenerationManager(BaseEstimationManager):
         if self.row_generation_cfg.max_slack_counter < float('inf'):
             to_remove = []
             for constr in self.master_model.getConstrs():
-                if constr.Slack < -1e-6:
+                if constr.Slack < -DEFAULT_SLACK_TOLERANCE:
                     # Only add to counter when constraint is actually slack
                     if constr not in self.slack_counter:
                         self.slack_counter[constr] = 0
                     self.slack_counter[constr] += 1
                     if self.slack_counter[constr] >= self.row_generation_cfg.max_slack_counter:
                         to_remove.append(constr)
-                if constr.Pi > 1e-6:
+                if constr.Pi > DEFAULT_SLACK_TOLERANCE:
                     self.slack_counter.pop(constr, None)
             # Remove all constraints that exceeded the slack counter limit
             for constr in to_remove:
@@ -546,7 +573,7 @@ class RowGenerationManager(BaseEstimationManager):
             'bundles': np.array(bundles, dtype=np.float64)
         }
 
-    def get_binding_constraints(self, tolerance: float = 1e-6) -> Optional[Dict[str, NDArray]]:
+    def get_binding_constraints(self, tolerance: float = DEFAULT_BINDING_TOLERANCE) -> Optional[Dict[str, NDArray]]:
         """
         Extract only binding constraints (slack ≈ 0) from the Gurobi model.
         

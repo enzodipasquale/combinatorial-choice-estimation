@@ -132,7 +132,7 @@ class ColumnGenerationManager(BaseEstimationManager):
                     expr.addTerms(-1.0, beta_var)
                 self.beta_vars.append(beta_var)
 
-                rhs = float(obs_features[k] * max(1, self.num_simuls))
+                rhs = float(obs_features[k] * max(1, self.num_simulations))
                 if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
                     constr = self.master_model.addConstr(expr >= rhs, name=f"feature_match[{k}]")
                 else:
@@ -184,7 +184,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         max_reduced_cost = 0.0
         if self.is_root() and features_all is not None and errors_all is not None:
             penalties = agent_penalties[: len(errors_all)]
-            scaled_errors = errors_all / max(1, self.num_simuls)
+            scaled_errors = errors_all / max(1, self.num_simulations)
             reduced_costs = scaled_errors - features_all @ dual_prices - penalties
             max_reduced_cost = float(np.max(reduced_costs))
             self._pricing_cache = (bundles_all, features_all, scaled_errors, reduced_costs)
@@ -232,7 +232,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             column.addTerms(1.0, agent_constr)
 
             var = self.master_model.addVar(
-                obj=float(errors[idx] / max(1, self.num_simuls)),
+                obj=float(errors[idx] / max(1, self.num_simulations)),
                 lb=0.0,
                 column=column,
                 name=f"mu_{idx}_{len(self.column_vars)}",
@@ -275,7 +275,7 @@ class ColumnGenerationManager(BaseEstimationManager):
 
         errors_tensor = input_data.get("errors") if input_data else None
         if errors_tensor is None:
-            errors_tensor = np.zeros((self.num_simuls, self.num_agents, self.num_items), dtype=np.float64)
+            errors_tensor = np.zeros((self.num_simulations, self.num_agents, self.num_items), dtype=np.float64)
         else:
             errors_tensor = np.asarray(errors_tensor, dtype=np.float64)
             if errors_tensor.ndim == 2:
@@ -283,11 +283,11 @@ class ColumnGenerationManager(BaseEstimationManager):
             if errors_tensor.ndim != 3:
                 raise ValueError(f"Unexpected errors dimensionality: {errors_tensor.shape}")
 
-        bundles_arr = np.zeros((self.num_simuls, self.num_agents, self.num_items), dtype=bool)
-        features_arr = np.zeros((self.num_simuls, self.num_agents, self.num_features), dtype=np.float64)
-        errors_arr = np.zeros((self.num_simuls, self.num_agents), dtype=np.float64)
+        bundles_arr = np.zeros((self.num_simulations, self.num_agents, self.num_items), dtype=bool)
+        features_arr = np.zeros((self.num_simulations, self.num_agents, self.num_features), dtype=np.float64)
+        errors_arr = np.zeros((self.num_simulations, self.num_agents), dtype=np.float64)
 
-        for s in range(self.num_simuls):
+        for s in range(self.num_simulations):
             bundle_slice = obs_bundles[min(s, obs_bundles.shape[0] - 1)]
             error_slice = errors_tensor[min(s, errors_tensor.shape[0] - 1)]
             for i in range(self.num_agents):
@@ -314,7 +314,7 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     def _master_iteration(self, timing: Dict[str, float]) -> bool:
         stop = False
-        num_si = self.num_simuls * self.num_agents
+        num_si = self.num_simulations * self.num_agents
 
         if self.is_root():
             t_prep = datetime.now()

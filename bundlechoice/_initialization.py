@@ -94,12 +94,14 @@ def try_init_subproblem_manager(bc: Any) -> SubproblemManager:
         feature_manager=bc.feature_manager,
         subproblem_cfg=bc.config.subproblem
     )
-    # Don't auto-load here - will auto-load on first use (init_and_solve)
+    # Note: load() is called by core.py's _try_init_subproblem_manager for consistency
     return bc.subproblem_manager
 
 
 def try_init_row_generation_manager(bc: Any) -> RowGenerationManager:
     """Initialize RowGenerationManager if not already present."""
+    from bundlechoice.errors import SetupError
+    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
         missing = []
         if bc.data_manager is None:
@@ -110,10 +112,10 @@ def try_init_row_generation_manager(bc: Any) -> RowGenerationManager:
             missing.append("subproblem (call bc.subproblems.load())")
         if bc.config is None or bc.config.row_generation is None:
             missing.append("row_generation config (add 'row_generation' to your config)")
-        raise RuntimeError(
-            "Cannot initialize row generation solver - missing setup:\n  " +
-            "\n  ".join(missing) +
-            "\n\nRun bc.print_status() to see your current setup state."
+        raise SetupError(
+            "Cannot initialize row generation solver - missing setup",
+            suggestion="\n  ".join(f"- {m}" for m in missing) + "\n\nRun bc.print_status() to see your current setup state.",
+            missing=missing
         )
 
     bc.row_generation_manager = RowGenerationManager(
@@ -129,6 +131,8 @@ def try_init_row_generation_manager(bc: Any) -> RowGenerationManager:
 
 def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> EllipsoidManager:
     """Initialize EllipsoidManager if not already present."""
+    from bundlechoice.errors import SetupError
+    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.ellipsoid is None:
         missing = []
         if bc.data_manager is None:
@@ -139,10 +143,10 @@ def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> Ell
             missing.append("subproblem (call bc.subproblems.load())")
         if bc.config is None or bc.config.ellipsoid is None:
             missing.append("ellipsoid config (add 'ellipsoid' to your config)")
-        raise RuntimeError(
-            "Cannot initialize ellipsoid solver - missing setup:\n  " +
-            "\n  ".join(missing) +
-            "\n\nRun bc.print_status() to see your current setup state."
+        raise SetupError(
+            "Cannot initialize ellipsoid solver - missing setup",
+            suggestion="\n  ".join(f"- {m}" for m in missing) + "\n\nRun bc.print_status() to see your current setup state.",
+            missing=missing
         )
 
     bc.ellipsoid_manager = EllipsoidManager(
@@ -159,6 +163,8 @@ def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> Ell
 
 def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
     """Initialize InequalitiesManager if required managers are set."""
+    from bundlechoice.errors import SetupError
+    
     missing_managers = []
     if bc.data_manager is None:
         missing_managers.append("DataManager")
@@ -169,10 +175,10 @@ def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
     if bc.config is None or bc.config.dimensions is None:
         missing_managers.append("DimensionsConfig")
     if missing_managers:
-        raise RuntimeError(
-            "DataManager, FeatureManager, SubproblemManager, and DimensionsConfig must be set in config "
-            "before initializing inequalities manager. Missing managers: "
-            f"{', '.join(missing_managers)}"
+        raise SetupError(
+            "Cannot initialize inequalities manager - missing managers",
+            suggestion=f"Ensure {', '.join(missing_managers)} are initialized before accessing bc.inequalities",
+            missing=missing_managers
         )
 
     bc.inequalities_manager = InequalitiesManager(
@@ -187,6 +193,8 @@ def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
 
 def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None) -> ColumnGenerationManager:
     """Initialize ColumnGenerationManager if not already present."""
+    from bundlechoice.errors import SetupError
+    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
         missing = []
         if bc.data_manager is None:
@@ -197,10 +205,10 @@ def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None
             missing.append("subproblem (call bc.subproblems.load())")
         if bc.config is None or bc.config.row_generation is None:
             missing.append("row_generation config (add 'row_generation' to your config)")
-        raise RuntimeError(
-            "Cannot initialize column generation solver - missing setup:\n  "
-            + "\n  ".join(missing)
-            + "\n\nRun bc.print_status() to see your current setup state."
+        raise SetupError(
+            "Cannot initialize column generation solver - missing setup",
+            suggestion="\n  ".join(f"- {m}" for m in missing) + "\n\nRun bc.print_status() to see your current setup state.",
+            missing=missing
         )
 
     bc.column_generation_manager = ColumnGenerationManager(

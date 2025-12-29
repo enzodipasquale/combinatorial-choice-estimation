@@ -12,7 +12,7 @@ def test_data_manager_scatter_mpi():
         num_agents=40,
         num_items=3,
         num_features=1,
-        num_simuls=1
+        num_simulations=1
     )
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

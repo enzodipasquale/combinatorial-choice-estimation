@@ -32,7 +32,7 @@ def test_ellipsoid_quadsupermodular():
         )
         .with_num_simuls(num_simuls)
         .with_sigma(sigma)
-        .with_agent_modular_config(multiplier=-2.0, mean=2.0, std=1.0, apply_abs=True)
+        .with_agent_modular_config(multiplier=-2.0, mean=2.0, std=1.0)
         .with_quadratic_method(
             method=QuadraticGenerationMethod.EXPONENTIAL,
             mask_threshold=0.3,

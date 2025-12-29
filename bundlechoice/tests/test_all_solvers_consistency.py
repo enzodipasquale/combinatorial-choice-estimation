@@ -11,6 +11,10 @@ from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 
 
+@pytest.mark.mpi
+@pytest.mark.integration
+
+
 def test_row_generation_mpi_optimizations():
     """Test that row_generation works with MPI buffer optimizations."""
     

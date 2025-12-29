@@ -55,6 +55,6 @@ def test_generate_data_linear():
     if bc.is_root():
         assert isinstance(results, np.ndarray)
         assert results.dtype == bool
-        assert results.shape == (num_agents * cfg["dimensions"]["num_simuls"], num_items)
+        assert results.shape == (num_agents * bc.config.dimensions.num_simulations, num_items)
     else:
         assert results is None
