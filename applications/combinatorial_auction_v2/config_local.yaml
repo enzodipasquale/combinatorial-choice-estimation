@@ -2,7 +2,7 @@ dimensions:
     num_agents: 256
     num_items: 493
     num_features: 497
-    num_simuls: 1
+    num_simuls: 2
 
 subproblem: 
     name: QuadKnapsack
