@@ -199,15 +199,16 @@ class RowGenerationManager(BaseEstimationManager):
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
-            theta_val = None
+            # Pre-allocate array for buffer-based broadcast (must match root's shape/dtype)
+            theta_val = np.empty(self.num_features, dtype=np.float64)
             stop = False
             timing_dict['master_prep'] = 0.0
             timing_dict['master_update'] = 0.0
             timing_dict['master_optimize'] = 0.0
         
-        # Broadcast theta and stop flag together (single broadcast reduces latency)
+        # Broadcast theta and stop flag using buffer-based operations (no pickle)
         t_mpi_broadcast_start = datetime.now()
-        self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
+        self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
         timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
         
         return stop

@@ -382,12 +382,13 @@ class ColumnGenerationManager(BaseEstimationManager):
             timing["master_optimize"] = 0.0
 
         if self.is_root():
-            theta_to_send = None if self.theta_val is None else self.theta_val.copy()
+            theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.num_features, dtype=np.float64)
         else:
-            theta_to_send = None
+            # Pre-allocate array for buffer-based broadcast (must match root's shape/dtype)
+            theta_to_send = np.empty(self.num_features, dtype=np.float64)
 
         t_broadcast = datetime.now()
-        self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_to_send, stop), root=0)
+        self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_send, stop, root=0)
         timing["mpi_broadcast"] = (datetime.now() - t_broadcast).total_seconds()
 
         return bool(stop)
