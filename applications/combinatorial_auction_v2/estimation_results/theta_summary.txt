@@ -7,7 +7,7 @@ Total features: 497
   - Quadratic item features: 3
 
 Theta statistics:
-  Min: 1.602833
-  Max: 559.455850
-  Mean: 4.675102
-  Std: 26.452589
+  Min: 2.255019
+  Max: 537.052003
+  Mean: 4.430471
+  Std: 24.779344

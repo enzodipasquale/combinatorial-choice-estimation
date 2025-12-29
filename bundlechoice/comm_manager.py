@@ -206,17 +206,45 @@ class CommManager:
     
     @_mpi_error_handler
     def concatenate_array_at_root_fast(self, local_array: np.ndarray, root: int = 0) -> Optional[np.ndarray]:
-        """Gather and concatenate arrays using MPI buffers (3-5x faster). Falls back to pickle for bool."""
+        """
+        Gather and concatenate arrays using MPI buffers (optimized, no pickle).
+        
+        Handles bool arrays by packing as uint8, and uses buffer-based shape gathering
+        instead of pickle for better performance with many ranks.
+        """
+        # Handle bool arrays by packing as uint8 (1 byte per bool, same as bool_)
         if local_array.dtype == np.bool_:
-            return self.concatenate_at_root(local_array, root=root)
+            local_array = local_array.astype(np.uint8)
+            unpack_bool = True
+        else:
+            unpack_bool = False
         
         local_flat = local_array.ravel()
+        ndim = local_array.ndim
+        
+        # Gather sizes using Allgather (fast, buffer-based)
         all_sizes_array = np.empty(self.size, dtype=np.int64)
         self.comm.Allgather(np.array([local_flat.size], dtype=np.int64), all_sizes_array)
         all_sizes = all_sizes_array.tolist()
         
-        all_shapes = self.comm.gather(local_array.shape, root=root)
+        # Gather shapes using buffer-based Allgather instead of pickle
+        # Shape is a tuple of length ndim, send as int array
+        shape_array = np.array(local_array.shape, dtype=np.int64)
+        all_shapes_buffer = np.empty(self.size * ndim, dtype=np.int64)
+        self.comm.Allgather(shape_array, all_shapes_buffer)
         
+        # Reshape to (size, ndim) and extract shapes on root
+        if self.is_root():
+            all_shapes = all_shapes_buffer.reshape(self.size, ndim)
+            # Verify all ranks have same shape (except first dimension)
+            if ndim > 1:
+                shape_template = all_shapes[0, 1:]
+                if not np.all(all_shapes[:, 1:] == shape_template):
+                    raise ValueError("Inconsistent shapes across ranks (non-first dimensions must match)")
+        else:
+            all_shapes = None
+        
+        # Gather actual data using Gatherv (fast, buffer-based)
         recvbuf = [np.empty(sum(all_sizes), dtype=local_array.dtype), all_sizes, 
                    self._compute_displacements(all_sizes), _get_mpi_type(local_array.dtype)] if self.is_root() else None
         self.comm.Gatherv(local_flat, recvbuf, root=root)
@@ -225,7 +253,21 @@ class CommManager:
             return None
         
         result = recvbuf[0]
-        return result if local_array.ndim == 1 else result.reshape((sum(s[0] for s in all_shapes),) + all_shapes[0][1:])
+        
+        # Reshape result
+        if ndim == 1:
+            final_result = result
+        else:
+            # Reconstruct shape: first dim is sum of all first dims, rest from template
+            first_dim = sum(all_shapes[:, 0])
+            rest_shape = tuple(all_shapes[0, 1:])
+            final_result = result.reshape((first_dim,) + rest_shape)
+        
+        # Unpack bool if needed
+        if unpack_bool:
+            final_result = final_result.astype(np.bool_)
+        
+        return final_result
 
     # ============================================================================
     # Profiling

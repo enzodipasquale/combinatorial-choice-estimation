@@ -14,6 +14,6 @@ row_generation:
     theta_ubs: 1000
     parameters_to_log: [0, -3,-2,-1]
 
-    max_slack_counter: 100000
+    max_slack_counter: 20000000
 
 

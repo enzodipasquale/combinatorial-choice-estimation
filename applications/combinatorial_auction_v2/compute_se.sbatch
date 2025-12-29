@@ -13,5 +13,5 @@ module purge
 
 export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"
 
-srun ./run-gurobi.bash python compute_sandwich_se_v2.py
+srun ./run-gurobi.bash python compute_sandwich_se.py
 

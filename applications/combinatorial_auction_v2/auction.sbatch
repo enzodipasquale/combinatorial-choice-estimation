@@ -4,7 +4,7 @@
 #SBATCH --nodes=20
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=150G
+#SBATCH --mem=80G
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm-estimation-%j.out
 #SBATCH --error=slurm-estimation-%j.err
