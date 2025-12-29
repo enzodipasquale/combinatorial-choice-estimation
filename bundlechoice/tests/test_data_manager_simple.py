@@ -12,7 +12,7 @@ def test_data_manager_basic():
         num_agents=40,
         num_items=3,
         num_features=1,
-        num_simuls=1
+        num_simulations=1
     )
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -28,7 +28,7 @@ def test_data_manager_basic():
     assert dm.num_agents == 40
     assert dm.num_items == 3
     assert dm.num_features == 1
-    assert dm.num_simuls == 1
+    assert dm.num_simulations == 1
 
 
 def test_data_manager_load_only():
@@ -37,7 +37,7 @@ def test_data_manager_load_only():
         num_agents=40,
         num_items=3,
         num_features=1,
-        num_simuls=1
+        num_simulations=1
     )
     input_data = {
         'item_data': {'a': np.array([1, 2, 3])},

@@ -10,10 +10,6 @@ from .base import BaseEstimationManager
 logger = get_logger(__name__)
 
 
-# Ensure root logger is configured for INFO level output
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
-
-
 class InequalitiesManager(BaseEstimationManager):
     """
     Implements the inequalities method for parameter estimation in modular bundle choice models.
@@ -53,7 +49,7 @@ class InequalitiesManager(BaseEstimationManager):
         model = gp.Model()
         model.setParam('OutputFlag', 0)
         theta = model.addMVar(self.num_features, obj=-self.obs_features, ub=100, name='parameter')
-        u = model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
+        u = model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
         features_alt, errors_alt = self.compute_features_alt_AddDrop()
         model.addConstr(u[:, None] >= gp.quicksum(features_alt[:,:,k] * theta[k] for k in range(self.num_features)) + errors_alt)
         
@@ -66,10 +62,10 @@ class InequalitiesManager(BaseEstimationManager):
         
     def compute_features_alt_AddDrop(self) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Compute alternative features for add/drop operations. Returns (features_alt, errors_alt)."""
-        features_alt = np.zeros((self.num_agents * self.num_simuls, self.num_items, self.num_features))
-        errors_alt = np.zeros((self.num_agents * self.num_simuls, self.num_items))
+        features_alt = np.zeros((self.num_agents * self.num_simulations, self.num_items, self.num_features))
+        errors_alt = np.zeros((self.num_agents * self.num_simulations, self.num_items))
         
-        for si in range(self.num_agents * self.num_simuls):
+        for si in range(self.num_agents * self.num_simulations):
             i = si % self.num_agents
             s = si // self.num_agents
             bundle = self.input_data["obs_bundle"][i]

@@ -46,3 +46,24 @@ Repository = "https://github.com/enzodipasquale/combinatorial-choice-estimation"
 [tool.setuptools.packages.find]
 include = ["bundlechoice*"]
 exclude = ["bundlechoice._legacy*", "bundlechoice.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["bundlechoice/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "mpi: test requires MPI (run with mpirun -n N)",
+    "slow: test takes a long time to run",
+    "integration: integration test",
+    "unit: unit test",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]

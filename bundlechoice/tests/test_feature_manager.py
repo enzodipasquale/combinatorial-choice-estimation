@@ -10,7 +10,7 @@ from bundlechoice.comm_manager import CommManager
 class DummyDataManager:
     """Mock data manager for testing feature computation."""
     
-    def __init__(self, num_agents, num_simuls):
+    def __init__(self, num_agents, num_simulations):
         self.agent_data = {"dummy": np.array([[1, 2], [3, 4]])}
         self.item_data = {"dummy": np.array([0])}
         self.input_data = {
@@ -34,14 +34,14 @@ def dummy_get_x_k(i, B, data):
 def test_compute_rank_features():
     """Test feature computation for local rank."""
     num_agents = 30
-    num_simuls = 2
+    num_simulations = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,
         num_items=2,
         num_features=1,
-        num_simuls=num_simuls
+        num_simulations=num_simulations
     )
-    data_manager = DummyDataManager(num_agents, num_simuls)
+    data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,
@@ -50,8 +50,8 @@ def test_compute_rank_features():
     )
     features.set_oracle(dummy_get_x_k)
     
-    # Create bundles for local agents
-    local_bundles = [np.array([1, 2]) for _ in range(data_manager.num_local_agents)]
+    # Create bundles for local agents (as numpy array)
+    local_bundles = np.array([[1, 2] for _ in range(data_manager.num_local_agents)], dtype=np.float64)
     x_i_k = features.compute_rank_features(local_bundles)
     
     # Verify shape and values
@@ -66,14 +66,14 @@ def test_compute_rank_features():
 def test_compute_gathered_features():
     """Test feature computation with MPI gathering."""
     num_agents = 2  # 2 agents per rank
-    num_simuls = 2
+    num_simulations = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,
         num_items=2,
         num_features=1,
-        num_simuls=num_simuls
+        num_simulations=num_simulations
     )
-    data_manager = DummyDataManager(num_agents, num_simuls)
+    data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,
@@ -82,8 +82,8 @@ def test_compute_gathered_features():
     )
     features.set_oracle(dummy_get_x_k)
     
-    # Create bundles for local agents
-    local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]
+    # Create bundles for local agents (as numpy array)
+    local_bundles = np.array([[1, 1] for _ in range(data_manager.num_local_agents)], dtype=np.float64)
     x_si_k = features.compute_gathered_features(local_bundles)
     
     # Verify results on root rank
@@ -102,14 +102,14 @@ def test_compute_gathered_features():
 def test_compute_gathered_features_consistency():
     """Test consistency of gathered features across MPI ranks."""
     num_agents = 2  # 2 agents per rank
-    num_simuls = 2
+    num_simulations = 2
     dimensions_cfg = DimensionsConfig(
         num_agents=num_agents,
         num_items=2,
         num_features=1,
-        num_simuls=num_simuls
+        num_simulations=num_simulations
     )
-    data_manager = DummyDataManager(num_agents, num_simuls)
+    data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
     features = FeatureManager(
         dimensions_cfg=dimensions_cfg,

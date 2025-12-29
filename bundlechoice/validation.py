@@ -123,7 +123,7 @@ def validate_item_data(item_data: Dict[str, np.ndarray], num_items: int) -> None
             )
 
 
-def validate_errors(errors: np.ndarray, num_agents: int, num_items: int, num_simuls: int) -> None:
+def validate_errors(errors: np.ndarray, num_agents: int, num_items: int, num_simulations: int) -> None:
     """Validate error array dimensions."""
     if errors is None:
         raise DataError(
@@ -147,17 +147,17 @@ def validate_errors(errors: np.ndarray, num_agents: int, num_items: int, num_sim
                 context={'expected_shape': expected, 'actual_shape': errors.shape}
             )
     elif errors.ndim == 3:
-        expected = (num_simuls, num_agents, num_items)
+        expected = (num_simulations, num_agents, num_items)
         if errors.shape != expected:
             raise DimensionMismatchError(
                 f"errors shape mismatch: expected {expected}, got {errors.shape}",
-                suggestion="errors should have shape (num_simuls, num_agents, num_items)",
+                suggestion="errors should have shape (num_simulations, num_agents, num_items)",
                 context={'expected_shape': expected, 'actual_shape': errors.shape}
             )
     else:
         raise DataError(
             f"errors must be 2D or 3D, got {errors.ndim}D with shape {errors.shape}",
-            suggestion="errors should have shape (num_agents, num_items) or (num_simuls, num_agents, num_items)"
+            suggestion="errors should have shape (num_agents, num_items) or (num_simulations, num_agents, num_items)"
         )
 
 
@@ -301,7 +301,7 @@ def validate_input_data_comprehensive(input_data: Dict[str, Any], dimensions_cfg
     # Dimension validation
     validate_agent_data(input_data.get('agent_data'), dimensions_cfg.num_agents, dimensions_cfg.num_items)
     validate_item_data(input_data.get('item_data'), dimensions_cfg.num_items)
-    validate_errors(input_data.get('errors'), dimensions_cfg.num_agents, dimensions_cfg.num_items, dimensions_cfg.num_simuls)
+    validate_errors(input_data.get('errors'), dimensions_cfg.num_agents, dimensions_cfg.num_items, dimensions_cfg.num_simulations)
     validate_obs_bundles(input_data.get('obs_bundle'), dimensions_cfg.num_agents, dimensions_cfg.num_items)
     
     # Data quality validation
@@ -317,77 +317,3 @@ def validate_input_data_comprehensive(input_data: Dict[str, Any], dimensions_cfg
         validate_quadratic_features(input_data['item_data'])
 
 
-# ============================================================================
-# Legacy compatibility (for tests and existing code)
-# ============================================================================
-
-class SetupValidator:
-    """Legacy wrapper for setup validation."""
-    WORKFLOW_REQUIREMENTS = WORKFLOW_REQUIREMENTS
-    
-    @staticmethod
-    def check_component(bc, component: str) -> bool:
-        return check_component(bc, component)
-    
-    @staticmethod
-    def get_completed_steps(bc) -> List[str]:
-        return get_completed_steps(bc)
-    
-    @staticmethod
-    def validate_for_operation(bc, operation: str) -> None:
-        validate_workflow(bc, operation)
-    
-    @staticmethod
-    def validate_all(bc) -> Dict[str, bool]:
-        return {comp: check_component(bc, comp) 
-                for comp in ['config', 'data', 'features', 'subproblems', 'obs_bundles']}
-
-
-class DimensionValidator:
-    """Legacy wrapper for dimension validation."""
-    
-    @staticmethod
-    def validate_agent_data(agent_data, num_agents, num_items):
-        validate_agent_data(agent_data, num_agents, num_items)
-    
-    @staticmethod
-    def validate_item_data(item_data, num_items):
-        validate_item_data(item_data, num_items)
-    
-    @staticmethod
-    def validate_errors(errors, num_agents, num_items, num_simuls):
-        validate_errors(errors, num_agents, num_items, num_simuls)
-    
-    @staticmethod
-    def validate_obs_bundles(obs_bundles, num_agents, num_items):
-        validate_obs_bundles(obs_bundles, num_agents, num_items)
-    
-    @staticmethod
-    def validate_all_data(input_data, num_agents, num_items, num_simuls):
-        from bundlechoice.config import DimensionsConfig
-        dims = DimensionsConfig(num_agents=num_agents, num_items=num_items, 
-                                num_features=1, num_simuls=num_simuls)
-        validate_input_data_comprehensive(input_data, dims)
-
-
-class DataQualityValidator:
-    """Legacy wrapper for data quality validation."""
-    
-    @staticmethod
-    def check_for_invalid_values(data, context="data"):
-        return check_nan_inf(data, context)
-    
-    @staticmethod
-    def validate_quadratic_features(item_data):
-        validate_quadratic_features(item_data)
-    
-    @staticmethod
-    def validate_data_quality(input_data):
-        problems = check_nan_inf(input_data)
-        if problems:
-            raise DataError(
-                "Data contains invalid values: " + "; ".join(problems),
-                suggestion="Check for NaN/Inf. Use np.nan_to_num() or imputation to fix."
-            )
-        if 'item_data' in input_data:
-            validate_quadratic_features(input_data['item_data'])

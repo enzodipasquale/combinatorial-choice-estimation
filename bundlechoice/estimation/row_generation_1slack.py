@@ -168,8 +168,8 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             print("=" * 70)
             print()  # Blank line after header
             print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
-            if self.dimensions_cfg.num_simuls > 1:
-                print(f"  Simulations: {self.dimensions_cfg.num_simuls}")
+            if self.dimensions_cfg.num_simulations > 1:
+                print(f"  Simulations: {self.dimensions_cfg.num_simulations}")
             print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
             print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
             print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")

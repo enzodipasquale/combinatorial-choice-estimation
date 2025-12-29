@@ -10,10 +10,10 @@ from typing import Dict, Any
 
 def load_configs_from_dict(config_dict: Dict[str, Any]):
     """Load configs from dictionary without requiring a bundle_choice instance."""
-    dimensions_cfg = DimensionsConfig(**config_dict.get("dimensions", {}))
-    row_generation_cfg = RowGenerationConfig(**config_dict.get("row_generation", {}))
-    subproblem_cfg = SubproblemConfig(**config_dict.get("subproblem", {}))
-    return dimensions_cfg, row_generation_cfg, subproblem_cfg
+    from bundlechoice.config import BundleChoiceConfig
+    # Use BundleChoiceConfig.from_dict to handle num_simuls → num_simulations conversion
+    full_config = BundleChoiceConfig.from_dict(config_dict)
+    return full_config.dimensions, full_config.row_generation, full_config.subproblem
 
 
 def load_configs_from_yaml(yaml_path: str):
@@ -100,7 +100,7 @@ subproblem:
         assert dimensions_cfg.num_agents == 7
         assert dimensions_cfg.num_items == 12
         assert dimensions_cfg.num_features == 4
-        assert dimensions_cfg.num_simuls == 3
+        assert dimensions_cfg.num_simulations == 3
         
         # Test row generation
         assert row_generation_cfg.tolerance_optimality == 0.02
@@ -166,7 +166,7 @@ def test_automatic_update_in_place():
     assert initial_config.dimensions.num_agents == 20  # Updated
     assert initial_config.dimensions.num_items == 5    # Unchanged
     assert initial_config.dimensions.num_features == 6 # Updated
-    assert initial_config.dimensions.num_simuls == 1   # Default unchanged
+    assert initial_config.dimensions.num_simulations == 1   # Default unchanged
     
     # Test that subproblem was updated correctly
     assert initial_config.subproblem.name == "greedy"  # Unchanged

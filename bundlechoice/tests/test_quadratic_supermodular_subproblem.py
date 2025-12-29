@@ -10,7 +10,7 @@ from bundlechoice.feature_manager import FeatureManager
 def test_quad_vs_bruteforce():
     """Test that quadratic solver finds the same optimal bundles as brute force."""
     # Simulate config and data with non-negative quadratic terms
-    num_agents, num_items, num_simuls = 30, 13, 1  # Small problem for brute force efficiency
+    num_agents, num_items, num_simulations = 30, 13, 1  # Small problem for brute force efficiency
     agent_modular_dim = 1
     agent_quadratic_dim = 1
     item_modular_dim = 1
@@ -39,7 +39,7 @@ def test_quad_vs_bruteforce():
         item_data["quadratic"][:, :, k] = np.triu(item_data["quadratic"][:, :, k], k=1)
 
     # Use moderate error variance to add variation
-    errors = np.random.normal(0, 0.6, size=(num_simuls, num_agents, num_items))
+    errors = np.random.normal(0, 0.6, size=(num_simulations, num_agents, num_items))
     input_data = {
         "item_data": item_data,
         "agent_data": agent_data,
@@ -53,7 +53,7 @@ def test_quad_vs_bruteforce():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls
+            "num_simulations": num_simulations
         },
         "subproblem": {
             "name": "QuadSupermodularNetwork",

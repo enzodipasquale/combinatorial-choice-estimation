@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Callable, Optional, Dict
+from typing import Any, Callable, Optional, Dict, Tuple
 from numpy.typing import NDArray
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
@@ -27,7 +27,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         self.data_manager = data_manager
         self._features_oracle: Optional[Callable] = None
         self._supports_batch: Optional[bool] = None
-        self.num_global_agents = self.num_simuls * self.num_agents
+        self.num_global_agents = self.num_simulations * self.num_agents
 
     # ============================================================================
     # Oracle Management
@@ -91,9 +91,9 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         
         return self._supports_batch
 
-    def compute_rank_features(self, local_bundles: NDArray[np.float64]) -> NDArray[np.float64]:
+    def compute_rank_features(self, local_bundles: Optional[NDArray[np.float64]]) -> NDArray[np.float64]:
         """Compute features for all local agents on this rank. Uses batch if supported."""
-        if self.num_local_agents == 0 or len(local_bundles) == 0:
+        if self.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
             return np.empty((0, self.num_features), dtype=np.float64)
         
         assert self.num_local_agents == len(local_bundles), \
@@ -105,10 +105,23 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         return np.stack([self.features_oracle(i, local_bundles[i], self.local_data) 
                         for i in range(self.num_local_agents)])
 
-    def compute_gathered_features(self, local_bundles: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
+    def compute_gathered_features(self, local_bundles: Optional[NDArray[np.float64]]) -> Optional[NDArray[np.float64]]:
         """Compute features for all agents, gather to rank 0."""
         features_local = self.compute_rank_features(local_bundles)
         return self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+
+    def compute_gathered_features_and_errors(self, local_bundles: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
+        """
+        Compute features and errors for all agents in one pass, gather to rank 0.
+        
+        Returns:
+            Tuple of (features, errors) arrays, both None on non-root ranks
+        """
+        features_local = self.compute_rank_features(local_bundles)
+        errors_local = (self.data_manager.local_data["errors"] * local_bundles).sum(1)
+        features = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        errors = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        return features, errors
 
     def compute_gathered_utilities(self, local_bundles: NDArray[np.float64], 
                                    theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:

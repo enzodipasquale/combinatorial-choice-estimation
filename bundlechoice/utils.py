@@ -1,12 +1,13 @@
 """
-Utility functions for logging and output suppression.
+Utility functions for logging, output suppression, and timing.
 """
 
 import logging
 import os
 import sys
+import time
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Dict, Any
 try:
     from mpi4py import MPI
 except ImportError:
@@ -53,4 +54,30 @@ def suppress_output():
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
-            logging.getLogger().setLevel(old_logging_level) 
+            logging.getLogger().setLevel(old_logging_level)
+
+# ============================================================================
+# Timing Utilities
+# ============================================================================
+
+@contextmanager
+def time_operation(name: str, timing_dict: Dict[str, float]):
+    """
+    Context manager for timing operations and storing results in a dictionary.
+    
+    Args:
+        name: Name of the operation to time
+        timing_dict: Dictionary to store timing results (will be updated in-place)
+    
+    Example:
+        timing = {}
+        with time_operation('pricing', timing):
+            result = solve_subproblems()
+        # timing['pricing'] now contains elapsed time in seconds
+    """
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        timing_dict[name] = elapsed 

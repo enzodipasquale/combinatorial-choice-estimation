@@ -270,16 +270,14 @@ class CommManager:
         all_shapes_buffer = np.empty(self.size * ndim, dtype=np.int64)
         self.comm.Allgather(shape_array, all_shapes_buffer)
         
-        # Reshape to (size, ndim) and extract shapes on root
-        if self.is_root():
-            all_shapes = all_shapes_buffer.reshape(self.size, ndim)
-            # Verify all ranks have same shape (except first dimension)
-            if ndim > 1:
-                shape_template = all_shapes[0, 1:]
-                if not np.all(all_shapes[:, 1:] == shape_template):
-                    raise ValueError("Inconsistent shapes across ranks (non-first dimensions must match)")
-        else:
-            all_shapes = None
+        # Reshape to (size, ndim) - all ranks need this for shape validation
+        all_shapes = all_shapes_buffer.reshape(self.size, ndim)
+        
+        # Verify all ranks have same shape (except first dimension) - check on all ranks
+        if ndim > 1:
+            shape_template = all_shapes[0, 1:]
+            if not np.all(all_shapes[:, 1:] == shape_template):
+                raise ValueError("Inconsistent shapes across ranks (non-first dimensions must match)")
         
         # Gather actual data using Gatherv (fast, buffer-based)
         recvbuf = [np.empty(sum(all_sizes), dtype=local_array.dtype), all_sizes, 

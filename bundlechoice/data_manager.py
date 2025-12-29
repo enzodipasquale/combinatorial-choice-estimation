@@ -73,7 +73,7 @@ class DataManager(HasDimensions, HasComm):
                 agent_data = agent_data.copy() if agent_data else {}
                 agent_data["constraint_mask"] = self.input_data["constraint_mask"]
             
-            idx_chunks = np.array_split(np.arange(self.num_simuls * self.num_agents), self.comm_size)
+            idx_chunks = np.array_split(np.arange(self.num_simulations * self.num_agents), self.comm_size)
             counts = [len(idx) for idx in idx_chunks]
             
             has_agent_data = len(agent_data) > 0
@@ -83,8 +83,8 @@ class DataManager(HasDimensions, HasComm):
             print("=" * 70)
             print("DATA SCATTER")
             print("=" * 70)
-            total_agents = self.num_simuls * self.num_agents
-            sim_info = f" ({self.num_simuls} simuls × {self.num_agents} agents)" if self.num_simuls > 1 else ""
+            total_agents = self.num_simulations * self.num_agents
+            sim_info = f" ({self.num_simulations} simuls × {self.num_agents} agents)" if self.num_simulations > 1 else ""
             print(f"  Scattering: {total_agents} agents{sim_info} → {self.comm_size} ranks")
             if len(set(counts)) == 1:
                 print(f"  Distribution: {counts[0]} agents/rank (balanced)")
@@ -110,7 +110,7 @@ class DataManager(HasDimensions, HasComm):
         flat_counts = [c * self.num_items for c in counts]
         if self.is_root():
             print("  Arrays:")
-            print(f"    Errors: shape=({self.num_simuls * self.num_agents}, {self.num_items})")
+            print(f"    Errors: shape=({self.num_simulations * self.num_agents}, {self.num_items})")
         local_errors_flat = self.comm_manager.scatter_array(
             send_array=errors, counts=flat_counts, root=0, 
             dtype=errors.dtype if self.is_root() else np.float64
@@ -145,13 +145,13 @@ class DataManager(HasDimensions, HasComm):
                 agent_data_expanded = {}
                 for k, array in agent_data.items():
                     # Repeat agent data across simulations if needed
-                    if self.num_simuls > 1:
+                    if self.num_simulations > 1:
                         if array.ndim == 1:
-                            # For 1D arrays, tile along single dimension: (num_agents,) -> (num_simuls * num_agents,)
-                            agent_data_expanded[k] = np.tile(array, self.num_simuls)
+                            # For 1D arrays, tile along single dimension: (num_agents,) -> (num_simulations * num_agents,)
+                            agent_data_expanded[k] = np.tile(array, self.num_simulations)
                         else:
-                            # For 2D+ arrays, tile along first dimension: (num_agents, ...) -> (num_simuls, num_agents, ...)
-                            agent_data_expanded[k] = np.tile(array, (self.num_simuls, 1) + (1,) * (array.ndim - 2))
+                            # For 2D+ arrays, tile along first dimension: (num_agents, ...) -> (num_simulations, num_agents, ...)
+                            agent_data_expanded[k] = np.tile(array, (self.num_simulations, 1) + (1,) * (array.ndim - 2))
                     else:
                         agent_data_expanded[k] = array
             else:
@@ -184,12 +184,12 @@ class DataManager(HasDimensions, HasComm):
 
     # --- Helper Methods ---
     def _prepare_errors(self, errors: Optional[np.ndarray]) -> Optional[np.ndarray]:
-        if (self.num_simuls == 1 and errors.ndim == 2):
+        if (self.num_simulations == 1 and errors.ndim == 2):
             return errors
         elif errors.ndim == 3:
             return errors.reshape(-1, self.num_items)
         else:
-            raise ValueError(f"errors has shape {errors.shape}, while num_simuls is {self.num_simuls} and num_agents is {self.num_agents}")
+            raise ValueError(f"errors has shape {errors.shape}, while num_simulations is {self.num_simulations} and num_agents is {self.num_agents}")
 
 
     def _validate_input_data(self, input_data: Dict[str, Any]) -> None:
