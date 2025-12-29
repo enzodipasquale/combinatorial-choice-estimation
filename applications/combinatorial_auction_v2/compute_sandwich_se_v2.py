@@ -13,6 +13,7 @@ from bundlechoice import BundleChoice
 from mpi4py import MPI
 import os
 import pandas as pd
+import time
 
 # Monkey patch FeatureManager.compute_rank_features to handle ranks with 0 local agents
 # (bundlechoice may error on empty local arrays when using many MPI ranks)
@@ -155,34 +156,73 @@ def compute_avg_subgradient_beta(theta, errors_all_sims):
     num_simuls = len(errors_all_sims)
     num_beta = len(beta_indices)
 
+    if rank == 0:
+        print(f"    [DEBUG] Starting compute_avg_subgradient_beta...", flush=True)
+    
     # Compute mean observed features (beta) via local sums + allreduce
+    comm.Barrier()  # Ensure all ranks are ready
+    t0 = time.time()
     obs_local = bc.data_manager.local_data["obs_bundles"]
+    if rank == 0:
+        print(f"    [DEBUG] Rank 0: obs_local shape = {obs_local.shape if obs_local is not None else None}", flush=True)
     obs_feat_local = bc.feature_manager.compute_rank_features(obs_local)  # (n_local, K)
+    if rank == 0:
+        print(f"    [DEBUG] Rank 0: obs_feat_local shape = {obs_feat_local.shape}", flush=True)
     obs_sum_beta_local = obs_feat_local[:, beta_indices].sum(axis=0) if obs_feat_local.size else np.zeros(num_beta)
+    if rank == 0:
+        print(f"    [DEBUG] Observed features computed: {time.time()-t0:.2f}s, sum = {obs_sum_beta_local}", flush=True)
 
+    comm.Barrier()  # CRITICAL: Ensure all ranks have computed obs_sum_beta_local before Allreduce
+    t1 = time.time()
     obs_sum_beta_global = np.zeros(num_beta)
+    if rank == 0:
+        print(f"    [DEBUG] About to call Allreduce...", flush=True)
     comm.Allreduce(obs_sum_beta_local, obs_sum_beta_global, op=MPI.SUM)
+    if rank == 0:
+        print(f"    [DEBUG] Observed Allreduce done: {time.time()-t1:.2f}s", flush=True)
     mean_obs_beta = obs_sum_beta_global / num_agents
 
     # Compute mean simulated features (beta) across simulations via local sums + allreduce
     sim_sum_beta_local = np.zeros(num_beta)
 
     for s in range(num_simuls):
+        comm.Barrier()  # Ensure all ranks are synchronized
         if rank == 0:
-            print(f"  Simulation {s+1}/{num_simuls} (mean-only)...", flush=True)
+            print(f"    [DEBUG] Simulation {s+1}/{num_simuls} starting...", flush=True)
+        
+        t2 = time.time()
         bc.data_manager.update_errors(errors_all_sims[s] if rank == 0 else None)
+        comm.Barrier()
+        if rank == 0:
+            print(f"    [DEBUG] Errors updated: {time.time()-t2:.2f}s", flush=True)
 
+        t3 = time.time()
         if bc.data_manager.num_local_agents > 0:
+            if rank == 0:
+                print(f"    [DEBUG] Solving {bc.data_manager.num_local_agents} agents on rank 0...", flush=True)
             local_bundles = bc.subproblems.solve_local(theta)
+            if rank == 0:
+                print(f"    [DEBUG] Solve completed: {time.time()-t3:.2f}s", flush=True)
         else:
             local_bundles = np.empty((0, bc.data_manager.num_items), dtype=bool)
+            if rank == 0:
+                print(f"    [DEBUG] Rank 0 has no agents, skipping solve", flush=True)
+        
+        comm.Barrier()  # Ensure all ranks finish solving before computing features
 
+        t4 = time.time()
         feat_local = bc.feature_manager.compute_rank_features(local_bundles)  # (n_local, K)
+        if rank == 0:
+            print(f"    [DEBUG] Features computed: {time.time()-t4:.2f}s", flush=True)
         if feat_local.size:
             sim_sum_beta_local += feat_local[:, beta_indices].sum(axis=0)
 
+    comm.Barrier()  # Ensure all ranks have computed local sums before Allreduce
+    t5 = time.time()
     sim_sum_beta_global = np.zeros(num_beta)
     comm.Allreduce(sim_sum_beta_local, sim_sum_beta_global, op=MPI.SUM)
+    if rank == 0:
+        print(f"    [DEBUG] Final Allreduce done: {time.time()-t5:.2f}s", flush=True)
 
     # Average over simulations, then over agents
     mean_sim_beta = (sim_sum_beta_global / num_simuls) / num_agents
@@ -202,26 +242,40 @@ if rank == 0:
     print(f"B_beta: shape={B_beta.shape}, cond={np.linalg.cond(B_beta):.2e}")
 
 # Compute A matrix via finite differences
+# CRITICAL: All ranks must participate because compute_avg_subgradient_beta uses MPI Allreduce!
+comm.Barrier()
 if rank == 0:
     print(f"\nComputing A matrix via finite differences (step_size={STEP_SIZE})...")
-    num_beta = len(beta_indices)
-    A_beta = np.zeros((num_beta, num_beta))
-    
-    for k_idx, k in enumerate(beta_indices):
-        h_k = STEP_SIZE * max(1.0, abs(theta_hat[k]))
-        theta_plus = theta_hat.copy()
-        theta_plus[k] += h_k
-        theta_minus = theta_hat.copy()
-        theta_minus[k] -= h_k
+num_beta = len(beta_indices)
+A_beta = np.zeros((num_beta, num_beta)) if rank == 0 else None
 
-        # NOTE: This is the dominant cost: 2 * (#simulations) * (#agents) MIP solves per column.
-        g_plus = compute_avg_subgradient_beta(theta_plus, errors_all_sims)
-        g_minus = compute_avg_subgradient_beta(theta_minus, errors_all_sims)
+for k_idx, k in enumerate(beta_indices):
+    comm.Barrier()
+    if rank == 0:
+        print(f"  Column {k_idx+1}/{num_beta} (parameter index {k})...", flush=True)
+    h_k = STEP_SIZE * max(1.0, abs(theta_hat[k]))
+    theta_plus = theta_hat.copy()
+    theta_plus[k] += h_k
+    theta_minus = theta_hat.copy()
+    theta_minus[k] -= h_k
+
+    # NOTE: This is the dominant cost: 2 * (#simulations) * (#agents) MIP solves per column.
+    # All ranks must call this function!
+    comm.Barrier()
+    if rank == 0:
+        print(f"    Computing forward difference...", flush=True)
+    g_plus = compute_avg_subgradient_beta(theta_plus, errors_all_sims)
+    comm.Barrier()
+    if rank == 0:
+        print(f"    Computing backward difference...", flush=True)
+    g_minus = compute_avg_subgradient_beta(theta_minus, errors_all_sims)
+    comm.Barrier()
+    
+    if rank == 0:
         A_beta[:, k_idx] = (g_plus - g_minus) / (2 * h_k)
+        print(f"    ✓ Column {k_idx+1}/{num_beta} complete", flush=True)
 
-        if (k_idx + 1) % 10 == 0:
-            print(f"  Completed {k_idx + 1}/{num_beta} columns")
-    
+if rank == 0:
     print(f"A_beta: shape={A_beta.shape}, cond={np.linalg.cond(A_beta):.2e}")
 
 # Compute sandwich variance: (1/N) A^{-1} B A^{-1}
