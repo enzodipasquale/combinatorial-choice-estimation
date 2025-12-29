@@ -149,6 +149,43 @@ class CommManager:
         return array
     
     @_mpi_error_handler
+    def broadcast_array_with_flag(self, array: Optional[np.ndarray], flag: bool, root: int = 0) -> Tuple[np.ndarray, bool]:
+        """
+        Broadcast numpy array + boolean flag using buffer-based operations (no pickle).
+        
+        This is optimized for frequent broadcasts (e.g., per-iteration theta + stop flag).
+        The array is broadcast using Bcast (buffer-based), and the flag is broadcast as uint8.
+        
+        Args:
+            array: NumPy array to broadcast (on root) or empty array with correct shape/dtype (on non-root)
+            flag: Boolean flag to broadcast
+            root: Root rank
+            
+        Returns:
+            Tuple of (broadcasted_array, broadcasted_flag)
+        """
+        if self.is_root():
+            if array is None:
+                raise ValueError("array required on root")
+            array_shape = array.shape
+            array_dtype = array.dtype
+        else:
+            if array is None:
+                raise ValueError("array required on non-root (must pre-allocate with correct shape/dtype)")
+            array_shape = array.shape
+            array_dtype = array.dtype
+        
+        # Broadcast array using buffer-based Bcast
+        self.comm.Bcast(array, root=root)
+        
+        # Broadcast flag as uint8 (1 byte, buffer-based)
+        flag_uint8 = np.array([1 if flag else 0], dtype=np.uint8) if self.is_root() else np.array([0], dtype=np.uint8)
+        self.comm.Bcast(flag_uint8, root=root)
+        flag_result = bool(flag_uint8[0])
+        
+        return array, flag_result
+    
+    @_mpi_error_handler
     def scatter_array(self, send_array: Optional[np.ndarray] = None, counts: Optional[List[int]] = None, 
                      root: int = 0, dtype: Optional[np.dtype] = None) -> np.ndarray:
         """Scatter numpy array using MPI buffers (5-20x faster than pickle)."""
