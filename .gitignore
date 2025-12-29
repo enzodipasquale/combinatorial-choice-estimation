@@ -54,3 +54,4 @@ experiments_paper/__results/*
 !experiments_paper/__results/.gitkeep
 paper/_table1/
 paper/_ellipsoid/
+*.sbatch

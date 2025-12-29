@@ -175,6 +175,23 @@ for replication in range(NUM_REPLICATIONS):
         combinatorial_auction.data.load_and_scatter(input_data)
         combinatorial_auction.features.build_from_data()
         combinatorial_auction.subproblems.load()
+        
+        # Compute and print obs_features[0] for comparison
+        if rank == 0:
+            obs_features = combinatorial_auction.row_generation.obs_features
+            if obs_features is not None:
+                print(f"\n{'=' * 70}")
+                print(f"OBSERVED FEATURES ANALYSIS (Bootstrap Replication {replication + 1})")
+                print(f"{'=' * 70}")
+                print(f"obs_features[0] (modular agent feature): {obs_features[0]:.10f}")
+                print(f"obs_features shape: {obs_features.shape}")
+                print(f"obs_features stats:")
+                print(f"  Min: {obs_features.min():.10f}")
+                print(f"  Max: {obs_features.max():.10f}")
+                print(f"  Mean: {obs_features.mean():.10f}")
+                print(f"  Sum: {obs_features.sum():.10f}")
+                print(f"{'=' * 70}\n")
+        
         theta = combinatorial_auction.row_generation.solve()
         
         if rank == 0:

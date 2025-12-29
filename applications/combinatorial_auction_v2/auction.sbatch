@@ -1,10 +1,10 @@
 #!/bin/bash 
 
 #SBATCH --job-name=combinatorial_auction_v2
-#SBATCH --nodes=15
-#SBATCH --ntasks-per-node=16
+#SBATCH --nodes=20
+#SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=100G
+#SBATCH --mem=150G
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm-estimation-%j.out
 #SBATCH --error=slurm-estimation-%j.err
