@@ -146,7 +146,12 @@ class DataManager(HasDimensions, HasComm):
                 for k, array in agent_data.items():
                     # Repeat agent data across simulations if needed
                     if self.num_simuls > 1:
-                        agent_data_expanded[k] = np.tile(array, (self.num_simuls, 1) + (1,) * (array.ndim - 2))
+                        if array.ndim == 1:
+                            # For 1D arrays, tile along single dimension: (num_agents,) -> (num_simuls * num_agents,)
+                            agent_data_expanded[k] = np.tile(array, self.num_simuls)
+                        else:
+                            # For 2D+ arrays, tile along first dimension: (num_agents, ...) -> (num_simuls, num_agents, ...)
+                            agent_data_expanded[k] = np.tile(array, (self.num_simuls, 1) + (1,) * (array.ndim - 2))
                     else:
                         agent_data_expanded[k] = array
             else:
