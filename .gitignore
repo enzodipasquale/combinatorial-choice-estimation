@@ -1,8 +1,7 @@
-/experiment_table1/
 # Virtual environments
 .bundle/
 
-# Python-related artifacts
+# Python artifacts
 __pycache__/
 *.py[cod]
 *.so
@@ -10,20 +9,11 @@ __pycache__/
 *.egg-info
 .hypothesis/
 
-# Data and logs
-*.log
-*.out
-*.err
-*.mif
-*.mps
-*.ext3
-*.bas
-*.png
-
 # Jupyter Notebook artifacts
 .ipynb_checkpoints/
 
-# macOS system files
+# Build and system files
+Makefile
 .DS_Store
 
 # Editor settings
@@ -31,27 +21,23 @@ __pycache__/
 .cursor/
 .cursorrules
 
-# Shell scripts (utility scripts)
-timeout_wrapper.sh
-Makefile
+# Logs and solver output files
+*.log
+*.out
+*.err
+*.mif
+*.mps
+*.ext3
+*.bas
 
-# Other
-/_tests/
+# Images (generated/plot outputs)
+*.png
+
+# Project-specific directories
 bundlechoice/_legacy/
 /applications/firms_export/
-singularity.txt
-/benchmarking/
-/examples/
-/greedy_benchmarking/
-config.yaml.backup
-/validation_auction/
-/experiments_paper_wellipsoid/
-experiments/
 paper/
-
-# Experiment results (local only, not synced)
-experiments_paper/__results/*
-!experiments_paper/__results/.gitkeep
 paper/_table1/
-paper/_ellipsoid/
+
+# Batch job scripts
 *.sbatch
