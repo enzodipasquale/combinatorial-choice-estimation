@@ -13,6 +13,15 @@ from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
 from .result import EstimationResult
+
+# Try to import tracemalloc for memory profiling (optional)
+try:
+    import tracemalloc
+    TRACEMALLOC_AVAILABLE = True
+except ImportError:
+    TRACEMALLOC_AVAILABLE = False
+    tracemalloc = None
+
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
@@ -149,11 +158,36 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
+        # Enhanced diagnostics: per-gather timing and computation/communication separation
         t_mpi_gather_start = datetime.now()
-        # Gather bundles for encoding in constraint names
+        
+        # Gather bundles - measure separately with memory profiling
+        t_gather_bundles_start = datetime.now()
+        if TRACEMALLOC_AVAILABLE:
+            tracemalloc.start()
+        
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
+        gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
+        timing_dict['gather_bundles'] = gather_bundles_time
+        
+        if TRACEMALLOC_AVAILABLE:
+            current, peak = tracemalloc.get_traced_memory()
+            timing_dict['gather_bundles_memory_peak_mb'] = peak / 1024 / 1024
+            tracemalloc.stop()
+        
+        if local_pricing_results is not None and len(local_pricing_results) > 0:
+            bundles_size = local_pricing_results.nbytes
+            timing_dict['gather_bundles_size'] = bundles_size
+            if gather_bundles_time > 0:
+                timing_dict['gather_bundles_bandwidth_mbps'] = (bundles_size / gather_bundles_time) / 1e6
+        
+        # Gather features - includes computation and communication timing
+        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results, timing_dict=timing_dict)
+        
+        # Gather errors - includes computation and communication timing
+        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results, timing_dict=timing_dict)
+        
+        # Total gather time (for backward compatibility)
         timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         
         stop = False
@@ -306,7 +340,7 @@ class RowGenerationManager(BaseEstimationManager):
         init_time = (datetime.now() - t_init).total_seconds()
         iteration = 0
         
-        # Detailed timing tracking
+        # Detailed timing tracking (enhanced with diagnostics)
         timing_breakdown = {
             'pricing': [],
             'mpi_gather': [],
@@ -314,8 +348,42 @@ class RowGenerationManager(BaseEstimationManager):
             'master_update': [],
             'master_optimize': [],
             'mpi_broadcast': [],
-            'callback': []
+            'callback': [],
+            # Enhanced diagnostics
+            'gather_bundles': [],
+            'gather_features': [],
+            'gather_errors': [],
+            'compute_features': [],
+            'compute_errors': [],
+            'gather_bundles_size': [],
+            'gather_features_size': [],
+            'gather_errors_size': [],
+            'gather_bundles_bandwidth_mbps': [],
+            'gather_features_bandwidth_mbps': [],
+            'gather_errors_bandwidth_mbps': []
         }
+        
+        # Rank distribution verification (once at start)
+        if self.is_root():
+            from mpi4py import MPI
+            num_local_agents_all = self.comm_manager.comm.allgather(
+                self.data_manager.num_local_agents if self.data_manager else 0
+            )
+            num_local_agents_array = np.array(num_local_agents_all)
+            logger.info("=" * 70)
+            logger.info("RANK DISTRIBUTION VERIFICATION")
+            logger.info("=" * 70)
+            logger.info(f"Total ranks: {len(num_local_agents_array)}")
+            logger.info(f"Agents per rank: min={num_local_agents_array.min()}, "
+                       f"max={num_local_agents_array.max()}, "
+                       f"mean={num_local_agents_array.mean():.2f}, "
+                       f"std={num_local_agents_array.std():.2f}")
+            imbalance = num_local_agents_array.max() - num_local_agents_array.min()
+            if imbalance > 1:
+                logger.warning(f"Load imbalance detected: {imbalance} agents difference")
+            else:
+                logger.info("Load distribution is balanced")
+            logger.info("=" * 70)
         
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
@@ -338,7 +406,7 @@ class RowGenerationManager(BaseEstimationManager):
             # Master iteration (with internal timing)
             stop = self._master_iteration(local_pricing_results, iter_timing) 
             
-            # Store timing breakdown
+            # Store timing breakdown (including enhanced diagnostics)
             for key in timing_breakdown.keys():
                 if key in iter_timing:
                     timing_breakdown[key].append(iter_timing[key])

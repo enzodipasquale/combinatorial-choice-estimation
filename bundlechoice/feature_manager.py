@@ -5,6 +5,15 @@ from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.base import HasDimensions, HasData, HasComm
+
+# Try to import tracemalloc for memory profiling (optional)
+try:
+    import tracemalloc
+    TRACEMALLOC_AVAILABLE = True
+except ImportError:
+    TRACEMALLOC_AVAILABLE = False
+    tracemalloc = None
+
 logger = get_logger(__name__)
 
 
@@ -105,10 +114,49 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         return np.stack([self.features_oracle(i, local_bundles[i], self.local_data) 
                         for i in range(self.num_local_agents)])
 
-    def compute_gathered_features(self, local_bundles: Optional[NDArray[np.float64]]) -> Optional[NDArray[np.float64]]:
-        """Compute features for all agents, gather to rank 0."""
+    def compute_gathered_features(self, local_bundles: Optional[NDArray[np.float64]], 
+                                  timing_dict: Optional[Dict[str, float]] = None) -> Optional[NDArray[np.float64]]:
+        """
+        Compute features for all agents, gather to rank 0.
+        
+        Args:
+            local_bundles: Local bundles array
+            timing_dict: Optional dict to record computation and communication times
+            
+        Returns:
+            Gathered features array (rank 0 only, None on other ranks)
+        """
+        from datetime import datetime
+        
+        # Time computation separately
+        t_comp_start = datetime.now()
         features_local = self.compute_rank_features(local_bundles)
-        return self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        comp_time = (datetime.now() - t_comp_start).total_seconds()
+        
+        # Time communication separately with memory profiling
+        t_comm_start = datetime.now()
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+            tracemalloc.start()
+        
+        features_gathered = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        comm_time = (datetime.now() - t_comm_start).total_seconds()
+        
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+            current, peak = tracemalloc.get_traced_memory()
+            timing_dict['gather_features_memory_peak_mb'] = peak / 1024 / 1024
+            tracemalloc.stop()
+        
+        # Record timing if dict provided
+        if timing_dict is not None:
+            timing_dict['compute_features'] = comp_time
+            timing_dict['gather_features'] = comm_time
+            if features_local is not None and len(features_local) > 0:
+                data_size = features_local.nbytes
+                timing_dict['gather_features_size'] = data_size
+                if comm_time > 0:
+                    timing_dict['gather_features_bandwidth_mbps'] = (data_size / comm_time) / 1e6
+        
+        return features_gathered
 
     def compute_gathered_features_and_errors(self, local_bundles: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
         """
@@ -132,10 +180,49 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             utilities_local = features_local @ theta + errors_local
         return self.comm_manager.concatenate_array_at_root_fast(utilities_local, root=0)
 
-    def compute_gathered_errors(self, local_bundles: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
-        """Compute errors for all agents, gather to rank 0."""
+    def compute_gathered_errors(self, local_bundles: NDArray[np.float64],
+                                timing_dict: Optional[Dict[str, float]] = None) -> Optional[NDArray[np.float64]]:
+        """
+        Compute errors for all agents, gather to rank 0.
+        
+        Args:
+            local_bundles: Local bundles array
+            timing_dict: Optional dict to record computation and communication times
+            
+        Returns:
+            Gathered errors array (rank 0 only, None on other ranks)
+        """
+        from datetime import datetime
+        
+        # Time computation separately
+        t_comp_start = datetime.now()
         errors_local = (self.data_manager.local_data["errors"] * local_bundles).sum(1)
-        return self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        comp_time = (datetime.now() - t_comp_start).total_seconds()
+        
+        # Time communication separately with memory profiling
+        t_comm_start = datetime.now()
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+            tracemalloc.start()
+        
+        errors_gathered = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        comm_time = (datetime.now() - t_comm_start).total_seconds()
+        
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+            current, peak = tracemalloc.get_traced_memory()
+            timing_dict['gather_errors_memory_peak_mb'] = peak / 1024 / 1024
+            tracemalloc.stop()
+        
+        # Record timing if dict provided
+        if timing_dict is not None:
+            timing_dict['compute_errors'] = comp_time
+            timing_dict['gather_errors'] = comm_time
+            if errors_local is not None and len(errors_local) > 0:
+                data_size = errors_local.nbytes
+                timing_dict['gather_errors_size'] = data_size
+                if comm_time > 0:
+                    timing_dict['gather_errors_bandwidth_mbps'] = (data_size / comm_time) / 1e6
+        
+        return errors_gathered
 
     # ============================================================================
     # Auto-Generated Oracle Builder
