@@ -73,7 +73,13 @@ firms_export.load_config(CONFIG_PATH)
 firms_export.data.load_and_scatter(input_data)
 firms_export.features.build_from_data()
 firms_export.subproblems.load()
-theta_hat = firms_export.row_generation.solve()
+result = firms_export.row_generation.solve()
+
+if rank == 0:
+    theta_hat = result.theta_hat
+else:
+    theta_hat = None
+theta_hat = comm.bcast(theta_hat, root=0)
 
 results = firms_export.subproblems.init_and_solve(theta_hat)
 if rank == 0:

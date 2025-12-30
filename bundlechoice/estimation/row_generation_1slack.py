@@ -11,6 +11,7 @@ import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
+from .result import EstimationResult
 logger = get_logger(__name__)
 
 # Ensure root logger is configured for INFO level output
@@ -36,7 +37,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
                 subproblem_manager: Any
                 ) -> None:
         """
-        Initialize the RowGeneration1SlackSolver.
+        Initialize the RowGeneration1SlackManager.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -160,8 +161,8 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
         return stop
 
-    def solve(self) -> NDArray[np.float64]:
-        """Run row generation with 1slack formulation. Returns estimated parameter vector."""
+    def solve(self) -> EstimationResult:
+        """Run row generation with 1slack formulation. Returns EstimationResult with theta_hat and diagnostics."""
         if self.is_root():
             print("=" * 70)
             print("ROW GENERATION (1SLACK)")
@@ -279,8 +280,36 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             else:
                 self.timing_stats = None
         
-        self.theta_hat = self.theta_val
-        return self.theta_hat
+        self.theta_hat = self.theta_val.copy()
+        
+        # Create result object
+        if self.is_root():
+            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            converged = iteration < self.row_generation_cfg.max_iters
+            result = EstimationResult(
+                theta_hat=self.theta_hat.copy(),
+                converged=converged,
+                num_iterations=iteration + 1 if converged else iteration,
+                final_objective=obj_val,
+                timing=self.timing_stats,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        else:
+            # Non-root ranks: theta_val is already broadcast, use it for consistency
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=iteration < self.row_generation_cfg.max_iters,
+                num_iterations=iteration + 1 if iteration < self.row_generation_cfg.max_iters else iteration,
+                final_objective=None,
+                timing=None,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        
+        return result
 
     def _enforce_slack_counter(self) -> int:
         """Update slack counter and remove constraints that have been slack too long. Returns number removed."""
@@ -384,3 +413,4 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
         else:
             logger.info("Parameters: %s", np.round(self.theta_val, precision))
+

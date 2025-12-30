@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation.ellipsoid import EllipsoidSolver
+from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.factory import ScenarioLibrary
 
 
@@ -45,7 +45,10 @@ def test_ellipsoid_linear_knapsack():
     prepared.apply(knapsack_demo, comm=comm, stage="estimation")
     knapsack_demo.subproblems.load()
 
-    theta_hat = knapsack_demo.ellipsoid.solve()
+    result = knapsack_demo.ellipsoid.solve()
+    
+    # Extract theta_hat on all ranks (result object exists on all ranks)
+    theta_hat = result.theta_hat
     
     # Check objective values on all ranks
     obj_at_theta_0 = knapsack_demo.ellipsoid.objective(theta_0)

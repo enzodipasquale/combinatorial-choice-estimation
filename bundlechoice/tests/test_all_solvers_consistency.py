@@ -87,9 +87,10 @@ def test_row_generation_mpi_optimizations():
     bc_rg.features.build_from_data()
     bc_rg.subproblems.load()
     
-    theta_rg = bc_rg.row_generation.solve()
+    result_rg = bc_rg.row_generation.solve()
     
     if rank == 0:
+        theta_rg = result_rg.theta_hat
         obj_rg = bc_rg.row_generation.master_model.ObjVal
         print(f"  Theta: {theta_rg}")
         print(f"  ObjVal: {obj_rg:.4f}")

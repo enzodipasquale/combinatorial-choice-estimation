@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
+from .result import EstimationResult
 
 logger = get_logger(__name__)
 
@@ -396,7 +397,7 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     # Public solve
     # ------------------------------------------------------------------ #
-    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> EstimationResult:
         logger.info("=== COLUMN GENERATION (DUAL) ===")
         tic = datetime.now()
 
@@ -439,9 +440,39 @@ class ColumnGenerationManager(BaseEstimationManager):
         elapsed = (datetime.now() - tic).total_seconds()
         if self.is_root():
             logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, iteration + 1)
+            
+            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            converged = iteration + 1 < self.row_generation_cfg.max_iters
+            timing_stats = {
+                'total_time': elapsed,
+                'num_iterations': iteration + 1,
+            }
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=converged,
+                num_iterations=iteration + 1,
+                final_objective=obj_val,
+                timing=timing_stats,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        else:
+            # Non-root ranks: theta_val is already broadcast, use it for consistency
+            converged = iteration + 1 < self.row_generation_cfg.max_iters
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=converged,
+                num_iterations=iteration + 1,
+                final_objective=None,
+                timing=None,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
 
         self.theta_hat = self.theta_val.copy()
-        return self.theta_hat
+        return result
 
     def _expand_bounds(self, bound, fill_value: float) -> NDArray[np.float64]:
         arr = np.full(self.num_features, fill_value, dtype=np.float64)
@@ -459,4 +490,5 @@ class ColumnGenerationManager(BaseEstimationManager):
             else:
                 arr[idx] = float(val)
         return arr
+
 

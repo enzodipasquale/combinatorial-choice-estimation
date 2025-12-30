@@ -3,7 +3,7 @@ import pytest
 import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGeneration1SlackSolver
+from bundlechoice.estimation import RowGeneration1SlackManager
 from bundlechoice.factory import ScenarioLibrary
 
 
@@ -67,7 +67,7 @@ def test_row_generation_1slack_plain_single_item():
     
     tic = time.time()
     # Use 1slack solver instead of regular row generation
-    solver = RowGeneration1SlackSolver(
+    solver = RowGeneration1SlackManager(
         comm_manager=demo.comm_manager,
         dimensions_cfg=demo.config.dimensions,
         row_generation_cfg=demo.config.row_generation,
@@ -75,10 +75,11 @@ def test_row_generation_1slack_plain_single_item():
         feature_manager=demo.feature_manager,
         subproblem_manager=demo.subproblem_manager
     )
-    theta_hat = solver.solve()
+    result = solver.solve()
     toc = time.time()
     
     if rank == 0:
+        theta_hat = result.theta_hat
         print("theta_hat (row generation 1slack result):\n", theta_hat)
         print("theta_0:\n", theta_0)
         print(f"Time taken: {toc - tic} seconds")

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation.ellipsoid import EllipsoidSolver
+from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.factory import ScenarioLibrary
 
 
@@ -50,7 +50,10 @@ def test_ellipsoid_greedy():
     gradient = greedy_demo.ellipsoid.obj_gradient(theta_)
  
     
-    theta_hat = greedy_demo.ellipsoid.solve()
+    result = greedy_demo.ellipsoid.solve()
+    
+    # Extract theta_hat on all ranks (result object exists on all ranks)
+    theta_hat = result.theta_hat
     
     if rank == 0:
         print("theta_hat:", theta_hat)
@@ -62,6 +65,8 @@ def test_ellipsoid_greedy():
         # Check that the solution is reasonable (not all zeros or extreme values)
         assert np.any(theta_hat != 0)
         assert np.all(np.abs(theta_hat) < 100)  # Reasonable bounds
+    
+    # Check objective values on all ranks
     obj_at_theta_0 = greedy_demo.ellipsoid.objective(theta_0)
     obj_at_theta_hat = greedy_demo.ellipsoid.objective(theta_hat)
     if rank == 0:

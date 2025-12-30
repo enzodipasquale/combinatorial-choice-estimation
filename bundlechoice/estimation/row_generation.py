@@ -10,17 +10,20 @@ from typing import Tuple, List, Optional, Any, Dict, Callable
 import logging
 import gurobipy as gp
 from gurobipy import GRB
-from bundlechoice.utils import get_logger, suppress_output, time_operation
-from bundlechoice.constants import DEFAULT_CONSTRAINT_TOLERANCE, DEFAULT_BINDING_TOLERANCE, DEFAULT_SLACK_TOLERANCE
+from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
+from .result import EstimationResult
 logger = get_logger(__name__)
+
+# Ensure root logger is configured for INFO level output
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s][%(levelname)s][%(process)d][%(name)s] %(message)s')
 
 
 class RowGenerationManager(BaseEstimationManager):
     """
     Implements the row generation algorithm for parameter estimation in modular bundle choice models.
 
-    This manager is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
+    This solver is designed for use with the v2 BundleChoice API and its managers. It supports distributed computation via MPI and Gurobi for solving the master problem.
     """
     def __init__(
                 self, 
@@ -57,7 +60,6 @@ class RowGenerationManager(BaseEstimationManager):
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
-        self.constraint_bundles = {}
 
     def _setup_gurobi_model_params(self) -> Any:
         """Create and set up Gurobi model with parameters from configuration."""    
@@ -104,7 +106,7 @@ class RowGenerationManager(BaseEstimationManager):
             if hasattr(self, '_theta_init_for_start') and self._theta_init_for_start is not None:
                 theta.Start = self._theta_init_for_start
 
-            u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
+            u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
             
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
@@ -113,16 +115,18 @@ class RowGenerationManager(BaseEstimationManager):
                 for i, idx in enumerate(indices):
                     agent_id = idx % self.num_agents
                     sim_id = idx // self.num_agents
-                    bundle = bundles[i]  # Accept any dtype, convert as needed
-                    bundle_float = bundle.astype(np.float64)  # Convert to float64 for feature computation
+                    bundle = bundles[i]
                     
                     # Compute features and errors
-                    features = self.feature_manager.features_oracle(agent_id, bundle_float, self.input_data)
-                    error = (self.input_data["errors"][sim_id, agent_id] * bundle_float).sum()
+                    features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
+                    error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
                     
-                    constr_name = f"rowgen_{idx}"
-                    constr = self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
-                    self.constraint_bundles[constr] = bundle.astype(np.bool_)
+                    # Encode bundle as binary string
+                    bundle_binary = ''.join(str(int(b)) for b in bundle)
+                    constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
+                    
+                    # Add constraint
+                    self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
                 
                 logger.info("Added %d initial constraints for warm-start", len(indices))
 
@@ -142,74 +146,81 @@ class RowGenerationManager(BaseEstimationManager):
     
 
 
-    def _master_iteration(self, local_pricing_results: NDArray[np.bool_], 
+    def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        with time_operation('mpi_gather', timing_dict):
-            bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-            x_sim, errors_sim = self.feature_manager.compute_gathered_features_and_errors(local_pricing_results.astype(np.float64))
+        t_mpi_gather_start = datetime.now()
+        # Gather bundles for encoding in constraint names
+        bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
+        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
+        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         
         stop = False
         if self.is_root():
-            with time_operation('master_prep', timing_dict):
-                theta, u = self.master_variables
-                with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                    u_sim = x_sim @ theta.X + errors_sim
-                u_master = u.X
+            t_master_prep_start = datetime.now()
+            theta, u = self.master_variables
+            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                u_sim = x_sim @ theta.X + errors_sim
+            u_master = u.X
 
-                violations = np.where(~np.isclose(u_master, u_sim, rtol=DEFAULT_CONSTRAINT_TOLERANCE, atol=DEFAULT_CONSTRAINT_TOLERANCE) * (u_master > u_sim))[0]
-                if len(violations) > 0:
-                    logger.warning(
-                        "Possible failure of demand oracle at agents ids: %s, "
-                        "u_sim: %s, u_master: %s",
-                        violations, u_sim[violations], u_master[violations]
-                    )
+            violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-5, atol = 1e-5) * (u_master > u_sim))[0]
+            if len(violations) > 0:
+                logger.warning(
+                    "Possible failure of demand oracle at agents ids: %s, "
+                    "u_sim: %s, u_master: %s",
+                    violations, u_sim[violations], u_master[violations]
+                )
 
-                self.log_parameter()
-                logger.info(f"ObjVal: {self.master_model.ObjVal}")
-                max_reduced_cost = np.max(u_sim - u_master)
-                logger.info("Reduced cost: %s", max_reduced_cost)
-                # Check if we're in suboptimal cuts mode (set by callback)
-                suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
-                if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
-                    if not suboptimal_mode:
-                        stop = True
-                    else:
-                        logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
-                rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
-                logger.info("New constraints: %d", len(rows_to_add))
+            self.log_parameter()
+            logger.info(f"ObjVal: {self.master_model.ObjVal}")
+            max_reduced_cost = np.max(u_sim - u_master)
+            logger.info("Reduced cost: %s", max_reduced_cost)
+            # Check if we're in suboptimal cuts mode (set by callback)
+            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
+            if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
+                if not suboptimal_mode:
+                    stop = True
+                else:
+                    logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
+            rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
+            logger.info("New constraints: %d", len(rows_to_add))
+            timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
             
-            with time_operation('master_update', timing_dict):
-                if len(rows_to_add) > 0 and bundles_sim is not None:
-                    for idx in rows_to_add:
-                        bundle_bool = bundles_sim[idx].astype(np.bool_)
-                        constr_name = f"rowgen_{idx}"
-                        constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
-                        self.constraint_bundles[constr] = bundle_bool
-                self._enforce_slack_counter()
-                logger.info("Number of constraints: %d", self.master_model.NumConstrs)
+            t_master_update_start = datetime.now()
+            # Add constraints with names encoding index and bundle (binary string)
+            if len(rows_to_add) > 0 and bundles_sim is not None:
+                for idx in rows_to_add:
+                    # Encode bundle as binary string (0/1 for each item)
+                    bundle_binary = ''.join(str(int(b)) for b in bundles_sim[idx])
+                    constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
+                    self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
+            self._enforce_slack_counter()
+            logger.info("Number of constraints: %d", self.master_model.NumConstrs)
+            timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
             
-            with time_operation('master_optimize', timing_dict):
-                self.master_model.optimize()
+            t_master_optimize_start = datetime.now()
+            self.master_model.optimize()
+            timing_dict['master_optimize'] = (datetime.now() - t_master_optimize_start).total_seconds()
             
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
         else:
-            # Pre-allocate array for buffer-based broadcast (must match root's shape/dtype)
-            theta_val = np.empty(self.num_features, dtype=np.float64)
+            theta_val = None
             stop = False
             timing_dict['master_prep'] = 0.0
             timing_dict['master_update'] = 0.0
             timing_dict['master_optimize'] = 0.0
         
-        # Broadcast theta and stop flag using buffer-based operations (no pickle)
-        with time_operation('mpi_broadcast', timing_dict):
-            self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
+        # Broadcast theta and stop flag together (single broadcast reduces latency)
+        t_mpi_broadcast_start = datetime.now()
+        self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
+        timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
         
         return stop
 
     def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-              theta_init: Optional[NDArray[np.float64]] = None) -> NDArray[np.float64]:
+              theta_init: Optional[NDArray[np.float64]] = None) -> EstimationResult:
         """
         Run the row generation algorithm to estimate model parameters.
 
@@ -221,11 +232,10 @@ class RowGenerationManager(BaseEstimationManager):
                      - 'objective': Current objective value (float)
                      - 'pricing_time': Time spent solving subproblems in seconds (float)
                      - 'master_time': Time spent on master problem in seconds (float)
-            theta_init: Optional initial theta. If provided, subproblems are solved at this
-                       theta and constraints added before the first iteration.
+            theta_init: Optional initial parameter vector. If None, uses default initialization.
         
         Returns:
-            np.ndarray: Estimated parameter vector.
+            EstimationResult: Result object containing theta_hat and diagnostics.
         """
         if self.is_root():
             print("=" * 70)
@@ -233,8 +243,8 @@ class RowGenerationManager(BaseEstimationManager):
             print("=" * 70)
             print()  # Blank line after header
             print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
-            if self.dimensions_cfg.num_simulations > 1:
-                print(f"  Simulations: {self.dimensions_cfg.num_simulations}")
+            if self.dimensions_cfg.num_simuls > 1:
+                print(f"  Simulations: {self.dimensions_cfg.num_simuls}")
             print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
             print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
             print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
@@ -257,7 +267,12 @@ class RowGenerationManager(BaseEstimationManager):
         if theta_init is not None:
             if self.is_root():
                 logger.info("Initializing with provided theta (warm start)")
-                self.theta_val = np.asarray(theta_init, dtype=np.float64).copy()
+                # Handle both EstimationResult and numpy array
+                if hasattr(theta_init, 'theta_hat'):
+                    theta_init_array = theta_init.theta_hat
+                else:
+                    theta_init_array = theta_init
+                self.theta_val = np.asarray(theta_init_array, dtype=np.float64).copy()
             else:
                 self.theta_val = np.empty(self.num_features, dtype=np.float64)
             self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
@@ -269,15 +284,21 @@ class RowGenerationManager(BaseEstimationManager):
             bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
             
             if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
-                indices = np.arange(self.num_simulations * self.num_agents, dtype=np.int64)
+                indices = np.arange(self.num_simuls * self.num_agents, dtype=np.int64)
                 initial_constraints = {
                     'indices': indices,
                     'bundles': bundles_sim.astype(np.float64)
                 }
                 logger.info("Pre-computed %d initial constraints from theta_init", len(indices))
         
-        # Store theta_init for use in _initialize_master_problem
-        self._theta_init_for_start = theta_init if theta_init is not None else None
+        # Store theta_init for Gurobi start value (extract array if EstimationResult)
+        if theta_init is not None:
+            if hasattr(theta_init, 'theta_hat'):
+                self._theta_init_for_start = theta_init.theta_hat
+            else:
+                self._theta_init_for_start = theta_init
+        else:
+            self._theta_init_for_start = None
         
         self._initialize_master_problem(initial_constraints=initial_constraints)
         
@@ -310,8 +331,9 @@ class RowGenerationManager(BaseEstimationManager):
                 )
             
             # Pricing phase
-            with time_operation('pricing', iter_timing):
-                local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            t_pricing = datetime.now()
+            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            iter_timing['pricing'] = (datetime.now() - t_pricing).total_seconds()
             
             # Master iteration (with internal timing)
             stop = self._master_iteration(local_pricing_results, iter_timing) 
@@ -323,17 +345,16 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Callback phase
             if callback:
-                with time_operation('callback', iter_timing):
-                    if self.is_root():
-                        callback({
-                            'iteration': iteration + 1,
-                            'theta': self.theta_val.copy() if self.theta_val is not None else None,
-                            'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
-                            'pricing_time': iter_timing['pricing'],
-                            'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
-                        })
-                if 'callback' in iter_timing:
-                    timing_breakdown['callback'].append(iter_timing['callback'])
+                t_callback = datetime.now()
+                if self.is_root():
+                    callback({
+                        'iteration': iteration + 1,
+                        'theta': self.theta_val.copy() if self.theta_val is not None else None,
+                        'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
+                        'pricing_time': iter_timing['pricing'],
+                        'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
+                    })
+                timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
@@ -397,28 +418,55 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             self.timing_stats = None
         
-        self.theta_hat = self.theta_val
-        return self.theta_hat
+        self.theta_hat = self.theta_val.copy()
+        
+        # Create result object
+        if self.is_root():
+            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            converged = iteration < self.row_generation_cfg.max_iters
+            result = EstimationResult(
+                theta_hat=self.theta_hat.copy(),
+                converged=converged,
+                num_iterations=iteration + 1 if converged else iteration,
+                final_objective=obj_val,
+                timing=self.timing_stats,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        else:
+            # Non-root ranks: theta_val is already broadcast, use it for consistency
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=iteration < self.row_generation_cfg.max_iters,
+                num_iterations=iteration + 1 if iteration < self.row_generation_cfg.max_iters else iteration,
+                final_objective=None,
+                timing=None,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        
+        return result
 
     def _enforce_slack_counter(self) -> int:
         """Update slack counter and remove constraints that have been slack too long. Returns number removed."""
         if self.row_generation_cfg.max_slack_counter < float('inf'):
             to_remove = []
             for constr in self.master_model.getConstrs():
-                if constr.Slack < -DEFAULT_SLACK_TOLERANCE:
+                if constr.Slack < -1e-6:
                     # Only add to counter when constraint is actually slack
                     if constr not in self.slack_counter:
                         self.slack_counter[constr] = 0
                     self.slack_counter[constr] += 1
                     if self.slack_counter[constr] >= self.row_generation_cfg.max_slack_counter:
                         to_remove.append(constr)
-                if constr.Pi > DEFAULT_SLACK_TOLERANCE:
+                if constr.Pi > 1e-6:
                     self.slack_counter.pop(constr, None)
             # Remove all constraints that exceeded the slack counter limit
             for constr in to_remove:
                 self.master_model.remove(constr)
                 self.slack_counter.pop(constr, None)
-                self.constraint_bundles.pop(constr, None)
             num_removed = len(to_remove)
             logger.info("Removed constraints: %d", num_removed)
             return num_removed
@@ -526,22 +574,24 @@ class RowGenerationManager(BaseEstimationManager):
         for i, idx in enumerate(indices):
             agent_id = idx % self.num_agents
             sim_id = idx // self.num_agents
-            bundle = bundles[i]  # Accept any dtype, convert as needed
-            bundle_float = bundle.astype(np.float64)  # Convert to float64 for feature computation
+            bundle = bundles[i]
             
             # Compute features and errors
-            features = self.feature_manager.features_oracle(agent_id, bundle_float, self.input_data)
-            error = (self.input_data["errors"][sim_id, agent_id] * bundle_float).sum()
+            features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
+            error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
             
-            constr_name = f"rowgen_{idx}"
-            constr = self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
-            self.constraint_bundles[constr] = bundle.astype(np.bool_)
+            # Encode bundle as binary string
+            bundle_binary = ''.join(str(int(b)) for b in bundle)
+            constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
+            
+            # Add constraint
+            self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
         
         logger.info("Added %d constraints to master problem", len(indices))
 
     def get_constraints(self) -> Optional[Dict[str, NDArray]]:
         """
-        Extract constraints from the Gurobi model using stored bundle dict.
+        Extract constraints from the Gurobi model by parsing constraint names.
         
         Returns:
             Dict with keys 'indices', 'bundles' containing numpy arrays,
@@ -553,14 +603,21 @@ class RowGenerationManager(BaseEstimationManager):
         indices = []
         bundles = []
         
+        # Extract constraints by parsing names
         for constr in self.master_model.getConstrs():
-            if constr.ConstrName and constr.ConstrName.startswith("rowgen_") and constr in self.constraint_bundles:
+            if constr.ConstrName and constr.ConstrName.startswith("rowgen_"):
                 try:
-                    idx = int(constr.ConstrName.split("_")[1])
-                    bundle = self.constraint_bundles[constr].astype(np.float64)
-                    if len(bundle) == self.num_items:
-                        indices.append(idx)
-                        bundles.append(bundle)
+                    # Parse: "rowgen_{idx}_bundle_{binary_string}"
+                    parts = constr.ConstrName.split("_bundle_")
+                    if len(parts) == 2:
+                        idx = int(parts[0].split("_")[1])  # Extract idx from "rowgen_{idx}"
+                        bundle_binary = parts[1]  # Binary string
+                        # Convert binary string back to bundle array
+                        bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
+                        # Verify bundle has correct length
+                        if len(bundle) == self.num_items:
+                            indices.append(idx)
+                            bundles.append(bundle)
                 except (ValueError, IndexError):
                     continue
         
@@ -573,7 +630,7 @@ class RowGenerationManager(BaseEstimationManager):
             'bundles': np.array(bundles, dtype=np.float64)
         }
 
-    def get_binding_constraints(self, tolerance: float = DEFAULT_BINDING_TOLERANCE) -> Optional[Dict[str, NDArray]]:
+    def get_binding_constraints(self, tolerance: float = 1e-6) -> Optional[Dict[str, NDArray]]:
         """
         Extract only binding constraints (slack ≈ 0) from the Gurobi model.
         
@@ -590,17 +647,25 @@ class RowGenerationManager(BaseEstimationManager):
         indices = []
         bundles = []
         
+        # Extract only binding constraints by parsing names and checking slack
         for constr in self.master_model.getConstrs():
-            if (constr.ConstrName and constr.ConstrName.startswith("rowgen_") and 
-                abs(constr.Slack) <= tolerance and constr in self.constraint_bundles):
-                try:
-                    idx = int(constr.ConstrName.split("_")[1])
-                    bundle = self.constraint_bundles[constr].astype(np.float64)
-                    if len(bundle) == self.num_items:
-                        indices.append(idx)
-                        bundles.append(bundle)
-                except (ValueError, IndexError):
-                    continue
+            if constr.ConstrName and constr.ConstrName.startswith("rowgen_"):
+                # Check if constraint is binding (slack close to zero)
+                if abs(constr.Slack) <= tolerance:
+                    try:
+                        # Parse: "rowgen_{idx}_bundle_{binary_string}"
+                        parts = constr.ConstrName.split("_bundle_")
+                        if len(parts) == 2:
+                            idx = int(parts[0].split("_")[1])  # Extract idx from "rowgen_{idx}"
+                            bundle_binary = parts[1]  # Binary string
+                            # Convert binary string back to bundle array
+                            bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
+                            # Verify bundle has correct length
+                            if len(bundle) == self.num_items:
+                                indices.append(idx)
+                                bundles.append(bundle)
+                    except (ValueError, IndexError):
+                        continue
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
@@ -610,3 +675,4 @@ class RowGenerationManager(BaseEstimationManager):
             'indices': np.array(indices, dtype=np.int64),
             'bundles': np.array(bundles, dtype=np.float64)
         }
+

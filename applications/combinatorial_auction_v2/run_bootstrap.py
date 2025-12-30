@@ -192,9 +192,10 @@ for replication in range(NUM_REPLICATIONS):
                 print(f"  Sum: {obs_features.sum():.10f}")
                 print(f"{'=' * 70}\n")
         
-        theta = combinatorial_auction.row_generation.solve()
+        result = combinatorial_auction.row_generation.solve()
         
         if rank == 0:
+            theta = result.theta_hat
             # Get bounds from config
             theta_ub = config_subsample["row_generation"].get("theta_ubs", 1000)
             theta_lb = config_subsample["row_generation"].get("theta_lbs", 0)

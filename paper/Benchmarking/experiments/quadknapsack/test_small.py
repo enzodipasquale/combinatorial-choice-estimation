@@ -79,7 +79,8 @@ def main():
         print("\nRunning row generation...")
         tic = datetime.now()
 
-    theta_row = bc.row_generation.solve()
+    result_row = bc.row_generation.solve()
+    theta_row = result_row.theta_hat
 
     if rank == 0:
         elapsed = (datetime.now() - tic).total_seconds()
@@ -101,7 +102,8 @@ def main():
         subproblem_manager=bc.subproblem_manager,
     )
 
-    theta_row1 = rg1.solve()
+    result_row1 = rg1.solve()
+    theta_row1 = result_row1.theta_hat
 
     if rank == 0:
         elapsed = (datetime.now() - tic).total_seconds()
