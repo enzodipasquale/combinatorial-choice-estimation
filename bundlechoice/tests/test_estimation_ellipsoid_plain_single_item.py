@@ -3,7 +3,7 @@ import pytest
 import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation.ellipsoid import EllipsoidSolver
+from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.factory import ScenarioLibrary
 
 
@@ -66,8 +66,11 @@ def test_ellipsoid_plain_single_item():
     demo.subproblems.load()
     
     tic = time.time()
-    theta_hat = demo.ellipsoid.solve()
+    result = demo.ellipsoid.solve()
     toc = time.time()
+    
+    # Extract theta_hat on all ranks (result object exists on all ranks)
+    theta_hat = result.theta_hat
     
     # # Check objective values on all ranks
     # obj_at_theta_0 = demo.ellipsoid.objective(theta_0)

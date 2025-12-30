@@ -12,14 +12,7 @@ from .ellipsoid import EllipsoidManager
 from .column_generation import ColumnGenerationManager
 from .inequalities import InequalitiesManager
 from .callbacks import adaptive_gurobi_timeout, constant_timeout
-
-# Backward compatibility aliases
-BaseEstimationSolver = BaseEstimationManager
-RowGenerationSolver = RowGenerationManager
-RowGeneration1SlackSolver = RowGeneration1SlackManager
-EllipsoidSolver = EllipsoidManager
-ColumnGenerationSolver = ColumnGenerationManager
-InequalitiesSolver = InequalitiesManager
+from .result import EstimationResult
 
 __all__ = [
     'BaseEstimationManager',
@@ -28,13 +21,7 @@ __all__ = [
     'EllipsoidManager',
     'ColumnGenerationManager',
     'InequalitiesManager',
-    # Backward compatibility
-    'BaseEstimationSolver',
-    'RowGenerationSolver',
-    'RowGeneration1SlackSolver',
-    'EllipsoidSolver',
-    'ColumnGenerationSolver',
-    'InequalitiesSolver',
+    'EstimationResult',
     'adaptive_gurobi_timeout',
     'constant_timeout',
 ]

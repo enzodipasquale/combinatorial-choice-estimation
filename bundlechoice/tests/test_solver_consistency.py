@@ -10,7 +10,7 @@ Run with: mpirun -n 10 python -m pytest bundlechoice/tests/test_solver_consisten
 import numpy as np
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGeneration1SlackSolver
+from bundlechoice.estimation import RowGeneration1SlackManager
 
 
 def features_oracle(i_id, B_j, data):
@@ -86,9 +86,10 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_rg.data.load_and_scatter(input_data)
     bc_rg.features.set_oracle(features_oracle)
     bc_rg.subproblems.load()
-    theta_rg = bc_rg.row_generation.solve()
+    result_rg = bc_rg.row_generation.solve()
     
     if rank == 0:
+        theta_rg = result_rg.theta_hat
         objval_rg = bc_rg.row_generation.master_model.ObjVal
     
     # --- Method 2: 1-Slack (needs 1000 max iterations to ensure convergence) ---
@@ -105,7 +106,7 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_1s.features.set_oracle(features_oracle)
     bc_1s.subproblems.load()
     
-    solver_1s = RowGeneration1SlackSolver(
+    solver_1s = RowGeneration1SlackManager(
         comm_manager=bc_1s.comm_manager,
         dimensions_cfg=bc_1s.config.dimensions,
         row_generation_cfg=bc_1s.config.row_generation,
@@ -113,9 +114,10 @@ def test_row_generation_vs_1slack_identical_objval():
         feature_manager=bc_1s.feature_manager,
         subproblem_manager=bc_1s.subproblem_manager
     )
-    theta_1s = solver_1s.solve()
+    result_1s = solver_1s.solve()
     
     if rank == 0:
+        theta_1s = result_1s.theta_hat
         objval_1s = solver_1s.master_model.ObjVal
         
         objval_diff = abs(objval_rg - objval_1s)

@@ -23,9 +23,10 @@ def test_row_generation_linear_knapsack():
     bundlechoice = BundleChoice()
     prepared.apply(bundlechoice, comm=comm, stage="estimation")
 
-    theta_hat = bundlechoice.row_generation.solve()
+    result = bundlechoice.row_generation.solve()
 
     if rank == 0:
+        theta_hat = result.theta_hat
         theta_0 = prepared.theta_star
         obs_bundles = prepared.estimation_data["obs_bundle"]
         print("theta_hat:", theta_hat)

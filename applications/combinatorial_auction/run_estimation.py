@@ -63,4 +63,6 @@ combinatorial_auction.features.build_from_data()
 combinatorial_auction.subproblems.load()
 # combinatorial_auction.subproblems.initialize_local()
 # combinatorial_auction.subproblems.init_and_solve(np.ones(num_features))
-combinatorial_auction.row_generation.solve()
+result = combinatorial_auction.row_generation.solve()
+if rank == 0:
+    print(f"\n{result.summary()}")

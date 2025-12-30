@@ -31,11 +31,16 @@ def test_row_generation_greedy_theta_init_same_problem():
     bundlechoice1.config.row_generation.max_iters = 100
     bundlechoice1.config.row_generation.min_iters = 1
     
-    theta_hat1 = bundlechoice1.row_generation.solve()
+    result1 = bundlechoice1.row_generation.solve()
     
+    # Broadcast theta_hat1 to all ranks for use in second run
     if rank == 0:
+        theta_hat1 = result1.theta_hat
         print(f"\nFirst run completed. Theta_hat: {theta_hat1}")
-        print(f"Number of iterations: {bundlechoice1.row_generation_manager.timing_stats['num_iterations']}")
+        print(f"Number of iterations: {result1.num_iterations}")
+    else:
+        theta_hat1 = None
+    theta_hat1 = comm.bcast(theta_hat1, root=0)
     
     # Second run: initialize with theta_hat1 from first run
     bundlechoice2 = BundleChoice()
@@ -46,11 +51,12 @@ def test_row_generation_greedy_theta_init_same_problem():
     bundlechoice2.config.row_generation.min_iters = 1
     
     # Solve with theta_init
-    theta_hat2 = bundlechoice2.row_generation.solve(theta_init=theta_hat1)
+    result2 = bundlechoice2.row_generation.solve(theta_init=theta_hat1)
     
     if rank == 0:
-        num_iterations = bundlechoice2.row_generation_manager.timing_stats['num_iterations']
-        num_iterations1 = bundlechoice1.row_generation_manager.timing_stats['num_iterations']
+        theta_hat2 = result2.theta_hat
+        num_iterations = result2.num_iterations
+        num_iterations1 = result1.num_iterations
         print(f"\nSecond run with theta_init completed.")
         print(f"Number of iterations: {num_iterations} (first run: {num_iterations1})")
         print(f"Theta_hat2: {theta_hat2}")
@@ -93,11 +99,16 @@ def test_row_generation_greedy_theta_init_helps_convergence():
     bundlechoice1.config.row_generation.max_iters = 100
     bundlechoice1.config.row_generation.min_iters = 1
     
-    theta_hat1 = bundlechoice1.row_generation.solve()
+    result1 = bundlechoice1.row_generation.solve()
     
+    # Broadcast theta_hat1 to all ranks
     if rank == 0:
-        num_iterations1 = bundlechoice1.row_generation_manager.timing_stats['num_iterations']
+        theta_hat1 = result1.theta_hat
+        num_iterations1 = result1.num_iterations
         print(f"\nFirst run (without init): {num_iterations1} iterations")
+    else:
+        theta_hat1 = None
+    theta_hat1 = comm.bcast(theta_hat1, root=0)
     
     # Second run: without theta_init, limited to 10 iterations
     bundlechoice2 = BundleChoice()
@@ -106,10 +117,11 @@ def test_row_generation_greedy_theta_init_helps_convergence():
     bundlechoice2.config.row_generation.max_iters = 10
     bundlechoice2.config.row_generation.min_iters = 1
     
-    theta_hat2_no_init = bundlechoice2.row_generation.solve()
+    result2 = bundlechoice2.row_generation.solve()
     
     if rank == 0:
-        num_iterations2_no_init = bundlechoice2.row_generation_manager.timing_stats['num_iterations']
+        theta_hat2_no_init = result2.theta_hat
+        num_iterations2_no_init = result2.num_iterations
         print(f"Second run (no init, max 10 iters): {num_iterations2_no_init} iterations")
     
     # Third run: with theta_init, limited to 10 iterations
@@ -119,10 +131,11 @@ def test_row_generation_greedy_theta_init_helps_convergence():
     bundlechoice3.config.row_generation.max_iters = 10
     bundlechoice3.config.row_generation.min_iters = 1
     
-    theta_hat3_with_init = bundlechoice3.row_generation.solve(theta_init=theta_hat1)
+    result3 = bundlechoice3.row_generation.solve(theta_init=theta_hat1)
     
     if rank == 0:
-        num_iterations3_with_init = bundlechoice3.row_generation_manager.timing_stats['num_iterations']
+        theta_hat3_with_init = result3.theta_hat
+        num_iterations3_with_init = result3.num_iterations
         print(f"Third run (with init, max 10 iters): {num_iterations3_with_init} iterations")
         
         # With initialization, should converge faster (fewer iterations)

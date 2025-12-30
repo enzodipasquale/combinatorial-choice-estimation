@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.estimation import RowGeneration1SlackSolver
+from bundlechoice.estimation import RowGeneration1SlackManager
 from bundlechoice.factory import ScenarioLibrary
 from bundlechoice.factory.data_generator import QuadraticGenerationMethod
 
@@ -61,7 +61,7 @@ def test_row_generation_1slack_quadsupermodular():
     quad_demo.subproblems.load()
     
     # Use 1slack solver instead of regular row generation
-    solver = RowGeneration1SlackSolver(
+    solver = RowGeneration1SlackManager(
         comm_manager=quad_demo.comm_manager,
         dimensions_cfg=quad_demo.config.dimensions,
         row_generation_cfg=quad_demo.config.row_generation,
@@ -69,9 +69,10 @@ def test_row_generation_1slack_quadsupermodular():
         feature_manager=quad_demo.feature_manager,
         subproblem_manager=quad_demo.subproblem_manager
     )
-    theta_hat = solver.solve()
+    result = solver.solve()
     
     if rank == 0:
+        theta_hat = result.theta_hat
         print("theta_hat:", theta_hat)
         print("theta_0:", theta_0)
         assert theta_hat.shape == (num_features,)

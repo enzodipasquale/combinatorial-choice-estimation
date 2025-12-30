@@ -1,0 +1,18 @@
+# Data files (may be large or sensitive)
+data/*.csv
+data/*.json
+data/*.xlsx
+!data/*_sample.csv
+
+# Processed data
+processed/
+
+# Output plots
+plots/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+

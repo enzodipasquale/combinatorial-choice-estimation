@@ -1,7 +1,7 @@
 """
-Base estimation manager for bundle choice estimation.
+Base estimation solver for bundle choice estimation.
 
-Provides common functionality for row generation, ellipsoid, and other estimation methods.
+Provides common functionality for row generation, ellipsoid, and other solvers.
 """
 
 import numpy as np
@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 
 # ============================================================================
-# Base Estimation Manager
+# Base Estimation Solver
 # ============================================================================
 
 class BaseEstimationManager(HasDimensions, HasData, HasComm):
@@ -68,6 +68,13 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
 
     def objective(self, theta: NDArray[np.float64]) -> Optional[float]:
         """Compute objective function value."""
+        # Handle EstimationResult objects
+        if hasattr(theta, 'theta_hat'):
+            theta = theta.theta_hat
+        # Ensure theta is a numpy array
+        theta = np.asarray(theta, dtype=np.float64)
+        if theta.ndim == 0:
+            raise ValueError(f"theta must be 1D array, got scalar or 0D array")
         B_local = self.subproblem_manager.solve_local(theta)
         utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
         if self.is_root():
@@ -86,6 +93,6 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
     # Abstract Solve Method
     # ============================================================================
 
-    def solve(self) -> NDArray[np.float64]:
+    def solve(self):
         """Main solve method (implemented by subclasses)."""
-        raise NotImplementedError("Subclasses must implement the solve method") 
+        raise NotImplementedError("Subclasses must implement the solve method")

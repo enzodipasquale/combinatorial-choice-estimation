@@ -100,10 +100,11 @@ def main():
             results = {}
 
             t0 = time.time()
-            theta_row = bc.row_generation.solve()
+            result_row = bc.row_generation.solve()
             time_row = time.time() - t0
+            theta_row = result_row.theta_hat
             obj_row = bc.row_generation.objective(theta_row)
-            timing_rg = bc.row_generation.timing_stats if bc.row_generation.timing_stats else None
+            timing_rg = result_row.timing
             results['row_generation'] = (theta_row, time_row, obj_row, timing_rg)
 
             rg1 = RowGeneration1SlackSolver(
@@ -116,10 +117,11 @@ def main():
             )
 
             t1 = time.time()
-            theta_row1 = rg1.solve()
+            result_row1 = rg1.solve()
             time_row1 = time.time() - t1
+            theta_row1 = result_row1.theta_hat
             obj_row1 = bc.row_generation.objective(theta_row1)
-            timing_rg1 = rg1.timing_stats if rg1.timing_stats else None
+            timing_rg1 = result_row1.timing
             results['row_generation_1slack'] = (theta_row1, time_row1, obj_row1, timing_rg1)
 
             # Warm start ellipsoid with row generation solution
