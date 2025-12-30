@@ -30,6 +30,9 @@ class DataManager(HasDimensions, HasComm):
         self.input_data: Optional[Dict[str, Any]] = None
         self.local_data: Optional[Dict[str, Any]] = None
         self.num_local_agents: Optional[int] = None
+        # Cache for get_data_info() results
+        self._cached_data_info: Optional[Dict[str, Any]] = None
+        self._cached_data_info_source: Optional[str] = None  # 'input' or 'local'
 
     # ============================================================================
     # Data Loading
@@ -40,8 +43,13 @@ class DataManager(HasDimensions, HasComm):
         self._validate_input_data(input_data)
         if self.is_root():
             self.input_data = input_data
+            # Invalidate cache when input_data changes
+            self._cached_data_info = None
+            self._cached_data_info_source = None
         else:
             self.input_data = None
+            self._cached_data_info = None
+            self._cached_data_info_source = None
 
     def load_and_scatter(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Load input data and scatter across MPI ranks."""
@@ -70,7 +78,10 @@ class DataManager(HasDimensions, HasComm):
             item_data = self.input_data.get("item_data")
             
             if "constraint_mask" in self.input_data and self.input_data["constraint_mask"] is not None:
-                agent_data = agent_data.copy() if agent_data else {}
+                # Only copy if constraint_mask isn't already in agent_data (avoid unnecessary copy)
+                if "constraint_mask" not in agent_data:
+                    # Shallow copy of dict structure only (arrays remain references)
+                    agent_data = {k: v for k, v in (agent_data.items() if agent_data else [])}
                 agent_data["constraint_mask"] = self.input_data["constraint_mask"]
             
             idx_chunks = np.array_split(np.arange(self.num_simulations * self.num_agents), self.comm_size)
@@ -121,10 +132,11 @@ class DataManager(HasDimensions, HasComm):
             if self.is_root():
                 print(f"    Obs_bundles: shape=({self.num_agents}, {self.num_items})")
             if self.is_root():
-                obs_chunks = []
-                for idx in idx_chunks:
-                    obs_chunks.append(obs_bundles[idx % self.num_agents])
-                indexed_obs_bundles = np.concatenate(obs_chunks, axis=0)
+                # Optimized: use advanced indexing instead of list comprehension + concatenate
+                # Concatenate all index chunks, compute modulo (vectorized), then index
+                all_indices = np.concatenate(idx_chunks)
+                agent_indices = all_indices % self.num_agents
+                indexed_obs_bundles = obs_bundles[agent_indices]
             else:
                 indexed_obs_bundles = None
             
@@ -178,6 +190,9 @@ class DataManager(HasDimensions, HasComm):
             "obs_bundles": local_obs_bundles,
         }
         self.num_local_agents = num_local_agents
+        # Invalidate cache when local_data changes
+        self._cached_data_info = None
+        self._cached_data_info_source = None
         if self.is_root():
             print(f"  Complete: {num_local_agents} local agents/rank")
             print() 
@@ -254,9 +269,19 @@ class DataManager(HasDimensions, HasComm):
         """
         if data is None:
             data = self.local_data
+            source = 'local'
+        elif data is self.input_data:
+            source = 'input'
+        else:
+            # Custom data dict - don't cache
+            source = None
+        
+        # Return cached result if available and source matches
+        if source is not None and self._cached_data_info is not None and self._cached_data_info_source == source:
+            return self._cached_data_info
         
         if data is None:
-            return {
+            result = {
                 "has_modular_agent": False,
                 "has_modular_item": False,
                 "has_quadratic_agent": False,
@@ -268,24 +293,31 @@ class DataManager(HasDimensions, HasComm):
                 "num_quadratic_agent": 0,
                 "num_quadratic_item": 0,
             }
+        else:
+            agent_data = data.get("agent_data") or {}
+            item_data = data.get("item_data") or {}
+            
+            has_modular_agent = "modular" in agent_data
+            has_modular_item = "modular" in item_data
+            has_quadratic_agent = "quadratic" in agent_data
+            has_quadratic_item = "quadratic" in item_data
+            
+            result = {
+                "has_modular_agent": has_modular_agent,
+                "has_modular_item": has_modular_item,
+                "has_quadratic_agent": has_quadratic_agent,
+                "has_quadratic_item": has_quadratic_item,
+                "has_errors": "errors" in data,
+                "has_constraint_mask": "constraint_mask" in agent_data or "constraint_mask" in data,
+                "num_modular_agent": agent_data["modular"].shape[-1] if has_modular_agent else 0,
+                "num_modular_item": item_data["modular"].shape[-1] if has_modular_item else 0,
+                "num_quadratic_agent": agent_data["quadratic"].shape[-1] if has_quadratic_agent else 0,
+                "num_quadratic_item": item_data["quadratic"].shape[-1] if has_quadratic_item else 0,
+            }
         
-        agent_data = data.get("agent_data") or {}
-        item_data = data.get("item_data") or {}
+        # Cache result if source is known
+        if source is not None:
+            self._cached_data_info = result
+            self._cached_data_info_source = source
         
-        has_modular_agent = "modular" in agent_data
-        has_modular_item = "modular" in item_data
-        has_quadratic_agent = "quadratic" in agent_data
-        has_quadratic_item = "quadratic" in item_data
-        
-        return {
-            "has_modular_agent": has_modular_agent,
-            "has_modular_item": has_modular_item,
-            "has_quadratic_agent": has_quadratic_agent,
-            "has_quadratic_item": has_quadratic_item,
-            "has_errors": "errors" in data,
-            "has_constraint_mask": "constraint_mask" in agent_data or "constraint_mask" in data,
-            "num_modular_agent": agent_data["modular"].shape[-1] if has_modular_agent else 0,
-            "num_modular_item": item_data["modular"].shape[-1] if has_modular_item else 0,
-            "num_quadratic_agent": agent_data["quadratic"].shape[-1] if has_quadratic_agent else 0,
-            "num_quadratic_item": item_data["quadratic"].shape[-1] if has_quadratic_item else 0,
-        }
+        return result
