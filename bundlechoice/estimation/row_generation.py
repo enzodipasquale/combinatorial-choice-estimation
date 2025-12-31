@@ -207,26 +207,6 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Early convergence check disabled - adds overhead without benefit
-        should_stop_early = False
-            # Early convergence detected - skip full gather
-            if self.is_root():
-                theta, u = self.master_variables
-                theta_val = theta.X
-            else:
-                theta_val = None
-            if not self.is_root() and self.theta_val is None:
-                self.theta_val = np.empty(self.num_features, dtype=np.float64)
-            self.theta_val, _ = self.comm_manager.broadcast_array_with_flag(
-                theta_val if self.is_root() else self.theta_val, 
-                True, root=0
-            )
-            timing_dict['mpi_gather'] = 0.0
-            timing_dict['master_prep'] = 0.0
-            timing_dict['master_update'] = 0.0
-            timing_dict['master_optimize'] = 0.0
-            return True
-        
         # Gather bundles, features, and errors
         # Compute features/errors in parallel on each rank, then gather (faster than computing on root)
         t_mpi_gather_start = datetime.now()
