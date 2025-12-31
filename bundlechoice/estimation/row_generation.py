@@ -224,9 +224,22 @@ class RowGenerationManager(BaseEstimationManager):
         # Phase 2 optimization: Early convergence check using Allreduce
         # This can skip full gather if already converged
         t_early_check_start = datetime.now()
-        should_stop_early, max_reduced_cost_upper_bound = self._check_early_convergence(local_pricing_results, timing_dict)
-        early_check_time = (datetime.now() - t_early_check_start).total_seconds()
-        timing_dict['early_convergence_check'] = early_check_time
+        try:
+            should_stop_early, max_reduced_cost_upper_bound = self._check_early_convergence(local_pricing_results, timing_dict)
+            early_check_time = (datetime.now() - t_early_check_start).total_seconds()
+            timing_dict['early_convergence_check'] = early_check_time
+            if self.is_root():
+                logger.debug("Early convergence check: should_stop=%s, upper_bound=%.6f, tolerance=%.6f", 
+                           should_stop_early, max_reduced_cost_upper_bound if max_reduced_cost_upper_bound is not None else -1, 
+                           self.row_generation_cfg.tolerance_optimality)
+        except Exception as e:
+            # If early check fails, log and continue with normal flow
+            if self.is_root():
+                logger.warning("Early convergence check failed: %s, continuing with normal gather", str(e))
+            should_stop_early = False
+            max_reduced_cost_upper_bound = None
+            early_check_time = (datetime.now() - t_early_check_start).total_seconds()
+            timing_dict['early_convergence_check'] = early_check_time
         
         if should_stop_early:
             if self.is_root():
