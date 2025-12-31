@@ -207,17 +207,8 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Phase 2 optimization: Early convergence check using Allreduce (optional, fails silently)
-        t_early_check_start = datetime.now()
+        # Early convergence check disabled - adds overhead without benefit
         should_stop_early = False
-        try:
-            should_stop_early = self._check_early_convergence(local_pricing_results)
-        except Exception:
-            # If early check fails, continue with normal flow
-            pass
-        timing_dict['early_convergence_check'] = (datetime.now() - t_early_check_start).total_seconds()
-        
-        if should_stop_early:
             # Early convergence detected - skip full gather
             if self.is_root():
                 theta, u = self.master_variables
