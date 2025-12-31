@@ -509,6 +509,13 @@ class RowGenerationManager(BaseEstimationManager):
                     })
                 timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
             
+            # Print periodic timing summary every 10 iterations
+            if self.is_root() and (iteration + 1) % 10 == 0:
+                elapsed = (datetime.now() - tic).total_seconds()
+                obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+                print(f"\n=== INTERMEDIATE TIMING (Iteration {iteration + 1}) ===")
+                self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
+            
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
                 if self.is_root():
