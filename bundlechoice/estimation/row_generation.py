@@ -163,14 +163,17 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Gather bundles - measure separately with memory profiling
         t_gather_bundles_start = datetime.now()
+        tracemalloc_started = False
         if TRACEMALLOC_AVAILABLE:
-            tracemalloc.start()
+            if not tracemalloc.is_tracing():
+                tracemalloc.start()
+                tracemalloc_started = True
         
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
         gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
         timing_dict['gather_bundles'] = gather_bundles_time
         
-        if TRACEMALLOC_AVAILABLE:
+        if TRACEMALLOC_AVAILABLE and tracemalloc_started:
             current, peak = tracemalloc.get_traced_memory()
             timing_dict['gather_bundles_memory_peak_mb'] = peak / 1024 / 1024
             tracemalloc.stop()

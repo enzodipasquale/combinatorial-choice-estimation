@@ -135,13 +135,16 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         
         # Time communication separately with memory profiling
         t_comm_start = datetime.now()
+        tracemalloc_started = False
         if timing_dict is not None and TRACEMALLOC_AVAILABLE:
-            tracemalloc.start()
+            if not tracemalloc.is_tracing():
+                tracemalloc.start()
+                tracemalloc_started = True
         
         features_gathered = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
         comm_time = (datetime.now() - t_comm_start).total_seconds()
         
-        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE and tracemalloc_started:
             current, peak = tracemalloc.get_traced_memory()
             timing_dict['gather_features_memory_peak_mb'] = peak / 1024 / 1024
             tracemalloc.stop()
@@ -201,13 +204,16 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         
         # Time communication separately with memory profiling
         t_comm_start = datetime.now()
+        tracemalloc_started = False
         if timing_dict is not None and TRACEMALLOC_AVAILABLE:
-            tracemalloc.start()
+            if not tracemalloc.is_tracing():
+                tracemalloc.start()
+                tracemalloc_started = True
         
         errors_gathered = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
         comm_time = (datetime.now() - t_comm_start).total_seconds()
         
-        if timing_dict is not None and TRACEMALLOC_AVAILABLE:
+        if timing_dict is not None and TRACEMALLOC_AVAILABLE and tracemalloc_started:
             current, peak = tracemalloc.get_traced_memory()
             timing_dict['gather_errors_memory_peak_mb'] = peak / 1024 / 1024
             tracemalloc.stop()
