@@ -241,12 +241,6 @@ class RowGenerationManager(BaseEstimationManager):
         gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
         timing_dict['gather_bundles'] = gather_bundles_time
         
-        if local_pricing_results is not None and len(local_pricing_results) > 0:
-            bundles_size = local_pricing_results.nbytes
-            timing_dict['gather_bundles_size'] = bundles_size
-            if gather_bundles_time > 0:
-                timing_dict['gather_bundles_bandwidth_mbps'] = (bundles_size / gather_bundles_time) / 1e6
-        
         # COMBINED GATHER OPTIMIZATION: Compute features and errors on root from gathered bundles
         # This avoids 2 additional MPI gather operations
         if self.is_root():
@@ -276,13 +270,6 @@ class RowGenerationManager(BaseEstimationManager):
             # Set gather times to 0 since we're computing on root (no gather needed)
             timing_dict['gather_features'] = 0.0
             timing_dict['gather_errors'] = 0.0
-            
-            if bundles_sim is not None and len(bundles_sim) > 0:
-                # Features size (approximate, since we computed on root)
-                if x_sim is not None:
-                    timing_dict['gather_features_size'] = x_sim.nbytes
-                # Errors size
-                timing_dict['gather_errors_size'] = errors_sim.nbytes
         else:
             x_sim = None
             errors_sim = None
@@ -290,8 +277,6 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['compute_errors'] = 0.0
             timing_dict['gather_features'] = 0.0
             timing_dict['gather_errors'] = 0.0
-            timing_dict['gather_features_size'] = 0
-            timing_dict['gather_errors_size'] = 0
         
         timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         
@@ -683,7 +668,9 @@ class RowGenerationManager(BaseEstimationManager):
             # Calculate totals and percentages for each component
             # Filter out non-time entries (sizes, bandwidth, etc.)
             time_only_keys = {'pricing', 'mpi_gather', 'master_prep', 'master_update', 
-                            'master_optimize', 'mpi_broadcast', 'callback'}
+                            'master_optimize', 'mpi_broadcast', 'callback', 
+                            'gather_bundles', 'gather_features', 'gather_errors',
+                            'compute_features', 'compute_errors'}
             
             component_stats = []
             total_accounted = init_time
