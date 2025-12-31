@@ -114,6 +114,47 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         
         return np.stack([self.features_oracle(i, local_bundles[i], self.local_data) 
                         for i in range(self.num_local_agents)])
+    
+    def compute_all_features_on_root(self, all_bundles: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
+        """
+        Compute features for all agents on root rank using input_data.
+        
+        This method is used for combined gather optimization where bundles are already
+        gathered to root, avoiding the need for a separate feature gather operation.
+        
+        Args:
+            all_bundles: Gathered bundles array of shape (num_simulations * num_agents, num_items)
+            
+        Returns:
+            Features array of shape (num_simulations * num_agents, num_features) on root, None on other ranks
+        """
+        if not self.is_root():
+            return None
+        
+        if all_bundles is None or len(all_bundles) == 0:
+            return np.empty((0, self.num_features), dtype=np.float64)
+        
+        # Verify we have input_data on root
+        if self.data_manager.input_data is None:
+            raise RuntimeError("input_data not available on root rank for compute_all_features_on_root")
+        
+        num_total_agents = self.num_simulations * self.num_agents
+        assert len(all_bundles) == num_total_agents, \
+            f"Expected {num_total_agents} bundles, got {len(all_bundles)}"
+        
+        # Check if batch computation is supported
+        if self._check_batch_support():
+            # Use batch computation with input_data
+            return self._features_oracle(None, all_bundles, self.data_manager.input_data)
+        
+        # Fallback: compute features one agent at a time
+        # Map global agent index to (simulation, agent) pair
+        features_list = []
+        for global_idx in range(num_total_agents):
+            agent_id = global_idx % self.num_agents
+            features_list.append(self.features_oracle(agent_id, all_bundles[global_idx], self.data_manager.input_data))
+        
+        return np.stack(features_list)
 
     def compute_gathered_features(self, local_bundles: Optional[NDArray[np.float64]], 
                                   timing_dict: Optional[Dict[str, float]] = None) -> Optional[NDArray[np.float64]]:

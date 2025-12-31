@@ -201,26 +201,57 @@ class RowGenerationManager(BaseEstimationManager):
             if gather_bundles_time > 0:
                 timing_dict['gather_bundles_bandwidth_mbps'] = (bundles_size / gather_bundles_time) / 1e6
         
-        # Gather features - includes computation and communication timing
+        # COMBINED GATHER OPTIMIZATION: Compute features and errors on root from gathered bundles
+        # This avoids 2 additional MPI gather operations
         if self.is_root():
-            print("DEBUG: _master_iteration: about to gather features", flush=True)
+            print("DEBUG: _master_iteration: computing features and errors on root from gathered bundles", flush=True)
             sys.stdout.flush()
-        
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results, timing_dict=timing_dict)
+            
+            t_comp_features_start = datetime.now()
+            x_sim = self.feature_manager.compute_all_features_on_root(bundles_sim)
+            comp_features_time = (datetime.now() - t_comp_features_start).total_seconds()
+            timing_dict['compute_features'] = comp_features_time
+            
+            t_comp_errors_start = datetime.now()
+            # Compute errors on root using input_data
+            # Errors in input_data have shape (num_simulations, num_agents, num_items) or (num_agents, num_items)
+            # Need to reshape to match bundles_sim shape (num_simulations * num_agents, num_items)
+            errors_input = self.data_manager.input_data["errors"]
+            if errors_input.ndim == 2:
+                # Single simulation: shape (num_agents, num_items)
+                errors_reshaped = errors_input
+            elif errors_input.ndim == 3:
+                # Multiple simulations: shape (num_simulations, num_agents, num_items)
+                errors_reshaped = errors_input.reshape(-1, self.num_items)
+            else:
+                raise ValueError(f"Unexpected errors shape: {errors_input.shape}")
+            
+            errors_sim = (errors_reshaped * bundles_sim).sum(1)
+            comp_errors_time = (datetime.now() - t_comp_errors_start).total_seconds()
+            timing_dict['compute_errors'] = comp_errors_time
+            
+            # Set gather times to 0 since we're computing on root (no gather needed)
+            timing_dict['gather_features'] = 0.0
+            timing_dict['gather_errors'] = 0.0
+            
+            if bundles_sim is not None and len(bundles_sim) > 0:
+                # Features size (approximate, since we computed on root)
+                if x_sim is not None:
+                    timing_dict['gather_features_size'] = x_sim.nbytes
+                # Errors size
+                timing_dict['gather_errors_size'] = errors_sim.nbytes
+        else:
+            x_sim = None
+            errors_sim = None
+            timing_dict['compute_features'] = 0.0
+            timing_dict['compute_errors'] = 0.0
+            timing_dict['gather_features'] = 0.0
+            timing_dict['gather_errors'] = 0.0
+            timing_dict['gather_features_size'] = 0
+            timing_dict['gather_errors_size'] = 0
         
         if self.is_root():
-            print("DEBUG: _master_iteration: features gathered", flush=True)
-            sys.stdout.flush()
-        
-        # Gather errors - includes computation and communication timing
-        if self.is_root():
-            print("DEBUG: _master_iteration: about to gather errors", flush=True)
-            sys.stdout.flush()
-        
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results, timing_dict=timing_dict)
-        
-        if self.is_root():
-            print("DEBUG: _master_iteration: errors gathered", flush=True)
+            print("DEBUG: _master_iteration: features and errors computed on root", flush=True)
             sys.stdout.flush()
         
         # Total gather time (for backward compatibility)
