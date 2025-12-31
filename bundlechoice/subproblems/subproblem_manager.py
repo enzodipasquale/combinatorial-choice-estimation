@@ -85,12 +85,27 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
 
     def solve_local(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Solve all local subproblems for current rank. Returns bool array of bundles."""
+        import sys
+        if self.is_root():
+            print(f"DEBUG: solve_local: started, num_local_agents={self.num_local_agents}", flush=True)
+            sys.stdout.flush()
+        
         if self.subproblem_instance is None:
             raise RuntimeError("Subproblem is not initialized.")
         if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
             raise RuntimeError("DataManager or num_local_agents is not initialized.")
         
-        return self.subproblem_instance.solve_all(theta, self.local_subproblems)
+        if self.is_root():
+            print("DEBUG: solve_local: about to call solve_all", flush=True)
+            sys.stdout.flush()
+        
+        result = self.subproblem_instance.solve_all(theta, self.local_subproblems)
+        
+        if self.is_root():
+            print(f"DEBUG: solve_local: solve_all returned, shape={result.shape if result is not None else None}", flush=True)
+            sys.stdout.flush()
+        
+        return result
 
     def init_and_solve(self, theta: NDArray[np.float64], return_values: bool = False) -> Optional[Union[NDArray[np.float64], Tuple[NDArray[np.float64], NDArray[np.float64]]]]:
         """Initialize and solve local subproblems, then gather results at rank 0."""

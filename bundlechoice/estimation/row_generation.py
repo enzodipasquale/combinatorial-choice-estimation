@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from datetime import datetime
 from typing import Tuple, List, Optional, Any, Dict, Callable
 import logging
+import sys
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
@@ -158,10 +159,18 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
+        if self.is_root():
+            print("DEBUG: _master_iteration: started", flush=True)
+            sys.stdout.flush()
+        
         # Enhanced diagnostics: per-gather timing and computation/communication separation
         t_mpi_gather_start = datetime.now()
         
         # Gather bundles - measure separately with memory profiling
+        if self.is_root():
+            print("DEBUG: _master_iteration: about to gather bundles", flush=True)
+            sys.stdout.flush()
+        
         t_gather_bundles_start = datetime.now()
         tracemalloc_started = False
         if TRACEMALLOC_AVAILABLE:
@@ -169,9 +178,17 @@ class RowGenerationManager(BaseEstimationManager):
                 tracemalloc.start()
                 tracemalloc_started = True
         
+        if self.is_root():
+            print("DEBUG: _master_iteration: calling concatenate_array_at_root_fast for bundles", flush=True)
+            sys.stdout.flush()
+        
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
         gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
         timing_dict['gather_bundles'] = gather_bundles_time
+        
+        if self.is_root():
+            print(f"DEBUG: _master_iteration: bundles gathered in {gather_bundles_time:.4f}s", flush=True)
+            sys.stdout.flush()
         
         if TRACEMALLOC_AVAILABLE and tracemalloc_started:
             current, peak = tracemalloc.get_traced_memory()
@@ -185,21 +202,41 @@ class RowGenerationManager(BaseEstimationManager):
                 timing_dict['gather_bundles_bandwidth_mbps'] = (bundles_size / gather_bundles_time) / 1e6
         
         # Gather features - includes computation and communication timing
+        if self.is_root():
+            print("DEBUG: _master_iteration: about to gather features", flush=True)
+            sys.stdout.flush()
+        
         x_sim = self.feature_manager.compute_gathered_features(local_pricing_results, timing_dict=timing_dict)
         
+        if self.is_root():
+            print("DEBUG: _master_iteration: features gathered", flush=True)
+            sys.stdout.flush()
+        
         # Gather errors - includes computation and communication timing
+        if self.is_root():
+            print("DEBUG: _master_iteration: about to gather errors", flush=True)
+            sys.stdout.flush()
+        
         errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results, timing_dict=timing_dict)
+        
+        if self.is_root():
+            print("DEBUG: _master_iteration: errors gathered", flush=True)
+            sys.stdout.flush()
         
         # Total gather time (for backward compatibility)
         timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
         
         stop = False
         if self.is_root():
+            print("DEBUG: _master_iteration: on root, about to prepare master problem", flush=True)
+            sys.stdout.flush()
             t_master_prep_start = datetime.now()
             theta, u = self.master_variables
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + errors_sim
             u_master = u.X
+            print("DEBUG: _master_iteration: master variables computed", flush=True)
+            sys.stdout.flush()
 
             violations = np.where(~np.isclose(u_master, u_sim, rtol = 1e-5, atol = 1e-5) * (u_master > u_sim))[0]
             if len(violations) > 0:
@@ -251,8 +288,14 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Broadcast theta and stop flag together (single broadcast reduces latency)
         t_mpi_broadcast_start = datetime.now()
+        if self.is_root():
+            print("DEBUG: _master_iteration: about to broadcast theta_val and stop flag", flush=True)
+            sys.stdout.flush()
         self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
         timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
+        if self.is_root():
+            print(f"DEBUG: _master_iteration: broadcast completed, stop={stop}", flush=True)
+            sys.stdout.flush()
         
         return stop
 
@@ -297,13 +340,24 @@ class RowGenerationManager(BaseEstimationManager):
         tic = datetime.now()
         
         t_init = datetime.now()
+        
+        if self.is_root():
+            print("DEBUG: solve(): about to initialize_local()", flush=True)
+            sys.stdout.flush()
+        
         self.subproblem_manager.initialize_local()
+        
+        if self.is_root():
+            print("DEBUG: solve(): initialize_local() completed", flush=True)
+            sys.stdout.flush()
         
         # Initialize with theta_init if provided
         initial_constraints = None
         if theta_init is not None:
             if self.is_root():
                 logger.info("Initializing with provided theta (warm start)")
+                print("DEBUG: solve(): initializing with theta_init", flush=True)
+                sys.stdout.flush()
                 # Handle both EstimationResult and numpy array
                 if hasattr(theta_init, 'theta_hat'):
                     theta_init_array = theta_init.theta_hat
@@ -312,13 +366,38 @@ class RowGenerationManager(BaseEstimationManager):
                 self.theta_val = np.asarray(theta_init_array, dtype=np.float64).copy()
             else:
                 self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            
+            if self.is_root():
+                print("DEBUG: solve(): about to broadcast theta_val", flush=True)
+                sys.stdout.flush()
+            
             self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
             
+            if self.is_root():
+                print("DEBUG: solve(): theta_val broadcast completed", flush=True)
+                sys.stdout.flush()
+            
             # Solve subproblems at initial theta to get initial constraints
+            if self.is_root():
+                print("DEBUG: solve(): solving initial subproblems for warm start", flush=True)
+                sys.stdout.flush()
+            
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             
+            if self.is_root():
+                print("DEBUG: solve(): initial solve_local() completed", flush=True)
+                sys.stdout.flush()
+            
             # Gather bundles - all processes must participate
+            if self.is_root():
+                print("DEBUG: solve(): gathering initial bundles", flush=True)
+                sys.stdout.flush()
+            
             bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+            
+            if self.is_root():
+                print("DEBUG: solve(): initial bundles gathered", flush=True)
+                sys.stdout.flush()
             
             if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
                 indices = np.arange(self.num_simuls * self.num_agents, dtype=np.int64)
@@ -337,11 +416,23 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             self._theta_init_for_start = None
         
+        if self.is_root():
+            print("DEBUG: solve(): about to initialize master problem", flush=True)
+            sys.stdout.flush()
+        
         self._initialize_master_problem(initial_constraints=initial_constraints)
+        
+        if self.is_root():
+            print("DEBUG: solve(): master problem initialized", flush=True)
+            sys.stdout.flush()
         
         self.slack_counter = {}
         init_time = (datetime.now() - t_init).total_seconds()
         iteration = 0
+        
+        if self.is_root():
+            print("DEBUG: solve(): starting iteration loop", flush=True)
+            sys.stdout.flush()
         
         # Detailed timing tracking (enhanced with diagnostics)
         timing_breakdown = {
@@ -389,11 +480,18 @@ class RowGenerationManager(BaseEstimationManager):
             logger.info("=" * 70)
         
         while iteration < self.row_generation_cfg.max_iters:
+            if self.is_root():
+                print(f"DEBUG: solve(): Starting iteration {iteration + 1}", flush=True)
+                sys.stdout.flush()
+            
             logger.info(f"ITERATION {iteration + 1}")
             iter_timing = {}
             
             # Subproblem callback (if configured) - called before pricing phase
             if self.row_generation_cfg.subproblem_callback is not None:
+                if self.is_root():
+                    print("DEBUG: solve(): calling subproblem_callback", flush=True)
+                    sys.stdout.flush()
                 master_model = self.master_model if self.is_root() else None
                 self.row_generation_cfg.subproblem_callback(
                     iteration, 
@@ -402,12 +500,24 @@ class RowGenerationManager(BaseEstimationManager):
                 )
             
             # Pricing phase
+            if self.is_root():
+                print(f"DEBUG: solve(): about to call solve_local() for iteration {iteration + 1}", flush=True)
+                sys.stdout.flush()
+            
             t_pricing = datetime.now()
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             iter_timing['pricing'] = (datetime.now() - t_pricing).total_seconds()
             
+            if self.is_root():
+                print(f"DEBUG: solve(): solve_local() returned in {iter_timing['pricing']:.4f}s, about to call _master_iteration", flush=True)
+                sys.stdout.flush()
+            
             # Master iteration (with internal timing)
-            stop = self._master_iteration(local_pricing_results, iter_timing) 
+            stop = self._master_iteration(local_pricing_results, iter_timing)
+            
+            if self.is_root():
+                print(f"DEBUG: solve(): _master_iteration() returned, stop={stop}", flush=True)
+                sys.stdout.flush() 
             
             # Store timing breakdown (including enhanced diagnostics)
             for key in timing_breakdown.keys():

@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Any, Callable, Optional, Dict, Tuple
 from numpy.typing import NDArray
+import sys
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.data_manager import DataManager
@@ -141,7 +142,15 @@ class FeatureManager(HasDimensions, HasComm, HasData):
                 tracemalloc.start()
                 tracemalloc_started = True
         
+        if self.is_root():
+            print("DEBUG: compute_gathered_features: about to call concatenate_array_at_root_fast", flush=True)
+            sys.stdout.flush()
+        
         features_gathered = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        
+        if self.is_root():
+            print("DEBUG: compute_gathered_features: concatenate_array_at_root_fast returned", flush=True)
+            sys.stdout.flush()
         comm_time = (datetime.now() - t_comm_start).total_seconds()
         
         if timing_dict is not None and TRACEMALLOC_AVAILABLE and tracemalloc_started:
@@ -210,7 +219,15 @@ class FeatureManager(HasDimensions, HasComm, HasData):
                 tracemalloc.start()
                 tracemalloc_started = True
         
+        if self.is_root():
+            print("DEBUG: compute_gathered_errors: about to call concatenate_array_at_root_fast", flush=True)
+            sys.stdout.flush()
+        
         errors_gathered = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        
+        if self.is_root():
+            print("DEBUG: compute_gathered_errors: concatenate_array_at_root_fast returned", flush=True)
+            sys.stdout.flush()
         comm_time = (datetime.now() - t_comm_start).total_seconds()
         
         if timing_dict is not None and TRACEMALLOC_AVAILABLE and tracemalloc_started:
