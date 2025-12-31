@@ -11,6 +11,7 @@ import logging
 import sys
 import gurobipy as gp
 from gurobipy import GRB
+from mpi4py import MPI
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
 from .result import EstimationResult
@@ -156,12 +157,106 @@ class RowGenerationManager(BaseEstimationManager):
     
 
 
+    def _check_early_convergence(self, local_pricing_results: NDArray[np.float64], 
+                                 timing_dict: Dict[str, float]) -> Tuple[bool, Optional[float]]:
+        """
+        Check convergence using Allreduce before full gather (Phase 2 optimization).
+        Returns (should_stop, max_reduced_cost) where max_reduced_cost is None if not computed.
+        """
+        from mpi4py import MPI
+        
+        # Compute features and errors locally (no gather yet)
+        t_comp_start = datetime.now()
+        features_local = self.feature_manager.compute_rank_features(local_pricing_results)
+        errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
+        comp_time = (datetime.now() - t_comp_start).total_seconds()
+        timing_dict['early_check_compute'] = comp_time
+        
+        # Compute local u_sim using local features/errors and broadcasted theta
+        if len(features_local) > 0 and len(errors_local) > 0:
+            u_sim_local = features_local @ self.theta_val + errors_local
+            max_u_sim_local = np.max(u_sim_local) if len(u_sim_local) > 0 else -np.inf
+        else:
+            max_u_sim_local = -np.inf
+        
+        # Get global max u_sim using Allreduce
+        t_allreduce_start = datetime.now()
+        max_u_sim_global = self.comm_manager.comm.allreduce(max_u_sim_local, op=MPI.MAX)
+        allreduce_time = (datetime.now() - t_allreduce_start).total_seconds()
+        timing_dict['early_check_allreduce'] = allreduce_time
+        
+        # Broadcast u_master bounds from root (needed for convergence check)
+        # We need min(u_master) for upper bound: max(u_sim) - min(u_master) >= max(u_sim - u_master)
+        if self.is_root():
+            if self.master_model is None:
+                return False, None
+            _, u = self.master_variables
+            u_master = u.X
+            min_u_master = np.min(u_master) if len(u_master) > 0 else -np.inf
+        else:
+            min_u_master = None
+        
+        # Broadcast min_u_master to all ranks
+        min_u_master_buffer = np.array([min_u_master], dtype=np.float64) if self.is_root() else np.empty(1, dtype=np.float64)
+        self.comm_manager.comm.Bcast(min_u_master_buffer, root=0)
+        min_u_master = min_u_master_buffer[0]
+        
+        # Compute upper bound for max_reduced_cost: max(u_sim) - min(u_master) >= max(u_sim - u_master)
+        # If this upper bound < tolerance, then we're definitely converged
+        max_reduced_cost_upper_bound = max_u_sim_global - min_u_master
+        
+        # Check if we should stop early (only if not in suboptimal mode)
+        # Use upper bound: if upper bound < tolerance, definitely converged
+        suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
+        should_stop = (max_reduced_cost_upper_bound < self.row_generation_cfg.tolerance_optimality) and (not suboptimal_mode)
+        
+        timing_dict['early_check_total'] = comp_time + allreduce_time
+        
+        return should_stop, max_reduced_cost_upper_bound
+
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
         if self.is_root():
             print("DEBUG: _master_iteration: started", flush=True)
             sys.stdout.flush()
+        
+        # Phase 2 optimization: Early convergence check using Allreduce
+        # This can skip full gather if already converged
+        t_early_check_start = datetime.now()
+        should_stop_early, max_reduced_cost_upper_bound = self._check_early_convergence(local_pricing_results, timing_dict)
+        early_check_time = (datetime.now() - t_early_check_start).total_seconds()
+        timing_dict['early_convergence_check'] = early_check_time
+        
+        if should_stop_early:
+            if self.is_root():
+                logger.info("Early convergence detected (Allreduce check): max_reduced_cost_upper_bound=%.6f < tolerance=%.6f", 
+                           max_reduced_cost_upper_bound, self.row_generation_cfg.tolerance_optimality)
+                logger.info("Skipping full gather - already converged")
+            # Still need to update master and broadcast theta, but skip gather
+            # For now, we'll still do a minimal gather to maintain compatibility
+            # In future, we could skip gather entirely if no constraints need adding
+            timing_dict['gather_bundles'] = 0.0
+            timing_dict['gather_features'] = 0.0
+            timing_dict['gather_errors'] = 0.0
+            timing_dict['mpi_gather'] = 0.0
+            timing_dict['master_prep'] = 0.0
+            timing_dict['master_update'] = 0.0
+            timing_dict['master_optimize'] = 0.0
+            
+            # Still need to broadcast updated theta (even if stopping)
+            if self.is_root():
+                theta, u = self.master_variables
+                theta_val = theta.X
+            else:
+                theta_val = None
+            if not self.is_root() and self.theta_val is None:
+                self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val, _ = self.comm_manager.broadcast_array_with_flag(
+                theta_val if self.is_root() else self.theta_val, 
+                True, root=0
+            )
+            return True
         
         # Enhanced diagnostics: per-gather timing and computation/communication separation
         t_mpi_gather_start = datetime.now()
