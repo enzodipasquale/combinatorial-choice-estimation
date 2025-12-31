@@ -208,12 +208,14 @@ class RowGenerationManager(BaseEstimationManager):
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
         # Phase 2 optimization: Early convergence check using Allreduce (optional, fails silently)
+        t_early_check_start = datetime.now()
         should_stop_early = False
         try:
             should_stop_early = self._check_early_convergence(local_pricing_results)
         except Exception:
             # If early check fails, continue with normal flow
             pass
+        timing_dict['early_convergence_check'] = (datetime.now() - t_early_check_start).total_seconds()
         
         if should_stop_early:
             # Early convergence detected - skip full gather
@@ -475,12 +477,14 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Subproblem callback (if configured)
             if self.row_generation_cfg.subproblem_callback is not None:
+                t_callback_start = datetime.now()
                 master_model = self.master_model if self.is_root() else None
                 self.row_generation_cfg.subproblem_callback(
                     iteration, 
                     self.subproblem_manager, 
                     master_model
                 )
+                iter_timing['subproblem_callback'] = (datetime.now() - t_callback_start).total_seconds()
             
             # Pricing phase
             t_pricing = datetime.now()
@@ -508,15 +512,6 @@ class RowGenerationManager(BaseEstimationManager):
                     })
                 timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
             
-            # Print periodic timing summary every 10 iterations
-            if self.is_root() and (iteration + 1) % 10 == 0:
-                import sys
-                elapsed = (datetime.now() - tic).total_seconds()
-                obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-                print(f"\n=== INTERMEDIATE TIMING (Iteration {iteration + 1}) ===", flush=True)
-                sys.stdout.flush()
-                self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
-                sys.stdout.flush()
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
@@ -673,7 +668,8 @@ class RowGenerationManager(BaseEstimationManager):
             time_only_keys = {'pricing', 'mpi_gather', 'master_prep', 'master_update', 
                             'master_optimize', 'mpi_broadcast', 'callback', 
                             'gather_bundles', 'gather_features', 'gather_errors',
-                            'compute_features', 'compute_errors'}
+                            'compute_features', 'compute_errors', 'early_convergence_check',
+                            'subproblem_callback'}
             
             component_stats = []
             total_accounted = init_time
