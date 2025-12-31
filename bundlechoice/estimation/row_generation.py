@@ -234,15 +234,14 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_optimize'] = 0.0
             return True
         
-        # Gather bundles, features, and errors
-        t_mpi_gather_start = datetime.now()
+        # COMBINED GATHER OPTIMIZATION: Gather bundles once, compute features/errors on root
+        # This avoids 2 additional MPI gather operations
         t_gather_bundles_start = datetime.now()
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
         gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
         timing_dict['gather_bundles'] = gather_bundles_time
         
-        # COMBINED GATHER OPTIMIZATION: Compute features and errors on root from gathered bundles
-        # This avoids 2 additional MPI gather operations
+        # Compute features and errors on root from gathered bundles (no additional gather)
         if self.is_root():
             t_comp_features_start = datetime.now()
             x_sim = self.feature_manager.compute_all_features_on_root(bundles_sim)
@@ -251,14 +250,10 @@ class RowGenerationManager(BaseEstimationManager):
             
             t_comp_errors_start = datetime.now()
             # Compute errors on root using input_data
-            # Errors in input_data have shape (num_simulations, num_agents, num_items) or (num_agents, num_items)
-            # Need to reshape to match bundles_sim shape (num_simulations * num_agents, num_items)
             errors_input = self.data_manager.input_data["errors"]
             if errors_input.ndim == 2:
-                # Single simulation: shape (num_agents, num_items)
                 errors_reshaped = errors_input
             elif errors_input.ndim == 3:
-                # Multiple simulations: shape (num_simulations, num_agents, num_items)
                 errors_reshaped = errors_input.reshape(-1, self.num_items)
             else:
                 raise ValueError(f"Unexpected errors shape: {errors_input.shape}")
@@ -266,19 +261,14 @@ class RowGenerationManager(BaseEstimationManager):
             errors_sim = (errors_reshaped * bundles_sim).sum(1)
             comp_errors_time = (datetime.now() - t_comp_errors_start).total_seconds()
             timing_dict['compute_errors'] = comp_errors_time
-            
-            # Set gather times to 0 since we're computing on root (no gather needed)
-            timing_dict['gather_features'] = 0.0
-            timing_dict['gather_errors'] = 0.0
         else:
             x_sim = None
             errors_sim = None
             timing_dict['compute_features'] = 0.0
             timing_dict['compute_errors'] = 0.0
-            timing_dict['gather_features'] = 0.0
-            timing_dict['gather_errors'] = 0.0
         
-        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
+        # mpi_gather is now just the bundle gather time (the actual MPI operation)
+        timing_dict['mpi_gather'] = gather_bundles_time
         
         stop = False
         if self.is_root():
@@ -448,6 +438,9 @@ class RowGenerationManager(BaseEstimationManager):
         timing_breakdown = {
             'pricing': [],
             'mpi_gather': [],
+            'gather_bundles': [],
+            'compute_features': [],
+            'compute_errors': [],
             'master_prep': [],
             'master_update': [],
             'master_optimize': [],
