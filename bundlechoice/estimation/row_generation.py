@@ -511,10 +511,13 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Print periodic timing summary every 10 iterations
             if self.is_root() and (iteration + 1) % 10 == 0:
+                import sys
                 elapsed = (datetime.now() - tic).total_seconds()
                 obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-                print(f"\n=== INTERMEDIATE TIMING (Iteration {iteration + 1}) ===")
+                print(f"\n=== INTERMEDIATE TIMING (Iteration {iteration + 1}) ===", flush=True)
+                sys.stdout.flush()
                 self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
+                sys.stdout.flush()
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
@@ -640,6 +643,7 @@ class RowGenerationManager(BaseEstimationManager):
                            obj_val: Optional[float] = None, theta: Optional[NDArray[np.float64]] = None) -> None:
         """Log comprehensive timing summary showing bottlenecks."""
         # Use print for statistics to avoid logging prefix clutter
+        import sys
         if self.is_root():
             print("=" * 70)
             print("ROW GENERATION SUMMARY")
