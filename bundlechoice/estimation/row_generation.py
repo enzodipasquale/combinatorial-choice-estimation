@@ -627,17 +627,24 @@ class RowGenerationManager(BaseEstimationManager):
             print("Timing Statistics:")
             
             # Calculate totals and percentages for each component
+            # Filter out non-time entries (sizes, bandwidth, etc.)
+            time_only_keys = {'pricing', 'mpi_gather', 'master_prep', 'master_update', 
+                            'master_optimize', 'mpi_broadcast', 'callback'}
+            
             component_stats = []
             total_accounted = init_time
             
             for component, times in timing_breakdown.items():
+                # Only process time-based metrics
+                if component not in time_only_keys:
+                    continue
                 if len(times) > 0:
                     total = np.sum(times)
                     mean = np.mean(times)
                     std = np.std(times)
                     min_t = np.min(times)
                     max_t = np.max(times)
-                    pct = 100 * total / total_time
+                    pct = 100 * total / total_time if total_time > 0 else 0
                     total_accounted += total
                     component_stats.append({
                         'name': component,
