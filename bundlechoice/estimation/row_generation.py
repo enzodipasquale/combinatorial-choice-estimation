@@ -459,6 +459,10 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Rank distribution verification (once at start)
         if self.is_root():
+            print("DEBUG: solve(): about to do rank distribution verification", flush=True)
+            sys.stdout.flush()
+        
+        if self.is_root():
             from mpi4py import MPI
             num_local_agents_all = self.comm_manager.comm.allgather(
                 self.data_manager.num_local_agents if self.data_manager else 0
@@ -478,6 +482,17 @@ class RowGenerationManager(BaseEstimationManager):
             else:
                 logger.info("Load distribution is balanced")
             logger.info("=" * 70)
+            print("DEBUG: solve(): rank distribution verification completed", flush=True)
+            sys.stdout.flush()
+        else:
+            # Non-root ranks must also participate in allgather!
+            _ = self.comm_manager.comm.allgather(
+                self.data_manager.num_local_agents if self.data_manager else 0
+            )
+        
+        if self.is_root():
+            print("DEBUG: solve(): about to enter while loop", flush=True)
+            sys.stdout.flush()
         
         while iteration < self.row_generation_cfg.max_iters:
             if self.is_root():
