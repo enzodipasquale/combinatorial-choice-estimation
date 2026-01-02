@@ -53,48 +53,19 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         subproblem_manager: SubproblemManager,
         se_cfg: StandardErrorsConfig,
     ):
-        self._comm_manager = comm_manager
-        self._dimensions_cfg = dimensions_cfg
-        self._data_manager = data_manager
+        # Use the names expected by mixins
+        self.comm_manager = comm_manager
+        self.dimensions_cfg = dimensions_cfg
+        self.data_manager = data_manager
         self._feature_manager = feature_manager
         self._subproblem_manager = subproblem_manager
         self._se_cfg = se_cfg
         self._obs_features: Optional[NDArray[np.float64]] = None
     
-    # HasComm interface
-    @property
-    def comm_manager(self) -> CommManager:
-        return self._comm_manager
-    
+    # HasComm needs comm property for MPI.Comm access
     @property
     def comm(self) -> MPI.Comm:
-        return self._comm_manager.comm
-    
-    @property
-    def rank(self) -> int:
-        return self._comm_manager.rank
-    
-    @property
-    def comm_size(self) -> int:
-        return self._comm_manager.comm_size
-    
-    # HasDimensions interface
-    @property
-    def num_agents(self) -> int:
-        return self._dimensions_cfg.num_agents
-    
-    @property
-    def num_items(self) -> int:
-        return self._dimensions_cfg.num_items
-    
-    @property
-    def num_features(self) -> int:
-        return self._dimensions_cfg.num_features
-    
-    # HasData interface
-    @property
-    def num_local_agents(self) -> int:
-        return self._data_manager.num_local_agents
+        return self.comm_manager.comm
     
     def compute(
         self,
@@ -103,6 +74,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         step_size: Optional[float] = None,
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
+        optimize_for_subset: bool = True,
     ) -> Optional[StandardErrorsResult]:
         """
         Compute sandwich standard errors.
@@ -111,8 +83,10 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             theta_hat: Estimated parameter vector (root rank only)
             num_simulations: Number of simulations for SE (overrides config)
             step_size: Step size for finite differences (overrides config)
-            beta_indices: Which parameters to report SE for (default: all)
+            beta_indices: Which parameters to compute SE for (default: all)
             seed: Random seed for error generation
+            optimize_for_subset: If True and beta_indices provided, only compute
+                matrices for the subset (faster). If False, compute full matrices.
             
         Returns:
             StandardErrorsResult on root rank, None on other ranks
@@ -135,8 +109,12 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         # Cache observed features (gathered to root)
         if self._obs_features is None:
-            obs_bundles = self._data_manager.local_data["obs_bundles"]
+            obs_bundles = self.local_data["obs_bundles"]
             self._obs_features = self._feature_manager.compute_gathered_features(obs_bundles)
+        
+        # Determine if we should optimize for subset
+        is_subset = len(beta_indices) < self.num_features
+        use_subset_opt = optimize_for_subset and is_subset
         
         # Print header
         if self.is_root():
@@ -146,39 +124,74 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             print(f"  Simulations: {num_simulations}")
             print(f"  Step size: {step_size}")
             print(f"  Total parameters: {self.num_features}")
+            if use_subset_opt:
+                print(f"  Computing subset: {len(beta_indices)} params (optimized)")
         
-        # Compute B matrix (always full KxK)
+        if use_subset_opt:
+            # Optimized: only compute for beta_indices subset
+            B_sub = self._compute_B_matrix_subset(theta_hat, errors_all_sims, beta_indices)
+            A_sub = self._compute_A_matrix_subset(theta_hat, errors_all_sims, step_size, beta_indices)
+            
+            self.comm.Barrier()
+            if self.is_root():
+                A_cond = np.linalg.cond(A_sub)
+                B_cond = np.linalg.cond(B_sub)
+                print(f"\n  A matrix: cond={A_cond:.2e}")
+                print(f"  B matrix: cond={B_cond:.2e}")
+                
+                try:
+                    A_inv = np.linalg.solve(A_sub, np.eye(len(beta_indices)))
+                except np.linalg.LinAlgError:
+                    print("  Warning: A matrix singular, using pseudoinverse")
+                    A_inv = np.linalg.pinv(A_sub)
+                
+                V_sub = (1.0 / self.num_agents) * (A_inv @ B_sub @ A_inv.T)
+                se_beta = np.sqrt(np.maximum(np.diag(V_sub), 0))
+                theta_beta = theta_hat[beta_indices]
+                t_stats = np.where(se_beta > 0, theta_beta / se_beta, 0.0)
+                
+                print("\n" + "-" * 70)
+                print("Standard Errors:")
+                print("-" * 70)
+                for i, idx in enumerate(beta_indices):
+                    print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se_beta[i]:.6f}, t = {t_stats[i]:.2f}")
+                
+                return StandardErrorsResult(
+                    se=se_beta,
+                    se_all=se_beta,  # Only subset computed
+                    theta_beta=theta_beta,
+                    beta_indices=beta_indices,
+                    variance=V_sub,
+                    A_matrix=A_sub,
+                    B_matrix=B_sub,
+                    t_stats=t_stats,
+                )
+            return None
+        
+        # Full computation
         B_full = self._compute_B_matrix(theta_hat, errors_all_sims)
-        
-        # Compute A matrix (always full KxK)
         A_full = self._compute_A_matrix(theta_hat, errors_all_sims, step_size)
         
-        # Compute sandwich variance on root
         self.comm.Barrier()
         if self.is_root():
-            # Check conditioning
             A_cond = np.linalg.cond(A_full)
             B_cond = np.linalg.cond(B_full)
             print(f"\n  A matrix: cond={A_cond:.2e}")
             print(f"  B matrix: cond={B_cond:.2e}")
             
-            # Invert A
             try:
                 A_inv = np.linalg.solve(A_full, np.eye(self.num_features))
             except np.linalg.LinAlgError:
                 print("  Warning: A matrix singular, using pseudoinverse")
                 A_inv = np.linalg.pinv(A_full)
             
-            # Sandwich: V = (1/N) A^{-1} B A^{-1}
             V_full = (1.0 / self.num_agents) * (A_inv @ B_full @ A_inv.T)
             se_all = np.sqrt(np.maximum(np.diag(V_full), 0))
             
-            # Extract selected parameters for reporting
             se_beta = se_all[beta_indices]
             theta_beta = theta_hat[beta_indices]
             t_stats = np.where(se_beta > 0, theta_beta / se_beta, 0.0)
             
-            # Print results
             print("\n" + "-" * 70)
             print("Standard Errors:")
             print("-" * 70)
@@ -230,7 +243,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
                 print(f"  Simulation {s+1}/{num_simuls}...")
             
             # Update errors for this simulation
-            self._data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             # Solve subproblems
             if self.num_local_agents > 0:
@@ -257,6 +270,47 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             B_full = (g_i_full.T @ g_i_full) / self.num_agents
             print(f"  B matrix: cond={np.linalg.cond(B_full):.2e}")
             return B_full
+        return None
+    
+    def _compute_B_matrix_subset(
+        self,
+        theta: NDArray[np.float64],
+        errors_all_sims: NDArray[np.float64],
+        beta_indices: NDArray[np.int64],
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute B matrix for subset of parameters only."""
+        num_simuls = len(errors_all_sims)
+        num_beta = len(beta_indices)
+        
+        if self.is_root():
+            print(f"\nComputing B matrix ({num_beta}×{num_beta})...")
+        
+        all_features_per_sim = []
+        for s in range(num_simuls):
+            if self.is_root():
+                print(f"  Simulation {s+1}/{num_simuls}...")
+            
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            
+            if self.num_local_agents > 0:
+                local_bundles = self._subproblem_manager.solve_local(theta)
+            else:
+                local_bundles = np.empty((0, self.num_items), dtype=bool)
+            
+            features_sim = self._feature_manager.compute_gathered_features(local_bundles)
+            if self.is_root():
+                all_features_per_sim.append(features_sim)
+        
+        self.comm.Barrier()
+        
+        if self.is_root():
+            features_all = np.stack(all_features_per_sim, axis=0)
+            avg_simulated = features_all.mean(axis=0)[:, beta_indices]
+            obs_beta = self._obs_features[:, beta_indices]
+            g_i_beta = avg_simulated - obs_beta
+            B_beta = (g_i_beta.T @ g_i_beta) / self.num_agents
+            print(f"  B matrix: cond={np.linalg.cond(B_beta):.2e}")
+            return B_beta
         return None
     
     def _compute_A_matrix(
@@ -297,6 +351,81 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         self.comm.Barrier()
         return A_full
     
+    def _compute_A_matrix_subset(
+        self,
+        theta: NDArray[np.float64],
+        errors_all_sims: NDArray[np.float64],
+        step_size: float,
+        beta_indices: NDArray[np.int64],
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute A matrix for subset of parameters only (more efficient)."""
+        num_beta = len(beta_indices)
+        
+        if self.is_root():
+            print(f"Computing A matrix ({num_beta}×{num_beta}, {num_beta} columns)...")
+            A_beta = np.zeros((num_beta, num_beta))
+        else:
+            A_beta = None
+        
+        for k_idx, k in enumerate(beta_indices):
+            if self.is_root():
+                print(f"  Column {k_idx+1}/{num_beta} (param {k})...")
+            
+            h_k = step_size * max(1.0, abs(theta[k]))
+            
+            theta_plus = theta.copy()
+            theta_plus[k] += h_k
+            theta_minus = theta.copy()
+            theta_minus[k] -= h_k
+            
+            g_plus = self._compute_avg_subgradient_subset(theta_plus, errors_all_sims, beta_indices)
+            g_minus = self._compute_avg_subgradient_subset(theta_minus, errors_all_sims, beta_indices)
+            
+            if self.is_root():
+                A_beta[:, k_idx] = (g_plus - g_minus) / (2 * h_k)
+        
+        self.comm.Barrier()
+        return A_beta
+    
+    def _compute_avg_subgradient_subset(
+        self,
+        theta: NDArray[np.float64],
+        errors_all_sims: NDArray[np.float64],
+        beta_indices: NDArray[np.int64],
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute average subgradient for subset of features only."""
+        num_simuls = len(errors_all_sims)
+        num_beta = len(beta_indices)
+        
+        obs_local = self.data_manager.local_data["obs_bundles"]
+        obs_feat_local = self._feature_manager.compute_rank_features(obs_local)
+        obs_sum_local = obs_feat_local[:, beta_indices].sum(axis=0) if obs_feat_local.size else np.zeros(num_beta)
+        
+        obs_sum_global = np.zeros(num_beta)
+        self.comm.Allreduce(obs_sum_local, obs_sum_global, op=MPI.SUM)
+        mean_obs = obs_sum_global / self.num_agents
+        
+        sim_sum_local = np.zeros(num_beta)
+        for s in range(num_simuls):
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            
+            if self.num_local_agents > 0:
+                local_bundles = self._subproblem_manager.solve_local(theta)
+            else:
+                local_bundles = np.empty((0, self.num_items), dtype=bool)
+            
+            feat_local = self._feature_manager.compute_rank_features(local_bundles)
+            if feat_local.size:
+                sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
+        
+        sim_sum_global = np.zeros(num_beta)
+        self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
+        mean_sim = (sim_sum_global / num_simuls) / self.num_agents
+        
+        if self.is_root():
+            return mean_sim - mean_obs
+        return None
+    
     def _compute_avg_subgradient(
         self,
         theta: NDArray[np.float64],
@@ -311,7 +440,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         K = self.num_features
         
         # Local observed features sum
-        obs_local = self._data_manager.local_data["obs_bundles"]
+        obs_local = self.data_manager.local_data["obs_bundles"]
         obs_feat_local = self._feature_manager.compute_rank_features(obs_local)
         obs_sum_local = obs_feat_local.sum(axis=0) if obs_feat_local.size else np.zeros(K)
         
@@ -322,7 +451,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         # Simulated features sum
         sim_sum_local = np.zeros(K)
         for s in range(num_simuls):
-            self._data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
                 local_bundles = self._subproblem_manager.solve_local(theta)
