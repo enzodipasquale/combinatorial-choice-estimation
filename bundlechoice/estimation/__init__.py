@@ -13,6 +13,7 @@ from .column_generation import ColumnGenerationManager
 from .inequalities import InequalitiesManager
 from .callbacks import adaptive_gurobi_timeout, constant_timeout
 from .result import EstimationResult
+from .standard_errors import StandardErrorsManager, StandardErrorsResult
 
 __all__ = [
     'BaseEstimationManager',
@@ -24,4 +25,6 @@ __all__ = [
     'EstimationResult',
     'adaptive_gurobi_timeout',
     'constant_timeout',
+    'StandardErrorsManager',
+    'StandardErrorsResult',
 ]

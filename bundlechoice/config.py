@@ -83,12 +83,22 @@ class EllipsoidConfig(AutoUpdateMixin):
 
 
 @dataclass
+class StandardErrorsConfig(AutoUpdateMixin):
+    """Standard errors computation parameters."""
+    num_simulations: int = 10
+    step_size: float = 1e-2
+    seed: Optional[int] = None
+    beta_indices: Optional[List[int]] = None  # Which parameters to report SE for (default: all)
+
+
+@dataclass
 class BundleChoiceConfig(AutoUpdateMixin):
     """Unified configuration container for all BundleChoice components."""
     dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
     subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
     row_generation: RowGenerationConfig = field(default_factory=RowGenerationConfig)
     ellipsoid: EllipsoidConfig = field(default_factory=EllipsoidConfig)
+    standard_errors: StandardErrorsConfig = field(default_factory=StandardErrorsConfig)
 
     # ============================================================================
     # Factory Methods
@@ -107,6 +117,7 @@ class BundleChoiceConfig(AutoUpdateMixin):
             subproblem=SubproblemConfig(**cfg.get("subproblem", {})),
             row_generation=RowGenerationConfig(**cfg.get("row_generation", {})),
             ellipsoid=EllipsoidConfig(**cfg.get("ellipsoid", {})),
+            standard_errors=StandardErrorsConfig(**cfg.get("standard_errors", {})),
         )
 
     @classmethod
