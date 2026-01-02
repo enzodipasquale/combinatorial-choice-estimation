@@ -654,7 +654,7 @@ class RowGenerationManager(BaseEstimationManager):
                             'master_optimize', 'mpi_broadcast', 'callback', 
                             'gather_bundles', 'gather_features', 'gather_errors',
                             'compute_features', 'compute_errors', 'early_convergence_check',
-                            'subproblem_callback'}
+                            'subproblem_callback', 'iteration_overhead'}
             
             component_stats = []
             total_accounted = init_time
