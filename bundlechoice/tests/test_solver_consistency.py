@@ -40,12 +40,12 @@ def test_row_generation_vs_1slack_identical_objval():
     num_agents = 10
     num_items = 15
     num_features = 3
-    num_simuls = 1
+    num_simulations = 1
     
     # Generate data
     if rank == 0:
         modular = np.random.normal(0, 1, (num_agents, num_items, num_features-1))
-        errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+        errors = np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
         input_data = {
             "agent_data": {"modular": modular},
             "errors": errors
@@ -58,7 +58,7 @@ def test_row_generation_vs_1slack_identical_objval():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls,
+            "num_simulations": num_simulations,
         },
         "subproblem": {"name": "Greedy"},
     }

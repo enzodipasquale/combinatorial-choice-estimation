@@ -14,7 +14,7 @@ def test_row_generation_greedy():
         ScenarioLibrary.greedy()
         .with_dimensions(num_agents=250, num_items=50)
         .with_num_features(6)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 

@@ -49,7 +49,7 @@ errors_all_sims = comm.bcast(errors_all_sims, root=0)
 # Initialize
 config = {
     "dimensions": {"num_agents": num_agents, "num_items": num_items, 
-                   "num_features": num_features, "num_simuls": 1},
+                   "num_features": num_features, "num_simulations": 1},
     "subproblem": {"name": "QuadKnapsack", "settings": {"TimeLimit": 1, "MIPGap_tol": 1e-2}},
 }
 

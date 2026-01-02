@@ -2,18 +2,19 @@
 Ellipsoid method solver for modular bundle choice estimation (v2).
 This module implements the ellipsoid method for parameter estimation.
 """
+import time
+import math
 import numpy as np
 from numpy.typing import NDArray
-from datetime import datetime
-from typing import Optional, Tuple, Callable, Dict, Any
-import math
-from .base import BaseEstimationSolver
-from bundlechoice.utils import get_logger
+from typing import Optional, Callable, Dict, Any
+from .base import BaseEstimationManager
+from .result import EstimationResult
+from bundlechoice.utils import get_logger, make_timing_stats
 
 logger = get_logger(__name__)
 
 
-class EllipsoidSolver(BaseEstimationSolver):
+class EllipsoidManager(BaseEstimationManager):
     """
     Implements the ellipsoid method for parameter estimation in modular bundle choice models.
 
@@ -32,7 +33,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         theta_init: Optional[NDArray[np.float64]] = None
     ) -> None:
         """
-        Initialize the EllipsoidSolver.
+        Initialize the EllipsoidManager.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -58,152 +59,137 @@ class EllipsoidSolver(BaseEstimationSolver):
         self.theta_iter = None
         self.B_iter = None
         self.iteration_count = 0
-        self.timing_stats = None  # Store detailed timing statistics
+        self.timing_stats = None
         
         # Ellipsoid update coefficients
         n = self.num_features
         self.n = n
         self.alpha = (n**2 / (n**2 - 1))**(1/4)
         self.gamma = self.alpha * ((n-1)/(n+1))**(1/2)
-
         self.gamma_1 = (n**2 / (n**2 - 1))**(1/2)
         self.gamma_2 = self.gamma_1 * ((2 / (n + 1)))
 
-    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> EstimationResult:
         """
         Run the ellipsoid method to estimate model parameters.
 
         Args:
             callback: Optional callback function called after each iteration.
-                     Signature: callback(info: dict) where info contains:
-                     - 'iteration': Current iteration number (int)
-                     - 'theta': Current parameter estimate (np.ndarray)
-                     - 'objective': Current objective value (float)
-                     - 'best_objective': Best objective found so far (float or None)
 
         Returns:
-            np.ndarray: Estimated parameter vector.
+            EstimationResult: Result object containing theta_hat and diagnostics.
         """
         logger.info("=== ELLIPSOID METHOD ===")
-        tic = datetime.now()
+        tic = time.perf_counter()
         
-        # Initialize subproblem manager
         self.subproblem_manager.initialize_local()
-        
-        # Initialize ellipsoid
         self._initialize_ellipsoid()
         
-        # Main iteration loop
-        iteration = 0
-        vals = []
-        centers = []
-        # Use num_iters if provided, otherwise compute from solver_precision or fall back to max_iterations
+        # Determine number of iterations
         if self.ellipsoid_cfg.num_iters is not None:
             num_iters = self.ellipsoid_cfg.num_iters
         else:
-            # Compute iterations using formula: n*(n-1)*log(1/precision) where n is num_features
             num_iters = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
-        keep_last_n = min(1000, num_iters)  # Limit memory for large num_iters
+        keep_last_n = min(1000, num_iters)
 
-        # Track timing breakdown
-        timing_breakdown = {
-            'pricing': [],
-            'gradient_compute': [],
-            'ellipsoid_update': [],
-            'mpi_broadcast': []
-        }
+        vals = []
+        centers = []
+        
+        # Running sums for timing
+        total_gradient = 0.0
+        total_update = 0.0
+        total_mpi = 0.0
 
-        while iteration < num_iters:
-            iteration += 1
+        for iteration in range(1, num_iters + 1):
             logger.info(f"ELLIPSOID ITERATION {iteration}")
             logger.info(f"THETA: {np.round(self.theta_iter, 4)}")
             
-            # Check for constraint violations (non-negativity)
             violated = np.where(self.theta_iter < 0.0)[0]
 
-            direction = None
             if violated.size > 0:
-                # Handle constraint violation: use negative gradient of violated constraint
                 direction = np.zeros_like(self.theta_iter)
                 direction[violated[0]] = -1.0
                 obj_value = np.inf
             else:
-                # Use objective gradient for productive update
-                t_gradient = datetime.now()
+                t0 = time.perf_counter()
                 obj_value, gradient = self.compute_obj_and_gradient(self.theta_iter)
-                timing_breakdown['gradient_compute'].append((datetime.now() - t_gradient).total_seconds())
+                total_gradient += time.perf_counter() - t0
                 direction = gradient
                 vals.append(obj_value)
                 centers.append(self.theta_iter.copy())
                 
-                # Limit memory growth for very long runs
                 if len(centers) > keep_last_n:
                     vals = vals[-keep_last_n:]
                     centers = centers[-keep_last_n:]
 
-            # Update ellipsoid
-            t_update = datetime.now()
+            t0 = time.perf_counter()
             self._update_ellipsoid(direction)
-            timing_breakdown['ellipsoid_update'].append((datetime.now() - t_update).total_seconds())
+            total_update += time.perf_counter() - t0
             
-            # Prepare buffer on non-root ranks
             if not self.is_root():
                 self.theta_iter = np.empty(self.num_features, dtype=np.float64)
             
-            t_bcast = datetime.now()
+            t0 = time.perf_counter()
             self.theta_iter = self.comm_manager.broadcast_array(self.theta_iter, root=0)
-            timing_breakdown['mpi_broadcast'].append((datetime.now() - t_bcast).total_seconds())
+            total_mpi += time.perf_counter() - t0
             
-            # Call callback if provided
             if callback and self.is_root() and obj_value != np.inf:
                 callback({
                     'iteration': iteration,
-                    'theta': self.theta_iter.copy() if self.theta_iter is not None else None,
+                    'theta': self.theta_iter.copy(),
                     'objective': obj_value,
                     'best_objective': min(vals) if vals else None,
                 })
-            
 
-
-        elapsed = (datetime.now() - tic).total_seconds()
-        logger.info("Ellipsoid method completed %d iterations in %.2f seconds.", 
-                   num_iters, elapsed)
+        elapsed = time.perf_counter() - tic
+        logger.info("Ellipsoid method completed %d iterations in %.2f seconds.", num_iters, elapsed)
         
-        # Return best theta found, not last iteration
+        # Find best theta
         if self.is_root():
             if len(vals) > 0:
                 best_idx = np.argmin(vals)
                 best_theta = np.array(centers)[best_idx]
-                logger.info(f"Best objective: {vals[best_idx]:.4f} at iteration {best_idx+1}")
+                best_obj = vals[best_idx]
+                best_iter = best_idx + 1
+                logger.info(f"Best objective: {best_obj:.4f} at iteration {best_iter}")
             else:
-                # All iterations were constraint violations
                 best_theta = self.theta_iter
+                best_obj = None
+                best_iter = None
         else:
             best_theta = np.empty(self.num_features, dtype=np.float64)
+            best_obj = None
+            best_iter = None
         
-        # Broadcast result to all ranks
         best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
         
-        # Store timing statistics
+        # Create timing stats and result
         if self.is_root():
-            total_gradient = np.sum(timing_breakdown.get('gradient_compute', [0]))
-            total_update = np.sum(timing_breakdown.get('ellipsoid_update', [0]))
-            total_mpi = np.sum(timing_breakdown.get('mpi_broadcast', [0]))
-            
-            self.timing_stats = {
-                'total_time': elapsed,
-                'num_iterations': num_iters,
-                'gradient_time': total_gradient,
-                'update_time': total_update,
-                'mpi_time': total_mpi,
-                'gradient_time_pct': 100 * total_gradient / elapsed if elapsed > 0 else 0,
-                'update_time_pct': 100 * total_update / elapsed if elapsed > 0 else 0,
-                'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
-            }
+            self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient, total_update, total_mpi)
+            result = EstimationResult(
+                theta_hat=best_theta.copy(),
+                converged=True,
+                num_iterations=num_iters,
+                final_objective=best_obj,
+                timing=self.timing_stats,
+                iteration_history=None,
+                warnings=[] if best_obj is not None else ['All iterations were constraint violations'],
+                metadata={'best_iteration': best_iter}
+            )
         else:
             self.timing_stats = None
+            result = EstimationResult(
+                theta_hat=best_theta.copy(),
+                converged=True,
+                num_iterations=num_iters,
+                final_objective=None,
+                timing=None,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
         
-        return best_theta
+        return result
 
     def _initialize_ellipsoid(self) -> None:
         """Initialize the ellipsoid with starting parameters and matrix."""
@@ -214,12 +200,7 @@ class EllipsoidSolver(BaseEstimationSolver):
         self.B_iter = self.ellipsoid_cfg.initial_radius * np.eye(self.n)
 
     def _update_ellipsoid(self, d: NDArray[np.float64]) -> None:
-        """
-        Update the ellipsoid using the gradient.
-        
-        Args:
-            d: Direction of update.
-        """
+        """Update the ellipsoid using the gradient."""
         if self.is_root():
             dTBd = d.T @ self.B_iter @ d
             if dTBd <= 0 or not np.isfinite(dTBd):
@@ -234,7 +215,4 @@ class EllipsoidSolver(BaseEstimationSolver):
             if np.all(np.isfinite(B_new)):
                 self.B_iter = B_new
             else:
-                logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")   
-
-
-
+                logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")

@@ -7,11 +7,32 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+import numpy as np
+from numpy.typing import NDArray
 try:
     from mpi4py import MPI
 except ImportError:
     MPI = None
+
+
+# ============================================================================
+# Theta Extraction
+# ============================================================================
+
+def extract_theta(theta: Any) -> NDArray[np.float64]:
+    """
+    Extract theta array from EstimationResult or raw array.
+    
+    Args:
+        theta: Either an EstimationResult object (with theta_hat attribute) or a numpy array
+        
+    Returns:
+        Numpy array of theta values
+    """
+    if hasattr(theta, 'theta_hat'):
+        return np.asarray(theta.theta_hat, dtype=np.float64)
+    return np.asarray(theta, dtype=np.float64)
 
 
 # ============================================================================
@@ -57,6 +78,39 @@ def suppress_output():
             logging.getLogger().setLevel(old_logging_level)
 
 # ============================================================================
+# Timing Statistics
+# ============================================================================
+
+def make_timing_stats(elapsed: float, num_iterations: int,
+                      pricing_time: float = 0.0, master_time: float = 0.0, 
+                      mpi_time: float = 0.0, init_time: float = 0.0) -> Dict[str, Any]:
+    """
+    Create timing statistics dictionary from running sums.
+    
+    Args:
+        elapsed: Total elapsed time
+        num_iterations: Number of iterations completed
+        pricing_time: Total time in pricing/subproblems
+        master_time: Total time in master problem
+        mpi_time: Total time in MPI communication
+        init_time: Initialization time
+        
+    Returns:
+        Dict with timing statistics
+    """
+    return {
+        'total_time': elapsed,
+        'num_iterations': num_iterations,
+        'pricing_time': pricing_time,
+        'master_time': master_time,
+        'mpi_time': mpi_time,
+        'init_time': init_time,
+        'pricing_pct': 100 * pricing_time / elapsed if elapsed > 0 else 0,
+        'master_pct': 100 * master_time / elapsed if elapsed > 0 else 0,
+        'mpi_pct': 100 * mpi_time / elapsed if elapsed > 0 else 0,
+    }
+
+# ============================================================================
 # Timing Utilities
 # ============================================================================
 
@@ -80,4 +134,5 @@ def time_operation(name: str, timing_dict: Dict[str, float]):
         yield
     finally:
         elapsed = time.perf_counter() - start
-        timing_dict[name] = elapsed 
+        timing_dict[name] = elapsed
+

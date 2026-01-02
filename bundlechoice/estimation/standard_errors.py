@@ -232,15 +232,15 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         g_i = (1/S) sum_s x_{i,B_i^{s,*}} - x_{i,B_i^obs}
         """
-        num_simuls = len(errors_all_sims)
+        num_simulations = len(errors_all_sims)
         
         if self.is_root():
             print(f"\nComputing B matrix ({self.num_features}×{self.num_features})...")
         
         all_features_per_sim = []
-        for s in range(num_simuls):
+        for s in range(num_simulations):
             if self.is_root():
-                print(f"  Simulation {s+1}/{num_simuls}...")
+                print(f"  Simulation {s+1}/{num_simulations}...")
             
             # Update errors for this simulation
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
@@ -279,16 +279,16 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         beta_indices: NDArray[np.int64],
     ) -> Optional[NDArray[np.float64]]:
         """Compute B matrix for subset of parameters only."""
-        num_simuls = len(errors_all_sims)
+        num_simulations = len(errors_all_sims)
         num_beta = len(beta_indices)
         
         if self.is_root():
             print(f"\nComputing B matrix ({num_beta}×{num_beta})...")
         
         all_features_per_sim = []
-        for s in range(num_simuls):
+        for s in range(num_simulations):
             if self.is_root():
-                print(f"  Simulation {s+1}/{num_simuls}...")
+                print(f"  Simulation {s+1}/{num_simulations}...")
             
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
@@ -394,7 +394,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         beta_indices: NDArray[np.int64],
     ) -> Optional[NDArray[np.float64]]:
         """Compute average subgradient for subset of features only."""
-        num_simuls = len(errors_all_sims)
+        num_simulations = len(errors_all_sims)
         num_beta = len(beta_indices)
         
         obs_local = self.data_manager.local_data["obs_bundles"]
@@ -406,7 +406,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         mean_obs = obs_sum_global / self.num_agents
         
         sim_sum_local = np.zeros(num_beta)
-        for s in range(num_simuls):
+        for s in range(num_simulations):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
@@ -420,7 +420,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         sim_sum_global = np.zeros(num_beta)
         self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
-        mean_sim = (sim_sum_global / num_simuls) / self.num_agents
+        mean_sim = (sim_sum_global / num_simulations) / self.num_agents
         
         if self.is_root():
             return mean_sim - mean_obs
@@ -436,7 +436,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         Uses MPI Allreduce for efficiency.
         """
-        num_simuls = len(errors_all_sims)
+        num_simulations = len(errors_all_sims)
         K = self.num_features
         
         # Local observed features sum
@@ -450,7 +450,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         # Simulated features sum
         sim_sum_local = np.zeros(K)
-        for s in range(num_simuls):
+        for s in range(num_simulations):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
@@ -464,7 +464,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         sim_sum_global = np.zeros(K)
         self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
-        mean_sim = (sim_sum_global / num_simuls) / self.num_agents
+        mean_sim = (sim_sum_global / num_simulations) / self.num_agents
         
         if self.is_root():
             return mean_sim - mean_obs

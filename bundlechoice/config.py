@@ -39,11 +39,6 @@ class DimensionsConfig(AutoUpdateMixin):
     num_items: Optional[int] = None
     num_features: Optional[int] = None
     num_simulations: int = 1
-    # Backward compatibility alias
-    @property
-    def num_simuls(self) -> int:
-        """Backward compatibility alias for num_simulations."""
-        return self.num_simulations
 
 
 @dataclass
