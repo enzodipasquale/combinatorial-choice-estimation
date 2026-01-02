@@ -133,10 +133,9 @@ class RowGenerationManager(BaseEstimationManager):
                     features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
                     error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
                     
-                    # Encode bundle as binary string
-                    # Use hash of bundle for constraint name (avoids Gurobi 255 char limit)
-                    bundle_hash = hash(bundle.tobytes())
-                    constr_name = f"rowgen_{idx}_b{abs(bundle_hash) % 1000000000}"
+                    # BASELINE: Use binary string like main branch
+                    bundle_binary = ''.join(str(int(b)) for b in bundle)
+                    constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
                     
                     # Add constraint
                     self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
@@ -208,31 +207,37 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Gather bundles
+        # BASELINE: Match main branch exactly (no detailed timing breakdown)
+        # Gather bundles for encoding in constraint names
         t_gather_bundles = datetime.now()
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-        timing_dict['gather_bundles'] = (datetime.now() - t_gather_bundles).total_seconds()
+        gather_bundles_time = (datetime.now() - t_gather_bundles).total_seconds()
+        timing_dict['gather_bundles'] = gather_bundles_time
         
-        # Compute features locally (in parallel on all ranks), then gather
+        # Compute and gather features (break out computation vs gather)
         t_comp_features = datetime.now()
         features_local = self.feature_manager.compute_rank_features(local_pricing_results)
-        timing_dict['compute_features'] = (datetime.now() - t_comp_features).total_seconds()
+        comp_features_time = (datetime.now() - t_comp_features).total_seconds()
+        timing_dict['compute_features'] = comp_features_time
         
         t_gather_features = datetime.now()
         x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
-        timing_dict['gather_features'] = (datetime.now() - t_gather_features).total_seconds()
+        gather_features_time = (datetime.now() - t_gather_features).total_seconds()
+        timing_dict['gather_features'] = gather_features_time
         
-        # Compute errors locally (in parallel on all ranks), then gather
+        # Compute and gather errors (break out computation vs gather)
         t_comp_errors = datetime.now()
         errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
-        timing_dict['compute_errors'] = (datetime.now() - t_comp_errors).total_seconds()
+        comp_errors_time = (datetime.now() - t_comp_errors).total_seconds()
+        timing_dict['compute_errors'] = comp_errors_time
         
         t_gather_errors = datetime.now()
         errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
-        timing_dict['gather_errors'] = (datetime.now() - t_gather_errors).total_seconds()
+        gather_errors_time = (datetime.now() - t_gather_errors).total_seconds()
+        timing_dict['gather_errors'] = gather_errors_time
         
-        # Total MPI gather time (sum of gather operations only, not computation)
-        timing_dict['mpi_gather'] = timing_dict.get('gather_bundles', 0) + timing_dict.get('gather_features', 0) + timing_dict.get('gather_errors', 0)
+        # Total MPI gather time (sum of gather operations only, not including computation)
+        timing_dict['mpi_gather'] = gather_bundles_time + gather_features_time + gather_errors_time
         
         stop = False
         if self.is_root():
@@ -266,11 +271,12 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_prep'] = (datetime.now() - t_master_prep).total_seconds()
             
             t_master_update = datetime.now()
-            # Add constraints with names encoding index and bundle (hash for long bundles)
+            # Add constraints with names encoding index and bundle (binary string - BASELINE: match main)
             if len(rows_to_add) > 0 and bundles_sim is not None:
                 for idx in rows_to_add:
-                    # Use simple index-based name for performance
-                    constr_name = f"rowgen_{idx}"
+            # FEATURE TEST 1: Hash-based naming (avoids Gurobi 255 char limit)
+            bundle_hash = hash(bundles_sim[idx].tobytes())
+            constr_name = f"rowgen_{idx}_b{abs(bundle_hash) % 1000000000}"
                     self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
@@ -289,7 +295,7 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_update'] = 0.0
             timing_dict['master_optimize'] = 0.0
         
-        # Broadcast theta and stop flag together (single broadcast reduces latency)
+        # FEATURE TEST 2: broadcast_array_with_flag (buffer-based, faster than pickle)
         t_mpi_broadcast = datetime.now()
         # Non-root ranks must pre-allocate theta_val for buffer-based broadcast
         if not self.is_root() and self.theta_val is None:
@@ -397,49 +403,21 @@ class RowGenerationManager(BaseEstimationManager):
         init_time = (datetime.now() - t_init).total_seconds()
         iteration = 0
         
-        # Timing tracking (production - minimal overhead)
+        # BASELINE: Match main branch timing breakdown exactly
         timing_breakdown = {
             'pricing': [],
             'mpi_gather': [],
             'gather_bundles': [],
             'gather_features': [],
             'gather_errors': [],
-            'compute_features': [],
-            'compute_errors': [],
             'master_prep': [],
             'master_update': [],
             'master_optimize': [],
             'mpi_broadcast': [],
             'callback': [],
-            'subproblem_callback': [],
-            'iteration_overhead': [],
         }
         
-        # Rank distribution verification (once at start) - all ranks must participate
-        t_rank_verify = datetime.now()
-        from mpi4py import MPI
-        num_local_agents_all = self.comm_manager.comm.allgather(
-            self.data_manager.num_local_agents if self.data_manager else 0
-        )
-        if self.is_root():
-            num_local_agents_array = np.array(num_local_agents_all)
-            logger.info("=" * 70)
-            logger.info("RANK DISTRIBUTION VERIFICATION")
-            logger.info("=" * 70)
-            logger.info(f"Total ranks: {len(num_local_agents_array)}")
-            logger.info(f"Agents per rank: min={num_local_agents_array.min()}, "
-                       f"max={num_local_agents_array.max()}, "
-                       f"mean={num_local_agents_array.mean():.2f}, "
-                       f"std={num_local_agents_array.std():.2f}")
-            imbalance = num_local_agents_array.max() - num_local_agents_array.min()
-            if imbalance > 1:
-                logger.warning(f"Load imbalance detected: {imbalance} agents difference")
-            else:
-                logger.info("Load distribution is balanced")
-            logger.info("=" * 70)
-        rank_verify_time = (datetime.now() - t_rank_verify).total_seconds()
-        # Add to init_time since it happens during initialization
-        init_time += rank_verify_time
+        # BASELINE: Remove rank verification (not in main branch, adds overhead)
         
         while iteration < self.row_generation_cfg.max_iters:
             t_iter_start = datetime.now()
@@ -522,7 +500,8 @@ class RowGenerationManager(BaseEstimationManager):
         if iteration >= self.row_generation_cfg.max_iters and self.is_root():
             logger.info("Row generation reached max iterations (%d) in %.2f seconds.", iteration, elapsed)
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-            self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown, obj_val, self.theta_val)
+            # BASELINE: Disable timing summary (not in main branch, adds overhead)
+            # self._log_timing_summary(init_time, elapsed, iteration, timing_breakdown, obj_val, self.theta_val)
         
         # Store timing statistics for access later
         if self.is_root():
@@ -724,10 +703,9 @@ class RowGenerationManager(BaseEstimationManager):
             features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
             error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
             
-            # Encode bundle as binary string
-            # Use hash of bundle for constraint name (avoids Gurobi 255 char limit)
-            bundle_hash = hash(bundle.tobytes())
-            constr_name = f"rowgen_{idx}_b{abs(bundle_hash) % 1000000000}"
+            # BASELINE: Use binary string like main branch
+            bundle_binary = ''.join(str(int(b)) for b in bundle)
+            constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
             
             # Add constraint
             self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
