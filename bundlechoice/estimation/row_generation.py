@@ -209,7 +209,6 @@ class RowGenerationManager(BaseEstimationManager):
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
         # Gather bundles, features, and errors
         # Compute features/errors in parallel on each rank, then gather (faster than computing on root)
-        t_mpi_gather_start = datetime.now()
         
         # Gather bundles
         t_gather_bundles_start = datetime.now()
@@ -239,8 +238,8 @@ class RowGenerationManager(BaseEstimationManager):
         gather_errors_time = (datetime.now() - t_gather_errors_start).total_seconds()
         timing_dict['gather_errors'] = gather_errors_time
         
-        # Total MPI gather time (all gather operations)
-        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
+        # Total MPI gather time (sum of gather operations only, not computation)
+        timing_dict['mpi_gather'] = gather_bundles_time + gather_features_time + gather_errors_time
         
         stop = False
         if self.is_root():
@@ -411,6 +410,8 @@ class RowGenerationManager(BaseEstimationManager):
             'pricing': [],
             'mpi_gather': [],
             'gather_bundles': [],
+            'gather_features': [],
+            'gather_errors': [],
             'compute_features': [],
             'compute_errors': [],
             'master_prep': [],
@@ -418,9 +419,12 @@ class RowGenerationManager(BaseEstimationManager):
             'master_optimize': [],
             'mpi_broadcast': [],
             'callback': [],
+            'subproblem_callback': [],
+            'iteration_overhead': [],
         }
         
         # Rank distribution verification (once at start) - all ranks must participate
+        t_rank_verify = datetime.now()
         from mpi4py import MPI
         num_local_agents_all = self.comm_manager.comm.allgather(
             self.data_manager.num_local_agents if self.data_manager else 0
@@ -441,8 +445,12 @@ class RowGenerationManager(BaseEstimationManager):
             else:
                 logger.info("Load distribution is balanced")
             logger.info("=" * 70)
+        rank_verify_time = (datetime.now() - t_rank_verify).total_seconds()
+        # Add to init_time since it happens during initialization
+        init_time += rank_verify_time
         
         while iteration < self.row_generation_cfg.max_iters:
+            t_iter_start = datetime.now()
             logger.info(f"ITERATION {iteration + 1}")
             iter_timing = {}
             
@@ -465,11 +473,6 @@ class RowGenerationManager(BaseEstimationManager):
             # Master iteration
             stop = self._master_iteration(local_pricing_results, iter_timing) 
             
-            # Store timing breakdown (including enhanced diagnostics)
-            for key in timing_breakdown.keys():
-                if key in iter_timing:
-                    timing_breakdown[key].append(iter_timing[key])
-            
             # Callback phase
             if callback:
                 t_callback = datetime.now()
@@ -481,7 +484,18 @@ class RowGenerationManager(BaseEstimationManager):
                         'pricing_time': iter_timing['pricing'],
                         'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
                     })
-                timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
+                iter_timing['callback'] = (datetime.now() - t_callback).total_seconds()
+            
+            # Track iteration overhead (logger calls, loop overhead, etc.)
+            t_iter_end = datetime.now()
+            iter_total_time = (t_iter_end - t_iter_start).total_seconds()
+            iter_accounted = sum([iter_timing.get(k, 0) for k in timing_breakdown.keys() if k != 'iteration_overhead'])
+            iter_timing['iteration_overhead'] = max(0.0, iter_total_time - iter_accounted)
+            
+            # Store timing breakdown (including enhanced diagnostics)
+            for key in timing_breakdown.keys():
+                if key in iter_timing:
+                    timing_breakdown[key].append(iter_timing[key])
             
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
