@@ -1,109 +1,93 @@
-#!/bin/env python
+#!/usr/bin/env python
 """
-Quick Local Test: Small problem to verify timing fixes work
-Fast test for local agent - should complete in seconds, not minutes
+Small local test script for timing verification.
+Uses small problem size (32 agents, 20 items, 2 simuls) - completes in seconds.
 """
 
-from bundlechoice import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
 import numpy as np
+from bundlechoice import BundleChoice
 from mpi4py import MPI
-import sys
+import os
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# SMALL test parameters - fast to solve
-num_agents = 32   # Small (was 512)
-num_items = 20    # Small (was 200)
-num_modular_agent_features = 2
-num_modular_item_features = 2
-num_quadratic_item_features = 2
-num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_item_features
-num_simuls = 2    # Small (was 10)
-sigma = 5.0
-
+# Small test problem (fast, completes in seconds)
 if rank == 0:
-    print("=" * 70)
-    print("LOCAL QUICK TEST - TIMING VERIFICATION")
-    print("=" * 70)
-    print(f"Problem Dimensions:")
-    print(f"  • Agents: {num_agents}")
-    print(f"  • Items: {num_items}")
-    print(f"  • Features: {num_features}")
-    print(f"  • Simulations: {num_simuls}")
-    print(f"  • MPI Ranks: {comm.Get_size()}")
-    print("=" * 70)
-    print()
-    sys.stdout.flush()
+    num_agents = 32
+    num_items = 20
+    num_features = 6
+    num_simuls = 2
+    
+    np.random.seed(42)
+    
+    # Generate simple test data
+    # Quadratic features must be non-negative with zero diagonal (upper triangular)
+    quadratic = np.abs(np.random.randn(num_items, num_items, 2))
+    # Make upper triangular and zero diagonal
+    for k in range(2):
+        quadratic[:, :, k] = np.triu(quadratic[:, :, k], k=1)
+    
+    # Feature breakdown: 1 agent modular + 1 item modular + 2 quadratic = 4 features
+    # But config says 6, so let's use: 2 agent modular + 2 item modular + 2 quadratic = 6
+    item_data = {
+        "modular": np.random.randn(num_items, 2),  # 2 item modular features
+        "quadratic": quadratic,  # 2 quadratic features
+        "weights": np.ones(num_items)
+    }
+    agent_data = {
+        "modular": np.random.randn(num_agents, num_items, 2),  # 2 agent modular features
+        "capacity": np.ones(num_agents) * 5
+    }
+    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    obs_bundle = np.random.rand(num_agents, num_items) > 0.5
+    
+    input_data = {
+        "item_data": item_data,
+        "agent_data": agent_data,
+        "errors": errors,
+        "obs_bundle": obs_bundle
+    }
+else:
+    input_data = None
+    num_agents = None
+    num_items = None
+    num_features = None
+    num_simuls = None
 
-# Generate data using factory
-theta_star = np.ones(num_features) * 2.0
+# Broadcast dimensions
+num_agents = comm.bcast(num_agents, root=0)
+num_items = comm.bcast(num_items, root=0)
+num_features = comm.bcast(num_features, root=0)
+num_simuls = comm.bcast(num_simuls, root=0)
 
-scenario = (
-    ScenarioLibrary.quadratic_supermodular()
-    .with_dimensions(num_agents=num_agents, num_items=num_items)
-    .with_feature_counts(
-        num_mod_agent=num_modular_agent_features,
-        num_mod_item=num_modular_item_features,
-        num_quad_item=num_quadratic_item_features,
-    )
-    .with_sigma(sigma)
-    .with_num_simuls(num_simuls)
-    .build()
-)
-
-# Prepare scenario (generates data and observed bundles)
-prepared = scenario.prepare(comm=comm, seed=42, theta=theta_star)
-
-# Extract estimation data
-estimation_data = prepared.estimation_data
-
-# Update config to have correct num_simuls for estimation
-config = prepared.config.copy()
-config["dimensions"]["num_simuls"] = num_simuls
-
-# Initialize BundleChoice and load data
-if rank == 0:
-    print("Initializing BundleChoice...")
-    sys.stdout.flush()
+# Configure and run
+config = {
+    "dimensions": {
+        "num_agents": num_agents,
+        "num_items": num_items,
+        "num_features": num_features,
+        "num_simuls": num_simuls
+    },
+    "subproblem": {
+        "name": "QuadSupermodularNetwork",
+        "settings": {"TimeLimit": 5, "MIPGap_tol": 1e-2}
+    },
+    "row_generation": {
+        "max_iters": 10,
+        "tolerance_optimality": 0.01
+    }
+}
 
 bc = BundleChoice()
 bc.load_config(config)
-bc.data.load_and_scatter(estimation_data)
+bc.data.load_and_scatter(input_data)
 bc.features.build_from_data()
 bc.subproblems.load()
 
 # Run estimation
-if rank == 0:
-    print("Starting row generation estimation...")
-    print()
-    sys.stdout.flush()
+result = bc.row_generation.solve()
 
-theta_hat = bc.row_generation.solve()
-
-# Print results
 if rank == 0:
-    print()
-    print("=" * 70)
-    print("TEST COMPLETE")
-    print("=" * 70)
-    if theta_hat is not None:
-        theta_array = theta_hat.theta_hat if hasattr(theta_hat, 'theta_hat') else theta_hat
-        print(f"Theta estimate shape: {theta_array.shape}")
-    
-    # Print enhanced diagnostics if available
-    if hasattr(bc.row_generation, 'timing_stats') and bc.row_generation.timing_stats:
-        stats = bc.row_generation.timing_stats
-        print()
-        print("=" * 70)
-        print("TIMING SUMMARY")
-        print("=" * 70)
-        print(f"Total runtime: {stats.get('total_time', 0):.2f}s")
-        print(f"MPI gather time: {stats.get('mpi_time', 0):.2f}s ({stats.get('mpi_time_pct', 0):.1f}%)")
-        print()
-        print("Note: Full timing breakdown should appear in 'Timing Statistics:' section above.")
-        print("=" * 70)
-    
-    sys.stdout.flush()
+    print(f"\n{result.summary()}")
 
