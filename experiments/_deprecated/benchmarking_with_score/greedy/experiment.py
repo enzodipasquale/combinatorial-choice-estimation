@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Add bundlechoice to path BEFORE importing bundlechoice
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 import numpy as np
 import pandas as pd
 from mpi4py import MPI
@@ -7,8 +11,6 @@ from bundlechoice import BundleChoice
 from bundlechoice.scenarios import ScenarioLibrary
 from datetime import datetime
 
-# Add bundlechoice to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
