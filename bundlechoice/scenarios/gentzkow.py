@@ -28,7 +28,7 @@ class GentzkowParams:
     num_modular_agent_features: int = 2
     num_modular_item_features: int = 2
     num_quadratic_item_features: int = 2
-    num_simuls: int = 1
+    num_simulations: int = 1
     sigma: float = 5.0
     sigma_time_invariant: float = 2.0  # Standard deviation for time-invariant error component
     time_invariant_alpha: float = 1.0  # Diffusion parameter for graph Laplacian correlation (alpha > 0)
@@ -136,8 +136,8 @@ class GentzkowScenarioBuilder:
             raise ValueError(f"rho must be in [0,1], got {rho}")
         return GentzkowScenarioBuilder(replace(self._params, time_invariant_rho=rho), self._custom_theta)
 
-    def with_num_simuls(self, num_simuls: int) -> "GentzkowScenarioBuilder":
-        return GentzkowScenarioBuilder(replace(self._params, num_simuls=num_simuls), self._custom_theta)
+    def with_num_simulations(self, num_simulations: int) -> "GentzkowScenarioBuilder":
+        return GentzkowScenarioBuilder(replace(self._params, num_simulations=num_simulations), self._custom_theta)
 
     def with_theta(self, theta: np.ndarray) -> "GentzkowScenarioBuilder":
         """Set custom theta vector for bundle generation."""
@@ -220,7 +220,7 @@ class GentzkowScenarioBuilder:
                     "num_agents": params.num_agents,
                     "num_items": params.num_items,
                     "num_features": params.num_features,
-                    "num_simuls": 1,  # Always 1 for generation stage
+                    "num_simulations": 1,  # Always 1 for generation stage
                 },
                 "subproblem": {"name": "QuadSupermodularNetwork"},
                 "row_generation": {
@@ -358,7 +358,7 @@ class GentzkowScenarioBuilder:
             if rank == 0:
                 # For estimation, generate errors with same structure
                 # Shape is (num_simuls, num_agents, num_items)
-                estimation_errors = np.zeros((params.num_simuls, params.num_agents, params.num_items))
+                estimation_errors = np.zeros((params.num_simulations, params.num_agents, params.num_items))
                 
                 # Time-invariant errors are the same across all simulations (they don't depend on time)
                 # Generate once and reuse (skip if sigma_time_invariant=0)
@@ -387,14 +387,14 @@ class GentzkowScenarioBuilder:
                         )
                     
                     # Generate i.i.d. errors for each simulation (these vary across simulations)
-                    for simul in range(params.num_simuls):
+                    for simul in range(params.num_simulations):
                         iid_errors = generator.generate_errors(
                             (params.num_agents, params.num_items), params.sigma
                         )
                         estimation_errors[simul] = iid_errors + time_invariant_errors
                 else:
                     # No time-invariant component, just i.i.d. errors
-                    for simul in range(params.num_simuls):
+                    for simul in range(params.num_simulations):
                         iid_errors = generator.generate_errors(
                             (params.num_agents, params.num_items), params.sigma
                         )
@@ -430,7 +430,7 @@ class GentzkowScenarioBuilder:
                 "num_items_per_period": params.num_items_per_period,
                 "num_periods": params.num_periods,
                 "num_features": params.num_features,
-                "num_simuls": params.num_simuls,
+                "num_simulations": params.num_simulations,
                 "sigma": params.sigma,
             },
         )

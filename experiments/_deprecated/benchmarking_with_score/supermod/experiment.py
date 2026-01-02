@@ -1,8 +1,13 @@
+import sys
 import os
+
+# Add bundlechoice to path BEFORE importing bundlechoice
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 import numpy as np
 import pandas as pd
 from mpi4py import MPI
-from bundlechoice.core import BundleChoice
+from bundlechoice import BundleChoice
 from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 from datetime import datetime
@@ -17,7 +22,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/supermod"
 # Define dimensions
 num_agents = 1000
 num_items = 100
-num_simuls = 1
+num_simulations = 1
 modular_agent_features = 5
 quadratic_item_features = 1
 num_features = modular_agent_features + quadratic_item_features
@@ -34,7 +39,7 @@ scenario = (
         num_quad_agent=0,
         num_quad_item=quadratic_item_features,
     )
-    .with_num_simuls(num_simuls)
+    .with_num_simulations(num_simulations)
     .with_sigma(sigma)
     .with_agent_modular_config(multiplier=-5.0, mean=0.0, std=1.0)  # Match manual: -5*abs(normal) (apply_abs is always True)
     .with_quadratic_method(
@@ -84,7 +89,7 @@ if rank == 0:
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "subproblem": quadsupermod_experiment.subproblem_cfg.name,
         "sigma": sigma,
         **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},
