@@ -133,7 +133,7 @@ class GreedyScenarioBuilder:
                     "num_agents": params.num_agents,
                     "num_items": params.num_items,
                     "num_features": params.num_features,
-                    "num_simuls": 1,  # Always 1 for generation stage
+                    "num_simulations": 1,  # Always 1 for generation stage
                 },
                 "subproblem": {"name": "Greedy"},
                 "row_generation": {
@@ -252,7 +252,7 @@ class GreedyScenarioBuilder:
             estimation_data = None
             if rank == 0:
                 estimation_errors = generator.generate_errors(
-                    (params.num_simuls, params.num_agents, params.num_items), params.sigma
+                    (params.num_simulations, params.num_agents, params.num_items), params.sigma
                 )
                 estimation_data = {
                     "agent_data": generation_data["agent_data"],
@@ -278,7 +278,7 @@ class GreedyScenarioBuilder:
                 "num_agents": params.num_agents,
                 "num_items": params.num_items,
                 "num_features": params.num_features,
-                "num_simuls": params.num_simuls,
+                "num_simulations": params.num_simulations,
                 "sigma": params.sigma,
             },
         )
