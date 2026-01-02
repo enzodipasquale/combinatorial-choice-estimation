@@ -32,7 +32,7 @@ class QuadraticKnapsackParams:
     num_agent_quadratic_features: int = 1
     num_item_modular_features: int = 1
     num_item_quadratic_features: int = 1
-    num_simuls: int = 1
+    num_simulations: int = 1
     sigma: float = 1.0
     agent_config: ModularAgentConfig = field(
         default_factory=lambda: ModularAgentConfig(apply_abs=False)
@@ -109,9 +109,9 @@ class QuadraticKnapsackScenarioBuilder:
     def with_sigma(self, sigma: float) -> "QuadraticKnapsackScenarioBuilder":
         return QuadraticKnapsackScenarioBuilder(replace(self._params, sigma=sigma))
 
-    def with_num_simuls(self, num_simuls: int) -> "QuadraticKnapsackScenarioBuilder":
+    def with_num_simulations(self, num_simulations: int) -> "QuadraticKnapsackScenarioBuilder":
         return QuadraticKnapsackScenarioBuilder(
-            replace(self._params, num_simuls=num_simuls)
+            replace(self._params, num_simulations=num_simulations)
         )
 
     def with_weight_config(
@@ -286,7 +286,7 @@ class QuadraticKnapsackScenarioBuilder:
                     "num_agents": params.num_agents,
                     "num_items": params.num_items,
                     "num_features": params.num_features,
-                    "num_simuls": 1,  # Always 1 for generation stage
+                    "num_simulations": 1,  # Always 1 for generation stage
                 },
                 "subproblem": {
                     "name": "QuadKnapsack",
@@ -397,7 +397,7 @@ class QuadraticKnapsackScenarioBuilder:
             estimation_data = None
             if rank == 0:
                 estimation_errors = generator.generate_errors(
-                    (params.num_simuls, params.num_agents, params.num_items), params.sigma
+                    (params.num_simulations, params.num_agents, params.num_items), params.sigma
                 )
                 estimation_data = {
                     "item_data": generation_data["item_data"],
@@ -421,7 +421,7 @@ class QuadraticKnapsackScenarioBuilder:
                 "num_agents": params.num_agents,
                 "num_items": params.num_items,
                 "num_features": params.num_features,
-                "num_simuls": params.num_simuls,
+                "num_simulations": params.num_simulations,
                 "sigma": params.sigma,
             },
         )

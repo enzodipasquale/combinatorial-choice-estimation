@@ -1,8 +1,13 @@
+import sys
 import os
+
+# Add bundlechoice to path BEFORE importing bundlechoice
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 import numpy as np
 import pandas as pd
 from mpi4py import MPI
-from bundlechoice.core import BundleChoice
+from bundlechoice import BundleChoice
 from bundlechoice.scenarios import ScenarioLibrary
 from datetime import datetime
 comm = MPI.COMM_WORLD
@@ -16,7 +21,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/knapsack"
 # Define dimensions
 num_agents = 500
 num_items = 100
-num_simuls = 1
+num_simulations = 1
 modular_agent_features = 3
 modular_item_features = 2
 num_features = modular_agent_features + modular_item_features
@@ -28,7 +33,7 @@ scenario = (
     ScenarioLibrary.linear_knapsack()
     .with_dimensions(num_agents=num_agents, num_items=num_items)
     .with_feature_counts(num_agent_features=modular_agent_features, num_item_features=modular_item_features)
-    .with_num_simuls(num_simuls)
+    .with_num_simulations(num_simulations)
     .with_sigma(sigma)
     .with_capacity_config(mean_multiplier=0.5, lower_multiplier=0.85, upper_multiplier=1.15)  # Match manual
     .build()
@@ -79,7 +84,7 @@ if rank == 0:
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "subproblem": knapsack_experiment.subproblem_cfg.name,
         "sigma": sigma,
         **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},

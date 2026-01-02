@@ -19,7 +19,7 @@ from . import utils
 class AirlineParams:
     num_agents: int = 200
     num_cities: int = 10  # C cities
-    num_simuls: int = 1
+    num_simulations: int = 1
     sigma: float = 1.0
     theta_star: np.ndarray = field(default_factory=lambda: np.array([1.0, 1.0, 1.0, 0.1]))
     num_modular_features: int = 3  # Number of modular features (x_j^T θ^mod)
@@ -55,8 +55,8 @@ class AirlineScenarioBuilder:
         theta[-1] = self._params.theta_gs
         return AirlineScenarioBuilder(replace(self._params, num_modular_features=num_modular_features, theta_star=theta))
 
-    def with_num_simuls(self, num_simuls: int) -> "AirlineScenarioBuilder":
-        return AirlineScenarioBuilder(replace(self._params, num_simuls=num_simuls))
+    def with_num_simulations(self, num_simulations: int) -> "AirlineScenarioBuilder":
+        return AirlineScenarioBuilder(replace(self._params, num_simulations=num_simulations))
 
     def with_sigma(self, sigma: float) -> "AirlineScenarioBuilder":
         return AirlineScenarioBuilder(replace(self._params, sigma=sigma))
@@ -110,7 +110,7 @@ class AirlineScenarioBuilder:
                     "num_agents": params.num_agents,
                     "num_items": num_items,
                     "num_features": params.num_modular_features + 1,  # modular + congestion
-                    "num_simuls": 1,
+                    "num_simulations": 1,
                 },
                 "subproblem": {"name": "Greedy"},
                 "row_generation": {
@@ -197,7 +197,7 @@ class AirlineScenarioBuilder:
             estimation_data = None
             if rank == 0:
                 estimation_errors = generator.generate_errors(
-                    (params.num_simuls, params.num_agents, num_items), params.sigma
+                    (params.num_simulations, params.num_agents, num_items), params.sigma
                 )
                 estimation_data = {
                     "agent_data": generation_data["agent_data"],
@@ -222,7 +222,7 @@ class AirlineScenarioBuilder:
                 "num_items": num_items,
                 "num_cities": params.num_cities,
                 "num_features": params.num_modular_features + 1,
-                "num_simuls": params.num_simuls,
+                "num_simulations": params.num_simulations,
                 "sigma": params.sigma,
                 "theta_gs": params.theta_gs,
             },
