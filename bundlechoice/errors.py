@@ -13,7 +13,6 @@ from typing import Optional, Dict, List, Any
 
 class BundleChoiceError(Exception):
     """Base exception for all BundleChoice errors."""
-    pass
 
 
 # ============================================================================
@@ -158,7 +157,6 @@ class SolverError(BundleChoiceError):
 
 class SubproblemError(SolverError):
     """Raised when subproblem solving fails (infeasibility, numerical issues)."""
-    pass
 
 # ============================================================================
 # Configuration Errors

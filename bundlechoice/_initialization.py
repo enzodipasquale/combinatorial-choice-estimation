@@ -12,27 +12,11 @@ from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 from bundlechoice.estimation import ColumnGenerationManager, RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.estimation.inequalities import InequalitiesManager
+from bundlechoice.errors import SetupError
 
-
-# ============================================================================
-# Initialization Functions
-# ============================================================================
 
 def try_init_data_manager(bc: Any) -> DataManager:
-    """
-    Initialize the DataManager if dimensions_cfg is set and not already initialized.
-    
-    Args:
-        bc: BundleChoice instance
-        
-    Returns:
-        DataManager: The initialized DataManager instance
-        
-    Raises:
-        SetupError: If dimensions_cfg is not set
-    """
-    from bundlechoice.errors import SetupError
-    
+    """Initialize DataManager if dimensions_cfg is set."""
     if bc.config is None or bc.config.dimensions is None:
         raise SetupError(
             "Cannot initialize data manager - dimensions configuration not loaded",
@@ -48,8 +32,6 @@ def try_init_data_manager(bc: Any) -> DataManager:
 
 def try_init_feature_manager(bc: Any) -> FeatureManager:
     """Initialize FeatureManager if dimensions_cfg is set."""
-    from bundlechoice.errors import SetupError
-    
     if bc.config is None or bc.config.dimensions is None:
         raise SetupError(
             "Cannot initialize feature manager - dimensions configuration not loaded",
@@ -66,8 +48,6 @@ def try_init_feature_manager(bc: Any) -> FeatureManager:
 
 def try_init_subproblem_manager(bc: Any) -> SubproblemManager:
     """Initialize SubproblemManager if subproblem_cfg is set."""
-    from bundlechoice.errors import SetupError
-    
     if bc.data_manager is None or bc.feature_manager is None or bc.config is None or bc.config.subproblem is None:
         missing = []
         if bc.config is None or bc.config.subproblem is None:
@@ -100,8 +80,6 @@ def try_init_subproblem_manager(bc: Any) -> SubproblemManager:
 
 def try_init_row_generation_manager(bc: Any) -> RowGenerationManager:
     """Initialize RowGenerationManager if not already present."""
-    from bundlechoice.errors import SetupError
-    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
         missing = []
         if bc.data_manager is None:
@@ -131,8 +109,6 @@ def try_init_row_generation_manager(bc: Any) -> RowGenerationManager:
 
 def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> EllipsoidManager:
     """Initialize EllipsoidManager if not already present."""
-    from bundlechoice.errors import SetupError
-    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.ellipsoid is None:
         missing = []
         if bc.data_manager is None:
@@ -163,8 +139,6 @@ def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> Ell
 
 def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
     """Initialize InequalitiesManager if required managers are set."""
-    from bundlechoice.errors import SetupError
-    
     missing_managers = []
     if bc.data_manager is None:
         missing_managers.append("DataManager")
@@ -193,8 +167,6 @@ def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
 
 def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None) -> ColumnGenerationManager:
     """Initialize ColumnGenerationManager if not already present."""
-    from bundlechoice.errors import SetupError
-    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None or bc.config.row_generation is None:
         missing = []
         if bc.data_manager is None:
@@ -225,8 +197,6 @@ def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None
 
 def try_init_standard_errors_manager(bc: Any) -> StandardErrorsManager:
     """Initialize StandardErrorsManager if not already present."""
-    from bundlechoice.errors import SetupError
-    
     if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None:
         missing = []
         if bc.data_manager is None:

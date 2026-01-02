@@ -1,12 +1,11 @@
+import time
 import numpy as np
-from datetime import datetime
-from typing import Tuple, List, Optional, Any, Dict
+from typing import Tuple, Optional, Any
 from numpy.typing import NDArray
-import logging
 import gurobipy as gp
-from gurobipy import GRB
-from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.utils import get_logger
 from .base import BaseEstimationManager
+
 logger = get_logger(__name__)
 
 
@@ -44,7 +43,7 @@ class InequalitiesManager(BaseEstimationManager):
             np.ndarray: Estimated parameter vector theta
         """
         logger.info("=== INEQUALITIES SOLVER ===")
-        tic = datetime.now()
+        tic = time.perf_counter()
         
         model = gp.Model()
         model.setParam('OutputFlag', 0)
@@ -55,7 +54,7 @@ class InequalitiesManager(BaseEstimationManager):
         
         model.optimize()
         
-        elapsed = (datetime.now() - tic).total_seconds()
+        elapsed = time.perf_counter() - tic
         logger.info(f"Elapsed time: {elapsed:.2f} seconds")
         
         return theta.X

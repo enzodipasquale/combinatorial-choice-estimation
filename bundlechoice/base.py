@@ -43,8 +43,13 @@ class HasDimensions:
 
     @property
     def num_simuls(self) -> int:
-        """Number of simulation runs."""
+        """Number of simulation runs (alias for num_simulations)."""
         return self.dimensions_cfg.num_simuls if self.dimensions_cfg else 1
+
+    @property
+    def num_simulations(self) -> int:
+        """Number of simulation runs."""
+        return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
 
 class HasConfig:
     """Mixin for configuration access (subproblem_cfg, row_generation_cfg, etc.)."""
