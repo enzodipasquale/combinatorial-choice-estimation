@@ -14,7 +14,7 @@ def test_row_generation_1slack_plain_single_item():
     num_modular_agent_features = 4
     num_modular_item_features = 1
     num_features = num_modular_agent_features + num_modular_item_features
-    num_simuls = 1
+    num_simulations = 1
     sigma = 1
     seed = 42
     
@@ -23,7 +23,7 @@ def test_row_generation_1slack_plain_single_item():
         ScenarioLibrary.plain_single_item()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_feature_counts(num_agent_features=num_modular_agent_features, num_item_features=num_modular_item_features)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .with_correlation(enabled=False)  # No correlation in this test
         .build()

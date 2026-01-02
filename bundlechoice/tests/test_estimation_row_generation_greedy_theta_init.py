@@ -17,7 +17,7 @@ def test_row_generation_greedy_theta_init_same_problem():
         ScenarioLibrary.greedy()
         .with_dimensions(num_agents=100, num_items=100)
         .with_num_features(6)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 
@@ -86,7 +86,7 @@ def test_row_generation_greedy_theta_init_helps_convergence():
         ScenarioLibrary.greedy()
         .with_dimensions(num_agents=100, num_items=100)
         .with_num_features(6)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 

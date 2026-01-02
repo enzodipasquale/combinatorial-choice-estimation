@@ -17,7 +17,7 @@ def run_with_seed(seed: int):
     num_agents = 1000
     num_items = 80
     num_features = num_agent_features + num_item_features
-    num_simuls = 1
+    num_simulations = 1
     sigma = 3
     
     # Generate data using factory
@@ -29,7 +29,7 @@ def run_with_seed(seed: int):
             num_item_features=num_item_features,
         )
         .with_sigma(sigma)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_weight_config(
             distribution="uniform",
             low=1,
@@ -66,8 +66,8 @@ def run_with_seed(seed: int):
     
     # Naive estimation
     bc_naive = BundleChoice()
-    num_simuls_actual = prepared.metadata.get("num_simuls", 1)
-    prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+    num_simulations_actual = prepared.metadata.get("num_simulations", 1)
+    prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
     prepared.config["row_generation"]["max_iters"] = 500
     prepared.config["row_generation"]["tolerance_optimality"] = 0.001
     prepared.config["row_generation"]["max_slack_counter"] = 5
@@ -82,7 +82,7 @@ def run_with_seed(seed: int):
         est_data_blp["item_data"] = est_data_blp["item_data"].copy()
         est_data_blp["item_data"]["modular"] = np.eye(num_items)
         prepared.config["dimensions"]["num_features"] = num_agent_features + num_items
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-1e8] * num_items  # Very generous bounds
         prepared.config["row_generation"]["theta_ubs"] = 1e8  # Very generous bounds
         prepared.config["row_generation"]["max_iters"] = 500
@@ -94,7 +94,7 @@ def run_with_seed(seed: int):
     else:
         est_data_blp = None
         prepared.config["dimensions"]["num_features"] = num_agent_features + num_items
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-1e8] * num_items  # Very generous bounds
         prepared.config["row_generation"]["theta_ubs"] = 1e8  # Very generous bounds
         prepared.config["row_generation"]["max_iters"] = 500

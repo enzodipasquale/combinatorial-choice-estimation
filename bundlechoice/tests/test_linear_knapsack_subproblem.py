@@ -4,7 +4,7 @@ from bundlechoice.core import BundleChoice
 
 def test_generate_data_linear():
     # Simulate config and data
-    num_agents, num_items, num_simuls = 32, 6, 1
+    num_agents, num_items, num_simulations = 32, 6, 1
     agent_modular_dim = 3
     item_modular_dim = 2
     np.random.seed(123)
@@ -16,7 +16,7 @@ def test_generate_data_linear():
         "modular": np.random.normal(0, 1, (num_agents, num_items, agent_modular_dim)),
         "capacity": np.random.randint(1, 100, size=num_agents),
     }
-    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    errors = np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
     input_data = {  
         "item_data": item_data, 
         "agent_data": agent_data, 
@@ -35,7 +35,7 @@ def test_generate_data_linear():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls
+            "num_simulations": num_simulations
         },
         "subproblem": {
             "name": "LinearKnapsack",

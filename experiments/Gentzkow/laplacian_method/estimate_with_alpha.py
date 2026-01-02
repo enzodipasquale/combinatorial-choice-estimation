@@ -24,7 +24,7 @@ def generate_errors_with_alpha(
     sigma_time_invariant: float,
     alpha: float,
     item_quadratic: np.ndarray,
-    num_simuls: int = 1,
+    num_simulations: int = 1,
 ) -> np.ndarray:
     """
     Generate errors with time-invariant component having correlation structure based on alpha.
@@ -39,15 +39,15 @@ def generate_errors_with_alpha(
         sigma_time_invariant: Standard deviation for time-invariant errors
         alpha: Correlation parameter (alpha > 0)
         item_quadratic: (num_items, num_items, num_features) quadratic features
-        num_simuls: Number of simulation draws
+        num_simulations: Number of simulation draws
     
     Returns:
-        errors: (num_simuls, num_agents, num_items) array of errors
+        errors: (num_simulations, num_agents, num_items) array of errors
     """
-    errors = np.zeros((num_simuls, num_agents, num_items))
+    errors = np.zeros((num_simulations, num_agents, num_items))
     
     # Generate i.i.d. errors for each simulation
-    for simul in range(num_simuls):
+    for simul in range(num_simulations):
         iid_errors = generator.rng.normal(0, sigma, (num_agents, num_items))
         
         # Generate time-invariant errors with correlation structure
@@ -162,7 +162,7 @@ def main():
         ScenarioLibrary.gentzkow()
         .with_dimensions(num_agents=300, num_items_per_period=30)
         .with_feature_counts(num_mod_agent=2, num_mod_item=2, num_quad_item=2)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .with_sigma(3.0)
         .with_sigma_time_invariant(2.0)
         .with_time_invariant_alpha(true_alpha)
@@ -193,7 +193,7 @@ def main():
     
     # Extract metadata and quadratic features for error generation
     if rank == 0:
-        num_simuls = prepared.metadata['num_simuls']
+        num_simulations = prepared.metadata['num_simulations']
         num_agents = prepared.metadata['num_agents']
         num_items = prepared.metadata['num_items']
         num_items_per_period = prepared.metadata['num_items_per_period']
@@ -216,7 +216,7 @@ def main():
             sigma_time_invariant=sigma_time_invariant,
             alpha=estimation_alpha,
             item_quadratic=item_quadratic,
-            num_simuls=num_simuls,
+            num_simulations=num_simulations,
         )
         
         # Prepare estimation data

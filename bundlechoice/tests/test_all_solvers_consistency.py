@@ -25,14 +25,14 @@ def test_row_generation_mpi_optimizations():
     num_agents = 100
     num_items = 30
     num_features = 5
-    num_simuls = 1
+    num_simulations = 1
     sigma = 0.1
     
     # Generate identical data for all solvers
     np.random.seed(42)
     if rank == 0:
         modular_agent = np.random.normal(0, 1, (num_agents, num_items, num_features))
-        errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+        errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
         
         input_data = {
             "agent_data": {"modular": modular_agent},
@@ -51,7 +51,7 @@ def test_row_generation_mpi_optimizations():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls
+            "num_simulations": num_simulations
         },
         "subproblem": {"name": "Greedy"}
     })
@@ -74,7 +74,7 @@ def test_row_generation_mpi_optimizations():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls
+            "num_simulations": num_simulations
         },
         "subproblem": {"name": "Greedy"},
         "row_generation": {

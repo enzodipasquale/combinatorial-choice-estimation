@@ -14,7 +14,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 num_agents = 1500
 num_items = 100
 num_features = 5
-num_simuls = 1
+num_simulations = 1
 sigma = 0
 
 # Define configuration as a dictionary
@@ -23,7 +23,7 @@ cfg = {
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
     },
     "subproblem": {
         "name": "Greedy",
@@ -47,7 +47,7 @@ if rank == 0:
     # modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
     modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
     errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
-    estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    estimation_errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
     weights = np.abs(np.random.normal(0, 1, (num_items, 10)))
     item_data = {"weights": weights}
     agent_data = {"modular": modular}

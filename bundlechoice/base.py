@@ -42,9 +42,9 @@ class HasDimensions:
         return self.dimensions_cfg.num_features if self.dimensions_cfg else None
 
     @property
-    def num_simuls(self) -> int:
+    def num_simulations(self) -> int:
         """Number of simulation runs (alias for num_simulations)."""
-        return self.dimensions_cfg.num_simuls if self.dimensions_cfg else 1
+        return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
 
     @property
     def num_simulations(self) -> int:

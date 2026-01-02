@@ -19,7 +19,7 @@ def test_row_generation_quadsupermodular():
             num_quad_agent=0,
             num_quad_item=2,
         )
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 

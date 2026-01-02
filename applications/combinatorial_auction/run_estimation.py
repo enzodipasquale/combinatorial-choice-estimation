@@ -28,7 +28,7 @@ if rank == 0:
     num_agents = config["dimensions"]["num_agents"]
     num_items = config["dimensions"]["num_items"]
     num_features = config["dimensions"]["num_features"]
-    num_simuls = config["dimensions"]["num_simuls"]
+    num_simulations = config["dimensions"]["num_simulations"]
 
     item_data = {
         "modular": -np.eye(num_items),
@@ -41,7 +41,7 @@ if rank == 0:
     }
 
     np.random.seed(1995)
-    errors = np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+    errors = np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
 
     input_data = {
         "item_data": item_data,

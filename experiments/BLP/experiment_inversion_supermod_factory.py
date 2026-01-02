@@ -19,7 +19,7 @@ def run_row_generation_supermod_experiment():
     num_agents = 500  # Increased from 250
     num_items = 100
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_item_features
-    num_simuls = 1
+    num_simulations = 1
     sigma = 5.0
     
     # Quadratic term options
@@ -49,7 +49,7 @@ def run_row_generation_supermod_experiment():
                 num_quad_item=num_quadratic_item_features,
             )
             .with_sigma(sigma_adjusted)
-            .with_num_simuls(num_simuls)
+            .with_num_simulations(num_simulations)
             .with_quadratic_method(
                 method=quadratic_method,
                 binary_prob=quadratic_binary_prob,
@@ -119,9 +119,9 @@ def run_row_generation_supermod_experiment():
         print(f"[Rank {rank}] Setting up for NAIVE estimation (no fixed effects, endogenous features)...")
     
     bc_naive = BundleChoice()
-    num_simuls_actual = prepared.metadata.get("num_simuls", 1)
-    # Ensure config has correct num_simuls for estimation stage
-    prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+    num_simulations_actual = prepared.metadata.get("num_simulations", 1)
+    # Ensure config has correct num_simulations for estimation stage
+    prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
     # Update row generation config
     prepared.config["row_generation"]["max_iters"] = 500
     prepared.config["row_generation"]["tolerance_optimality"] = 0.001
@@ -159,7 +159,7 @@ def run_row_generation_supermod_experiment():
         
         # Update config for BLP inversion (modify in place)
         prepared.config["dimensions"]["num_features"] = num_modular_agent_features + num_items + num_quadratic_item_features
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_modular_agent_features + [-1e10] * num_items + [0] * num_quadratic_item_features  # Very generous bounds
         prepared.config["row_generation"]["theta_ubs"] = 1e10  # Very generous bounds
         prepared.config["row_generation"]["max_iters"] = 500
@@ -172,7 +172,7 @@ def run_row_generation_supermod_experiment():
         est_data_blp = None
         # Update config on non-root ranks too (same modifications)
         prepared.config["dimensions"]["num_features"] = num_modular_agent_features + num_items + num_quadratic_item_features
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_modular_agent_features + [-1e10] * num_items + [0] * num_quadratic_item_features  # Very generous bounds
         prepared.config["row_generation"]["theta_ubs"] = 1e10  # Very generous bounds
         prepared.config["row_generation"]["max_iters"] = 500

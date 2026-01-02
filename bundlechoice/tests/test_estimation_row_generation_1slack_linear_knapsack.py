@@ -13,7 +13,7 @@ def test_row_generation_1slack_linear_knapsack():
     num_modular_agent_features = 2
     num_modular_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features
-    num_simuls = 1
+    num_simulations = 1
     seed = 42
     
     # Use factory to generate data (matches manual: abs(normal), weights 1-10, random capacity 1-100)
@@ -21,7 +21,7 @@ def test_row_generation_1slack_linear_knapsack():
         ScenarioLibrary.linear_knapsack()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_feature_counts(num_agent_features=num_modular_agent_features, num_item_features=num_modular_item_features)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(1.0)
         .with_random_capacity(low=1, high=100)  # Match manual: random capacity
         .build()

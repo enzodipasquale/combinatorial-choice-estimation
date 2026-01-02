@@ -559,7 +559,7 @@ class DataGenerator:
         Therefore, the final errors are i.i.d. across items.
         
         Args:
-            shape: Shape for errors, e.g., (num_agents, num_items) or (num_simuls, num_agents, num_items)
+            shape: Shape for errors, e.g., (num_agents, num_items) or (num_simulations, num_agents, num_items)
             sigma: Standard deviation for base errors
             xi: Endogenous error component ξ (num_items,) - must be i.i.d. across items
         
@@ -573,7 +573,7 @@ class DataGenerator:
             # (num_agents, num_items)
             return base_errors + xi[None, :]
         elif len(shape) == 3:
-            # (num_simuls, num_agents, num_items)
+            # (num_simulations, num_agents, num_items)
             return base_errors + xi[None, None, :]
         else:
             raise ValueError(f"Unsupported shape for errors: {shape}")

@@ -15,7 +15,7 @@ RESULTS_DIR.mkdir(exist_ok=True)
 
 # Test configurations
 TEST_CONFIGS = [
-    # (scale_name, num_agents, num_items, num_simuls, num_features, max_iters, seed)
+    # (scale_name, num_agents, num_items, num_simulations, num_features, max_iters, seed)
     ("Medium", 128, 100, 5, 6, 50, 42),
     ("Large", 256, 150, 5, 6, 50, 42),
     ("XL", 512, 200, 5, 6, 50, 42),
@@ -23,7 +23,7 @@ TEST_CONFIGS = [
 
 MPI_RANKS = [4, 8, 12]
 
-def run_mpi_test(branch, scale_name, num_agents, num_items, num_simuls, num_features, max_iters, seed, num_ranks):
+def run_mpi_test(branch, scale_name, num_agents, num_items, num_simulations, num_features, max_iters, seed, num_ranks):
     """Run a single MPI test and return results."""
     print(f"\n{'='*80}")
     print(f"Testing: {branch} branch | {scale_name} ({num_agents}x{num_items}) | {num_ranks} ranks")
@@ -41,7 +41,7 @@ def run_mpi_test(branch, scale_name, num_agents, num_items, num_simuls, num_feat
         "python", "experiments/mpi_performance_test/run_single_test.py",
         "--agents", str(num_agents),
         "--items", str(num_items),
-        "--simuls", str(num_simuls),
+        "--simuls", str(num_simulations),
         "--features", str(num_features),
         "--max-iters", str(max_iters),
         "--seed", str(seed)
@@ -107,7 +107,7 @@ def main():
     
     all_results = {}
     
-    for scale_name, num_agents, num_items, num_simuls, num_features, max_iters, seed in TEST_CONFIGS:
+    for scale_name, num_agents, num_items, num_simulations, num_features, max_iters, seed in TEST_CONFIGS:
         all_results[scale_name] = {}
         
         for num_ranks in MPI_RANKS:
@@ -119,7 +119,7 @@ def main():
             print(f"TESTING MAIN: {scale_name} with {num_ranks} ranks")
             print(f"{'#'*80}")
             main_result = run_mpi_test(
-                "main", scale_name, num_agents, num_items, num_simuls, 
+                "main", scale_name, num_agents, num_items, num_simulations, 
                 num_features, max_iters, seed, num_ranks
             )
             all_results[scale_name][rank_key]['main'] = main_result
@@ -130,7 +130,7 @@ def main():
             print(f"TESTING FEATURE: {scale_name} with {num_ranks} ranks")
             print(f"{'#'*80}")
             feature_result = run_mpi_test(
-                "feature/mpi-gather-optimization", scale_name, num_agents, num_items, num_simuls,
+                "feature/mpi-gather-optimization", scale_name, num_agents, num_items, num_simulations,
                 num_features, max_iters, seed, num_ranks
             )
             all_results[scale_name][rank_key]['feature'] = feature_result

@@ -124,7 +124,7 @@ def main():
             "num_agents": num_firms,
             "num_items": len(features),
             "num_features": 4,
-            "num_simuls": 1
+            "num_simulations": 1
         },
         "subproblem": {
             "name": "QuadSupermodularNetwork",

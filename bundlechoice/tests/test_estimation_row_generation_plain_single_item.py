@@ -14,7 +14,7 @@ def test_row_generation_plain_single_item():
         ScenarioLibrary.plain_single_item()
         .with_dimensions(num_agents=500, num_items=2)
         .with_feature_counts(num_agent_features=4, num_item_features=1)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 
