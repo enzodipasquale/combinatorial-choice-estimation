@@ -6,7 +6,7 @@ from mpi4py import MPI
 from typing import Optional, Callable, Any, Dict, Union
 import numpy as np
 from bundlechoice.utils import get_logger
-from bundlechoice.estimation import RowGenerationManager
+from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.estimation.inequalities import InequalitiesManager
 from bundlechoice.base import HasComm, HasConfig
@@ -39,6 +39,7 @@ class BundleChoice(HasComm, HasConfig):
     row_generation_manager: Optional[RowGenerationManager]
     ellipsoid_manager: Optional[EllipsoidManager]
     inequalities_manager: Optional[InequalitiesManager]
+    standard_errors_manager: Optional[StandardErrorsManager]
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
 
@@ -52,6 +53,7 @@ class BundleChoice(HasComm, HasConfig):
         self.row_generation_manager = None
         self.ellipsoid_manager = None
         self.inequalities_manager = None
+        self.standard_errors_manager = None
 
     # ============================================================================
     # Component Initialization
@@ -88,6 +90,11 @@ class BundleChoice(HasComm, HasConfig):
         """Initialize InequalitiesManager."""
         from bundlechoice._initialization import try_init_inequalities_manager
         return try_init_inequalities_manager(self)
+
+    def _try_init_standard_errors_manager(self) -> StandardErrorsManager:
+        """Initialize StandardErrorsManager."""
+        from bundlechoice._initialization import try_init_standard_errors_manager
+        return try_init_standard_errors_manager(self)
 
     # ============================================================================
     # Property Accessors (Lazy Initialization)
@@ -128,6 +135,12 @@ class BundleChoice(HasComm, HasConfig):
         if self.inequalities_manager is None:
             self._try_init_inequalities_manager()
         return self.inequalities_manager
+
+    @property
+    def standard_errors(self) -> StandardErrorsManager:
+        if self.standard_errors_manager is None:
+            self._try_init_standard_errors_manager()
+        return self.standard_errors_manager
     
     # ============================================================================
     # Setup Status

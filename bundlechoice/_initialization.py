@@ -9,7 +9,7 @@ from typing import Any, Optional
 from bundlechoice.data_manager import DataManager
 from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
-from bundlechoice.estimation import ColumnGenerationManager, RowGenerationManager
+from bundlechoice.estimation import ColumnGenerationManager, RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.estimation.inequalities import InequalitiesManager
 
@@ -221,4 +221,35 @@ def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None
         theta_init=theta_init,
     )
     return bc.column_generation_manager
+
+
+def try_init_standard_errors_manager(bc: Any) -> StandardErrorsManager:
+    """Initialize StandardErrorsManager if not already present."""
+    from bundlechoice.errors import SetupError
+    
+    if bc.data_manager is None or bc.feature_manager is None or bc.subproblem_manager is None or bc.config is None:
+        missing = []
+        if bc.data_manager is None:
+            missing.append("data (call bc.data.load_and_scatter(input_data))")
+        if bc.feature_manager is None:
+            missing.append("features (call bc.features.set_oracle(fn) or bc.features.build_from_data())")
+        if bc.subproblem_manager is None:
+            missing.append("subproblem (call bc.subproblems.load())")
+        if bc.config is None:
+            missing.append("config (call bc.load_config(config_dict))")
+        raise SetupError(
+            "Cannot initialize standard errors manager - missing setup",
+            suggestion="\n  ".join(f"- {m}" for m in missing) + "\n\nRun bc.print_status() to see your current setup state.",
+            missing=missing
+        )
+
+    bc.standard_errors_manager = StandardErrorsManager(
+        comm_manager=bc.comm_manager,
+        dimensions_cfg=bc.config.dimensions,
+        data_manager=bc.data_manager,
+        feature_manager=bc.feature_manager,
+        subproblem_manager=bc.subproblem_manager,
+        se_cfg=bc.config.standard_errors,
+    )
+    return bc.standard_errors_manager
 
