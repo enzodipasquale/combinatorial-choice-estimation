@@ -5,7 +5,7 @@ Provides common functionality for row generation, ellipsoid, and other solvers.
 """
 
 import numpy as np
-from typing import Any, Optional, Tuple, Dict, List
+from typing import Any, Optional, Tuple, Dict
 from numpy.typing import NDArray
 from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger, extract_theta
@@ -128,63 +128,47 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
             return num_removed
         return 0
 
-    def _log_timing_summary(self, init_time: float, total_time: float, 
-                           num_iterations: int, timing_breakdown: Dict[str, List[float]],
-                           obj_val: Optional[float] = None, theta: Optional[NDArray[np.float64]] = None,
+    def _log_timing_summary(self, timing_stats: Dict[str, Any],
+                           obj_val: Optional[float] = None, 
+                           theta: Optional[NDArray[np.float64]] = None,
                            header_suffix: str = "") -> None:
-        """Log comprehensive timing summary showing bottlenecks."""
-        if self.is_root():
-            print("=" * 70)
-            print(f"ROW GENERATION SUMMARY{header_suffix}")
-            print("=" * 70)
+        """Log timing summary from timing_stats dict (created by make_timing_stats)."""
+        if not self.is_root():
+            return
             
-            if obj_val is not None:
-                print(f"Objective value at solution: {obj_val:.6f}")
-            if theta is not None:
-                if len(theta) <= 10:
-                    print(f"Theta at solution: {np.array2string(theta, precision=6, suppress_small=True)}")
-                else:
-                    print(f"Theta at solution (dim={len(theta)}):")
-                    print(f"  First 5: {np.array2string(theta[:5], precision=6, suppress_small=True)}")
-                    print(f"  Last 5:  {np.array2string(theta[-5:], precision=6, suppress_small=True)}")
-                    print(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
-            
-            print(f"Total iterations: {num_iterations}")
-            print(f"Total time: {total_time:.2f}s")
-            print()
-            print("Timing Statistics:")
-            
-            component_stats = []
-            total_accounted = init_time
-            
-            for component, times in timing_breakdown.items():
-                if len(times) > 0:
-                    total = np.sum(times)
-                    mean = np.mean(times)
-                    std = np.std(times)
-                    min_t = np.min(times)
-                    max_t = np.max(times)
-                    pct = 100 * total / total_time
-                    total_accounted += total
-                    component_stats.append({
-                        'name': component, 'total': total, 'mean': mean,
-                        'std': std, 'min': min_t, 'max': max_t, 'pct': pct
-                    })
-            
-            component_stats.sort(key=lambda x: x['total'], reverse=True)
-            
-            print("  Component breakdown (sorted by total time):")
-            for stat in component_stats:
-                print(
-                    f"  {stat['name']:16s}: {stat['total']:7.2f}s ({stat['pct']:5.1f}%) | "
-                    f"avg: {stat['mean']:.3f}s ± {stat['std']:.3f}s | "
-                    f"range: [{stat['min']:.3f}s, {stat['max']:.3f}s]"
-                )
-            
-            unaccounted = total_time - total_accounted
-            if abs(unaccounted) > 0.01:
-                print(f"  Unaccounted time:          {unaccounted:7.2f}s ({100*unaccounted/total_time:5.1f}%)")
-            print()
+        print("=" * 70)
+        print(f"ESTIMATION SUMMARY{header_suffix}")
+        print("=" * 70)
+        
+        if obj_val is not None:
+            print(f"Objective value: {obj_val:.6f}")
+        if theta is not None:
+            if len(theta) <= 10:
+                print(f"Theta: {np.array2string(theta, precision=6, suppress_small=True)}")
+            else:
+                print(f"Theta (dim={len(theta)}):")
+                print(f"  First 5: {np.array2string(theta[:5], precision=6, suppress_small=True)}")
+                print(f"  Last 5:  {np.array2string(theta[-5:], precision=6, suppress_small=True)}")
+                print(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
+        
+        print(f"Total iterations: {timing_stats.get('num_iterations', 0)}")
+        print(f"Total time: {timing_stats.get('total_time', 0.0):.2f}s")
+        
+        init_time = timing_stats.get('init_time', 0.0)
+        if init_time > 0:
+            print(f"  Init: {init_time:.2f}s")
+        
+        print()
+        print("Timing breakdown:")
+        pricing = timing_stats.get('pricing_time', 0.0)
+        master = timing_stats.get('master_time', 0.0)
+        mpi = timing_stats.get('mpi_time', 0.0)
+        
+        print(f"  Pricing:  {pricing:7.2f}s ({timing_stats.get('pricing_pct', 0.0):5.1f}%)")
+        print(f"  Master:   {master:7.2f}s ({timing_stats.get('master_pct', 0.0):5.1f}%)")
+        if mpi > 0:
+            print(f"  MPI:      {mpi:7.2f}s ({timing_stats.get('mpi_pct', 0.0):5.1f}%)")
+        print()
 
     def log_parameter(self) -> None:
         """Log current parameter values (if parameters_to_log is set in config)."""

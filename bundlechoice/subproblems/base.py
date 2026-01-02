@@ -89,4 +89,8 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         if subproblems is None:
             raise RuntimeError("subproblems is required for serial subproblems")
         return self.solve_serial(theta, subproblems)
-        
+
+
+# Backward compatibility aliases
+BaseBatchSubproblem = BatchSubproblemBase
+BaseSerialSubproblem = SerialSubproblemBase

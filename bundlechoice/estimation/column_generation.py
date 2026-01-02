@@ -6,7 +6,7 @@ Solves the dual of the row generation master problem via column generation.
 
 from __future__ import annotations
 
-from datetime import datetime
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import gurobipy as gp
@@ -14,8 +14,9 @@ import numpy as np
 from gurobipy import GRB
 from numpy.typing import NDArray
 
-from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.utils import get_logger, suppress_output, make_timing_stats
 from .base import BaseEstimationManager
+from .result import EstimationResult
 
 logger = get_logger(__name__)
 
@@ -312,12 +313,14 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     # Master iteration
     # ------------------------------------------------------------------ #
-    def _master_iteration(self, timing: Dict[str, float]) -> bool:
+    def _master_iteration(self) -> Tuple[bool, float, float, float]:
+        """Perform one iteration. Returns (stop, pricing_time, master_time, mpi_time)."""
         stop = False
         num_si = self.num_simulations * self.num_agents
+        master_time = 0.0
 
         if self.is_root():
-            t_prep = datetime.now()
+            t_master = time.perf_counter()
             if self.has_columns:
                 assert self.master_model is not None
                 if self.master_model.Status != GRB.OPTIMAL:
@@ -349,99 +352,108 @@ class ColumnGenerationManager(BaseEstimationManager):
             else:
                 dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.num_features, dtype=np.float64)
                 agent_penalties = np.zeros(num_si, dtype=np.float64)
-
-            timing["master_prep"] = (datetime.now() - t_prep).total_seconds()
+            master_time = time.perf_counter() - t_master
         else:
             dual_prices = np.empty(self.num_features, dtype=np.float64)
             agent_penalties = np.empty(num_si, dtype=np.float64)
 
+        t_mpi = time.perf_counter()
         dual_prices = self.comm_manager.broadcast_array(dual_prices, root=0)
         agent_penalties = self.comm_manager.broadcast_array(agent_penalties, root=0)
+        mpi_bcast_time = time.perf_counter() - t_mpi
 
-        t_pricing = datetime.now()
+        t_pricing = time.perf_counter()
         bundles, features, errors, reduced_costs, max_rc = self._solve_pricing_problem(dual_prices, agent_penalties)
-        timing["pricing"] = (datetime.now() - t_pricing).total_seconds()
+        pricing_time = time.perf_counter() - t_pricing
 
         if self.is_root():
+            t_master2 = time.perf_counter()
             logger.info("Max reduced cost: %.6e", max_rc)
             if max_rc <= self.row_generation_cfg.tolerance_optimality:
                 stop = True
             else:
-                t_update = datetime.now()
                 added = self._add_columns_to_master(bundles, features, errors, reduced_costs)
-                timing["master_update"] = (datetime.now() - t_update).total_seconds()
-
                 if added > 0:
-                    t_opt = datetime.now()
                     self.master_model.optimize()
-                    timing["master_optimize"] = (datetime.now() - t_opt).total_seconds()
-                else:
-                    timing["master_optimize"] = 0.0
-        else:
-            timing["master_update"] = 0.0
-            timing["master_optimize"] = 0.0
+            master_time += time.perf_counter() - t_master2
 
         if self.is_root():
             theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.num_features, dtype=np.float64)
         else:
-            # Pre-allocate array for buffer-based broadcast (must match root's shape/dtype)
             theta_to_send = np.empty(self.num_features, dtype=np.float64)
 
-        t_broadcast = datetime.now()
+        t_bcast = time.perf_counter()
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_send, stop, root=0)
-        timing["mpi_broadcast"] = (datetime.now() - t_broadcast).total_seconds()
+        mpi_bcast_time += time.perf_counter() - t_bcast
 
-        return bool(stop)
+        return bool(stop), pricing_time, master_time, mpi_bcast_time
 
     # ------------------------------------------------------------------ #
     # Public solve
     # ------------------------------------------------------------------ #
-    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> EstimationResult:
         logger.info("=== COLUMN GENERATION (DUAL) ===")
-        tic = datetime.now()
+        tic = time.perf_counter()
 
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()
 
-        timing_breakdown = {
-            "pricing": [],
-            "master_prep": [],
-            "master_update": [],
-            "master_optimize": [],
-            "mpi_broadcast": [],
-            "callback": [],
-        }
+        # Running sums for timing
+        total_pricing = 0.0
+        total_master = 0.0
+        total_mpi = 0.0
 
         for iteration in range(int(self.row_generation_cfg.max_iters)):
             logger.info("ITERATION %d", iteration + 1)
-            iter_timing: Dict[str, float] = {}
 
-            stop = self._master_iteration(iter_timing)
-
-            for key in timing_breakdown:
-                if key in iter_timing:
-                    timing_breakdown[key].append(iter_timing[key])
+            stop, pricing_time, master_time, mpi_time = self._master_iteration()
+            total_pricing += pricing_time
+            total_master += master_time
+            total_mpi += mpi_time
 
             if callback and self.is_root():
-                t_cb = datetime.now()
-                callback(
-                    {
-                        "iteration": iteration + 1,
-                        "theta": None if self.theta_val is None else self.theta_val.copy(),
-                        "objective": None if self.master_model is None else getattr(self.master_model, "ObjVal", None),
-                    }
-                )
-                timing_breakdown["callback"].append((datetime.now() - t_cb).total_seconds())
+                callback({
+                    "iteration": iteration + 1,
+                    "theta": None if self.theta_val is None else self.theta_val.copy(),
+                    "objective": None if self.master_model is None else getattr(self.master_model, "ObjVal", None),
+                })
 
             if stop and iteration + 1 >= self.row_generation_cfg.min_iters:
                 break
 
-        elapsed = (datetime.now() - tic).total_seconds()
+        elapsed = time.perf_counter() - tic
+        num_iters = iteration + 1
+        
         if self.is_root():
-            logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, iteration + 1)
+            logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, num_iters)
+            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing, total_master, total_mpi)
+            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            converged = iteration + 1 < self.row_generation_cfg.max_iters
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=converged,
+                num_iterations=num_iters,
+                final_objective=obj_val,
+                timing=self.timing_stats,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
+        else:
+            self.timing_stats = None
+            result = EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                converged=iteration + 1 < self.row_generation_cfg.max_iters,
+                num_iterations=num_iters,
+                final_objective=None,
+                timing=None,
+                iteration_history=None,
+                warnings=[],
+                metadata={}
+            )
 
         self.theta_hat = self.theta_val.copy()
-        return self.theta_hat
+        return result
 
     def _expand_bounds(self, bound, fill_value: float) -> NDArray[np.float64]:
         arr = np.full(self.num_features, fill_value, dtype=np.float64)
