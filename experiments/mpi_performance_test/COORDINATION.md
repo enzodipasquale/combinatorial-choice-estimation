@@ -8,16 +8,16 @@
 
 ## Current Status
 
-- Two SLURM jobs running: main (4004614) and feature (4004615)
-- Both testing same problem (seed=42, 512 agents, 200 items, 6 features, 10 simuls)
-- Goal: Verify unaccounted time is ~0% in both (was 40-47% before fixes)
+- **Feature branch**: Combined gather optimization implemented (1 gather instead of 3)
+- **Goal**: Verify speedup, especially at large sizes (XL: 512×200)
+- **Previous finding**: Feature branch was 1.7% slower at XL size - need to verify if combined gather fixes this
 
-## What We Fixed
+## Latest Change (Feature Branch)
 
-- Broke out computation vs gather time separately
-- Fixed `mpi_gather` to only sum gather operations (not computation)
-- Added iteration overhead tracking
-- Expected: unaccounted time should be ~0%
+- **Combined gather optimization**: Gather bundles once, compute features/errors on root
+- **Reduces MPI operations**: 3 gathers → 1 gather
+- **Expected benefit**: Should help at large scales where communication dominates
+- **Commit**: `d6e580d` - "opt: implement combined gather optimization"
 
 ## Messages
 
