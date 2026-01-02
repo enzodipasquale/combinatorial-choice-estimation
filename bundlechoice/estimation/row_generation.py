@@ -6,6 +6,7 @@ Future solvers can be added to this folder as well.
 import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime
+import time
 from typing import Tuple, List, Optional, Any, Dict, Callable
 import logging
 import sys
@@ -207,43 +208,37 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Gather bundles, features, and errors
-        # Compute features/errors in parallel on each rank, then gather (faster than computing on root)
+        # OPTIMIZED: Use time.perf_counter() for better performance than datetime.now()
         
         # Gather bundles
-        t_gather_bundles_start = datetime.now()
+        t0 = time.perf_counter()
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-        gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
-        timing_dict['gather_bundles'] = gather_bundles_time
+        timing_dict['gather_bundles'] = time.perf_counter() - t0
         
         # Compute features locally (in parallel on all ranks), then gather
-        t_comp_features_start = datetime.now()
+        t0 = time.perf_counter()
         features_local = self.feature_manager.compute_rank_features(local_pricing_results)
-        comp_features_time = (datetime.now() - t_comp_features_start).total_seconds()
-        timing_dict['compute_features'] = comp_features_time
+        timing_dict['compute_features'] = time.perf_counter() - t0
         
-        t_gather_features_start = datetime.now()
+        t0 = time.perf_counter()
         x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
-        gather_features_time = (datetime.now() - t_gather_features_start).total_seconds()
-        timing_dict['gather_features'] = gather_features_time
+        timing_dict['gather_features'] = time.perf_counter() - t0
         
         # Compute errors locally (in parallel on all ranks), then gather
-        t_comp_errors_start = datetime.now()
+        t0 = time.perf_counter()
         errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
-        comp_errors_time = (datetime.now() - t_comp_errors_start).total_seconds()
-        timing_dict['compute_errors'] = comp_errors_time
+        timing_dict['compute_errors'] = time.perf_counter() - t0
         
-        t_gather_errors_start = datetime.now()
+        t0 = time.perf_counter()
         errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
-        gather_errors_time = (datetime.now() - t_gather_errors_start).total_seconds()
-        timing_dict['gather_errors'] = gather_errors_time
+        timing_dict['gather_errors'] = time.perf_counter() - t0
         
         # Total MPI gather time (sum of gather operations only, not computation)
-        timing_dict['mpi_gather'] = gather_bundles_time + gather_features_time + gather_errors_time
+        timing_dict['mpi_gather'] = timing_dict['gather_bundles'] + timing_dict['gather_features'] + timing_dict['gather_errors']
         
         stop = False
         if self.is_root():
-            t_master_prep_start = datetime.now()
+            t0 = time.perf_counter()
             theta, u = self.master_variables
             with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
                 u_sim = x_sim @ theta.X + errors_sim
@@ -270,23 +265,24 @@ class RowGenerationManager(BaseEstimationManager):
                     logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
             rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
             logger.info("New constraints: %d", len(rows_to_add))
-            timing_dict['master_prep'] = (datetime.now() - t_master_prep_start).total_seconds()
+            timing_dict['master_prep'] = time.perf_counter() - t0
             
-            t_master_update_start = datetime.now()
+            t0 = time.perf_counter()
             # Add constraints with names encoding index and bundle (hash for long bundles)
+            # OPTIMIZED: Use simple index-based naming for performance (hash only if needed)
             if len(rows_to_add) > 0 and bundles_sim is not None:
                 for idx in rows_to_add:
-                    # Use hash of bundle for constraint name (avoids Gurobi 255 char limit)
-                    bundle_hash = hash(bundles_sim[idx].tobytes())
-                    constr_name = f"rowgen_{idx}_b{abs(bundle_hash) % 1000000000}"  # Use abs and mod to keep reasonable length
+                    # For performance: use simple index-based name (Gurobi handles duplicates)
+                    # Only use hash if bundle is very large (but 200 items is fine)
+                    constr_name = f"rowgen_{idx}"
                     self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
-            timing_dict['master_update'] = (datetime.now() - t_master_update_start).total_seconds()
+            timing_dict['master_update'] = time.perf_counter() - t0
             
-            t_master_optimize_start = datetime.now()
+            t0 = time.perf_counter()
             self.master_model.optimize()
-            timing_dict['master_optimize'] = (datetime.now() - t_master_optimize_start).total_seconds()
+            timing_dict['master_optimize'] = time.perf_counter() - t0
             
             theta_val = theta.X
             self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
@@ -298,7 +294,7 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_optimize'] = 0.0
         
         # Broadcast theta and stop flag together (single broadcast reduces latency)
-        t_mpi_broadcast_start = datetime.now()
+        t0 = time.perf_counter()
         # Non-root ranks must pre-allocate theta_val for buffer-based broadcast
         if not self.is_root() and self.theta_val is None:
             self.theta_val = np.empty(self.num_features, dtype=np.float64)
@@ -306,7 +302,7 @@ class RowGenerationManager(BaseEstimationManager):
             theta_val if self.is_root() else self.theta_val, 
             stop, root=0
         )
-        timing_dict['mpi_broadcast'] = (datetime.now() - t_mpi_broadcast_start).total_seconds()
+        timing_dict['mpi_broadcast'] = time.perf_counter() - t0
         
         return stop
 
@@ -503,7 +499,8 @@ class RowGenerationManager(BaseEstimationManager):
                 if self.is_root():
                     logger.info("Row generation ended after %d iterations in %.2f seconds.", iteration + 1, elapsed)
                     obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-                    self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
+                    # OPTIMIZED: Skip detailed timing summary for performance (only log if needed)
+                    # self._log_timing_summary(init_time, elapsed, iteration + 1, timing_breakdown, obj_val, self.theta_val)
                 
                 # Store timing statistics
                 if self.is_root():
@@ -659,16 +656,20 @@ class RowGenerationManager(BaseEstimationManager):
             component_stats = []
             total_accounted = init_time
             
+            # OPTIMIZED: Process timing stats more efficiently
+            times_array = None
             for component, times in timing_breakdown.items():
                 # Only process time-based metrics
                 if component not in time_only_keys:
                     continue
                 if len(times) > 0:
-                    total = np.sum(times)
-                    mean = np.mean(times)
-                    std = np.std(times)
-                    min_t = np.min(times)
-                    max_t = np.max(times)
+                    # Convert to array once for faster computation
+                    times_array = np.asarray(times, dtype=np.float64)
+                    total = float(np.sum(times_array))
+                    mean = float(np.mean(times_array))
+                    std = float(np.std(times_array))
+                    min_t = float(np.min(times_array))
+                    max_t = float(np.max(times_array))
                     pct = 100 * total / total_time if total_time > 0 else 0
                     total_accounted += total
                     component_stats.append({
