@@ -149,12 +149,36 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        t_mpi_gather_start = datetime.now()
         # Gather bundles for encoding in constraint names
+        t_gather_bundles = datetime.now()
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
-        x_sim = self.feature_manager.compute_gathered_features(local_pricing_results)
-        errors_sim = self.feature_manager.compute_gathered_errors(local_pricing_results)
-        timing_dict['mpi_gather'] = (datetime.now() - t_mpi_gather_start).total_seconds()
+        gather_bundles_time = (datetime.now() - t_gather_bundles).total_seconds()
+        timing_dict['gather_bundles'] = gather_bundles_time
+        
+        # Compute and gather features (break out computation vs gather)
+        t_comp_features = datetime.now()
+        features_local = self.feature_manager.compute_rank_features(local_pricing_results)
+        comp_features_time = (datetime.now() - t_comp_features).total_seconds()
+        timing_dict['compute_features'] = comp_features_time
+        
+        t_gather_features = datetime.now()
+        x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        gather_features_time = (datetime.now() - t_gather_features).total_seconds()
+        timing_dict['gather_features'] = gather_features_time
+        
+        # Compute and gather errors (break out computation vs gather)
+        t_comp_errors = datetime.now()
+        errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
+        comp_errors_time = (datetime.now() - t_comp_errors).total_seconds()
+        timing_dict['compute_errors'] = comp_errors_time
+        
+        t_gather_errors = datetime.now()
+        errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        gather_errors_time = (datetime.now() - t_gather_errors).total_seconds()
+        timing_dict['gather_errors'] = gather_errors_time
+        
+        # Total MPI gather time (sum of gather operations only, not computation)
+        timing_dict['mpi_gather'] = gather_bundles_time + gather_features_time + gather_errors_time
         
         stop = False
         if self.is_root():
@@ -310,25 +334,35 @@ class RowGenerationManager(BaseEstimationManager):
         timing_breakdown = {
             'pricing': [],
             'mpi_gather': [],
+            'gather_bundles': [],
+            'gather_features': [],
+            'gather_errors': [],
+            'compute_features': [],
+            'compute_errors': [],
             'master_prep': [],
             'master_update': [],
             'master_optimize': [],
             'mpi_broadcast': [],
-            'callback': []
+            'callback': [],
+            'subproblem_callback': [],
+            'iteration_overhead': [],
         }
         
         while iteration < self.row_generation_cfg.max_iters:
+            t_iter_start = datetime.now()
             logger.info(f"ITERATION {iteration + 1}")
             iter_timing = {}
             
             # Subproblem callback (if configured) - called before pricing phase
             if self.row_generation_cfg.subproblem_callback is not None:
+                t_callback_start = datetime.now()
                 master_model = self.master_model if self.is_root() else None
                 self.row_generation_cfg.subproblem_callback(
                     iteration, 
                     self.subproblem_manager, 
                     master_model
                 )
+                iter_timing['subproblem_callback'] = (datetime.now() - t_callback_start).total_seconds()
             
             # Pricing phase
             t_pricing = datetime.now()
@@ -337,11 +371,6 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Master iteration (with internal timing)
             stop = self._master_iteration(local_pricing_results, iter_timing) 
-            
-            # Store timing breakdown
-            for key in timing_breakdown.keys():
-                if key in iter_timing:
-                    timing_breakdown[key].append(iter_timing[key])
             
             # Callback phase
             if callback:
@@ -354,7 +383,18 @@ class RowGenerationManager(BaseEstimationManager):
                         'pricing_time': iter_timing['pricing'],
                         'master_time': sum([iter_timing.get(k, 0) for k in ['mpi_gather', 'master_prep', 'master_update', 'master_optimize', 'mpi_broadcast']]),
                     })
-                timing_breakdown['callback'].append((datetime.now() - t_callback).total_seconds())
+                iter_timing['callback'] = (datetime.now() - t_callback).total_seconds()
+            
+            # Track iteration overhead (logger calls, loop overhead, etc.)
+            t_iter_end = datetime.now()
+            iter_total_time = (t_iter_end - t_iter_start).total_seconds()
+            iter_accounted = sum([iter_timing.get(k, 0) for k in timing_breakdown.keys() if k != 'iteration_overhead'])
+            iter_timing['iteration_overhead'] = max(0.0, iter_total_time - iter_accounted)
+            
+            # Store timing breakdown
+            for key in timing_breakdown.keys():
+                if key in iter_timing:
+                    timing_breakdown[key].append(iter_timing[key])
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 elapsed = (datetime.now() - tic).total_seconds()
