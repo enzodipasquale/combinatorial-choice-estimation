@@ -7,13 +7,13 @@ The `validation.py` script verifies that factory-generated data matches manual g
 Run validation for all factories:
 
 ```bash
-python -m bundlechoice.factory.validation
+python -m bundlechoice.scenarios.validation
 ```
 
 Or with a custom seed:
 
 ```bash
-python -m bundlechoice.factory.validation 123
+python -m bundlechoice.scenarios.validation 123
 ```
 
 ## Adding New Factories

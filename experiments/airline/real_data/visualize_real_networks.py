@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from load_real_data import RealAirlineDataLoader
 
 

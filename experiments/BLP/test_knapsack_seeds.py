@@ -2,7 +2,7 @@
 """Test knapsack experiment with different seeds."""
 import numpy as np
 from mpi4py import MPI
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.core import BundleChoice
 from statsmodels.sandbox.regression.gmm import IV2SLS
 

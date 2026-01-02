@@ -10,8 +10,8 @@ from mpi4py import MPI
 from scipy.linalg import expm
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod, DataGenerator
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod, DataGenerator
 
 
 def generate_errors_with_alpha(

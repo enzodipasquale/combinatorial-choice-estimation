@@ -7,7 +7,7 @@ Uses the factory pattern with endogeneity support for BLP inversion.
 import numpy as np
 import time
 from mpi4py import MPI
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.core import BundleChoice
 
 def run_row_generation_knapsack_experiment():

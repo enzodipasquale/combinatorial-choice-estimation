@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 from datetime import datetime
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

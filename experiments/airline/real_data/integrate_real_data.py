@@ -21,8 +21,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory.base import FeatureSpec, SyntheticScenario
-from bundlechoice.factory.data_generator import DataGenerator
+from bundlechoice.scenarios.base import FeatureSpec, SyntheticScenario
+from bundlechoice.scenarios.data_generator import DataGenerator
 from load_real_data import RealAirlineDataLoader
 from compute_route_features import compute_route_features
 

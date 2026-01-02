@@ -4,7 +4,7 @@ import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGeneration1SlackManager
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 
 
 def test_row_generation_1slack_plain_single_item():

@@ -9,8 +9,8 @@ import numpy as np
 from mpi4py import MPI
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
         correct_errors = correct_data["errors"].copy()
         
         # Generate i.i.d. errors for misspecified model
-        from bundlechoice.factory.data_generator import DataGenerator
+        from bundlechoice.scenarios.data_generator import DataGenerator
         generator = DataGenerator(seed=999)
         
         num_simuls, num_agents, num_items = correct_errors.shape

@@ -7,7 +7,7 @@ Uses the factory pattern with endogeneity support for BLP inversion.
 import numpy as np
 import time
 from mpi4py import MPI
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.core import BundleChoice
 
 def run_row_generation_supermod_experiment():
@@ -23,7 +23,7 @@ def run_row_generation_supermod_experiment():
     sigma = 5.0
     
     # Quadratic term options
-    from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+    from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
     quadratic_method = QuadraticGenerationMethod.EXPONENTIAL  # Options: EXPONENTIAL, BINARY_CHOICE
     quadratic_binary_prob = 0.2  # Only used if method == BINARY_CHOICE
     quadratic_binary_value = .5  # Only used if method == BINARY_CHOICE

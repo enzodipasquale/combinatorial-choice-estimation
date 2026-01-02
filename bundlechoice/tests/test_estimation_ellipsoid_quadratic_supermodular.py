@@ -3,8 +3,8 @@ import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 
 
 def test_ellipsoid_quadsupermodular():
