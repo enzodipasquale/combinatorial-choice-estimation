@@ -21,7 +21,7 @@ def run_row_generation_quadknapsack_experiment():
     num_items = 50
     num_features = (num_agent_modular_features + num_agent_quadratic_features + 
                    num_item_modular_features + num_item_quadratic_features)
-    num_simuls = 1
+    num_simulations = 1
     sigma = 3.0
     
     # Quadratic term options
@@ -57,7 +57,7 @@ def run_row_generation_quadknapsack_experiment():
                 num_item_quadratic=num_item_quadratic_features,
             )
             .with_sigma(sigma)
-            .with_num_simuls(num_simuls)
+            .with_num_simulations(num_simulations)
             .with_weight_config(
                 distribution=weight_distribution,
                 low=weight_low,
@@ -142,9 +142,9 @@ def run_row_generation_quadknapsack_experiment():
         print(f"[Rank {rank}] Setting up for NAIVE estimation (no fixed effects, endogenous features)...")
     
     bc_naive = BundleChoice()
-    num_simuls_actual = prepared.metadata.get("num_simuls", 1)
-    # Ensure config has correct num_simuls for estimation stage
-    prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+    num_simulations_actual = prepared.metadata.get("num_simulations", 1)
+    # Ensure config has correct num_simulations for estimation stage
+    prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
     # Add timeout to subproblem settings to prevent hanging
     if "subproblem" not in prepared.config:
         prepared.config["subproblem"] = {}
@@ -191,7 +191,7 @@ def run_row_generation_quadknapsack_experiment():
         num_blp_features = (num_agent_modular_features + num_agent_quadratic_features + 
                            num_items + num_item_quadratic_features)
         prepared.config["dimensions"]["num_features"] = num_blp_features
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         # Bounds: agent features >= 0, fixed effects very generous, quadratic >= 0
         theta_lbs = ([0] * num_agent_modular_features + 
                     [0] * num_agent_quadratic_features + 
@@ -215,7 +215,7 @@ def run_row_generation_quadknapsack_experiment():
         num_blp_features = (num_agent_modular_features + num_agent_quadratic_features + 
                            num_items + num_item_quadratic_features)
         prepared.config["dimensions"]["num_features"] = num_blp_features
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         theta_lbs = ([0] * num_agent_modular_features + 
                     [0] * num_agent_quadratic_features + 
                     [-1e10] * num_items + 

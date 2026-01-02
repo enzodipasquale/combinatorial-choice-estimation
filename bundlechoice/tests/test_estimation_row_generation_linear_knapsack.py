@@ -14,7 +14,7 @@ def test_row_generation_linear_knapsack():
         ScenarioLibrary.linear_knapsack()
         .with_dimensions(num_agents=20, num_items=20)
         .with_feature_counts(num_agent_features=2, num_item_features=2)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .build()
     )
 

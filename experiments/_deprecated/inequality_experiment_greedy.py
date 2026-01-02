@@ -6,7 +6,7 @@ from datetime import datetime
 num_agents = 500
 num_items = 100
 num_features = 8
-num_simuls = 1
+num_simulations = 1
 sigma = 1
 
 # Define configuration as a dictionary
@@ -15,7 +15,7 @@ cfg = {
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
     },
     "subproblem": {
         "name": "Greedy",
@@ -29,7 +29,7 @@ inequality_experiment.load_config(cfg)
 
 modular = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_features-1)))
 errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
-estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+estimation_errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
 agent_data = {"modular": modular}
 data = {"agent_data": agent_data, 
         "errors": errors}

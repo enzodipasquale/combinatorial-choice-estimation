@@ -19,7 +19,7 @@ num_modular_agent_features = 2
 num_modular_item_features = 2
 num_quadratic_item_features = 2
 num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_item_features
-num_simuls = 5
+num_simulations = 5
 sigma = 5.0
 
 if rank == 0:
@@ -27,7 +27,7 @@ if rank == 0:
     print("TIMING TEST - SUPERMODULAR ESTIMATION (XXL)")
     print("=" * 70)
     print(f"Problem: {num_agents} agents × {num_items} items, {num_features} features")
-    print(f"Simulations: {num_simuls}")
+    print(f"Simulations: {num_simulations}")
     print(f"MPI Ranks: {comm.Get_size()}")
     print("=" * 70)
     print()
@@ -45,7 +45,7 @@ scenario = (
         num_quad_item=num_quadratic_item_features,
     )
     .with_sigma(sigma)
-    .with_num_simuls(num_simuls)
+    .with_num_simulations(num_simulations)
     .build()
 )
 
@@ -57,7 +57,7 @@ estimation_data = prepared.estimation_data
 
 # Update config
 config = prepared.config.copy()
-config["dimensions"]["num_simuls"] = num_simuls
+config["dimensions"]["num_simulations"] = num_simulations
 config["row_generation"]["max_iters"] = 100  # Limit iterations for quick test
 
 # Initialize BundleChoice and load data

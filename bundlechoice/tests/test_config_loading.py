@@ -11,7 +11,7 @@ from typing import Dict, Any
 def load_configs_from_dict(config_dict: Dict[str, Any]):
     """Load configs from dictionary without requiring a bundle_choice instance."""
     from bundlechoice.config import BundleChoiceConfig
-    # Use BundleChoiceConfig.from_dict to handle num_simuls → num_simulations conversion
+    # Use BundleChoiceConfig.from_dict to handle num_simulations → num_simulations conversion
     full_config = BundleChoiceConfig.from_dict(config_dict)
     return full_config.dimensions, full_config.row_generation, full_config.subproblem
 
@@ -30,7 +30,7 @@ def test_load_configs_from_dict_partial():
             'num_agents': 5,
             'num_items': 10,
             'num_features': 3,
-            'num_simuls': 2,
+            'num_simulations': 2,
         },
         'subproblem': {
             'name': 'test_subproblem',
@@ -52,7 +52,7 @@ def test_load_configs_from_dict_full():
             'num_agents': 5,
             'num_items': 10,
             'num_features': 3,
-            'num_simuls': 2,
+            'num_simulations': 2,
         },
         'row_generation': {
             'tolerance_optimality': 0.05,
@@ -79,7 +79,7 @@ dimensions:
   num_agents: 7
   num_items: 12
   num_features: 4
-  num_simuls: 3
+  num_simulations: 3
 row_generation:
   tolerance_optimality: 0.02
   max_iters: 100

@@ -151,12 +151,12 @@ beta_indices = comm.bcast(beta_indices, root=0)
 
 def compute_per_agent_subgradients(theta, errors_all_sims):
     """Compute g_i(theta) = (1/S) sum_s x_{i,B_i^{s,*}} - x_{i,B_i^obs}"""
-    num_simuls = len(errors_all_sims)
+    num_simulations = len(errors_all_sims)
     all_features_per_sim = []
     
-    for s in range(num_simuls):
+    for s in range(num_simulations):
         if rank == 0:
-            print(f"  Simulation {s+1}/{num_simuls}...", flush=True)
+            print(f"  Simulation {s+1}/{num_simulations}...", flush=True)
         bc.data_manager.update_errors(errors_all_sims[s] if rank == 0 else None)
         if bc.data_manager.num_local_agents > 0:
             local_bundles = bc.subproblems.solve_local(theta)
@@ -167,7 +167,7 @@ def compute_per_agent_subgradients(theta, errors_all_sims):
             all_features_per_sim.append(features_sim)
     
     if rank == 0:
-        features_all = np.stack(all_features_per_sim, axis=0)  # (num_simuls, num_agents, num_features)
+        features_all = np.stack(all_features_per_sim, axis=0)  # (num_simulations, num_agents, num_features)
         avg_simulated = features_all.mean(axis=0)  # (num_agents, num_features)
         return avg_simulated - agents_obs_features  # (num_agents, num_features)
     return None
@@ -178,7 +178,7 @@ def compute_avg_subgradient_beta(theta, errors_all_sims):
     Uses local sums + MPI Allreduce to avoid gathering per-agent features to rank 0.
     This is valid because g_bar only needs the mean over agents, not the per-agent array.
     """
-    num_simuls = len(errors_all_sims)
+    num_simulations = len(errors_all_sims)
     num_beta = len(beta_indices)
     
     # Compute mean observed features (beta) via local sums + allreduce
@@ -193,7 +193,7 @@ def compute_avg_subgradient_beta(theta, errors_all_sims):
     # Compute mean simulated features (beta) across simulations via local sums + allreduce
     sim_sum_beta_local = np.zeros(num_beta)
 
-    for s in range(num_simuls):
+    for s in range(num_simulations):
         bc.data_manager.update_errors(errors_all_sims[s] if rank == 0 else None)
         
         if bc.data_manager.num_local_agents > 0:
@@ -209,7 +209,7 @@ def compute_avg_subgradient_beta(theta, errors_all_sims):
     comm.Allreduce(sim_sum_beta_local, sim_sum_beta_global, op=MPI.SUM)
 
     # Average over simulations, then over agents
-    mean_sim_beta = (sim_sum_beta_global / num_simuls) / num_agents
+    mean_sim_beta = (sim_sum_beta_global / num_simulations) / num_agents
 
     if rank == 0:
         return mean_sim_beta - mean_obs_beta

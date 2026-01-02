@@ -34,7 +34,7 @@ def main():
             num_quad_item=num_quad_item,
         )
         .with_sigma(5.0)  # Keep default sigma
-        .with_num_simuls(args.simuls)
+        .with_num_simulations(args.simuls)
         .build()
     )
     
@@ -44,9 +44,9 @@ def main():
     theta_star = np.ones(args.features) * 2.0
     prepared = scenario.prepare(comm=comm, seed=args.seed, theta=theta_star)
     
-    # Update config with num_simuls
+    # Update config with num_simulations
     config = prepared.config.copy()
-    config["dimensions"]["num_simuls"] = args.simuls
+    config["dimensions"]["num_simulations"] = args.simuls
     config["row_generation"]["max_iters"] = args.max_iters
     
     # Create BundleChoice instance

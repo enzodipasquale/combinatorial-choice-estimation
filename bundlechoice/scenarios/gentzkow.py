@@ -357,7 +357,7 @@ class GentzkowScenarioBuilder:
             estimation_data = None
             if rank == 0:
                 # For estimation, generate errors with same structure
-                # Shape is (num_simuls, num_agents, num_items)
+                # Shape is (num_simulations, num_agents, num_items)
                 estimation_errors = np.zeros((params.num_simulations, params.num_agents, params.num_items))
                 
                 # Time-invariant errors are the same across all simulations (they don't depend on time)

@@ -270,7 +270,7 @@ def extract_metadata(df_current):
         'num_agents': first_row.get('num_agents', ''),
         'num_items': first_row.get('num_items', ''),
         'num_features': first_row.get('num_features', ''),
-        'num_simuls': first_row.get('num_simuls', ''),
+        'num_simulations': first_row.get('num_simulations', ''),
         'subproblem': first_row.get('subproblem', ''),
         'sigma': first_row.get('sigma', '')
     }

@@ -67,7 +67,7 @@ class BenchmarkResult:
     num_agents: int
     num_items: int
     num_features: int
-    num_simuls: int
+    num_simulations: int
     sigma: Optional[float]
     row_time: Optional[float]
     column_time: Optional[float]
@@ -85,7 +85,7 @@ class BenchmarkResult:
             "num_agents": self.num_agents,
             "num_items": self.num_items,
             "num_features": self.num_features,
-            "num_simuls": self.num_simuls,
+            "num_simulations": self.num_simulations,
             "sigma": self.sigma,
             "row_time": self.row_time,
             "column_time": self.column_time,
@@ -143,7 +143,7 @@ def run_methods(name: str,
     num_agents = metadata["num_agents"]
     num_items = metadata["num_items"]
     num_features = metadata["num_features"]
-    num_simuls = metadata["num_simuls"]
+    num_simulations = metadata["num_simulations"]
 
     # Ensure subproblems ready
     bc.subproblems.load()
@@ -163,7 +163,7 @@ def run_methods(name: str,
             num_agents=num_agents,
             num_items=num_items,
             num_features=num_features,
-            num_simuls=num_simuls,
+            num_simulations=num_simulations,
             sigma=sigma,
             row_time=None,
             column_time=None,
@@ -189,7 +189,7 @@ def run_methods(name: str,
             num_agents=num_agents,
             num_items=num_items,
             num_features=num_features,
-            num_simuls=num_simuls,
+            num_simulations=num_simulations,
             sigma=sigma,
             row_time=row_time if IS_ROOT else None,
             column_time=None,
@@ -215,7 +215,7 @@ def run_methods(name: str,
             num_agents=num_agents,
             num_items=num_items,
             num_features=num_features,
-            num_simuls=num_simuls,
+            num_simulations=num_simulations,
             sigma=sigma,
             row_time=row_time,
             column_time=column_time,
@@ -232,7 +232,7 @@ def run_methods(name: str,
             num_agents=num_agents,
             num_items=num_items,
             num_features=num_features,
-            num_simuls=num_simuls,
+            num_simulations=num_simulations,
             sigma=sigma,
             row_time=None,
             column_time=None,
@@ -251,7 +251,7 @@ def setup_greedy(timeout: Optional[int], seed: Optional[int] = None) -> Benchmar
     num_agents = 300
     num_items = 100
     num_features = 4
-    num_simuls = 1
+    num_simulations = 1
     sigma = 1.0
 
     # Use factory to generate data (matches manual generation)
@@ -259,7 +259,7 @@ def setup_greedy(timeout: Optional[int], seed: Optional[int] = None) -> Benchmar
         ScenarioLibrary.greedy()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_num_features(num_features)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .build()
     )
@@ -277,7 +277,7 @@ def setup_greedy(timeout: Optional[int], seed: Optional[int] = None) -> Benchmar
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "sigma": sigma,
     }
 
@@ -288,7 +288,7 @@ def setup_plain_single_item(timeout: Optional[int], seed: Optional[int] = None) 
     num_agents = 300
     num_items = 100
     num_features = 4
-    num_simuls = 1
+    num_simulations = 1
     sigma = 1.0
 
     # Use factory to generate data (matches manual generation with correlation)
@@ -296,7 +296,7 @@ def setup_plain_single_item(timeout: Optional[int], seed: Optional[int] = None) 
         ScenarioLibrary.plain_single_item()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_feature_counts(num_agent_features=num_features, num_item_features=0)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .with_correlation(enabled=True, matrix_range=(0, 4), normalize=True)  # Match manual
         .build()
@@ -315,7 +315,7 @@ def setup_plain_single_item(timeout: Optional[int], seed: Optional[int] = None) 
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "sigma": sigma,
     }
 
@@ -325,7 +325,7 @@ def setup_plain_single_item(timeout: Optional[int], seed: Optional[int] = None) 
 def setup_knapsack(timeout: Optional[int], seed: Optional[int] = None) -> BenchmarkResult:
     num_agents = 300
     num_items = 100
-    num_simuls = 1
+    num_simulations = 1
     modular_agent_features = 2
     modular_item_features = 1
     num_features = modular_agent_features + modular_item_features
@@ -336,7 +336,7 @@ def setup_knapsack(timeout: Optional[int], seed: Optional[int] = None) -> Benchm
         ScenarioLibrary.linear_knapsack()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_feature_counts(num_agent_features=modular_agent_features, num_item_features=modular_item_features)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .with_capacity_config(mean_multiplier=0.5, lower_multiplier=0.85, upper_multiplier=1.15)  # Match manual
         .build()
@@ -355,7 +355,7 @@ def setup_knapsack(timeout: Optional[int], seed: Optional[int] = None) -> Benchm
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "sigma": sigma,
     }
 
@@ -365,7 +365,7 @@ def setup_knapsack(timeout: Optional[int], seed: Optional[int] = None) -> Benchm
 def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None) -> BenchmarkResult:
     num_agents = 20
     num_items = 10
-    num_simuls = 1
+    num_simulations = 1
     agent_mod_dim = 2
     item_mod_dim = 1
     agent_quad_dim = 1
@@ -396,7 +396,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
         weights = rng.uniform(1.0, 3.0, size=num_items)
         capacity = rng.uniform(weights.sum() * 0.35, weights.sum() * 0.65, size=num_agents)
         errors = sigma * rng.normal(scale=1.0, size=(num_agents, num_items))
-        estimation_errors = sigma * rng.normal(scale=1.0, size=(num_simuls, num_agents, num_items))
+        estimation_errors = sigma * rng.normal(scale=1.0, size=(num_simulations, num_agents, num_items))
         
         generation_data = {
             "agent_data": {
@@ -420,7 +420,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls,
+            "num_simulations": num_simulations,
         },
         "subproblem": {"name": "QuadKnapsack"},
         "row_generation": {
@@ -461,7 +461,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "sigma": sigma,
     }
 
@@ -471,7 +471,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
 def setup_supermod(timeout: Optional[int], seed: Optional[int] = None) -> BenchmarkResult:
     num_agents = 1000
     num_items = 100
-    num_simuls = 1
+    num_simulations = 1
     modular_agent_features = 5
     quadratic_item_features = 1
     num_features = modular_agent_features + quadratic_item_features
@@ -487,7 +487,7 @@ def setup_supermod(timeout: Optional[int], seed: Optional[int] = None) -> Benchm
             num_quad_agent=0,
             num_quad_item=quadratic_item_features,
         )
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .with_agent_modular_config(multiplier=-5.0, mean=0.0, std=1.0)  # Match manual: -5 * abs(normal(0,1))
         .with_quadratic_method(
@@ -511,7 +511,7 @@ def setup_supermod(timeout: Optional[int], seed: Optional[int] = None) -> Benchm
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "sigma": sigma,
     }
 

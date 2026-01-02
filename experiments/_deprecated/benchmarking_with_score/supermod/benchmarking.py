@@ -260,7 +260,7 @@ def extract_metadata(df_current):
         'num_agents': first_row.get('num_agents', ''),
         'num_items': first_row.get('num_items', ''),
         'num_features': first_row.get('num_features', ''),
-        'num_simuls': first_row.get('num_simuls', ''),
+        'num_simulations': first_row.get('num_simulations', ''),
         'subproblem': first_row.get('subproblem', ''),
         'sigma': first_row.get('sigma', '')
     }
@@ -280,7 +280,7 @@ def save_results_with_metadata(results_folder, individual_mse_df, metadata, mse_
         'num_agents': metadata.get('num_agents', ''),
         'num_items': metadata.get('num_items', ''),
         'num_features': metadata.get('num_features', ''),
-        'num_simuls': metadata.get('num_simuls', ''),
+        'num_simulations': metadata.get('num_simulations', ''),
         'subproblem': metadata.get('subproblem', ''),
         'sigma': metadata.get('sigma', ''),
         'current_mse': mse_current,

@@ -31,7 +31,7 @@ def main():
         ScenarioLibrary.gentzkow()
         .with_dimensions(num_agents=300, num_items_per_period=30)
         .with_feature_counts(num_mod_agent=2, num_mod_item=2, num_quad_item=2)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .with_sigma(3.0)
         .with_sigma_time_invariant(2.0)
         .with_time_invariant_alpha(true_alpha)
@@ -67,7 +67,7 @@ def main():
         from bundlechoice.scenarios.data_generator import DataGenerator
         generator = DataGenerator(seed=999)
         
-        num_simuls, num_agents, num_items = correct_errors.shape
+        num_simulations, num_agents, num_items = correct_errors.shape
         num_items_per_period = prepared.metadata['num_items_per_period']
         num_periods = prepared.metadata['num_periods']
         sigma = 3.0
@@ -87,7 +87,7 @@ def main():
         
         # Generate new errors: i.i.d. simulation + i.i.d. time-invariant
         misspec_errors = np.zeros_like(correct_errors)
-        for simul in range(num_simuls):
+        for simul in range(num_simulations):
             iid_simul = generator.rng.normal(0, sigma, (num_agents, num_items))
             misspec_errors[simul] = iid_simul + time_invariant_errors_iid
         

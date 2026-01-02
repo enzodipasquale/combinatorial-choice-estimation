@@ -21,7 +21,7 @@ def run_quad_supermod_experiment():
     num_modular_item_features = 1
     num_quadratic_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_item_features
-    num_simuls = 40
+    num_simulations = 40
     sigma = 3
     
     # Configuration
@@ -30,7 +30,7 @@ def run_quad_supermod_experiment():
             "num_agents": num_agents,
             "num_items": num_items,
             "num_features": num_features,
-            "num_simuls": num_simuls
+            "num_simulations": num_simulations
         },
         "subproblem": {
             "name": "QuadSupermodularNetwork",
@@ -75,7 +75,7 @@ def run_quad_supermod_experiment():
 
         # Generate errors with endogenous component
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
-        estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+        estimation_errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
 
         input_data = {
             "item_data": {
@@ -119,7 +119,7 @@ def run_quad_supermod_experiment():
         
         input_data["obs_bundle"] = obs_bundles
         input_data["errors"] = estimation_errors
-        cfg["dimensions"]["num_simuls"] = num_simuls
+        cfg["dimensions"]["num_simulations"] = num_simulations
         # print(obs_bundles[:10]*1)
     else:
         input_data = None
@@ -170,7 +170,7 @@ def run_quad_supermod_experiment():
         input_data["errors"] = estimation_errors 
     else:
         input_data = None
-    cfg["dimensions"]["num_simuls"] = num_simuls
+    cfg["dimensions"]["num_simulations"] = num_simulations
     cfg["dimensions"]["num_features"] = num_modular_agent_features + num_items + num_quadratic_item_features
     cfg["row_generation"]["theta_lbs"] = [0] * num_modular_agent_features + [-500] * num_items + [0] * num_quadratic_item_features
     cfg["row_generation"]["theta_ubs"] = 500

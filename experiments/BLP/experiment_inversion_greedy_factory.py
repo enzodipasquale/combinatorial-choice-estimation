@@ -18,7 +18,7 @@ def run_row_generation_greedy_experiment():
     num_agents = 1000  # Increased from 500
     num_items = 60  # Increased from 50
     num_features = num_agent_features + num_item_features + 1
-    num_simuls = 1
+    num_simulations = 1
     sigma = 6
     
     comm = MPI.COMM_WORLD
@@ -39,7 +39,7 @@ def run_row_generation_greedy_experiment():
             .with_dimensions(num_agents=num_agents, num_items=num_items)
             .with_num_features(num_features)
             .with_sigma(sigma)
-            .with_num_simuls(num_simuls)
+            .with_num_simulations(num_simulations)
             .with_item_config(apply_abs=True, multiplier=item_multiplier, mean=0.0, std=item_std)
             .with_endogeneity(
                 endogenous_feature_indices=[0],
@@ -107,9 +107,9 @@ def run_row_generation_greedy_experiment():
         print(f"[Rank {rank}] Setting up for NAIVE estimation (no fixed effects, endogenous features)...")
     
     bc_naive = BundleChoice()
-    num_simuls_actual = prepared.metadata.get("num_simuls", 1)
-    # Ensure config has correct num_simuls for estimation stage
-    prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+    num_simulations_actual = prepared.metadata.get("num_simulations", 1)
+    # Ensure config has correct num_simulations for estimation stage
+    prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
     # Update row generation config to match original
     prepared.config["row_generation"]["max_iters"] = 500
     prepared.config["row_generation"]["tolerance_optimality"] = 0.001
@@ -145,7 +145,7 @@ def run_row_generation_greedy_experiment():
         
         # Update config for BLP inversion (modify in place like old version)
         prepared.config["dimensions"]["num_features"] = num_agent_features + num_items + 1
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
         prepared.config["row_generation"]["theta_ubs"] = 500
         parameters_to_log = [i for i in range(num_agent_features)] + [-1]
@@ -154,7 +154,7 @@ def run_row_generation_greedy_experiment():
         est_data_blp = None
         # Update config on non-root ranks too (same modifications)
         prepared.config["dimensions"]["num_features"] = num_agent_features + num_items + 1
-        prepared.config["dimensions"]["num_simuls"] = num_simuls_actual
+        prepared.config["dimensions"]["num_simulations"] = num_simulations_actual
         prepared.config["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
         prepared.config["row_generation"]["theta_ubs"] = 500
         parameters_to_log = [i for i in range(num_agent_features)] + [-1]

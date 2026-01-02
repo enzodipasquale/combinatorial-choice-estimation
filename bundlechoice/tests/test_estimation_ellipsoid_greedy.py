@@ -11,7 +11,7 @@ def test_ellipsoid_greedy():
     num_agents = 300
     num_items = 50
     num_features = 4
-    num_simuls = 1
+    num_simulations = 1
     seed = 42
     
     # Use factory to generate data (matches manual: abs(normal(0,1)))
@@ -19,7 +19,7 @@ def test_ellipsoid_greedy():
         ScenarioLibrary.greedy()
         .with_dimensions(num_agents=num_agents, num_items=num_items)
         .with_num_features(num_features)
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(1.0)
         .build()
     )

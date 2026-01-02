@@ -34,7 +34,7 @@ else:
 
 bc = BundleChoice()
 bc.load_config({
-    "dimensions": {"num_agents": 100, "num_items": 20, "num_features": 5, "num_simuls": 1},
+    "dimensions": {"num_agents": 100, "num_items": 20, "num_features": 5, "num_simulations": 1},
     "subproblem": {"name": "Greedy"},
     "row_generation": {"max_iters": 50, "tolerance_optimality": 0.001}
 })
@@ -73,7 +73,7 @@ input_data = {
         "modular": np.array,      # (num_items, num_features)
         "quadratic": np.array,    # (num_items, num_items, num_features) - optional
     },
-    "errors": np.array,           # (num_simuls, num_agents, num_items)
+    "errors": np.array,           # (num_simulations, num_agents, num_items)
     "obs_bundle": np.array,       # (num_agents, num_items)
     "constraint_mask": np.array   # (num_agents, num_items) - optional
 }
@@ -124,7 +124,7 @@ dimensions:
   num_agents: 100
   num_items: 50
   num_features: 10
-  num_simuls: 1
+  num_simulations: 1
 
 subproblem:
   name: "Greedy"

@@ -76,7 +76,7 @@ def create_real_airline_scenario(
                 "num_agents": num_agents,
                 "num_items": num_items,
                 "num_features": num_modular_features + 1,  # modular + congestion
-                "num_simuls": 1,
+                "num_simulations": 1,
             },
             "subproblem": {"name": "Greedy"},
             "row_generation": {

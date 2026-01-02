@@ -18,7 +18,7 @@ def test_row_generation_1slack_quadsupermodular():
     num_quadratic_agent_features = 0
     num_quadratic_item_features = 2
     num_features = num_modular_agent_features + num_modular_item_features + num_quadratic_agent_features + num_quadratic_item_features
-    num_simuls = 1
+    num_simulations = 1
     sigma = 5.0
     
     # Use factory to generate data (matches manual: -2*abs(normal(2,1)), exponential quadratic)
@@ -31,7 +31,7 @@ def test_row_generation_1slack_quadsupermodular():
             num_quad_agent=num_quadratic_agent_features,
             num_quad_item=num_quadratic_item_features,
         )
-        .with_num_simuls(num_simuls)
+        .with_num_simulations(num_simulations)
         .with_sigma(sigma)
         .with_agent_modular_config(multiplier=-2.0, mean=2.0, std=1.0)
         .with_quadratic_method(

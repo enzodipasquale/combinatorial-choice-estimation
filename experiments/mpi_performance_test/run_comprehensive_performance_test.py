@@ -9,17 +9,17 @@ import numpy as np
 from bundlechoice import BundleChoice
 from bundlechoice.factory import ScenarioLibrary
 
-def run_test(num_agents, num_items, num_simuls, num_features, max_iters, seed, branch_name):
+def run_test(num_agents, num_items, num_simulations, num_features, max_iters, seed, branch_name):
     """Run a single test and return timing statistics."""
     print(f"\n{'='*80}")
-    print(f"Testing: {branch_name} | Agents: {num_agents}, Items: {num_items}, Simuls: {num_simuls}")
+    print(f"Testing: {branch_name} | Agents: {num_agents}, Items: {num_items}, Simuls: {num_simulations}")
     print(f"{'='*80}")
     
     # Generate data
     scenario = ScenarioLibrary.quadratic_supermodular(
         num_agents=num_agents,
         num_items=num_items,
-        num_simulations=num_simuls,
+        num_simulations=num_simulations,
         num_features=num_features,
         seed=seed
     )
@@ -61,7 +61,7 @@ def main():
     print("COMPREHENSIVE PERFORMANCE TEST: MAIN vs FEATURE BRANCH")
     print("="*80)
     
-    # Test configurations: (num_agents, num_items, num_simuls, num_features, max_iters, seed)
+    # Test configurations: (num_agents, num_items, num_simulations, num_features, max_iters, seed)
     test_configs = [
         # Medium scale
         (128, 100, 5, 6, 50, 42),
@@ -76,7 +76,7 @@ def main():
     
     results = {}
     
-    for num_agents, num_items, num_simuls, num_features, max_iters, seed in test_configs:
+    for num_agents, num_items, num_simulations, num_features, max_iters, seed in test_configs:
         scale_name = f"{num_agents}x{num_items}"
         results[scale_name] = {}
         
@@ -92,7 +92,7 @@ def main():
             # Test main branch
             try:
                 main_result = run_test(
-                    num_agents, num_items, num_simuls, num_features, max_iters, seed,
+                    num_agents, num_items, num_simulations, num_features, max_iters, seed,
                     f"MAIN ({num_ranks} ranks)"
                 )
                 results[scale_name][rank_key]['main'] = main_result
@@ -103,7 +103,7 @@ def main():
             # Test feature branch
             try:
                 feature_result = run_test(
-                    num_agents, num_items, num_simuls, num_features, max_iters, seed,
+                    num_agents, num_items, num_simulations, num_features, max_iters, seed,
                     f"FEATURE ({num_ranks} ranks)"
                 )
                 results[scale_name][rank_key]['feature'] = feature_result

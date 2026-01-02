@@ -159,7 +159,7 @@ def main():
         ScenarioLibrary.gentzkow()
         .with_dimensions(num_agents=1500, num_items_per_period=30)
         .with_feature_counts(num_mod_agent=2, num_mod_item=2, num_quad_item=2)
-        .with_num_simuls(1)
+        .with_num_simulations(1)
         .with_sigma(3.0)
         .with_sigma_time_invariant(2.0)
         .with_time_invariant_alpha(true_alpha)
@@ -189,7 +189,7 @@ def main():
     
     # Extract observed bundles and store i.i.d. errors for transformation
     if rank == 0:
-        num_simuls = prepared.metadata['num_simuls']
+        num_simulations = prepared.metadata['num_simulations']
         num_agents = prepared.metadata['num_agents']
         num_items = prepared.metadata['num_items']
         num_items_per_period = prepared.metadata['num_items_per_period']
@@ -208,8 +208,8 @@ def main():
         generator_estimation = DataGenerator(seed=200)
         
         # Generate i.i.d. simulation errors for estimation
-        iid_simulation_errors = np.zeros((num_simuls, num_agents, num_items))
-        for simul in range(num_simuls):
+        iid_simulation_errors = np.zeros((num_simulations, num_agents, num_items))
+        for simul in range(num_simulations):
             iid_simulation_errors[simul] = generator_estimation.rng.normal(0, sigma, (num_agents, num_items))
         
         # Generate base i.i.d. time-invariant errors ONCE - these will be transformed with correlation for each alpha
@@ -247,7 +247,7 @@ def main():
         iid_simulation_errors = None
         base_iid_time_invariant_errors = None
         obs_pattern_moments = None
-        num_simuls = None
+        num_simulations = None
         num_agents = None
         num_items = None
         num_items_per_period = None
@@ -331,8 +331,8 @@ def main():
                 time_invariant_errors[:, start_idx:end_idx] = time_invariant_errors_period
             
             # Combine: i.i.d. simulation + time-invariant (with correlation)
-            estimation_errors = np.zeros((num_simuls, num_agents, num_items))
-            for simul in range(num_simuls):
+            estimation_errors = np.zeros((num_simulations, num_agents, num_items))
+            for simul in range(num_simulations):
                 estimation_errors[simul] = iid_simulation_errors[simul] + time_invariant_errors
             
             # Prepare estimation data

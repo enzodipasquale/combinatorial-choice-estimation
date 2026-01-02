@@ -46,7 +46,7 @@ if rank == 0:
     num_agents_full = obs_bundle_full.shape[0]
     num_items_full = obs_bundle_full.shape[1]
     num_features = config["dimensions"]["num_features"]
-    num_simuls = config["dimensions"]["num_simuls"]
+    num_simulations = config["dimensions"]["num_simulations"]
     
     item_data_full = {
         "modular": -np.eye(num_items_full),
@@ -59,7 +59,7 @@ if rank == 0:
     }
     
     np.random.seed(RANDOM_SEED)
-    errors_full = np.random.normal(0, 1, size=(num_simuls, num_agents_full, num_items_full))
+    errors_full = np.random.normal(0, 1, size=(num_simulations, num_agents_full, num_items_full))
 else:
     obs_bundle_full = None
     item_data_full = None
@@ -68,11 +68,11 @@ else:
     num_agents_full = None
     num_items_full = None
     num_features = None
-    num_simuls = None
+    num_simulations = None
 
 # Broadcast dimensions to all ranks (same as main estimation)
 num_features = comm.bcast(num_features if rank == 0 else None, root=0)
-num_simuls = comm.bcast(num_simuls if rank == 0 else None, root=0)
+num_simulations = comm.bcast(num_simulations if rank == 0 else None, root=0)
 
 # Bootstrap loop
 all_results = []

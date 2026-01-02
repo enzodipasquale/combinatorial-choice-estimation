@@ -18,7 +18,7 @@ def run_row_generation_greedy_experiment():
     num_agents = 100
     num_items = 300
     num_features = num_agent_features + num_item_features +1
-    num_simuls = 50
+    num_simulations = 50
     sigma = 6
     
     # Configuration
@@ -53,7 +53,7 @@ def run_row_generation_greedy_experiment():
 
         modular_agent = np.abs(np.random.normal(0, 1, (num_agents, num_items, num_agent_features)))
         errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) + endogenous_errors[None,:]
-        estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+        estimation_errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
         item_data = {"modular": modular_item}
         agent_data = {"modular": modular_agent}
         input_data = {"item_data": item_data, 
@@ -81,7 +81,7 @@ def run_row_generation_greedy_experiment():
         print(f"[Rank 0] Total aggregate: {obs_bundles.sum():.2f}")
         input_data["obs_bundle"] = obs_bundles
         input_data["errors"] = estimation_errors
-        cfg["dimensions"]["num_simuls"] = num_simuls
+        cfg["dimensions"]["num_simulations"] = num_simulations
     else:
         input_data = None
     
@@ -106,7 +106,7 @@ def run_row_generation_greedy_experiment():
         input_data["errors"] = estimation_errors 
     else:
         input_data = None
-    cfg["dimensions"]["num_simuls"] = num_simuls
+    cfg["dimensions"]["num_simulations"] = num_simulations
     cfg["dimensions"]["num_features"] = num_agent_features + num_items + 1
     cfg["row_generation"]["theta_lbs"] = [0] * num_agent_features + [-500] * num_items + [0]
     cfg["row_generation"]["theta_ubs"] = 500

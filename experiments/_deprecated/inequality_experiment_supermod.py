@@ -5,7 +5,7 @@ from datetime import datetime
 # Define dimensions
 num_agents = 1000
 num_items = 30
-num_simuls = 1
+num_simulations = 1
 modular_agent_features = 2
 quadratic_item_features = 0
 num_features = modular_agent_features + quadratic_item_features
@@ -17,7 +17,7 @@ cfg = {
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
     },
     "subproblem": {
         "name": "QuadSupermodularNetwork",
@@ -40,7 +40,7 @@ item_data = {"quadratic": quadratic_item}
 
 # Errors
 errors = sigma * np.random.normal(0, 1, size=(num_agents, num_items)) 
-estimation_errors = sigma * np.random.normal(0, 1, size=(num_simuls, num_agents, num_items))
+estimation_errors = sigma * np.random.normal(0, 1, size=(num_simulations, num_agents, num_items))
 
 # Data
 data = {"agent_data": agent_data, 
