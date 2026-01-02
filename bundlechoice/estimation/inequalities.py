@@ -1,12 +1,12 @@
 import numpy as np
 from datetime import datetime
-from typing import Tuple, Optional, Any
+from typing import Tuple, List, Optional, Any, Dict
 from numpy.typing import NDArray
+import logging
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
-from .result import EstimationResult
 logger = get_logger(__name__)
 
 
@@ -36,12 +36,12 @@ class InequalitiesManager(BaseEstimationManager):
             subproblem_manager=subproblem_manager
         )
 
-    def solve(self) -> EstimationResult:
+    def solve(self):
         """
         Solve the inequalities estimation problem.
         
         Returns:
-            EstimationResult: Result object containing theta_hat and diagnostics.
+            np.ndarray: Estimated parameter vector theta
         """
         logger.info("=== INEQUALITIES SOLVER ===")
         tic = datetime.now()
@@ -58,26 +58,7 @@ class InequalitiesManager(BaseEstimationManager):
         elapsed = (datetime.now() - tic).total_seconds()
         logger.info(f"Elapsed time: {elapsed:.2f} seconds")
         
-        theta_hat = theta.X.copy()
-        obj_val = model.ObjVal if model.Status == GRB.OPTIMAL else None
-        
-        timing = {
-            'total_time': elapsed,
-            'optimize_time': elapsed,
-        }
-        
-        result = EstimationResult(
-            theta_hat=theta_hat,
-            converged=(model.Status == GRB.OPTIMAL),
-            num_iterations=1,  # Single solve, no iterations
-            final_objective=obj_val,
-            timing=timing,
-            iteration_history=None,
-            warnings=[] if model.Status == GRB.OPTIMAL else [f"Model status: {model.Status}"],
-            metadata={'model_status': model.Status}
-        )
-        
-        return result
+        return theta.X
         
     def compute_features_alt_AddDrop(self) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Compute alternative features for add/drop operations. Returns (features_alt, errors_alt)."""
@@ -114,5 +95,4 @@ class InequalitiesManager(BaseEstimationManager):
         """
         obs_bundles = self.input_data.get("obs_bundle")
         agents_obs_features = np.array([self.feature_manager.features_oracle(i, obs_bundles[i]) for i in range(self.num_agents)])
-        return agents_obs_features.sum(0)
-
+        return agents_obs_features.sum(0) 

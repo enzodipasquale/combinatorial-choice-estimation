@@ -5,15 +5,15 @@ This module implements the ellipsoid method for parameter estimation.
 import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime
-from typing import Optional, Callable, Dict, Any
-from .base import BaseEstimationManager
-from .result import EstimationResult
+from typing import Optional, Tuple, Callable, Dict, Any
+import math
+from .base import BaseEstimationSolver
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-class EllipsoidManager(BaseEstimationManager):
+class EllipsoidSolver(BaseEstimationSolver):
     """
     Implements the ellipsoid method for parameter estimation in modular bundle choice models.
 
@@ -32,7 +32,7 @@ class EllipsoidManager(BaseEstimationManager):
         theta_init: Optional[NDArray[np.float64]] = None
     ) -> None:
         """
-        Initialize the EllipsoidManager.
+        Initialize the EllipsoidSolver.
 
         Args:
             comm_manager: Communication manager for MPI operations
@@ -69,12 +69,9 @@ class EllipsoidManager(BaseEstimationManager):
         self.gamma_1 = (n**2 / (n**2 - 1))**(1/2)
         self.gamma_2 = self.gamma_1 * ((2 / (n + 1)))
 
-    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> EstimationResult:
+    def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> NDArray[np.float64]:
         """
         Run the ellipsoid method to estimate model parameters.
-        
-        Returns:
-            EstimationResult: Result object containing theta_hat and diagnostics.
 
         Args:
             callback: Optional callback function called after each iteration.
@@ -105,7 +102,7 @@ class EllipsoidManager(BaseEstimationManager):
             num_iters = self.ellipsoid_cfg.num_iters
         else:
             # Compute iterations using formula: n*(n-1)*log(1/precision) where n is num_features
-            num_iters = int(self.n * (self.n - 1) * np.log(1.0 / self.ellipsoid_cfg.solver_precision))
+            num_iters = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
         keep_last_n = min(1000, num_iters)  # Limit memory for large num_iters
 
         # Track timing breakdown
@@ -177,18 +174,12 @@ class EllipsoidManager(BaseEstimationManager):
             if len(vals) > 0:
                 best_idx = np.argmin(vals)
                 best_theta = np.array(centers)[best_idx]
-                best_obj = vals[best_idx]
-                best_iter = best_idx + 1
                 logger.info(f"Best objective: {vals[best_idx]:.4f} at iteration {best_idx+1}")
             else:
                 # All iterations were constraint violations
                 best_theta = self.theta_iter
-                best_obj = None
-                best_iter = None
         else:
             best_theta = np.empty(self.num_features, dtype=np.float64)
-            best_obj = None
-            best_iter = None
         
         # Broadcast result to all ranks
         best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
@@ -209,30 +200,10 @@ class EllipsoidManager(BaseEstimationManager):
                 'update_time_pct': 100 * total_update / elapsed if elapsed > 0 else 0,
                 'mpi_time_pct': 100 * total_mpi / elapsed if elapsed > 0 else 0,
             }
-            result = EstimationResult(
-                theta_hat=best_theta.copy(),
-                converged=True,  # Ellipsoid always runs fixed iterations
-                num_iterations=num_iters,
-                final_objective=best_obj,
-                timing=self.timing_stats,
-                iteration_history=None,
-                warnings=[] if best_obj is not None else ['All iterations were constraint violations'],
-                metadata={'best_iteration': best_iter}
-            )
         else:
             self.timing_stats = None
-            result = EstimationResult(
-                theta_hat=best_theta.copy(),  # best_theta already broadcast to all ranks
-                converged=True,
-                num_iterations=num_iters,
-                final_objective=None,
-                timing=None,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
         
-        return result
+        return best_theta
 
     def _initialize_ellipsoid(self) -> None:
         """Initialize the ellipsoid with starting parameters and matrix."""
@@ -263,4 +234,7 @@ class EllipsoidManager(BaseEstimationManager):
             if np.all(np.isfinite(B_new)):
                 self.B_iter = B_new
             else:
-                logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")
+                logger.warning("Ellipsoid update: B_new is non-finite, skipping B update")   
+
+
+
