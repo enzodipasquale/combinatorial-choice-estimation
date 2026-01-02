@@ -1,10 +1,15 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 from mpi4py import MPI
-from bundlechoice.core import BundleChoice
+from bundlechoice import BundleChoice
 from bundlechoice.scenarios import ScenarioLibrary
 from datetime import datetime
+
+# Add bundlechoice to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
@@ -15,7 +20,7 @@ SAVE_PATH = "/Users/enzo-macbookpro/MyProjects/score-estimator/greedy"
 num_agents = 1000
 num_items = 100
 num_features = 5
-num_simuls = 1
+num_simulations = 1
 sigma = 1
 seed = None  # No fixed seed for benchmarking
 
@@ -24,7 +29,7 @@ scenario = (
     ScenarioLibrary.greedy()
     .with_dimensions(num_agents=num_agents, num_items=num_items)
     .with_num_features(num_features)
-    .with_num_simuls(num_simuls)
+    .with_num_simulations(num_simulations)
     .with_sigma(sigma)
     .build()
 )
@@ -64,7 +69,7 @@ if rank == 0:
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": num_simuls,
+        "num_simulations": num_simulations,
         "subproblem": greedy_experiment.subproblem_cfg.name,
         "sigma": sigma,
         **{f"theta_0_{i}": val for i, val in enumerate(theta_0)},
