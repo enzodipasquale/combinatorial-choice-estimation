@@ -771,9 +771,9 @@ class RowGenerationManager(BaseEstimationManager):
                             # Convert binary string back to bundle array
                             bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
                             # Verify bundle has correct length
-                    if len(bundle) == self.num_items:
-                        indices.append(idx)
-                        bundles.append(bundle)
+                            if len(bundle) == self.num_items:
+                                indices.append(idx)
+                                bundles.append(bundle)
                     elif constr.ConstrName.startswith("rowgen_") and "_b" in constr.ConstrName:
                         # New format: extract bundle from constraint expression (u[idx] >= error + features @ theta)
                         # Parse idx from name: "rowgen_{idx}_b{hash}"
@@ -831,9 +831,9 @@ class RowGenerationManager(BaseEstimationManager):
                                 # Convert binary string back to bundle array
                                 bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
                                 # Verify bundle has correct length
-                    if len(bundle) == self.num_items:
-                        indices.append(idx)
-                        bundles.append(bundle)
+                                if len(bundle) == self.num_items:
+                                    indices.append(idx)
+                                    bundles.append(bundle)
                         elif constr.ConstrName.startswith("rowgen_") and "_b" in constr.ConstrName:
                             # New format: extract idx only (bundle info lost in hash-based naming)
                             name_parts = constr.ConstrName.split("_")
@@ -842,8 +842,8 @@ class RowGenerationManager(BaseEstimationManager):
                                 indices.append(idx)
                                 # Use zeros as placeholder (bundle info lost in hash-based naming)
                                 bundles.append(np.zeros(self.num_items, dtype=np.float64))
-                except (ValueError, IndexError):
-                    continue
+                    except (ValueError, IndexError):
+                        continue
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
