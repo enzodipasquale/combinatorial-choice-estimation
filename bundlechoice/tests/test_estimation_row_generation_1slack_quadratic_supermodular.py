@@ -3,8 +3,8 @@ import pytest
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation import RowGeneration1SlackManager
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 
 
 def test_row_generation_1slack_quadsupermodular():

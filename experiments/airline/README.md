@@ -15,7 +15,7 @@ This folder contains tools for analyzing airline networks using the bundlechoice
 The airline scenario builder is in `bundlechoice/factory/airline.py` and can be accessed via:
 
 ```python
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 
 scenario = ScenarioLibrary.airline().build()
 ```

@@ -4,7 +4,7 @@ import time
 from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 
 
 def test_ellipsoid_plain_single_item():

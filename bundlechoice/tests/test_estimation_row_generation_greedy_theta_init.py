@@ -2,7 +2,7 @@ import numpy as np
 from mpi4py import MPI
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 
 
 def test_row_generation_greedy_theta_init_same_problem():

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from mpi4py import MPI
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 
 
 def plot_agent_network(agent_idx, bundle, cities, markets, agent_hubs, ax, title_suffix=""):

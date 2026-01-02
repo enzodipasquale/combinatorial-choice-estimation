@@ -7,7 +7,7 @@ Uses the factory pattern with endogeneity support for BLP inversion.
 import numpy as np
 import time
 from mpi4py import MPI
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.core import BundleChoice
 
 def run_row_generation_quadknapsack_experiment():
@@ -25,7 +25,7 @@ def run_row_generation_quadknapsack_experiment():
     sigma = 3.0
     
     # Quadratic term options
-    from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+    from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
     agent_quadratic_method = QuadraticGenerationMethod.BINARY_CHOICE  # Options: EXPONENTIAL, BINARY_CHOICE
     agent_quadratic_binary_prob = 0.2
     agent_quadratic_binary_value = 0.3

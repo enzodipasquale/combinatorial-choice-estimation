@@ -7,7 +7,7 @@ Uses the factory pattern with endogeneity support for BLP inversion.
 import numpy as np
 import time
 from mpi4py import MPI
-from bundlechoice.factory import ScenarioLibrary
+from bundlechoice.scenarios import ScenarioLibrary
 from bundlechoice.core import BundleChoice
 
 def run_row_generation_greedy_experiment():
@@ -170,7 +170,7 @@ def run_row_generation_greedy_experiment():
     
     # Reinstall find_best_item after subproblems are reloaded
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
-    from bundlechoice.factory.greedy import _install_find_best_item
+    from bundlechoice.scenarios.greedy import _install_find_best_item
     if isinstance(bc_blp.subproblems.subproblem_instance, GreedySubproblem):
         _install_find_best_item(bc_blp.subproblems.subproblem_instance)
     

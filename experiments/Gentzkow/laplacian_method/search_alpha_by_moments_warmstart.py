@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 from mpi4py import MPI
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod, DataGenerator
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod, DataGenerator
 from scipy.linalg import expm
 
 

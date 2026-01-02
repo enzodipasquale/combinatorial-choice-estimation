@@ -30,8 +30,8 @@ import numpy as np
 from mpi4py import MPI
 
 from bundlechoice.core import BundleChoice
-from bundlechoice.factory import ScenarioLibrary
-from bundlechoice.factory.data_generator import QuadraticGenerationMethod
+from bundlechoice.scenarios import ScenarioLibrary
+from bundlechoice.scenarios.data_generator import QuadraticGenerationMethod
 
 COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
