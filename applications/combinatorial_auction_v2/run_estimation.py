@@ -8,6 +8,9 @@ import os
 import traceback
 from pathlib import Path
 
+# Add bundlechoice to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from bundlechoice import BundleChoice
 import numpy as np
 import yaml
