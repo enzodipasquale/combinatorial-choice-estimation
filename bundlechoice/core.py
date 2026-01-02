@@ -1,15 +1,17 @@
-from .config import BundleChoiceConfig
+from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
 from .data_manager import DataManager
 from .feature_manager import FeatureManager
 from .subproblems.subproblem_manager import SubproblemManager
 from mpi4py import MPI
-from typing import Optional, Any, Dict, Union
+from typing import Optional, Callable, Any, Dict, Union
 import numpy as np
-from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager, ColumnGenerationManager
+from bundlechoice.utils import get_logger
+from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
 from bundlechoice.estimation.inequalities import InequalitiesManager
 from bundlechoice.base import HasComm, HasConfig
 from .comm_manager import CommManager
+logger = get_logger(__name__)
 
 
 # ============================================================================
@@ -35,7 +37,6 @@ class BundleChoice(HasComm, HasConfig):
     feature_manager: Optional[FeatureManager]
     subproblem_manager: Optional[SubproblemManager]
     row_generation_manager: Optional[RowGenerationManager]
-    column_generation_manager: Optional[ColumnGenerationManager]
     ellipsoid_manager: Optional[EllipsoidManager]
     inequalities_manager: Optional[InequalitiesManager]
     standard_errors_manager: Optional[StandardErrorsManager]
@@ -50,7 +51,6 @@ class BundleChoice(HasComm, HasConfig):
         self.feature_manager = None
         self.subproblem_manager = None
         self.row_generation_manager = None
-        self.column_generation_manager = None
         self.ellipsoid_manager = None
         self.inequalities_manager = None
         self.standard_errors_manager = None
@@ -80,11 +80,6 @@ class BundleChoice(HasComm, HasConfig):
         """Initialize RowGenerationManager."""
         from bundlechoice._initialization import try_init_row_generation_manager
         return try_init_row_generation_manager(self)
-
-    def _try_init_column_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> ColumnGenerationManager:
-        """Initialize ColumnGenerationManager."""
-        from bundlechoice._initialization import try_init_column_generation_manager
-        return try_init_column_generation_manager(self, theta_init)
 
     def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> EllipsoidManager:
         """Initialize EllipsoidManager."""
@@ -128,12 +123,6 @@ class BundleChoice(HasComm, HasConfig):
         if self.row_generation_manager is None:
             self._try_init_row_generation_manager()
         return self.row_generation_manager
-
-    @property
-    def column_generation(self) -> ColumnGenerationManager:
-        if self.column_generation_manager is None:
-            self._try_init_column_generation_manager()
-        return self.column_generation_manager
         
     @property
     def ellipsoid(self) -> EllipsoidManager:

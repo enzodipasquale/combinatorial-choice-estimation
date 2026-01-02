@@ -127,6 +127,15 @@ class BundleChoiceConfig(AutoUpdateMixin):
             cfg = yaml.safe_load(f)
         return cls.from_dict(cfg) 
 
+    @classmethod
+    def load(cls, cfg: Union[str, Path, Dict[str, Any]]) -> 'BundleChoiceConfig':
+        """Load configuration from YAML file or dictionary."""
+        if isinstance(cfg, (str, Path)):
+            return cls.from_yaml(str(cfg))
+        elif isinstance(cfg, dict):
+            return cls.from_dict(cfg)
+        else:
+            raise ValueError("cfg must be a string, Path, or a dictionary.")
 
     # ============================================================================
     # Validation

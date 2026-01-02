@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional, Dict, Any
 
 # ============================================================================
 # Mixin Classes
@@ -42,14 +42,9 @@ class HasDimensions:
         return self.dimensions_cfg.num_features if self.dimensions_cfg else None
 
     @property
-    def num_simulations(self) -> int:
-        """Number of simulation runs."""
-        return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
-    
-    @property
     def num_simuls(self) -> int:
-        """Backward compatibility alias for num_simulations."""
-        return self.num_simulations
+        """Number of simulation runs."""
+        return self.dimensions_cfg.num_simuls if self.dimensions_cfg else 1
 
 class HasConfig:
     """Mixin for configuration access (subproblem_cfg, row_generation_cfg, etc.)."""

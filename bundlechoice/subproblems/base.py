@@ -41,7 +41,7 @@ class BaseSubproblem(HasDimensions, HasData, ABC):
         """Solve all subproblems for this rank."""
         pass
 
-class BaseBatchSubproblem(BaseSubproblem, ABC):
+class BatchSubproblemBase(BaseSubproblem, ABC):
     """Base class for batch (vectorized) subproblems."""
     
     @abstractmethod
@@ -63,7 +63,7 @@ class BaseBatchSubproblem(BaseSubproblem, ABC):
         """Solve batch subproblem."""
         return self.solve(theta)
 
-class BaseSerialSubproblem(BaseSubproblem, ABC):
+class SerialSubproblemBase(BaseSubproblem, ABC):
     """Base class for serial (per-agent) subproblems."""
     
     @abstractmethod

@@ -8,7 +8,7 @@ import numpy as np
 from typing import Any, Optional, Tuple, Dict, List
 from numpy.typing import NDArray
 from bundlechoice.base import HasDimensions, HasData, HasComm
-from bundlechoice.utils import get_logger
+from bundlechoice.utils import get_logger, extract_theta
 
 logger = get_logger(__name__)
 
@@ -74,11 +74,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
 
     def objective(self, theta: NDArray[np.float64]) -> Optional[float]:
         """Compute objective function value."""
-        # Handle EstimationResult objects
-        if hasattr(theta, 'theta_hat'):
-            theta = theta.theta_hat
-        # Ensure theta is a numpy array
-        theta = np.asarray(theta, dtype=np.float64)
+        theta = extract_theta(theta)
         if theta.ndim == 0:
             raise ValueError(f"theta must be 1D array, got scalar or 0D array")
         B_local = self.subproblem_manager.solve_local(theta)
@@ -200,3 +196,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
         else:
             logger.info("Parameters: %s", np.round(self.theta_val, precision))
+
+
+# Alias for backward compatibility
+BaseEstimationSolver = BaseEstimationManager
