@@ -1,90 +1,99 @@
 # TASKS FOR LOCAL AGENT
 
+## Your Role
+You run code **locally** (not on SLURM). You can help by:
+- Testing code locally with small MPI ranks (2-4 ranks)
+- Verifying timing fixes work correctly
+- Debugging issues before they hit SLURM
+- Running quick validation tests
+
 ## Current Status
-- Two jobs submitted: main (4004614) and feature (4004615)
-- Both jobs are currently PENDING in the queue
-- Jobs will run with identical parameters (seed=42, same problem size)
+- Two SLURM jobs are running: main (4004614) and feature (4004615)
+- These are large-scale tests (160 ranks, 8 nodes)
+- You can run **small-scale local tests** to verify the fixes work
 
-## Your Tasks While Waiting
+## Your Tasks
 
-### 1. Monitor Job Status
+### 1. Test Timing Fixes Locally (Both Branches)
+
+#### Test Main Branch:
 ```bash
-# Check job status periodically
-squeue -j 4004614,4004615
+cd /scratch/ed2189/combinatorial-choice-estimation
+git checkout main
 
-# Check if output files appear
-ls -lh /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/slurm-mpi-test-*-400461*.out
+# Run small local test (2-4 ranks)
+mpirun -n 4 python experiments/mpi_performance_test/run_estimation.py
 ```
 
-### 2. When Jobs Start Running
-- Monitor progress by tailing output files:
+**What to check:**
+- Does it run without errors?
+- In the "Timing Statistics:" section, is "Unaccounted time" ~0%?
+- Are all timing components present (gather_bundles, gather_features, compute_features, etc.)?
+
+#### Test Feature Branch:
 ```bash
-# Main branch
-tail -f /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/slurm-mpi-test-main-4004614.out
+cd /scratch/ed2189/combinatorial-choice-estimation
+git checkout feature/mpi-gather-optimization
 
-# Feature branch  
-tail -f /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/slurm-mpi-test-feature-4004615.out
+# Run small local test (2-4 ranks)
+mpirun -n 4 python experiments/mpi_performance_test/run_estimation.py
 ```
 
-### 3. When Jobs Complete - Analysis Tasks
+**What to check:**
+- Same as above
+- Compare unaccounted time between branches (should both be ~0%)
 
-#### A. Check for Errors
-```bash
-# Check error files
-cat /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/slurm-mpi-test-main-4004614.err
-cat /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/slurm-mpi-test-feature-4004615.err
+### 2. Verify Timing Components Are Tracked
+
+For both branches, check that the output includes:
+- `gather_bundles`
+- `gather_features`
+- `gather_errors`
+- `compute_features`
+- `compute_errors`
+- `mpi_gather` (should be sum of gather operations)
+- `iteration_overhead`
+- `Unaccounted time` (should be ~0% or very small)
+
+### 3. Quick Validation Test
+
+Create a simple test script to verify timing adds up:
+```python
+# After running, check that:
+# total_time ≈ init_time + sum(all_component_times)
+# unaccounted_time = total_time - sum(all_tracked_times) ≈ 0
 ```
 
-#### B. Extract Timing Statistics
-For each output file, find the "Timing Statistics:" section and extract:
-- Total time
-- Unaccounted time (should be ~0%)
-- Component breakdown:
-  - pricing
-  - mpi_gather
-  - gather_bundles, gather_features, gather_errors
-  - compute_features, compute_errors
-  - master_prep, master_update, master_optimize
-  - mpi_broadcast
-  - iteration_overhead
+### 4. Report Findings
 
-#### C. Create Comparison Report
-Compare the two versions:
-1. **Unaccounted time**: Should be ~0% in both (this is what we fixed)
-2. **Total runtime**: Should be similar (within 10-20%)
-3. **mpi_gather time**: Should be small (< 1% of total) in both
-4. **Per-component times**: Compare each component between versions
-5. **Any discrepancies**: Note any significant differences
-
-#### D. Report Format
-Create a summary with:
-```
-=== TIMING COMPARISON REPORT ===
-
-Main Branch (4004614):
-- Total time: X.XXs
-- Unaccounted time: X.XXs (X.X%)
-- mpi_gather: X.XXs (X.X%)
-- [other components...]
-
-Feature Branch (4004615):
-- Total time: X.XXs
-- Unaccounted time: X.XXs (X.X%)
-- mpi_gather: X.XXs (X.X%)
-- [other components...]
-
-Comparison:
-- Unaccounted time fixed: [YES/NO - should be ~0% in both]
-- Runtime difference: X.X% [main vs feature]
-- Key findings: [list any issues or discrepancies]
-```
+Report:
+- ✅ Both branches run successfully locally
+- ✅ Unaccounted time is ~0% in both
+- ✅ All timing components are present
+- ⚠️ Any errors or issues found
+- ⚠️ Any discrepancies between branches
 
 ## ⚠️ CRITICAL REMINDER
-**DO NOT modify either branch until both jobs complete and analysis is done!**
+**DO NOT modify code in either branch!**
+- Test both branches as-is
+- Report issues but don't fix them
+- Wait for instructions before making changes
 
-## Files to Check
-- Main output: `applications/combinatorial_auction_v2/slurm-mpi-test-main-4004614.out`
-- Feature output: `applications/combinatorial_auction_v2/slurm-mpi-test-feature-4004615.out`
-- Main error: `applications/combinatorial_auction_v2/slurm-mpi-test-main-4004614.err`
-- Feature error: `applications/combinatorial_auction_v2/slurm-mpi-test-feature-4004615.err`
+## If You Find Issues
 
+1. **Syntax errors**: Report immediately
+2. **Timing issues**: Note which branch and what's wrong
+3. **Missing components**: List what's missing
+4. **Unaccounted time > 1%**: Report the value
+
+## Expected Local Test Results
+
+With 2-4 ranks, the test should:
+- Complete in < 1 minute
+- Show unaccounted time < 1%
+- Show all timing components
+- Run without errors
+
+## Files to Use
+- Test script: `experiments/mpi_performance_test/run_estimation.py`
+- This works on both branches (same script, different code versions)
