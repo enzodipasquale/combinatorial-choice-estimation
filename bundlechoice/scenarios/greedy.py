@@ -25,7 +25,7 @@ class GreedyParams:
     num_agents: int = 200
     num_items: int = 150
     num_features: int = 4
-    num_simuls: int = 1
+    num_simulations: int = 1
     sigma: float = 1.0
     theta_star: np.ndarray = field(default_factory=lambda: np.array([1.0, 1.0, 1.0, 0.1]))
     agent_config: ModularAgentConfig = field(default_factory=lambda: ModularAgentConfig(apply_abs=True))
