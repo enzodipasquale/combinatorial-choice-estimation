@@ -7,7 +7,7 @@ Solves the dual of the row generation master problem via column generation.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import gurobipy as gp
 import numpy as np

@@ -5,8 +5,7 @@ This module implements the ellipsoid method for parameter estimation.
 import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime
-from typing import Optional, Tuple, Callable, Dict, Any
-import math
+from typing import Optional, Callable, Dict, Any
 from .base import BaseEstimationManager
 from .result import EstimationResult
 from bundlechoice.utils import get_logger
@@ -106,7 +105,7 @@ class EllipsoidManager(BaseEstimationManager):
             num_iters = self.ellipsoid_cfg.num_iters
         else:
             # Compute iterations using formula: n*(n-1)*log(1/precision) where n is num_features
-            num_iters = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
+            num_iters = int(self.n * (self.n - 1) * np.log(1.0 / self.ellipsoid_cfg.solver_precision))
         keep_last_n = min(1000, num_iters)  # Limit memory for large num_iters
 
         # Track timing breakdown
