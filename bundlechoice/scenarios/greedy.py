@@ -56,8 +56,8 @@ class GreedyScenarioBuilder:
         theta[-1] = 0.1
         return GreedyScenarioBuilder(replace(self._params, num_features=num_features, theta_star=theta))
 
-    def with_num_simuls(self, num_simuls: int) -> "GreedyScenarioBuilder":
-        return GreedyScenarioBuilder(replace(self._params, num_simuls=num_simuls))
+    def with_num_simulations(self, num_simulations: int) -> "GreedyScenarioBuilder":
+        return GreedyScenarioBuilder(replace(self._params, num_simulations=num_simulations))
 
     def with_sigma(self, sigma: float) -> "GreedyScenarioBuilder":
         return GreedyScenarioBuilder(replace(self._params, sigma=sigma))
