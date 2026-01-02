@@ -8,16 +8,19 @@
 
 ## Current Status
 
-- **Feature branch**: Combined gather optimization implemented (1 gather instead of 3)
-- **Goal**: Verify speedup, especially at large sizes (XL: 512×200)
-- **Previous finding**: Feature branch was 1.7% slower at XL size - need to verify if combined gather fixes this
+- **Feature branch**: Combined gather optimization **REVERTED** (doesn't work)
+- **Test results**: Optimization caused 0.5-8.1% slowdown
+- **Root cause**: Sequential computation bottleneck (4-8x slower) outweighs negligible MPI gather savings
+- **Current approach**: Parallel computation + fast gathers (same as main branch)
 
 ## Latest Change (Feature Branch)
 
-- **Combined gather optimization**: Gather bundles once, compute features/errors on root
-- **Reduces MPI operations**: 3 gathers → 1 gather
-- **Expected benefit**: Should help at large scales where communication dominates
-- **Commit**: `d6e580d` - "opt: implement combined gather optimization"
+- **Reverted combined gather optimization**: Back to parallel computation approach
+- **Reason**: Test results showed optimization doesn't work at current scales
+  - MPI gather operations are very fast (<0.002s), so reducing from 3 to 1 gather saves negligible time
+  - Sequential computation on root is 4-8x slower than parallel computation
+  - Performance gets worse with more ranks (8.1% slowdown at 8 ranks)
+- **Conclusion**: At current scales, computation dominates, so parallel is better
 
 ## Messages
 
