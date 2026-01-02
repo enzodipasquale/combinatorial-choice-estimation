@@ -102,7 +102,7 @@ class RowGenerationManager(BaseEstimationManager):
             if hasattr(self, '_theta_init_for_start') and self._theta_init_for_start is not None:
                 theta.Start = self._theta_init_for_start
 
-            u = self.master_model.addMVar(self.num_simuls * self.num_agents, obj=1, name='utility')
+            u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
             
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
@@ -258,8 +258,8 @@ class RowGenerationManager(BaseEstimationManager):
             print("=" * 70)
             print()  # Blank line after header
             print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
-            if self.dimensions_cfg.num_simuls > 1:
-                print(f"  Simulations: {self.dimensions_cfg.num_simuls}")
+            if self.dimensions_cfg.num_simulations > 1:
+                print(f"  Simulations: {self.dimensions_cfg.num_simulations}")
             print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
             print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
             print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
@@ -299,7 +299,7 @@ class RowGenerationManager(BaseEstimationManager):
             bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
             
             if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
-                indices = np.arange(self.num_simuls * self.num_agents, dtype=np.int64)
+                indices = np.arange(self.num_simulations * self.num_agents, dtype=np.int64)
                 initial_constraints = {
                     'indices': indices,
                     'bundles': bundles_sim.astype(np.float64)

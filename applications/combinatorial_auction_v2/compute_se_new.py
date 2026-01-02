@@ -68,7 +68,7 @@ config = {
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
-        "num_simuls": 1
+        "num_simulations": 1
     },
     "subproblem": {
         "name": "QuadKnapsack",
