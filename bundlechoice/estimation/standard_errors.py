@@ -53,13 +53,13 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         subproblem_manager: SubproblemManager,
         se_cfg: StandardErrorsConfig,
     ):
-        # Use the names expected by mixins
+        # Use consistent naming with other managers
         self.comm_manager = comm_manager
         self.dimensions_cfg = dimensions_cfg
         self.data_manager = data_manager
-        self._feature_manager = feature_manager
-        self._subproblem_manager = subproblem_manager
-        self._se_cfg = se_cfg
+        self.feature_manager = feature_manager
+        self.subproblem_manager = subproblem_manager
+        self.se_cfg = se_cfg
         self._obs_features: Optional[NDArray[np.float64]] = None
     
     # HasComm needs comm property for MPI.Comm access
@@ -92,9 +92,9 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             StandardErrorsResult on root rank, None on other ranks
         """
         # Use config defaults if not specified
-        num_simulations = num_simulations or self._se_cfg.num_simulations
-        step_size = step_size or self._se_cfg.step_size
-        seed = seed if seed is not None else self._se_cfg.seed
+        num_simulations = num_simulations or self.se_cfg.num_simulations
+        step_size = step_size or self.se_cfg.step_size
+        seed = seed if seed is not None else self.se_cfg.seed
         
         # Broadcast theta to all ranks
         theta_hat = self.comm.bcast(theta_hat, root=0)
@@ -110,7 +110,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         # Cache observed features (gathered to root)
         if self._obs_features is None:
             obs_bundles = self.local_data["obs_bundles"]
-            self._obs_features = self._feature_manager.compute_gathered_features(obs_bundles)
+            self._obs_features = self.feature_manager.compute_gathered_features(obs_bundles)
         
         # Determine if we should optimize for subset
         is_subset = len(beta_indices) < self.num_features
@@ -247,12 +247,12 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             
             # Solve subproblems
             if self.num_local_agents > 0:
-                local_bundles = self._subproblem_manager.solve_local(theta)
+                local_bundles = self.subproblem_manager.solve_local(theta)
             else:
                 local_bundles = np.empty((0, self.num_items), dtype=bool)
             
             # Gather features to root
-            features_sim = self._feature_manager.compute_gathered_features(local_bundles)
+            features_sim = self.feature_manager.compute_gathered_features(local_bundles)
             if self.is_root():
                 all_features_per_sim.append(features_sim)
         
@@ -293,11 +293,11 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
-                local_bundles = self._subproblem_manager.solve_local(theta)
+                local_bundles = self.subproblem_manager.solve_local(theta)
             else:
                 local_bundles = np.empty((0, self.num_items), dtype=bool)
             
-            features_sim = self._feature_manager.compute_gathered_features(local_bundles)
+            features_sim = self.feature_manager.compute_gathered_features(local_bundles)
             if self.is_root():
                 all_features_per_sim.append(features_sim)
         
@@ -398,7 +398,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         num_beta = len(beta_indices)
         
         obs_local = self.data_manager.local_data["obs_bundles"]
-        obs_feat_local = self._feature_manager.compute_rank_features(obs_local)
+        obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
         obs_sum_local = obs_feat_local[:, beta_indices].sum(axis=0) if obs_feat_local.size else np.zeros(num_beta)
         
         obs_sum_global = np.zeros(num_beta)
@@ -410,11 +410,11 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
-                local_bundles = self._subproblem_manager.solve_local(theta)
+                local_bundles = self.subproblem_manager.solve_local(theta)
             else:
                 local_bundles = np.empty((0, self.num_items), dtype=bool)
             
-            feat_local = self._feature_manager.compute_rank_features(local_bundles)
+            feat_local = self.feature_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
         
@@ -441,7 +441,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         # Local observed features sum
         obs_local = self.data_manager.local_data["obs_bundles"]
-        obs_feat_local = self._feature_manager.compute_rank_features(obs_local)
+        obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
         obs_sum_local = obs_feat_local.sum(axis=0) if obs_feat_local.size else np.zeros(K)
         
         obs_sum_global = np.zeros(K)
@@ -454,11 +454,11 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             
             if self.num_local_agents > 0:
-                local_bundles = self._subproblem_manager.solve_local(theta)
+                local_bundles = self.subproblem_manager.solve_local(theta)
             else:
                 local_bundles = np.empty((0, self.num_items), dtype=bool)
             
-            feat_local = self._feature_manager.compute_rank_features(local_bundles)
+            feat_local = self.feature_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local.sum(axis=0)
         
