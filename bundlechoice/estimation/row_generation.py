@@ -207,39 +207,52 @@ class RowGenerationManager(BaseEstimationManager):
     def _master_iteration(self, local_pricing_results: NDArray[np.float64], 
                          timing_dict: Dict[str, float]) -> bool:
         """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Gather bundles, features, and errors
-        # Compute features/errors in parallel on each rank, then gather (faster than computing on root)
+        # Combined gather optimization: gather bundles once, compute features/errors on root
+        # This reduces MPI operations from 3 gathers to 1 gather
         
-        # Gather bundles
+        # Gather bundles (single MPI gather operation)
         t_gather_bundles_start = datetime.now()
         bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
         gather_bundles_time = (datetime.now() - t_gather_bundles_start).total_seconds()
         timing_dict['gather_bundles'] = gather_bundles_time
         
-        # Compute features locally (in parallel on all ranks), then gather
-        t_comp_features_start = datetime.now()
-        features_local = self.feature_manager.compute_rank_features(local_pricing_results)
-        comp_features_time = (datetime.now() - t_comp_features_start).total_seconds()
-        timing_dict['compute_features'] = comp_features_time
+        # Compute features and errors on root from gathered bundles (no additional gather)
+        if self.is_root():
+            t_comp_features_start = datetime.now()
+            x_sim = self.feature_manager.compute_all_features_on_root(bundles_sim)
+            comp_features_time = (datetime.now() - t_comp_features_start).total_seconds()
+            timing_dict['compute_features'] = comp_features_time
+            timing_dict['gather_features'] = 0.0  # No gather needed
+            
+            t_comp_errors_start = datetime.now()
+            # Prepare errors on root (reshape if needed to match bundles_sim shape)
+            errors_raw = self.data_manager.input_data["errors"]
+            if errors_raw.ndim == 3:
+                # Shape (num_simulations, num_agents, num_items) -> (num_simulations * num_agents, num_items)
+                errors_flat = errors_raw.reshape(-1, self.data_manager.num_items)
+            elif errors_raw.ndim == 2:
+                # Shape (num_agents, num_items) - replicate for each simulation
+                if self.data_manager.num_simulations > 1:
+                    errors_flat = np.tile(errors_raw, (self.data_manager.num_simulations, 1))
+                else:
+                    errors_flat = errors_raw
+            else:
+                raise ValueError(f"Unexpected errors shape: {errors_raw.shape}")
+            # Compute errors on root
+            errors_sim = (errors_flat * bundles_sim).sum(1)
+            comp_errors_time = (datetime.now() - t_comp_errors_start).total_seconds()
+            timing_dict['compute_errors'] = comp_errors_time
+            timing_dict['gather_errors'] = 0.0  # No gather needed
+        else:
+            x_sim = None
+            errors_sim = None
+            timing_dict['compute_features'] = 0.0
+            timing_dict['gather_features'] = 0.0
+            timing_dict['compute_errors'] = 0.0
+            timing_dict['gather_errors'] = 0.0
         
-        t_gather_features_start = datetime.now()
-        x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
-        gather_features_time = (datetime.now() - t_gather_features_start).total_seconds()
-        timing_dict['gather_features'] = gather_features_time
-        
-        # Compute errors locally (in parallel on all ranks), then gather
-        t_comp_errors_start = datetime.now()
-        errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
-        comp_errors_time = (datetime.now() - t_comp_errors_start).total_seconds()
-        timing_dict['compute_errors'] = comp_errors_time
-        
-        t_gather_errors_start = datetime.now()
-        errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
-        gather_errors_time = (datetime.now() - t_gather_errors_start).total_seconds()
-        timing_dict['gather_errors'] = gather_errors_time
-        
-        # Total MPI gather time (sum of gather operations only, not computation)
-        timing_dict['mpi_gather'] = gather_bundles_time + gather_features_time + gather_errors_time
+        # Total MPI gather time (only bundles gather, features/errors computed on root)
+        timing_dict['mpi_gather'] = gather_bundles_time
         
         stop = False
         if self.is_root():
