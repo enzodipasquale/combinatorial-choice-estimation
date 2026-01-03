@@ -86,7 +86,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
                 isinstance(result, np.ndarray) and 
                 result.shape == (2, self.num_features)
             )
-        except:
+        except Exception:
             self._supports_batch = False
         
         return self._supports_batch

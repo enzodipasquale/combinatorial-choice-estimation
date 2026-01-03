@@ -131,13 +131,21 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
     def _log_timing_summary(self, timing_stats: Dict[str, Any],
                            obj_val: Optional[float] = None, 
                            theta: Optional[NDArray[np.float64]] = None,
-                           header_suffix: str = "") -> None:
+                           header: str = "ESTIMATION SUMMARY") -> None:
         """Log timing summary from timing_stats dict (created by make_timing_stats)."""
         if not self.is_root():
             return
+        
+        total_time = timing_stats.get('total_time', 0.0)
+        num_iters = timing_stats.get('num_iterations', 0)
+        time_per_iter = timing_stats.get('time_per_iter', total_time / num_iters if num_iters > 0 else 0)
+        pricing = timing_stats.get('pricing_time', 0.0)
+        other = timing_stats.get('other_time', total_time - pricing)
+        pricing_pct = timing_stats.get('pricing_pct', 100 * pricing / total_time if total_time > 0 else 0)
+        other_pct = timing_stats.get('other_pct', 100 * other / total_time if total_time > 0 else 0)
             
         print("=" * 70)
-        print(f"ESTIMATION SUMMARY{header_suffix}")
+        print(header)
         print("=" * 70)
         
         if obj_val is not None:
@@ -151,23 +159,12 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
                 print(f"  Last 5:  {np.array2string(theta[-5:], precision=6, suppress_small=True)}")
                 print(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
         
-        print(f"Total iterations: {timing_stats.get('num_iterations', 0)}")
-        print(f"Total time: {timing_stats.get('total_time', 0.0):.2f}s")
-        
-        init_time = timing_stats.get('init_time', 0.0)
-        if init_time > 0:
-            print(f"  Init: {init_time:.2f}s")
-        
+        print(f"Iterations: {num_iters}")
+        print(f"Total time: {total_time:.2f}s ({time_per_iter:.2f}s/iter)")
         print()
-        print("Timing breakdown:")
-        pricing = timing_stats.get('pricing_time', 0.0)
-        master = timing_stats.get('master_time', 0.0)
-        mpi = timing_stats.get('mpi_time', 0.0)
-        
-        print(f"  Pricing:  {pricing:7.2f}s ({timing_stats.get('pricing_pct', 0.0):5.1f}%)")
-        print(f"  Master:   {master:7.2f}s ({timing_stats.get('master_pct', 0.0):5.1f}%)")
-        if mpi > 0:
-            print(f"  MPI:      {mpi:7.2f}s ({timing_stats.get('mpi_pct', 0.0):5.1f}%)")
+        print("Timing (root process):")
+        print(f"  Pricing (subproblems): {pricing:7.2f}s ({pricing_pct:5.1f}%)")
+        print(f"  Other (master + sync): {other:7.2f}s ({other_pct:5.1f}%)")
         print()
 
     def log_parameter(self) -> None:

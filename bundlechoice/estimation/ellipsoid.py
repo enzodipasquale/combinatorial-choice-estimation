@@ -95,10 +95,8 @@ class EllipsoidManager(BaseEstimationManager):
         vals = []
         centers = []
         
-        # Running sums for timing
+        # Simple timing: track gradient computation (includes subproblem solving)
         total_gradient = 0.0
-        total_update = 0.0
-        total_mpi = 0.0
 
         for iteration in range(1, num_iters + 1):
             logger.info(f"ELLIPSOID ITERATION {iteration}")
@@ -122,16 +120,12 @@ class EllipsoidManager(BaseEstimationManager):
                     vals = vals[-keep_last_n:]
                     centers = centers[-keep_last_n:]
 
-            t0 = time.perf_counter()
             self._update_ellipsoid(direction)
-            total_update += time.perf_counter() - t0
             
             if not self.is_root():
                 self.theta_iter = np.empty(self.num_features, dtype=np.float64)
             
-            t0 = time.perf_counter()
             self.theta_iter = self.comm_manager.broadcast_array(self.theta_iter, root=0)
-            total_mpi += time.perf_counter() - t0
             
             if callback and self.is_root() and obj_value != np.inf:
                 callback({
@@ -165,7 +159,8 @@ class EllipsoidManager(BaseEstimationManager):
         
         # Create timing stats and result
         if self.is_root():
-            self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient, total_update, total_mpi)
+            self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient)
+            self._log_timing_summary(self.timing_stats, best_obj, best_theta, header="ELLIPSOID METHOD SUMMARY")
             result = EstimationResult(
                 theta_hat=best_theta.copy(),
                 converged=True,

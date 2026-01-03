@@ -7,7 +7,7 @@ Solves the dual of the row generation master problem via column generation.
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import gurobipy as gp
 import numpy as np
@@ -313,14 +313,12 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     # Master iteration
     # ------------------------------------------------------------------ #
-    def _master_iteration(self) -> Tuple[bool, float, float, float]:
-        """Perform one iteration. Returns (stop, pricing_time, master_time, mpi_time)."""
+    def _master_iteration(self) -> Tuple[bool, float]:
+        """Perform one iteration. Returns (stop, pricing_time)."""
         stop = False
         num_si = self.num_simulations * self.num_agents
-        master_time = 0.0
 
         if self.is_root():
-            t_master = time.perf_counter()
             if self.has_columns:
                 assert self.master_model is not None
                 if self.master_model.Status != GRB.OPTIMAL:
@@ -352,22 +350,19 @@ class ColumnGenerationManager(BaseEstimationManager):
             else:
                 dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.num_features, dtype=np.float64)
                 agent_penalties = np.zeros(num_si, dtype=np.float64)
-            master_time = time.perf_counter() - t_master
         else:
             dual_prices = np.empty(self.num_features, dtype=np.float64)
             agent_penalties = np.empty(num_si, dtype=np.float64)
 
-        t_mpi = time.perf_counter()
         dual_prices = self.comm_manager.broadcast_array(dual_prices, root=0)
         agent_penalties = self.comm_manager.broadcast_array(agent_penalties, root=0)
-        mpi_bcast_time = time.perf_counter() - t_mpi
 
+        # Pricing phase - track time on all ranks
         t_pricing = time.perf_counter()
         bundles, features, errors, reduced_costs, max_rc = self._solve_pricing_problem(dual_prices, agent_penalties)
         pricing_time = time.perf_counter() - t_pricing
 
         if self.is_root():
-            t_master2 = time.perf_counter()
             logger.info("Max reduced cost: %.6e", max_rc)
             if max_rc <= self.row_generation_cfg.tolerance_optimality:
                 stop = True
@@ -375,18 +370,15 @@ class ColumnGenerationManager(BaseEstimationManager):
                 added = self._add_columns_to_master(bundles, features, errors, reduced_costs)
                 if added > 0:
                     self.master_model.optimize()
-            master_time += time.perf_counter() - t_master2
 
         if self.is_root():
             theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.num_features, dtype=np.float64)
         else:
             theta_to_send = np.empty(self.num_features, dtype=np.float64)
 
-        t_bcast = time.perf_counter()
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_send, stop, root=0)
-        mpi_bcast_time += time.perf_counter() - t_bcast
 
-        return bool(stop), pricing_time, master_time, mpi_bcast_time
+        return bool(stop), pricing_time
 
     # ------------------------------------------------------------------ #
     # Public solve
@@ -398,18 +390,14 @@ class ColumnGenerationManager(BaseEstimationManager):
         self.subproblem_manager.initialize_local()
         self._initialize_master_problem()
 
-        # Running sums for timing
+        # Simple timing: only track pricing time
         total_pricing = 0.0
-        total_master = 0.0
-        total_mpi = 0.0
 
         for iteration in range(int(self.row_generation_cfg.max_iters)):
             logger.info("ITERATION %d", iteration + 1)
 
-            stop, pricing_time, master_time, mpi_time = self._master_iteration()
+            stop, pricing_time = self._master_iteration()
             total_pricing += pricing_time
-            total_master += master_time
-            total_mpi += mpi_time
 
             if callback and self.is_root():
                 callback({
@@ -426,8 +414,9 @@ class ColumnGenerationManager(BaseEstimationManager):
         
         if self.is_root():
             logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, num_iters)
-            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing, total_master, total_mpi)
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
+            self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, header="COLUMN GENERATION SUMMARY")
             converged = iteration + 1 < self.row_generation_cfg.max_iters
             result = EstimationResult(
                 theta_hat=self.theta_val.copy(),

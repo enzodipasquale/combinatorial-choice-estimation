@@ -5,9 +5,8 @@ Utility functions for logging, output suppression, and timing.
 import logging
 import os
 import sys
-import time
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 import numpy as np
 from numpy.typing import NDArray
 try:
@@ -96,110 +95,28 @@ def suppress_output():
 # ============================================================================
 
 def make_timing_stats(elapsed: float, num_iterations: int,
-                      pricing_time: float = 0.0, master_time: float = 0.0, 
-                      mpi_time: float = 0.0, init_time: float = 0.0) -> Dict[str, Any]:
+                      pricing_time: float = 0.0, other_time: float = None) -> Dict[str, Any]:
     """
-    Create timing statistics dictionary from running sums.
+    Create simple timing statistics dictionary.
     
     Args:
-        elapsed: Total elapsed time
+        elapsed: Total elapsed time (wall-clock)
         num_iterations: Number of iterations completed
-        pricing_time: Total time in pricing/subproblems
-        master_time: Total time in master problem
-        mpi_time: Total time in MPI communication
-        init_time: Initialization time
+        pricing_time: Total time in pricing/subproblems (on this rank)
+        other_time: Time for everything else (master + sync). If None, computed as elapsed - pricing_time.
         
     Returns:
         Dict with timing statistics
     """
+    if other_time is None:
+        other_time = elapsed - pricing_time
+    
     return {
         'total_time': elapsed,
         'num_iterations': num_iterations,
+        'time_per_iter': elapsed / num_iterations if num_iterations > 0 else 0,
         'pricing_time': pricing_time,
-        'master_time': master_time,
-        'mpi_time': mpi_time,
-        'init_time': init_time,
         'pricing_pct': 100 * pricing_time / elapsed if elapsed > 0 else 0,
-        'master_pct': 100 * master_time / elapsed if elapsed > 0 else 0,
-        'mpi_pct': 100 * mpi_time / elapsed if elapsed > 0 else 0,
+        'other_time': other_time,
+        'other_pct': 100 * other_time / elapsed if elapsed > 0 else 0,
     }
-
-# ============================================================================
-# Timing Utilities
-# ============================================================================
-
-@contextmanager
-def time_operation(name: str, timing_dict: Dict[str, float]):
-    """
-    Context manager for timing operations and storing results in a dictionary.
-    
-    Args:
-        name: Name of the operation to time
-        timing_dict: Dictionary to store timing results (will be updated in-place)
-    
-    Example:
-        timing = {}
-        with time_operation('pricing', timing):
-            result = solve_subproblems()
-        # timing['pricing'] now contains elapsed time in seconds
-    """
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = time.perf_counter() - start
-        timing_dict[name] = elapsed
-def make_timing_stats(elapsed: float, num_iterations: int,
-                      pricing_time: float = 0.0, master_time: float = 0.0, 
-                      mpi_time: float = 0.0, init_time: float = 0.0) -> Dict[str, Any]:
-    """
-    Create timing statistics dictionary from running sums.
-    
-    Args:
-        elapsed: Total elapsed time
-        num_iterations: Number of iterations completed
-        pricing_time: Total time in pricing/subproblems
-        master_time: Total time in master problem
-        mpi_time: Total time in MPI communication
-        init_time: Initialization time
-        
-    Returns:
-        Dict with timing statistics
-    """
-    return {
-        'total_time': elapsed,
-        'num_iterations': num_iterations,
-        'pricing_time': pricing_time,
-        'master_time': master_time,
-        'mpi_time': mpi_time,
-        'init_time': init_time,
-        'pricing_pct': 100 * pricing_time / elapsed if elapsed > 0 else 0,
-        'master_pct': 100 * master_time / elapsed if elapsed > 0 else 0,
-        'mpi_pct': 100 * mpi_time / elapsed if elapsed > 0 else 0,
-    }
-
-# ============================================================================
-# Timing Utilities
-# ============================================================================
-
-@contextmanager
-def time_operation(name: str, timing_dict: Dict[str, float]):
-    """
-    Context manager for timing operations and storing results in a dictionary.
-    
-    Args:
-        name: Name of the operation to time
-        timing_dict: Dictionary to store timing results (will be updated in-place)
-    
-    Example:
-        timing = {}
-        with time_operation('pricing', timing):
-            result = solve_subproblems()
-        # timing['pricing'] now contains elapsed time in seconds
-    """
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = time.perf_counter() - start
-        timing_dict[name] = elapsed
