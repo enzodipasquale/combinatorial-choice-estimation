@@ -22,17 +22,14 @@ from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 
 
 # =============================================================================
-# Numerical Stability Utilities
+# Numerical Utilities
 # =============================================================================
 
 def compute_adaptive_step_size(theta_k: float, base_step: float = 1e-4) -> float:
     """
     Compute adaptive step size for finite differences.
     
-    Uses the formula: h_k = base_step * max(1, |theta_k|) * sign_factor
-    where sign_factor ensures we don't cross zero for small parameters.
-    
-    For very small parameters, uses a minimum step based on sqrt(machine_epsilon).
+    Scales step with parameter magnitude while respecting precision limits.
     """
     eps = np.finfo(np.float64).eps
     min_step = np.sqrt(eps)  # ~1.5e-8
@@ -49,64 +46,6 @@ def compute_adaptive_step_size(theta_k: float, base_step: float = 1e-4) -> float
         h = min(h, 0.1 * abs(theta_k))  # At most 10% of parameter value
     
     return h
-
-
-def regularized_inverse(A: NDArray[np.float64], rcond: float = 1e-10, 
-                        regularization: float = 0.0) -> NDArray[np.float64]:
-    """
-    Compute regularized inverse of matrix A.
-    
-    If regularization > 0, uses Tikhonov regularization: (A + reg*I)^{-1}
-    Otherwise uses pseudoinverse with specified rcond.
-    
-    Args:
-        A: Matrix to invert
-        rcond: Cutoff for small singular values in pseudoinverse
-        regularization: Tikhonov regularization parameter (0 = no regularization)
-    
-    Returns:
-        Inverse or pseudoinverse of A
-    """
-    n = A.shape[0]
-    
-    if regularization > 0:
-        # Tikhonov regularization
-        A_reg = A + regularization * np.eye(n)
-        try:
-            return np.linalg.solve(A_reg, np.eye(n))
-        except np.linalg.LinAlgError:
-            return np.linalg.pinv(A_reg, rcond=rcond)
-    
-    # Try direct solve first
-    try:
-        return np.linalg.solve(A, np.eye(n))
-    except np.linalg.LinAlgError:
-        pass
-    
-    # Fall back to pseudoinverse with adaptive rcond
-    cond = np.linalg.cond(A)
-    if cond > 1e10:
-        # Very ill-conditioned - use more aggressive cutoff
-        rcond = max(rcond, 1e-6)
-    
-    return np.linalg.pinv(A, rcond=rcond)
-
-
-def symmetrize_matrix(B: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Symmetrize matrix to correct for numerical errors."""
-    return 0.5 * (B + B.T)
-
-
-def ensure_positive_semidefinite(V: NDArray[np.float64], 
-                                  min_eigenvalue: float = 0.0) -> NDArray[np.float64]:
-    """
-    Project variance matrix to positive semi-definite cone.
-    
-    Replaces negative eigenvalues with min_eigenvalue.
-    """
-    eigenvalues, eigenvectors = np.linalg.eigh(V)
-    eigenvalues = np.maximum(eigenvalues, min_eigenvalue)
-    return eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
 
 
 @dataclass
@@ -220,49 +159,57 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             B_sub = self._compute_B_matrix_subset(theta_hat, errors_all_sims, beta_indices)
             A_sub = self._compute_A_matrix_subset(theta_hat, errors_all_sims, step_size, beta_indices)
             
-        self.comm.Barrier()
-        if self.is_root():
-            # Symmetrize B matrix
-            B_sub = symmetrize_matrix(B_sub)
-            
-            A_cond = np.linalg.cond(A_sub)
-            B_cond = np.linalg.cond(B_sub)
-            print(f"\n  A matrix: cond={A_cond:.2e}")
-            print(f"  B matrix: cond={B_cond:.2e}")
-            
-            # Determine regularization based on condition number
-            if A_cond > 1e12:
-                reg = 1e-6 * np.trace(A_sub) / len(beta_indices)
-                print(f"  Warning: Ill-conditioned A, using regularization={reg:.2e}")
-                A_inv = regularized_inverse(A_sub, regularization=reg)
-            else:
-                A_inv = regularized_inverse(A_sub)
-            
-            V_sub = (1.0 / self.num_agents) * (A_inv @ B_sub @ A_inv.T)
-            V_sub = symmetrize_matrix(V_sub)
-            V_sub = ensure_positive_semidefinite(V_sub)
-            
-            se_beta = np.sqrt(np.diag(V_sub))
-            theta_beta = theta_hat[beta_indices]
-            t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, 0.0)
-            
-            print("\n" + "-" * 70)
-            print("Standard Errors:")
-            print("-" * 70)
-            for i, idx in enumerate(beta_indices):
-                print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se_beta[i]:.6f}, t = {t_stats[i]:.2f}")
-            
-            return StandardErrorsResult(
-                se=se_beta,
-                se_all=se_beta,  # Only subset computed
-                theta_beta=theta_beta,
-                beta_indices=beta_indices,
-                variance=V_sub,
-                A_matrix=A_sub,
-                B_matrix=B_sub,
-                t_stats=t_stats,
-            )
-        return None
+            self.comm.Barrier()
+            if self.is_root():
+                A_cond = np.linalg.cond(A_sub)
+                B_cond = np.linalg.cond(B_sub)
+                print(f"\n  A matrix: cond={A_cond:.2e}")
+                print(f"  B matrix: cond={B_cond:.2e}")
+                
+                # Check for singular/ill-conditioned A matrix
+                if not np.isfinite(A_cond) or A_cond > 1e16:
+                    print("\n  ❌ ERROR: A matrix is singular or extremely ill-conditioned!")
+                    print("     Cannot compute standard errors reliably.")
+                    print("     Try: more simulations, larger sample, or check model specification.")
+                    return None
+                
+                # Strict inversion - no pseudoinverse
+                try:
+                    A_inv = np.linalg.solve(A_sub, np.eye(len(beta_indices)))
+                except np.linalg.LinAlgError:
+                    print("\n  ❌ ERROR: A matrix is singular, cannot invert!")
+                    return None
+                
+                # Sandwich formula
+                V_sub = (1.0 / self.num_agents) * (A_inv @ B_sub @ A_inv.T)
+                
+                # Check for valid variance
+                diag_V = np.diag(V_sub)
+                if np.any(diag_V < 0):
+                    neg_count = np.sum(diag_V < 0)
+                    print(f"\n  ⚠ WARNING: {neg_count} negative variances detected!")
+                
+                se_beta = np.sqrt(np.maximum(np.diag(V_sub), 0))
+                theta_beta = theta_hat[beta_indices]
+                t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, np.nan)
+                
+                print("\n" + "-" * 70)
+                print("Standard Errors:")
+                print("-" * 70)
+                for i, idx in enumerate(beta_indices):
+                    print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se_beta[i]:.6f}, t = {t_stats[i]:.2f}")
+                
+                return StandardErrorsResult(
+                    se=se_beta,
+                    se_all=se_beta,  # Only subset computed
+                    theta_beta=theta_beta,
+                    beta_indices=beta_indices,
+                    variance=V_sub,
+                    A_matrix=A_sub,
+                    B_matrix=B_sub,
+                    t_stats=t_stats,
+                )
+            return None
         
         # Full computation
         B_full = self._compute_B_matrix(theta_hat, errors_all_sims)
@@ -270,31 +217,39 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         
         self.comm.Barrier()
         if self.is_root():
-            # Symmetrize B matrix
-            B_full = symmetrize_matrix(B_full)
-            
             A_cond = np.linalg.cond(A_full)
             B_cond = np.linalg.cond(B_full)
             print(f"\n  A matrix: cond={A_cond:.2e}")
             print(f"  B matrix: cond={B_cond:.2e}")
             
-            # Determine regularization based on condition number
-            if A_cond > 1e12:
-                reg = 1e-6 * np.trace(A_full) / self.num_features
-                print(f"  Warning: Ill-conditioned A, using regularization={reg:.2e}")
-                A_inv = regularized_inverse(A_full, regularization=reg)
-            else:
-                A_inv = regularized_inverse(A_full)
+            # Check for singular/ill-conditioned A matrix
+            if not np.isfinite(A_cond) or A_cond > 1e16:
+                print("\n  ❌ ERROR: A matrix is singular or extremely ill-conditioned!")
+                print("     Cannot compute standard errors reliably.")
+                print("     Try: more simulations, larger sample, or check model specification.")
+                return None
             
+            # Strict inversion - no pseudoinverse
+            try:
+                A_inv = np.linalg.solve(A_full, np.eye(self.num_features))
+            except np.linalg.LinAlgError:
+                print("\n  ❌ ERROR: A matrix is singular, cannot invert!")
+                return None
+            
+            # Sandwich formula
             V_full = (1.0 / self.num_agents) * (A_inv @ B_full @ A_inv.T)
-            V_full = symmetrize_matrix(V_full)
-            V_full = ensure_positive_semidefinite(V_full)
             
-            se_all = np.sqrt(np.diag(V_full))
+            # Check for valid variance
+            diag_V = np.diag(V_full)
+            if np.any(diag_V < 0):
+                neg_count = np.sum(diag_V < 0)
+                print(f"\n  ⚠ WARNING: {neg_count} negative variances detected!")
+            
+            se_all = np.sqrt(np.maximum(np.diag(V_full), 0))
             
             se_beta = se_all[beta_indices]
             theta_beta = theta_hat[beta_indices]
-            t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, 0.0)
+            t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, np.nan)
             
             print("\n" + "-" * 70)
             print("Standard Errors:")
