@@ -3,17 +3,24 @@
 Main estimation script for combinatorial auction v2.
 """
 
+import sys
+import os
+from pathlib import Path
+
+# Add project root to Python path
+BASE_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from bundlechoice import BundleChoice
 import numpy as np
 import yaml
 from mpi4py import MPI
-import os
-from pathlib import Path
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-BASE_DIR = os.path.dirname(__file__)
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
