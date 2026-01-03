@@ -56,7 +56,7 @@ def validate_workflow(bc, operation: str) -> None:
             'data': "bc.data.load_and_scatter(input_data)",
             'features': "bc.features.build_from_data() or bc.features.set_oracle(fn)",
             'subproblems': "bc.subproblems.load()",
-            'obs_bundles': "Add 'obs_bundle' to input_data or bc.subproblems.init_and_solve(theta_true)"
+            'obs_bundles': "Add 'obs_bundle' key to input_data, or call bc.subproblems.init_and_solve(theta_true)"
         }
         
         instructions = "\n".join(

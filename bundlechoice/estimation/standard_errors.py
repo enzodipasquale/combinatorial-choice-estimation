@@ -21,6 +21,33 @@ from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 
 
+# =============================================================================
+# Numerical Utilities
+# =============================================================================
+
+def compute_adaptive_step_size(theta_k: float, base_step: float = 1e-4) -> float:
+    """
+    Compute adaptive step size for finite differences.
+    
+    Scales step with parameter magnitude while respecting precision limits.
+    """
+    eps = np.finfo(np.float64).eps
+    min_step = np.sqrt(eps)  # ~1.5e-8
+    
+    # Scale by parameter magnitude
+    scale = max(1.0, abs(theta_k))
+    h = base_step * scale
+    
+    # Ensure step is not too small (numerical precision)
+    h = max(h, min_step * scale)
+    
+    # Ensure step is not too large relative to parameter
+    if abs(theta_k) > 0:
+        h = min(h, 0.1 * abs(theta_k))  # At most 10% of parameter value
+    
+    return h
+
+
 @dataclass
 class StandardErrorsResult:
     """Result of standard errors computation."""
@@ -61,11 +88,6 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         self.subproblem_manager = subproblem_manager
         self.se_cfg = se_cfg
         self._obs_features: Optional[NDArray[np.float64]] = None
-    
-    # HasComm needs comm property for MPI.Comm access
-    @property
-    def comm(self) -> MPI.Comm:
-        return self.comm_manager.comm
     
     def compute(
         self,
@@ -139,16 +161,32 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
                 print(f"\n  A matrix: cond={A_cond:.2e}")
                 print(f"  B matrix: cond={B_cond:.2e}")
                 
+                # Check for singular/ill-conditioned A matrix
+                if not np.isfinite(A_cond) or A_cond > 1e16:
+                    print("\n  ❌ ERROR: A matrix is singular or extremely ill-conditioned!")
+                    print("     Cannot compute standard errors reliably.")
+                    print("     Try: more simulations, larger sample, or check model specification.")
+                    return None
+                
+                # Strict inversion - no pseudoinverse
                 try:
                     A_inv = np.linalg.solve(A_sub, np.eye(len(beta_indices)))
                 except np.linalg.LinAlgError:
-                    print("  Warning: A matrix singular, using pseudoinverse")
-                    A_inv = np.linalg.pinv(A_sub)
+                    print("\n  ❌ ERROR: A matrix is singular, cannot invert!")
+                    return None
                 
+                # Sandwich formula
                 V_sub = (1.0 / self.num_agents) * (A_inv @ B_sub @ A_inv.T)
+                
+                # Check for valid variance
+                diag_V = np.diag(V_sub)
+                if np.any(diag_V < 0):
+                    neg_count = np.sum(diag_V < 0)
+                    print(f"\n  ⚠ WARNING: {neg_count} negative variances detected!")
+                
                 se_beta = np.sqrt(np.maximum(np.diag(V_sub), 0))
                 theta_beta = theta_hat[beta_indices]
-                t_stats = np.where(se_beta > 0, theta_beta / se_beta, 0.0)
+                t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, np.nan)
                 
                 print("\n" + "-" * 70)
                 print("Standard Errors:")
@@ -179,18 +217,34 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             print(f"\n  A matrix: cond={A_cond:.2e}")
             print(f"  B matrix: cond={B_cond:.2e}")
             
+            # Check for singular/ill-conditioned A matrix
+            if not np.isfinite(A_cond) or A_cond > 1e16:
+                print("\n  ❌ ERROR: A matrix is singular or extremely ill-conditioned!")
+                print("     Cannot compute standard errors reliably.")
+                print("     Try: more simulations, larger sample, or check model specification.")
+                return None
+            
+            # Strict inversion - no pseudoinverse
             try:
                 A_inv = np.linalg.solve(A_full, np.eye(self.num_features))
             except np.linalg.LinAlgError:
-                print("  Warning: A matrix singular, using pseudoinverse")
-                A_inv = np.linalg.pinv(A_full)
+                print("\n  ❌ ERROR: A matrix is singular, cannot invert!")
+                return None
             
+            # Sandwich formula
             V_full = (1.0 / self.num_agents) * (A_inv @ B_full @ A_inv.T)
+            
+            # Check for valid variance
+            diag_V = np.diag(V_full)
+            if np.any(diag_V < 0):
+                neg_count = np.sum(diag_V < 0)
+                print(f"\n  ⚠ WARNING: {neg_count} negative variances detected!")
+            
             se_all = np.sqrt(np.maximum(np.diag(V_full), 0))
             
             se_beta = se_all[beta_indices]
             theta_beta = theta_hat[beta_indices]
-            t_stats = np.where(se_beta > 0, theta_beta / se_beta, 0.0)
+            t_stats = np.where(se_beta > 1e-16, theta_beta / se_beta, np.nan)
             
             print("\n" + "-" * 70)
             print("Standard Errors:")
@@ -335,7 +389,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             if self.is_root():
                 print(f"  Column {k+1}/{self.num_features}...")
             
-            h_k = step_size * max(1.0, abs(theta[k]))
+            h_k = compute_adaptive_step_size(theta[k], step_size)
             
             theta_plus = theta.copy()
             theta_plus[k] += h_k
@@ -371,7 +425,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             if self.is_root():
                 print(f"  Column {k_idx+1}/{num_beta} (param {k})...")
             
-            h_k = step_size * max(1.0, abs(theta[k]))
+            h_k = compute_adaptive_step_size(theta[k], step_size)
             
             theta_plus = theta.copy()
             theta_plus[k] += h_k
@@ -469,4 +523,4 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         if self.is_root():
             return mean_sim - mean_obs
         return None
-
+    

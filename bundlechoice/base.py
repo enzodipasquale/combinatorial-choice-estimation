@@ -5,8 +5,13 @@ from typing import Optional, Dict, Any
 # ============================================================================
 
 class HasComm:
-    """Mixin for MPI communicator access (rank, size, is_root)."""
+    """Mixin for MPI communicator access (rank, size, is_root, comm)."""
     comm_manager: 'CommManager'  # type: ignore
+
+    @property
+    def comm(self) -> Optional['MPI.Comm']:  # type: ignore
+        """MPI communicator object."""
+        return self.comm_manager.comm if self.comm_manager is not None else None
 
     @property
     def rank(self) -> Optional[int]:
@@ -43,11 +48,6 @@ class HasDimensions:
 
     @property
     def num_simulations(self) -> int:
-        """Number of simulation runs (alias for num_simulations)."""
-        return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
-
-    @property
-    def num_simulations(self) -> int:
         """Number of simulation runs."""
         return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
 
@@ -77,14 +77,14 @@ class HasData:
     @property
     def input_data(self) -> Optional[Any]:
         """Input data dictionary containing all problem data."""
-        return self.data_manager.input_data
+        return self.data_manager.input_data if self.data_manager is not None else None
 
     @property
     def local_data(self) -> Optional[Any]:
         """Local data dictionary for this MPI rank."""
-        return self.data_manager.local_data
+        return self.data_manager.local_data if self.data_manager is not None else None
 
     @property
     def num_local_agents(self) -> Optional[int]:
         """Number of agents assigned to this MPI rank."""
-        return self.data_manager.num_local_agents
+        return self.data_manager.num_local_agents if self.data_manager is not None else None
