@@ -1,0 +1,372 @@
+======================================================================
+BUNDLECHOICE CONFIGURATION
+======================================================================
+Problem Dimensions:
+  • Agents: 256
+  • Items: 493
+  • Features: 497
+  • Simulations: 10
+
+Subproblem:
+  • Algorithm: QuadKnapsack
+  • TimeLimit: 30s
+  • MIPGap tolerance: 1e-2
+
+Parallelization:
+  • MPI workers: 400
+
+======================================================================
+DATA SCATTER
+======================================================================
+  Scattering: 2560 agents (10 simuls × 256 agents) → 400 ranks
+  Distribution: 6-7 agents/rank
+  Arrays:
+    Errors: shape=(2560, 493)
+    Obs_bundles: shape=(256, 493)
+  Dictionaries:
+    Agent_data: 2 keys [modular, capacity], 256 agents
+    Item_data: 3 keys [modular, quadratic, weights], 493 items
+  Complete: 7 local agents/rank
+
+======================================================================
+ROW GENERATION
+======================================================================
+
+  Problem: 256 agents × 493 items, 497 features
+  Simulations: 10
+  Max iterations: 400
+  Min iterations: 0
+  Optimality tolerance: 1e-06
+  Max slack counter: 20000000
+
+  Starting row generation algorithm...
+
+Master Initialized
+Parameters: [1000. 1000. 1000. 1000.]
+ITERATION 1
+Subproblem 0 (rank 0): MIPGap 0.2547 > tol 1e-2, value: 52.86172988305959
+Subproblem 3 (rank 0): MIPGap 0.1168 > tol 1e-2, value: 43.625254159983804
+Parameters: [1000. 1000. 1000. 1000.]
+ObjVal: -12652.666807477512
+Reduced cost: 2526.890978746449
+New constraints: 2535
+Removed constraints: 0
+Number of constraints: 0
+ITERATION 2
+Parameters: [  0.    107.967   0.      0.   ]
+ObjVal: 2661.488178060428
+Reduced cost: 231.00028895278643
+New constraints: 2487
+Removed constraints: 0
+Number of constraints: 2535
+ITERATION 3
+Parameters: [ 0.    94.636  0.     0.   ]
+ObjVal: 4730.169856251934
+Reduced cost: 179.1630854609764
+New constraints: 2481
+Removed constraints: 0
+Number of constraints: 5022
+ITERATION 4
+Parameters: [  0.    150.762   0.      0.   ]
+ObjVal: 6119.6076224832495
+Reduced cost: 158.9044436546076
+New constraints: 2420
+Removed constraints: 0
+Number of constraints: 7503
+ITERATION 5
+Parameters: [  0.    203.492   0.      0.   ]
+ObjVal: 7129.223506058061
+Reduced cost: 148.79442857249606
+New constraints: 2339
+Removed constraints: 0
+Number of constraints: 9923
+ITERATION 6
+Parameters: [  0.   419.31   0.     0.  ]
+ObjVal: 8170.536310338664
+Reduced cost: 143.75446186215459
+New constraints: 2305
+Removed constraints: 0
+Number of constraints: 12262
+ITERATION 7
+Parameters: [  0.    429.175   0.      0.   ]
+ObjVal: 9036.821813800923
+Reduced cost: 122.0940044840762
+New constraints: 2189
+Removed constraints: 0
+Number of constraints: 14567
+ITERATION 8
+Parameters: [  0.    634.769   0.      0.   ]
+ObjVal: 9703.834657426461
+Reduced cost: 128.60419101430236
+New constraints: 2069
+Removed constraints: 0
+Number of constraints: 16756
+ITERATION 9
+Parameters: [102.369 600.398   0.      0.   ]
+ObjVal: 10439.360019531721
+Reduced cost: 92.97884589000338
+New constraints: 1977
+Removed constraints: 0
+Number of constraints: 18825
+ITERATION 10
+Parameters: [140.209 688.098   0.      0.   ]
+ObjVal: 10902.773624846293
+Reduced cost: 80.98003153531504
+New constraints: 1833
+Removed constraints: 0
+Number of constraints: 20802
+ITERATION 11
+Parameters: [182.851 653.709   0.      0.   ]
+ObjVal: 11275.549360953577
+Reduced cost: 78.50995718799729
+New constraints: 1693
+Removed constraints: 0
+Number of constraints: 22635
+ITERATION 12
+Parameters: [266.204 422.264   0.      0.   ]
+ObjVal: 11734.217731040657
+Reduced cost: 58.13096661263282
+New constraints: 1635
+Removed constraints: 0
+Number of constraints: 24328
+ITERATION 13
+Parameters: [333.215 478.828   0.      0.   ]
+ObjVal: 11880.722451461426
+Reduced cost: 67.1482099637816
+New constraints: 1359
+Removed constraints: 0
+Number of constraints: 25963
+ITERATION 14
+Parameters: [390.984 487.164   0.      0.   ]
+ObjVal: 12030.775708257324
+Reduced cost: 48.55532780434135
+New constraints: 1167
+Removed constraints: 0
+Number of constraints: 27322
+ITERATION 15
+Parameters: [206.002 571.316   0.      0.   ]
+ObjVal: 12324.866221991995
+Reduced cost: 26.103861590897086
+New constraints: 986
+Removed constraints: 0
+Number of constraints: 28489
+ITERATION 16
+Parameters: [237.537 597.558   0.      0.   ]
+ObjVal: 12455.07442149318
+Reduced cost: 22.63296788214547
+New constraints: 649
+Removed constraints: 0
+Number of constraints: 29475
+ITERATION 17
+Parameters: [275.085 580.098   0.      0.   ]
+ObjVal: 12540.492861302064
+Reduced cost: 43.434109594256554
+New constraints: 492
+Removed constraints: 0
+Number of constraints: 30124
+ITERATION 18
+Parameters: [283.483 582.793   0.      0.   ]
+ObjVal: 12556.752676967542
+Reduced cost: 27.29330193536517
+New constraints: 352
+Removed constraints: 0
+Number of constraints: 30616
+ITERATION 19
+Possible failure of demand oracle at agents ids: [1592], u_sim: [1.50245192], u_master: [1.50251673]
+Parameters: [213.433 637.303  26.988   0.   ]
+ObjVal: 12578.274570545062
+Reduced cost: 13.542360304006777
+New constraints: 245
+Removed constraints: 0
+Number of constraints: 30968
+ITERATION 20
+Parameters: [204.733 508.355   0.     45.504]
+ObjVal: 12663.298759376306
+Reduced cost: 13.339237841000472
+New constraints: 224
+Removed constraints: 0
+Number of constraints: 31213
+ITERATION 21
+Parameters: [126.972 537.294  52.237  36.811]
+ObjVal: 12714.744031240776
+Reduced cost: 7.160451626944903
+New constraints: 175
+Removed constraints: 0
+Number of constraints: 31437
+ITERATION 22
+Parameters: [136.385 542.468  26.696  30.102]
+ObjVal: 12729.349980203042
+Reduced cost: 5.945114833653643
+New constraints: 96
+Removed constraints: 0
+Number of constraints: 31612
+ITERATION 23
+Parameters: [128.634 541.098  45.56   52.319]
+ObjVal: 12761.326238462307
+Reduced cost: 15.653372842115559
+New constraints: 116
+Removed constraints: 0
+Number of constraints: 31708
+ITERATION 24
+Possible failure of demand oracle at agents ids: [1647], u_sim: [2.13956172], u_master: [2.13974844]
+Parameters: [137.82  542.884  33.965  56.674]
+ObjVal: 12761.687507099328
+Reduced cost: 5.32385068313306
+New constraints: 63
+Removed constraints: 0
+Number of constraints: 31824
+ITERATION 25
+Parameters: [116.979 539.696  23.312  57.516]
+ObjVal: 12764.494096740887
+Reduced cost: 8.562845006024972
+New constraints: 138
+Removed constraints: 0
+Number of constraints: 31887
+ITERATION 26
+Parameters: [116.562 539.767  22.771  58.041]
+ObjVal: 12764.562228192179
+Reduced cost: 19.170456615781745
+New constraints: 182
+Removed constraints: 0
+Number of constraints: 32025
+ITERATION 27
+Parameters: [116.562 539.767  22.771  58.041]
+ObjVal: 12764.562228192206
+Reduced cost: 3.5842497600314944
+New constraints: 41
+Removed constraints: 0
+Number of constraints: 32207
+ITERATION 28
+Parameters: [117.915 546.214  41.417  42.852]
+ObjVal: 12775.302979413851
+Reduced cost: 1.5764938149279364
+New constraints: 32
+Removed constraints: 0
+Number of constraints: 32248
+ITERATION 29
+Parameters: [118.687 542.947  31.738  48.013]
+ObjVal: 12776.175483433444
+Reduced cost: 1.6110970824595627
+New constraints: 24
+Removed constraints: 0
+Number of constraints: 32280
+ITERATION 30
+Parameters: [118.389 543.469  40.65   43.57 ]
+ObjVal: 12777.022689523794
+Reduced cost: 1.0685167516337923
+New constraints: 18
+Removed constraints: 0
+Number of constraints: 32304
+ITERATION 31
+Parameters: [123.182 529.956  44.015  40.186]
+ObjVal: 12777.38715950511
+Reduced cost: 0.4779857595979644
+New constraints: 16
+Removed constraints: 0
+Number of constraints: 32322
+ITERATION 32
+Parameters: [123.628 540.777  37.731  46.165]
+ObjVal: 12777.654005234588
+Reduced cost: 0.2363115769962647
+New constraints: 13
+Removed constraints: 0
+Number of constraints: 32338
+ITERATION 33
+Parameters: [123.867 540.608  39.625  41.54 ]
+ObjVal: 12777.7204415365
+Reduced cost: 0.646685141928868
+New constraints: 9
+Removed constraints: 0
+Number of constraints: 32351
+ITERATION 34
+Parameters: [123.517 537.583  40.42   40.953]
+ObjVal: 12777.747683479789
+Reduced cost: 0.08897812156595819
+New constraints: 5
+Removed constraints: 0
+Number of constraints: 32360
+ITERATION 35
+Parameters: [123.76  538.508  39.508  42.792]
+ObjVal: 12777.766307707228
+Reduced cost: 0.15534995567016185
+New constraints: 5
+Removed constraints: 0
+Number of constraints: 32365
+ITERATION 36
+Parameters: [124.85  537.146  40.664  40.297]
+ObjVal: 12777.792988963703
+Reduced cost: 0.048986552696341334
+New constraints: 7
+Removed constraints: 0
+Number of constraints: 32370
+ITERATION 37
+Parameters: [126.288 536.954  39.878  41.776]
+ObjVal: 12777.796231047405
+Reduced cost: 0.01572586304655932
+New constraints: 3
+Removed constraints: 0
+Number of constraints: 32377
+ITERATION 38
+Parameters: [125.95  537.001  40.024  41.7  ]
+ObjVal: 12777.797683127685
+Reduced cost: 0.03708076011058559
+New constraints: 3
+Removed constraints: 0
+Number of constraints: 32380
+ITERATION 39
+Parameters: [125.828 537.052  40.066  41.669]
+ObjVal: 12777.798271373402
+Reduced cost: 0.03242340511394781
+New constraints: 1
+Removed constraints: 0
+Number of constraints: 32383
+ITERATION 40
+Parameters: [125.828 537.052  40.066  41.669]
+ObjVal: 12777.79827137343
+Reduced cost: 0.20260492617110337
+New constraints: 1
+Removed constraints: 0
+Number of constraints: 32384
+ITERATION 41
+Parameters: [125.828 537.052  40.066  41.669]
+ObjVal: 12777.798271373427
+Reduced cost: 4.079935602696594e-07
+New constraints: 0
+Removed constraints: 0
+Number of constraints: 32385
+Row generation ended after 41 iterations in 615.20 seconds.
+======================================================================
+ROW GENERATION SUMMARY
+======================================================================
+Objective value at solution: 12777.798271
+Theta at solution (dim=497):
+  First 5: [125.828415   2.44845    2.691539   2.591257   2.597977]
+  Last 5:  [  2.695816   2.42411  537.052003  40.065583  41.668651]
+  Min: 2.255573, Max: 537.052003, Mean: 4.429732
+Total iterations: 41
+Total time: 615.20s
+
+Timing Statistics:
+  Component breakdown (sorted by total time):
+  mpi_gather      :  291.90s ( 47.4%) | avg: 7.120s ± 20.037s | range: [0.096s, 119.169s]
+  gather_bundles  :  291.64s ( 47.4%) | avg: 7.113s ± 20.036s | range: [0.090s, 119.161s]
+  master_optimize :  210.27s ( 34.2%) | avg: 5.129s ± 6.007s | range: [0.000s, 20.516s]
+  pricing         :   82.12s ( 13.3%) | avg: 2.003s ± 9.579s | range: [0.455s, 62.586s]
+  master_update   :   28.47s (  4.6%) | avg: 0.694s ± 0.718s | range: [0.094s, 1.995s]
+  compute_features:    1.09s (  0.2%) | avg: 0.027s ± 0.000s | range: [0.026s, 0.028s]
+  gather_features :    0.25s (  0.0%) | avg: 0.006s ± 0.002s | range: [0.004s, 0.014s]
+  master_prep     :    0.12s (  0.0%) | avg: 0.003s ± 0.000s | range: [0.003s, 0.004s]
+  mpi_broadcast   :    0.02s (  0.0%) | avg: 0.000s ± 0.000s | range: [0.000s, 0.001s]
+  gather_errors   :    0.01s (  0.0%) | avg: 0.000s ± 0.000s | range: [0.000s, 0.000s]
+  compute_errors  :    0.00s (  0.0%) | avg: 0.000s ± 0.000s | range: [0.000s, 0.000s]
+  iteration_overhead:    0.00s (  0.0%) | avg: 0.000s ± 0.000s | range: [0.000s, 0.000s]
+  Unaccounted time:          -291.89s (-47.4%)
+
+
+=== Estimation Results ===
+Converged: True
+Iterations: 41
+Final objective: 12777.798271
+Total time: 615.21s
+
+Results saved to /scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/estimation_results/

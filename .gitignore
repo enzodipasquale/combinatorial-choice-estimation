@@ -23,8 +23,6 @@ Makefile
 
 # Logs and solver output files
 *.log
-*.out
-*.err
 *.mif
 *.mps
 *.ext3
