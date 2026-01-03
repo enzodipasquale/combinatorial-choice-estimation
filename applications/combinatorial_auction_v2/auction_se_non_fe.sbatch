@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --job-name=auction_se
+#SBATCH --job-name=auction_se_non_fe
 #SBATCH --nodes=20
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1

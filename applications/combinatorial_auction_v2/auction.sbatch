@@ -1,11 +1,11 @@
 #!/bin/bash 
 
-#SBATCH --job-name=combinatorial_auction_v2
-#SBATCH --nodes=20
+#SBATCH --job-name=auction_estimation
+#SBATCH --nodes=35
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
-#SBATCH --time=00:30:00
+#SBATCH --time=03:30:00
 #SBATCH --output=slurm-estimation-%j.out
 
 module purge

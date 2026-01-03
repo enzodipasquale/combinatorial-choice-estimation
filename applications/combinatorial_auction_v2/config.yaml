@@ -2,7 +2,7 @@ dimensions:
     num_agents: 256
     num_items: 493
     num_features: 497
-    num_simulations: 10
+    num_simulations: 100
 
 subproblem: 
     name: QuadKnapsack
@@ -14,6 +14,6 @@ row_generation:
     theta_ubs: 1000
     parameters_to_log: [0, -3,-2,-1]
 
-    max_slack_counter: 20000000
+    max_slack_counter: 9
 
 
