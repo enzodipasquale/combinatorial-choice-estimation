@@ -38,4 +38,4 @@ paper/
 paper/_table1/
 
 # Batch job scripts
-*.sbatch
+
