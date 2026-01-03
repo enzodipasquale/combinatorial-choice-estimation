@@ -54,6 +54,20 @@ def get_logger(name: str = __name__) -> logging.Logger:
     logger = logging.getLogger(name)
     if not any(isinstance(f, MPIRankFilter) for f in logger.filters):
         logger.addFilter(MPIRankFilter())
+    
+    # Configure handler if not already configured
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        # Ensure root logger doesn't block
+        root_logger = logging.getLogger()
+        if root_logger.level > logging.INFO:
+            root_logger.setLevel(logging.INFO)
+    
     return logger
 
 # ============================================================================
@@ -81,6 +95,60 @@ def suppress_output():
 # Timing Statistics
 # ============================================================================
 
+def make_timing_stats(elapsed: float, num_iterations: int,
+                      pricing_time: float = 0.0, master_time: float = 0.0, 
+                      mpi_time: float = 0.0, init_time: float = 0.0) -> Dict[str, Any]:
+    """
+    Create timing statistics dictionary from running sums.
+    
+    Args:
+        elapsed: Total elapsed time
+        num_iterations: Number of iterations completed
+        pricing_time: Total time in pricing/subproblems
+        master_time: Total time in master problem
+        mpi_time: Total time in MPI communication
+        init_time: Initialization time
+        
+    Returns:
+        Dict with timing statistics
+    """
+    return {
+        'total_time': elapsed,
+        'num_iterations': num_iterations,
+        'pricing_time': pricing_time,
+        'master_time': master_time,
+        'mpi_time': mpi_time,
+        'init_time': init_time,
+        'pricing_pct': 100 * pricing_time / elapsed if elapsed > 0 else 0,
+        'master_pct': 100 * master_time / elapsed if elapsed > 0 else 0,
+        'mpi_pct': 100 * mpi_time / elapsed if elapsed > 0 else 0,
+    }
+
+# ============================================================================
+# Timing Utilities
+# ============================================================================
+
+@contextmanager
+def time_operation(name: str, timing_dict: Dict[str, float]):
+    """
+    Context manager for timing operations and storing results in a dictionary.
+    
+    Args:
+        name: Name of the operation to time
+        timing_dict: Dictionary to store timing results (will be updated in-place)
+    
+    Example:
+        timing = {}
+        with time_operation('pricing', timing):
+            result = solve_subproblems()
+        # timing['pricing'] now contains elapsed time in seconds
+    """
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        timing_dict[name] = elapsed
 def make_timing_stats(elapsed: float, num_iterations: int,
                       pricing_time: float = 0.0, master_time: float = 0.0, 
                       mpi_time: float = 0.0, init_time: float = 0.0) -> Dict[str, Any]:

@@ -56,6 +56,7 @@ class RowGenerationManager(BaseEstimationManager):
         self.theta_val = None
         self.theta_hat = None
         self.slack_counter = None
+        self.constraint_info = {}  # Map constraint objects to (idx, bundle) tuples
 
     def _setup_gurobi_model_params(self) -> Any:
         """Create and set up Gurobi model with parameters from configuration."""    
@@ -87,6 +88,8 @@ class RowGenerationManager(BaseEstimationManager):
         """
         obs_features = self.get_obs_features()
         if self.is_root():
+            # Clear constraint info when creating a new model (old constraint objects become invalid)
+            self.constraint_info.clear()
             self.master_model = self._setup_gurobi_model_params()    
             theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
@@ -117,12 +120,9 @@ class RowGenerationManager(BaseEstimationManager):
                     features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
                     error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
                     
-                    # Encode bundle as binary string
-                    bundle_binary = ''.join(str(int(b)) for b in bundle)
-                    constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
-                    
-                    # Add constraint
-                    self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
+                    # Add constraint (no name needed, store info in mapping)
+                    constr = self.master_model.addConstr(u[idx] >= error + features @ theta)
+                    self.constraint_info[constr] = (idx, bundle.copy())
                 
                 logger.info("Added %d initial constraints for warm-start", len(indices))
 
@@ -203,13 +203,11 @@ class RowGenerationManager(BaseEstimationManager):
             timing_dict['master_prep'] = time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            # Add constraints with names encoding index and bundle (binary string)
+            # Add constraints (no name needed, store info in mapping)
             if len(rows_to_add) > 0 and bundles_sim is not None:
                 for idx in rows_to_add:
-                    # Encode bundle as binary string (0/1 for each item)
-                    bundle_binary = ''.join(str(int(b)) for b in bundles_sim[idx])
-                    constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
-                    self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta, name=constr_name)
+                    constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta)
+                    self.constraint_info[constr] = (idx, bundles_sim[idx].copy())
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             timing_dict['master_update'] = time.perf_counter() - t0
@@ -341,7 +339,8 @@ class RowGenerationManager(BaseEstimationManager):
         
         while iteration < self.row_generation_cfg.max_iters:
             t_iter_start = time.perf_counter()
-            logger.info(f"ITERATION {iteration + 1}")
+            if self.is_root():
+                print(f"ITERATION {iteration + 1}")
             iter_timing = {}
             
             # Subproblem callback (if configured) - called before pricing phase
@@ -497,6 +496,7 @@ class RowGenerationManager(BaseEstimationManager):
             for constr in to_remove:
                 self.master_model.remove(constr)
                 self.slack_counter.pop(constr, None)
+                self.constraint_info.pop(constr, None)
             num_removed = len(to_remove)
             logger.info("Removed constraints: %d", num_removed)
             return num_removed
@@ -610,18 +610,15 @@ class RowGenerationManager(BaseEstimationManager):
             features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
             error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
             
-            # Encode bundle as binary string
-            bundle_binary = ''.join(str(int(b)) for b in bundle)
-            constr_name = f"rowgen_{idx}_bundle_{bundle_binary}"
-            
-            # Add constraint
-            self.master_model.addConstr(u[idx] >= error + features @ theta, name=constr_name)
+            # Add constraint (no name needed, store info in mapping)
+            constr = self.master_model.addConstr(u[idx] >= error + features @ theta)
+            self.constraint_info[constr] = (idx, bundle.copy())
         
         logger.info("Added %d constraints to master problem", len(indices))
 
     def get_constraints(self) -> Optional[Dict[str, NDArray]]:
         """
-        Extract constraints from the Gurobi model by parsing constraint names.
+        Extract constraints from the Gurobi model using constraint info mapping.
         
         Returns:
             Dict with keys 'indices', 'bundles' containing numpy arrays,
@@ -633,23 +630,12 @@ class RowGenerationManager(BaseEstimationManager):
         indices = []
         bundles = []
         
-        # Extract constraints by parsing names
+        # Extract constraints from mapping
         for constr in self.master_model.getConstrs():
-            if constr.ConstrName and constr.ConstrName.startswith("rowgen_"):
-                try:
-                    # Parse: "rowgen_{idx}_bundle_{binary_string}"
-                    parts = constr.ConstrName.split("_bundle_")
-                    if len(parts) == 2:
-                        idx = int(parts[0].split("_")[1])  # Extract idx from "rowgen_{idx}"
-                        bundle_binary = parts[1]  # Binary string
-                        # Convert binary string back to bundle array
-                        bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
-                        # Verify bundle has correct length
-                        if len(bundle) == self.num_items:
-                            indices.append(idx)
-                            bundles.append(bundle)
-                except (ValueError, IndexError):
-                    continue
+            if constr in self.constraint_info:
+                idx, bundle = self.constraint_info[constr]
+                indices.append(idx)
+                bundles.append(bundle)
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
@@ -677,25 +663,14 @@ class RowGenerationManager(BaseEstimationManager):
         indices = []
         bundles = []
         
-        # Extract only binding constraints by parsing names and checking slack
+        # Extract only binding constraints from mapping
         for constr in self.master_model.getConstrs():
-            if constr.ConstrName and constr.ConstrName.startswith("rowgen_"):
+            if constr in self.constraint_info:
                 # Check if constraint is binding (slack close to zero)
                 if abs(constr.Slack) <= tolerance:
-                    try:
-                        # Parse: "rowgen_{idx}_bundle_{binary_string}"
-                        parts = constr.ConstrName.split("_bundle_")
-                        if len(parts) == 2:
-                            idx = int(parts[0].split("_")[1])  # Extract idx from "rowgen_{idx}"
-                            bundle_binary = parts[1]  # Binary string
-                            # Convert binary string back to bundle array
-                            bundle = np.array([int(b) for b in bundle_binary], dtype=np.float64)
-                            # Verify bundle has correct length
-                            if len(bundle) == self.num_items:
-                                indices.append(idx)
-                                bundles.append(bundle)
-                    except (ValueError, IndexError):
-                        continue
+                    idx, bundle = self.constraint_info[constr]
+                    indices.append(idx)
+                    bundles.append(bundle)
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),

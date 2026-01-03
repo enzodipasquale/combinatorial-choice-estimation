@@ -49,3 +49,4 @@ class EstimationResult:
                 lines.append(f"  - {w}")
         return "\n".join(lines)
 
+
