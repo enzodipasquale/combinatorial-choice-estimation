@@ -339,8 +339,7 @@ class RowGenerationManager(BaseEstimationManager):
         
         while iteration < self.row_generation_cfg.max_iters:
             t_iter_start = time.perf_counter()
-            if self.is_root():
-                print(f"ITERATION {iteration + 1}")
+            logger.info(f"ITERATION {iteration + 1}")
             iter_timing = {}
             
             # Subproblem callback (if configured) - called before pricing phase
