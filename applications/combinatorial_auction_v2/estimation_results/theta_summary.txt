@@ -1,5 +1,5 @@
 === Estimation Results ===
 Converged: True
-Iterations: 41
-Final objective: 12777.798271
-Total time: 615.21s
+Iterations: 94
+Final objective: 2472.510868
+Total time: 2306.76s

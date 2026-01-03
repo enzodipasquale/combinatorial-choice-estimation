@@ -4,7 +4,7 @@ This module implements a simplified row generation approach with a single scalar
 """
 import time
 import numpy as np
-from typing import Tuple, List, Optional, Any, Dict
+from typing import Optional, Any
 from numpy.typing import NDArray
 import gurobipy as gp
 from gurobipy import GRB
@@ -96,18 +96,13 @@ class RowGeneration1SlackManager(BaseEstimationManager):
 
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
-    def _master_iteration(self, optimal_bundles: NDArray[np.float64]) -> Tuple[bool, float, float]:
-        """Perform one iteration of master problem (1slack). Returns (stop, master_time, mpi_time)."""
-        t_mpi = time.perf_counter()
+    def _master_iteration(self, optimal_bundles: NDArray[np.float64]) -> bool:
+        """Perform one iteration of master problem (1slack). Returns True if stopping criterion met."""
         x_sim = self.feature_manager.compute_gathered_features(optimal_bundles)
         errors_sim = self.feature_manager.compute_gathered_errors(optimal_bundles)
-        mpi_gather_time = time.perf_counter() - t_mpi
         
         stop = False
-        master_time = 0.0
-        
         if self.is_root():
-            t_master = time.perf_counter()
             theta, u_bar = self.master_variables
             u_sim = (x_sim @ theta.X).sum() + errors_sim.sum()
             u_master = u_bar.X
@@ -129,16 +124,13 @@ class RowGeneration1SlackManager(BaseEstimationManager):
                     self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
             
             theta_val = theta.X
-            master_time = time.perf_counter() - t_master
         else:
             theta_val = np.empty(self.num_features, dtype=np.float64)
             
         # Broadcast theta and stop flag
-        t_bcast = time.perf_counter()
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
-        mpi_bcast_time = time.perf_counter() - t_bcast
         
-        return stop, master_time, mpi_gather_time + mpi_bcast_time
+        return stop
 
     def solve(self) -> EstimationResult:
         """Run row generation with 1slack formulation. Returns EstimationResult with theta_hat and diagnostics."""
@@ -165,10 +157,8 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         self.slack_counter = {}
         iteration = 0
         
-        # Running sums for timing
+        # Simple timing: only track pricing time
         total_pricing = 0.0
-        total_master = 0.0
-        total_mpi = 0.0
         
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
@@ -176,28 +166,25 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             # Pricing phase
             t0 = time.perf_counter()
             optimal_bundles = self.subproblem_manager.solve_local(self.theta_val)
-            pricing_time = time.perf_counter() - t0
-            total_pricing += pricing_time
+            total_pricing += time.perf_counter() - t0
             
             # Master iteration
-            stop, master_time, mpi_time = self._master_iteration(optimal_bundles)
-            total_master += master_time
-            total_mpi += mpi_time
+            stop = self._master_iteration(optimal_bundles)
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 break
             iteration += 1
         
         elapsed = time.perf_counter() - tic
-        num_iters = iteration + 1 if iteration < self.row_generation_cfg.max_iters else iteration
+        num_iters = iteration + 1
         
         if self.is_root():
             converged = iteration < self.row_generation_cfg.max_iters
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation (1slack) {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
-            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing, total_master, total_mpi)
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-            self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, " (1-SLACK)")
+            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
+            self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, header="ROW GENERATION (1-SLACK) SUMMARY")
         else:
             self.timing_stats = None
         

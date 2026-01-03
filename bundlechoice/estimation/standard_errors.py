@@ -89,11 +89,6 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         self.se_cfg = se_cfg
         self._obs_features: Optional[NDArray[np.float64]] = None
     
-    # HasComm needs comm property for MPI.Comm access
-    @property
-    def comm(self) -> MPI.Comm:
-        return self.comm_manager.comm
-    
     def compute(
         self,
         theta_hat: NDArray[np.float64],
@@ -528,4 +523,4 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         if self.is_root():
             return mean_sim - mean_obs
         return None
-
+    
