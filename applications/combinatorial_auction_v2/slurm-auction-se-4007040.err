@@ -1,4 +1,0 @@
-/scratch/ed2189/combinatorial-choice-estimation/bundlechoice/estimation/standard_errors.py:193: RuntimeWarning: divide by zero encountered in divide
-  t_stats = np.where(se_beta > 0, theta_beta / se_beta, 0.0)
-/scratch/ed2189/combinatorial-choice-estimation/applications/combinatorial_auction_v2/compute_se_new.py:117: RuntimeWarning: divide by zero encountered in divide
-  "t_stat": np.where(se_result.se_all > 0, theta_hat / se_result.se_all, 0.0),
