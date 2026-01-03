@@ -7,7 +7,6 @@
 #SBATCH --mem=80G
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm-estimation-%j.out
-#SBATCH --error=slurm-estimation-%j.err
 
 module purge
 

@@ -5,11 +5,11 @@
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
-#SBATCH --time=06:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=slurm-auction-se-%j.out
 
 module purge
 
 export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"
 
-srun ./run-gurobi.bash python compute_se.py
+srun ./run-gurobi.bash python compute_se_non_fe.py

@@ -13,14 +13,18 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 import numpy as np
+import time
 from bundlechoice import BundleChoice
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+if rank == 0:
+    start_time = time.time()
+
 BASE_DIR = os.path.dirname(__file__)
-NUM_SIMULS = 100  # More simulations for stability
+NUM_SIMULS = 200  # More simulations for stability
 TIMELIMIT_SEC = 1.0
 STEP_SIZE = 1e-4
 
@@ -151,4 +155,11 @@ if rank == 0 and se_result is not None:
     np.save(os.path.join(OUTPUT_DIR, "A_non_fe.npy"), se_result.A_matrix)
     np.save(os.path.join(OUTPUT_DIR, "B_non_fe.npy"), se_result.B_matrix)
     print(f"\nSaved to: {OUTPUT_DIR}/se_non_fe.npy")
+    
+    # Print total execution time
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"\n" + "="*60)
+    print(f"Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+    print("="*60)
 
