@@ -38,4 +38,6 @@ paper/
 paper/_table1/
 
 # Batch job scripts
+slurm-*.out
+slurm-*.err
 
