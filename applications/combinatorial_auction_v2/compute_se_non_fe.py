@@ -25,7 +25,7 @@ if rank == 0:
 
 BASE_DIR = os.path.dirname(__file__)
 NUM_SIMULS = 200  # More simulations for stability
-TIMELIMIT_SEC = 1.0
+TIMELIMIT_SEC = 30
 STEP_SIZE = 1e-4
 
 # Non-FE parameter indices
@@ -131,23 +131,6 @@ if rank == 0 and se_result is not None:
         t_val = se_result.t_stats[i]
         print(f"  θ[{idx}] = {theta_val:.4f}, SE = {se_val:.4f}, t = {t_val:.2f}")
     
-    # Compare with previous HPC results
-    print("\n" + "="*60)
-    print("COMPARISON WITH PREVIOUS HPC RUN (10 sims, full 497x497)")
-    print("="*60)
-    prev_se = {
-        0: 232.714023,
-        494: 55.782308,
-        495: 1101.776229,
-        496: 822.364941,
-    }
-    print(f"{'Param':<8} {'Old SE':>12} {'New SE':>12} {'Ratio':>10}")
-    print("-"*45)
-    for i, idx in enumerate(NON_FE_INDICES):
-        old = prev_se[idx]
-        new = se_result.se[i]
-        ratio = new / old if old > 0 else float('inf')
-        print(f"θ[{idx}]    {old:>12.4f} {new:>12.4f} {ratio:>10.4f}")
     
     # Save results
     OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
