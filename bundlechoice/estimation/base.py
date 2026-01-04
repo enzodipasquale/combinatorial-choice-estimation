@@ -164,22 +164,20 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         print(f"Iterations: {num_iters}")
         print(f"Total time: {total_time:.2f}s ({time_per_iter:.2f}s/iter avg)")
         print()
-        print("Timing breakdown:")
-        print(f"  Pricing (subproblems): {pricing:7.2f}s ({pricing_pct:5.1f}%)")
-        if master > 0:
-            print(f"  Master problem:        {master:7.2f}s ({master_pct:5.1f}%)")
-        print(f"  Other (sync/overhead): {other:7.2f}s ({other_pct:5.1f}%)")
         
         # Per-iteration stats if available
         pricing_per = timing_stats.get('pricing_per_iter')
         master_per = timing_stats.get('master_per_iter')
-        if pricing_per or master_per:
-            print()
-            print("Per-iteration (min / avg / max):")
-            if pricing_per:
-                print(f"  Pricing: {pricing_per['min']:.3f}s / {pricing_per['avg']:.3f}s / {pricing_per['max']:.3f}s")
-            if master_per:
-                print(f"  Master:  {master_per['min']:.3f}s / {master_per['avg']:.3f}s / {master_per['max']:.3f}s")
+        has_per_iter = pricing_per or master_per
+        
+        header = "Timing:                  Total           [min  /  avg  /  max  per iter]" if has_per_iter else "Timing:"
+        print(header)
+        pricing_detail = f"  [{pricing_per['min']:.3f}s / {pricing_per['avg']:.3f}s / {pricing_per['max']:.3f}s]" if pricing_per else ""
+        print(f"  Pricing (subproblems): {pricing:5.2f}s ({pricing_pct:5.1f}%){pricing_detail}")
+        if master > 0:
+            master_detail = f"  [{master_per['min']:.3f}s / {master_per['avg']:.3f}s / {master_per['max']:.3f}s]" if master_per else ""
+            print(f"  Master problem:        {master:5.2f}s ({master_pct:5.1f}%){master_detail}")
+        print(f"  Other (sync/overhead): {other:5.2f}s ({other_pct:5.1f}%)")
         print()
 
     def log_parameter(self) -> None:
