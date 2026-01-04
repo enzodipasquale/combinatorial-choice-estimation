@@ -24,6 +24,10 @@ rank = comm.Get_rank()
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
+# Option to use previous theta as initial value
+USE_PREVIOUS_THETA = True
+THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
+
 # Load configuration
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
@@ -77,7 +81,15 @@ combinatorial_auction.data.load_and_scatter(input_data)
 combinatorial_auction.features.build_from_data()
 combinatorial_auction.subproblems.load()
 
-result = combinatorial_auction.row_generation.solve()
+# Load previous theta if requested
+theta_init = None
+if USE_PREVIOUS_THETA and os.path.exists(THETA_PATH):
+    if rank == 0:
+        theta_init = np.load(THETA_PATH)
+        print(f"Loading previous theta from {THETA_PATH}")
+    theta_init = comm.bcast(theta_init, root=0)
+
+result = combinatorial_auction.row_generation.solve(theta_init=theta_init)
 
 if rank == 0:
     print(f"\n{result.summary()}")

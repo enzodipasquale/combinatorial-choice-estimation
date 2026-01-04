@@ -11,7 +11,6 @@ from bundlechoice.feature_manager import FeatureManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 from bundlechoice.estimation import ColumnGenerationManager, RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
-from bundlechoice.estimation.inequalities import InequalitiesManager
 from bundlechoice.errors import SetupError
 
 
@@ -135,34 +134,6 @@ def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> Ell
         theta_init=theta_init
     )
     return bc.ellipsoid_manager
-
-
-def try_init_inequalities_manager(bc: Any) -> InequalitiesManager:
-    """Initialize InequalitiesManager if required managers are set."""
-    missing_managers = []
-    if bc.data_manager is None:
-        missing_managers.append("DataManager")
-    if bc.feature_manager is None:
-        missing_managers.append("FeatureManager")
-    if bc.subproblem_manager is None:
-        missing_managers.append("SubproblemManager")
-    if bc.config is None or bc.config.dimensions is None:
-        missing_managers.append("DimensionsConfig")
-    if missing_managers:
-        raise SetupError(
-            "Cannot initialize inequalities manager - missing managers",
-            suggestion=f"Ensure {', '.join(missing_managers)} are initialized before accessing bc.inequalities",
-            missing=missing_managers
-        )
-
-    bc.inequalities_manager = InequalitiesManager(
-        comm_manager=bc.comm_manager,
-        dimensions_cfg=bc.config.dimensions,
-        data_manager=bc.data_manager,
-        feature_manager=bc.feature_manager,
-        subproblem_manager=None
-    )
-    return bc.inequalities_manager
 
 
 def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None) -> ColumnGenerationManager:
