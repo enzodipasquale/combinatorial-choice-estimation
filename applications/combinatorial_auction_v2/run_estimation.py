@@ -89,8 +89,4 @@ if rank == 0:
     # Save theta_hat
     np.save(os.path.join(OUTPUT_DIR, "theta.npy"), result.theta_hat)
     
-    # Save summary
-    with open(os.path.join(OUTPUT_DIR, "theta_summary.txt"), 'w') as f:
-        f.write(result.summary())
-    
     print(f"\nResults saved to {OUTPUT_DIR}/")
