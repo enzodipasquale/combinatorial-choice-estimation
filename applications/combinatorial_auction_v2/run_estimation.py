@@ -6,6 +6,8 @@ Main estimation script for combinatorial auction v2.
 import sys
 import os
 from pathlib import Path
+from datetime import datetime
+import csv
 
 # Add project root to Python path
 BASE_DIR = os.path.dirname(__file__)
@@ -98,7 +100,65 @@ if rank == 0:
     OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     
-    # Save theta_hat
+    # Save theta_hat as numpy array
     np.save(os.path.join(OUTPUT_DIR, "theta.npy"), result.theta_hat)
     
+    # Save to CSV with metadata
+    CSV_PATH = os.path.join(OUTPUT_DIR, "theta_hat.csv")
+    num_mpi = comm.Get_size()
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    
+    # Prepare row data
+    row_data = {
+        "timestamp": timestamp,
+        "num_mpi": num_mpi,
+        "num_agents": num_agents,
+        "num_items": num_items,
+        "num_features": num_features,
+        "num_simulations": num_simulations,
+        "converged": result.converged,
+        "num_iterations": result.num_iterations,
+        "final_objective": result.final_objective if result.final_objective is not None else "",
+    }
+    
+    # Add timing statistics if available
+    if result.timing:
+        timing = result.timing
+        row_data.update({
+            "total_time": timing.get("total_time", ""),
+            "time_per_iter": timing.get("time_per_iter", ""),
+            "pricing_time": timing.get("pricing_time", ""),
+            "pricing_pct": timing.get("pricing_pct", ""),
+            "master_time": timing.get("master_time", ""),
+            "master_pct": timing.get("master_pct", ""),
+            "other_time": timing.get("other_time", ""),
+            "other_pct": timing.get("other_pct", ""),
+        })
+    else:
+        row_data.update({
+            "total_time": "",
+            "time_per_iter": "",
+            "pricing_time": "",
+            "pricing_pct": "",
+            "master_time": "",
+            "master_pct": "",
+            "other_time": "",
+            "other_pct": "",
+        })
+    
+    # Add theta values as separate columns
+    for i, theta_val in enumerate(result.theta_hat):
+        row_data[f"theta_{i}"] = theta_val
+    
+    # Write to CSV (append if file exists, create with headers if not)
+    file_exists = os.path.exists(CSV_PATH)
+    
+    with open(CSV_PATH, 'a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=row_data.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row_data)
+    
     print(f"\nResults saved to {OUTPUT_DIR}/")
+    print(f"  - theta.npy")
+    print(f"  - theta_hat.csv")
