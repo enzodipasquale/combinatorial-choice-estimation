@@ -289,8 +289,9 @@ class RowGenerationManager(BaseEstimationManager):
         self.slack_counter = {}
         iteration = 0
         
-        # Simple timing: only track pricing time on this rank
-        total_pricing = 0.0
+        # Track per-iteration times
+        pricing_times = []
+        master_times = []
         
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f"ITERATION {iteration + 1}")
@@ -304,14 +305,17 @@ class RowGenerationManager(BaseEstimationManager):
                     master_model
                 )
             
-            # Pricing phase - track time on all ranks
+            # Pricing phase
             t0 = time.perf_counter()
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             pricing_time = time.perf_counter() - t0
-            total_pricing += pricing_time
+            pricing_times.append(pricing_time)
             
             # Master iteration
+            t1 = time.perf_counter()
             stop = self._master_iteration(local_pricing_results)
+            master_time = time.perf_counter() - t1
+            master_times.append(master_time)
             
             # Callback
             if callback and self.is_root():
@@ -320,6 +324,7 @@ class RowGenerationManager(BaseEstimationManager):
                     'theta': self.theta_val.copy() if self.theta_val is not None else None,
                     'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
                     'pricing_time': pricing_time,
+                    'master_time': master_time,
                 })
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
@@ -334,7 +339,7 @@ class RowGenerationManager(BaseEstimationManager):
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-            self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
+            self.timing_stats = make_timing_stats(elapsed, num_iters, pricing_times, master_times)
             self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, header="ROW GENERATION SUMMARY")
         else:
             self.timing_stats = None

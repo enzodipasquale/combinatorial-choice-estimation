@@ -163,3 +163,4 @@ if rank == 0 and se_result is not None:
     print(f"Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
     print("="*60)
 
+

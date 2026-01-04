@@ -8,7 +8,6 @@ import numpy as np
 from bundlechoice.utils import get_logger
 from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager
 from bundlechoice.estimation.ellipsoid import EllipsoidManager
-from bundlechoice.estimation.inequalities import InequalitiesManager
 from bundlechoice.base import HasComm, HasConfig
 from .comm_manager import CommManager
 logger = get_logger(__name__)
@@ -38,7 +37,6 @@ class BundleChoice(HasComm, HasConfig):
     subproblem_manager: Optional[SubproblemManager]
     row_generation_manager: Optional[RowGenerationManager]
     ellipsoid_manager: Optional[EllipsoidManager]
-    inequalities_manager: Optional[InequalitiesManager]
     standard_errors_manager: Optional[StandardErrorsManager]
     comm: MPI.Comm
     comm_manager: Optional[CommManager]
@@ -52,7 +50,6 @@ class BundleChoice(HasComm, HasConfig):
         self.subproblem_manager = None
         self.row_generation_manager = None
         self.ellipsoid_manager = None
-        self.inequalities_manager = None
         self.standard_errors_manager = None
 
     # ============================================================================
@@ -85,11 +82,6 @@ class BundleChoice(HasComm, HasConfig):
         """Initialize EllipsoidManager."""
         from bundlechoice._initialization import try_init_ellipsoid_manager
         return try_init_ellipsoid_manager(self, theta_init)
-
-    def _try_init_inequalities_manager(self) -> InequalitiesManager:
-        """Initialize InequalitiesManager."""
-        from bundlechoice._initialization import try_init_inequalities_manager
-        return try_init_inequalities_manager(self)
 
     def _try_init_standard_errors_manager(self) -> StandardErrorsManager:
         """Initialize StandardErrorsManager."""
@@ -130,12 +122,6 @@ class BundleChoice(HasComm, HasConfig):
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
         
-    @property
-    def inequalities(self) -> InequalitiesManager:
-        if self.inequalities_manager is None:
-            self._try_init_inequalities_manager()
-        return self.inequalities_manager
-
     @property
     def standard_errors(self) -> StandardErrorsManager:
         if self.standard_errors_manager is None:
