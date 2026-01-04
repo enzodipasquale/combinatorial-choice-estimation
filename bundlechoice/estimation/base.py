@@ -140,8 +140,10 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         num_iters = timing_stats.get('num_iterations', 0)
         time_per_iter = timing_stats.get('time_per_iter', total_time / num_iters if num_iters > 0 else 0)
         pricing = timing_stats.get('pricing_time', 0.0)
+        master = timing_stats.get('master_time', 0.0)
         other = timing_stats.get('other_time', total_time - pricing)
         pricing_pct = timing_stats.get('pricing_pct', 100 * pricing / total_time if total_time > 0 else 0)
+        master_pct = timing_stats.get('master_pct', 100 * master / total_time if total_time > 0 else 0)
         other_pct = timing_stats.get('other_pct', 100 * other / total_time if total_time > 0 else 0)
             
         print("=" * 70)
@@ -160,11 +162,24 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
                 print(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
         
         print(f"Iterations: {num_iters}")
-        print(f"Total time: {total_time:.2f}s ({time_per_iter:.2f}s/iter)")
+        print(f"Total time: {total_time:.2f}s ({time_per_iter:.2f}s/iter avg)")
         print()
-        print("Timing (root process):")
+        print("Timing breakdown:")
         print(f"  Pricing (subproblems): {pricing:7.2f}s ({pricing_pct:5.1f}%)")
-        print(f"  Other (master + sync): {other:7.2f}s ({other_pct:5.1f}%)")
+        if master > 0:
+            print(f"  Master problem:        {master:7.2f}s ({master_pct:5.1f}%)")
+        print(f"  Other (sync/overhead): {other:7.2f}s ({other_pct:5.1f}%)")
+        
+        # Per-iteration stats if available
+        pricing_per = timing_stats.get('pricing_per_iter')
+        master_per = timing_stats.get('master_per_iter')
+        if pricing_per or master_per:
+            print()
+            print("Per-iteration (min / avg / max):")
+            if pricing_per:
+                print(f"  Pricing: {pricing_per['min']:.3f}s / {pricing_per['avg']:.3f}s / {pricing_per['max']:.3f}s")
+            if master_per:
+                print(f"  Master:  {master_per['min']:.3f}s / {master_per['avg']:.3f}s / {master_per['max']:.3f}s")
         print()
 
     def log_parameter(self) -> None:

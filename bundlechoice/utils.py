@@ -95,28 +95,57 @@ def suppress_output():
 # ============================================================================
 
 def make_timing_stats(elapsed: float, num_iterations: int,
-                      pricing_time: float = 0.0, other_time: float = None) -> Dict[str, Any]:
+                      pricing_times: Any = None, master_times: Any = None) -> Dict[str, Any]:
     """
-    Create simple timing statistics dictionary.
+    Create timing statistics dictionary with per-iteration breakdown.
     
     Args:
         elapsed: Total elapsed time (wall-clock)
         num_iterations: Number of iterations completed
-        pricing_time: Total time in pricing/subproblems (on this rank)
-        other_time: Time for everything else (master + sync). If None, computed as elapsed - pricing_time.
+        pricing_times: List/array of per-iteration pricing times, or total float
+        master_times: List/array of per-iteration master times, or total float
         
     Returns:
-        Dict with timing statistics
+        Dict with timing statistics including min/max/avg per iteration
     """
-    if other_time is None:
-        other_time = elapsed - pricing_time
+    # Handle pricing times (list or scalar)
+    if pricing_times is None:
+        pricing_times = []
+    pricing_arr = np.atleast_1d(np.asarray(pricing_times, dtype=np.float64))
+    total_pricing = float(pricing_arr.sum())
     
-    return {
+    # Handle master times (list or scalar)  
+    if master_times is None:
+        master_times = []
+    master_arr = np.atleast_1d(np.asarray(master_times, dtype=np.float64))
+    total_master = float(master_arr.sum())
+    
+    other_time = max(0, elapsed - total_pricing - total_master)
+    
+    stats = {
         'total_time': elapsed,
         'num_iterations': num_iterations,
         'time_per_iter': elapsed / num_iterations if num_iterations > 0 else 0,
-        'pricing_time': pricing_time,
-        'pricing_pct': 100 * pricing_time / elapsed if elapsed > 0 else 0,
+        'pricing_time': total_pricing,
+        'pricing_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
+        'master_time': total_master,
+        'master_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
         'other_time': other_time,
         'other_pct': 100 * other_time / elapsed if elapsed > 0 else 0,
     }
+    
+    # Per-iteration stats if we have array data
+    if len(pricing_arr) > 1:
+        stats['pricing_per_iter'] = {
+            'avg': float(pricing_arr.mean()),
+            'min': float(pricing_arr.min()),
+            'max': float(pricing_arr.max()),
+        }
+    if len(master_arr) > 1:
+        stats['master_per_iter'] = {
+            'avg': float(master_arr.mean()),
+            'min': float(master_arr.min()),
+            'max': float(master_arr.max()),
+        }
+    
+    return stats
