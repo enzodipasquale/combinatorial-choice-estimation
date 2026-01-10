@@ -4,21 +4,31 @@ Data preparation script for combinatorial auction estimation.
 
 Processes raw data from the Fox-Bajari replication package into the format
 required by BundleChoice framework.
+
+Usage:
+    python prepare_data.py              # Uses default delta=4
+    python prepare_data.py --delta 2    # Uses delta=2
+    python prepare_data.py --delta 4    # Uses delta=4 (explicit)
 """
 
+import argparse
+import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Tuple
+from datetime import datetime
 
 # Data paths
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
-OUTPUT_DIR = BASE_DIR / "input_data"
+
+def get_output_dir(delta: int) -> Path:
+    """Get delta-specific output directory."""
+    return BASE_DIR / f"input_data_delta{delta}"
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000
-POP_CENTROID_DELTA = 4
 POP_CENTROID_PERCENTILE = 0  # Truncation threshold
 
 
@@ -111,15 +121,21 @@ def generate_matching_matrix(
     return matching_i_j
 
 
-def build_pop_centroid_features(weight_j: np.ndarray, geo_distance_j_j: np.ndarray) -> np.ndarray:
-    """Build population-weighted centroid interaction features."""
+def build_pop_centroid_features(weight_j: np.ndarray, geo_distance_j_j: np.ndarray, delta: int = 4) -> np.ndarray:
+    """Build population-weighted centroid interaction features.
+    
+    Args:
+        weight_j: Population weights for each market
+        geo_distance_j_j: Geographic distance matrix between markets
+        delta: Distance decay exponent (2 or 4)
+    """
     # Compute interaction matrix
     E_j_j = (weight_j[:, None] * weight_j[None, :]).astype(float)
     np.fill_diagonal(E_j_j, 0)
     
     # Apply distance decay
     mask = geo_distance_j_j > 0
-    E_j_j[mask] /= (geo_distance_j_j[mask] ** POP_CENTROID_DELTA)
+    E_j_j[mask] /= (geo_distance_j_j[mask] ** delta)
     
     # Normalize
     pop_centroid_j_j = (weight_j[:, None] / weight_j.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
@@ -155,12 +171,21 @@ def build_quadratic_features(
     geo_distance_j_j: np.ndarray,
     travel_survey_j_j: np.ndarray,
     air_travel_j_j: np.ndarray,
+    delta: int = 4,
 ) -> np.ndarray:
-    """Build all quadratic item-item features."""
+    """Build all quadratic item-item features.
+    
+    Args:
+        weight_j: Population weights for each market
+        geo_distance_j_j: Geographic distance matrix
+        travel_survey_j_j: Travel survey interaction matrix
+        air_travel_j_j: Air travel interaction matrix
+        delta: Distance decay exponent (2 or 4)
+    """
     quadratic_list = []
     
     # Population-weighted centroid
-    pop_centroid_j_j = build_pop_centroid_features(weight_j, geo_distance_j_j)
+    pop_centroid_j_j = build_pop_centroid_features(weight_j, geo_distance_j_j, delta=delta)
     quadratic_list.append(pop_centroid_j_j)
     
     # Travel survey interactions
@@ -206,22 +231,39 @@ def save_processed_data(
     capacity_i: np.ndarray,
     modular_characteristics_i_j_k: np.ndarray,
     quadratic_characteristic_j_j_k: np.ndarray,
+    delta: int = 4,
 ) -> None:
-    """Save all processed data to numpy files."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Save all processed data to numpy files in delta-specific directory."""
+    output_dir = get_output_dir(delta)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    np.save(OUTPUT_DIR / "matching_i_j.npy", matching_i_j)
-    np.save(OUTPUT_DIR / "weight_j.npy", weight_j)
-    np.save(OUTPUT_DIR / "capacity_i.npy", capacity_i)
-    np.save(OUTPUT_DIR / "modular_characteristics_i_j_k.npy", modular_characteristics_i_j_k)
-    np.save(OUTPUT_DIR / "quadratic_characteristic_j_j_k.npy", quadratic_characteristic_j_j_k)
+    np.save(output_dir / "matching_i_j.npy", matching_i_j)
+    np.save(output_dir / "weight_j.npy", weight_j)
+    np.save(output_dir / "capacity_i.npy", capacity_i)
+    np.save(output_dir / "modular_characteristics_i_j_k.npy", modular_characteristics_i_j_k)
+    np.save(output_dir / "quadratic_characteristic_j_j_k.npy", quadratic_characteristic_j_j_k)
     
-    print(f"\nSaved processed data to {OUTPUT_DIR}:")
+    # Save metadata
+    metadata = {
+        "delta": delta,
+        "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
+        "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
+        "num_agents": int(capacity_i.shape[0]),
+        "num_items": int(weight_j.shape[0]),
+        "num_modular_features": int(modular_characteristics_i_j_k.shape[2]),
+        "num_quadratic_features": int(quadratic_characteristic_j_j_k.shape[2]),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+    with open(output_dir / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"\nSaved processed data to {output_dir}:")
     print(f"  matching_i_j.npy: {matching_i_j.shape}")
     print(f"  weight_j.npy: {weight_j.shape}")
     print(f"  capacity_i.npy: {capacity_i.shape}")
     print(f"  modular_characteristics_i_j_k.npy: {modular_characteristics_i_j_k.shape}")
     print(f"  quadratic_characteristic_j_j_k.npy: {quadratic_characteristic_j_j_k.shape}")
+    print(f"  metadata.json: delta={delta}")
 
 
 def compute_feature_statistics(
@@ -244,10 +286,37 @@ def compute_feature_statistics(
     print(f"  Std features: {phi_hat_i_k[winning].std(0)}")
 
 
-def main():
-    """Main data preparation pipeline."""
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Prepare data for combinatorial auction estimation.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    python prepare_data.py              # Uses default delta=4
+    python prepare_data.py --delta 2    # Uses delta=2
+    python prepare_data.py --delta 4    # Uses delta=4 (explicit)
+        """
+    )
+    parser.add_argument(
+        "--delta", "-d",
+        type=int,
+        choices=[2, 4],
+        default=4,
+        help="Distance decay exponent for population/centroid feature (default: 4)"
+    )
+    return parser.parse_args()
+
+
+def main(delta: int = 4):
+    """Main data preparation pipeline.
+    
+    Args:
+        delta: Distance decay exponent (2 or 4)
+    """
     print("=" * 70)
     print("Combinatorial Auction Data Preparation")
+    print(f"  Distance parameter δ = {delta}")
     print("=" * 70)
     
     # Load raw data
@@ -282,6 +351,7 @@ def main():
         raw_data["geo_distance_j_j"],
         raw_data["travel_survey_j_j"],
         raw_data["air_travel_j_j"],
+        delta=delta,
     )
     
     # Compute statistics
@@ -298,13 +368,15 @@ def main():
         capacity_i,
         modular_characteristics_i_j_k,
         quadratic_characteristic_j_j_k,
+        delta=delta,
     )
     
     print("\n" + "=" * 70)
-    print("Data preparation complete!")
+    print(f"Data preparation complete! (δ = {delta})")
     print("=" * 70)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(delta=args.delta)
 

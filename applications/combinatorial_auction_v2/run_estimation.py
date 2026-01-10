@@ -1,13 +1,19 @@
 #!/bin/env python
 """
 Main estimation script for combinatorial auction v2.
+
+Usage:
+    srun ./run-gurobi.bash python run_estimation.py --delta 4
+    srun ./run-gurobi.bash python run_estimation.py --delta 2
 """
 
+import argparse
 import sys
 import os
 from pathlib import Path
 from datetime import datetime
 import csv
+import json
 
 # Add project root to Python path
 BASE_DIR = os.path.dirname(__file__)
@@ -23,6 +29,13 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+# Parse arguments on all ranks (MPI-safe)
+parser = argparse.ArgumentParser(description="Run estimation for combinatorial auction")
+parser.add_argument("--delta", "-d", type=int, choices=[2, 4], required=True,
+                    help="Distance parameter delta (must match prepare_data.py)")
+args = parser.parse_args()
+DELTA = args.delta
+
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
@@ -34,9 +47,13 @@ THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
-# Load data on rank 0
+# Load data on rank 0 from delta-specific directory
 if rank == 0:
-    INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+    INPUT_DIR = os.path.join(BASE_DIR, f"input_data_delta{DELTA}")
+    if not os.path.exists(INPUT_DIR):
+        print(f"Error: Input data not found at {INPUT_DIR}")
+        print(f"  Run: ./run-gurobi.bash python prepare_data.py --delta {DELTA}")
+        sys.exit(1)
     obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
 
     num_agents = config["dimensions"]["num_agents"]
@@ -100,8 +117,21 @@ if rank == 0:
     OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     
+    # Delta is known from command-line argument
+    delta = DELTA
+    
     # Save theta_hat as numpy array
     np.save(os.path.join(OUTPUT_DIR, "theta.npy"), result.theta_hat)
+    
+    # Save theta metadata (for SE computation to know which delta was used)
+    theta_metadata = {
+        "delta": delta,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "converged": result.converged,
+        "num_iterations": result.num_iterations,
+    }
+    with open(os.path.join(OUTPUT_DIR, "theta_metadata.json"), "w") as f:
+        json.dump(theta_metadata, f, indent=2)
     
     # Save to CSV with metadata
     CSV_PATH = os.path.join(OUTPUT_DIR, "theta_hat.csv")
@@ -111,6 +141,7 @@ if rank == 0:
     # Prepare row data
     row_data = {
         "timestamp": timestamp,
+        "delta": delta if delta is not None else "",
         "num_mpi": num_mpi,
         "num_agents": num_agents,
         "num_items": num_items,

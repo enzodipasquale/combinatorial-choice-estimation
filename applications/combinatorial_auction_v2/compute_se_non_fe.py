@@ -5,20 +5,34 @@ Non-FE indices: [0, 494, 495, 496]
 - 0: modular agent feature
 - 494-496: quadratic features
 
-Run with: mpirun -n 12 python compute_se_non_fe.py
+Usage:
+    srun ./run-gurobi.bash python compute_se_non_fe.py --delta 4
+    srun ./run-gurobi.bash python compute_se_non_fe.py --delta 2
 """
 
+import argparse
+import csv
+import json
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 import numpy as np
 import time
+from datetime import datetime
+from pathlib import Path
 from bundlechoice import BundleChoice
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
+
+# Parse arguments on all ranks (MPI-safe)
+parser = argparse.ArgumentParser(description="Compute SE for non-FE parameters")
+parser.add_argument("--delta", "-d", type=int, choices=[2, 4], required=True,
+                    help="Distance parameter delta (must match theta_hat.csv)")
+args = parser.parse_args()
+DELTA = args.delta
 
 if rank == 0:
     start_time = time.time()
@@ -29,21 +43,75 @@ TIMELIMIT_SEC = 30
 STEP_SIZE = 1e-4
 
 # Non-FE parameter indices
-# Feature structure: [modular_agent(1), item_FE(493), quadratic(3)]
 NON_FE_INDICES = np.array([0, 494, 495, 496], dtype=np.int64)
+PARAM_NAMES = ["bidder_elig_pop", "pop_distance", "travel_survey", "air_travel"]
 
-# Load theta_hat
+
+def load_theta_from_csv(delta):
+    """Load theta from theta_hat.csv for given delta (most recent row)."""
+    csv_path = os.path.join(BASE_DIR, "estimation_results", "theta_hat.csv")
+    if not os.path.exists(csv_path):
+        return None
+    
+    with open(csv_path, "r") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    
+    # Find rows with matching delta
+    matching = [r for r in rows if str(r.get("delta", "")) == str(delta)]
+    if not matching:
+        return None
+    
+    # Get the most recent row (last one)
+    row = matching[-1]
+    
+    # Extract all theta values
+    num_features = int(row.get("num_features", 497))
+    theta = np.zeros(num_features)
+    for i in range(num_features):
+        key = f"theta_{i}"
+        if key in row and row[key]:
+            theta[i] = float(row[key])
+    
+    return theta
+
+
+# Load theta_hat from CSV
 if rank == 0:
-    theta_hat = np.load(os.path.join(BASE_DIR, "estimation_results", "theta.npy"))
-    print(f"Loaded theta_hat: shape={theta_hat.shape}")
-    print(f"Non-FE parameters: {NON_FE_INDICES}")
-    print(f"Non-FE theta values: {theta_hat[NON_FE_INDICES]}")
+    print("=" * 60)
+    print(f"COMPUTING STANDARD ERRORS FOR δ = {DELTA}")
+    print("=" * 60)
+    
+    # Try to load from CSV first
+    theta_hat = load_theta_from_csv(DELTA)
+    
+    if theta_hat is not None:
+        print(f"Loaded theta from theta_hat.csv (delta={DELTA})")
+        print(f"  Shape: {theta_hat.shape}")
+        print(f"  Non-FE values: {theta_hat[NON_FE_INDICES]}")
+    else:
+        # Fallback to theta.npy (for backward compatibility)
+        theta_path = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
+        if os.path.exists(theta_path):
+            theta_hat = np.load(theta_path)
+            print(f"Warning: No theta found in CSV for delta={DELTA}")
+            print(f"  Falling back to theta.npy (may not match delta!)")
+        else:
+            print(f"Error: No theta estimates found for delta={DELTA}")
+            print(f"  Run estimation first: sbatch auction.sbatch {DELTA}")
+            sys.exit(1)
+    
+    print(f"\nNon-FE parameters: {NON_FE_INDICES}")
 else:
     theta_hat = None
 
-# Load data
+# Load data from delta-specific directory
 if rank == 0:
-    INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+    INPUT_DIR = os.path.join(BASE_DIR, f"input_data_delta{DELTA}")
+    if not os.path.exists(INPUT_DIR):
+        print(f"Error: Input data not found at {INPUT_DIR}")
+        print(f"  Run: ./run-gurobi.bash python prepare_data.py --delta {DELTA}")
+        sys.exit(1)
     obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
     quadratic = np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy"))
     weights = np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
@@ -103,7 +171,6 @@ if rank == 0:
     print(f"Simulations: {NUM_SIMULS}")
     print(f"Step size: {STEP_SIZE}")
     print(f"Computing SE for {len(NON_FE_INDICES)} non-FE parameters only")
-    print(f"Using optimize_for_subset=True for faster computation")
 
 # Compute SE for non-FE parameters only
 se_result = bc.standard_errors.compute(
@@ -112,12 +179,15 @@ se_result = bc.standard_errors.compute(
     step_size=STEP_SIZE,
     beta_indices=NON_FE_INDICES,
     seed=1995,
-    optimize_for_subset=True,  # Only compute 4x4 matrices
+    optimize_for_subset=True,
 )
 
 if rank == 0 and se_result is not None:
+    end_time = time.time()
+    total_time = end_time - start_time
+    
     print("\n" + "="*60)
-    print("NON-FE STANDARD ERRORS (SUBSET COMPUTATION)")
+    print(f"NON-FE STANDARD ERRORS (δ = {DELTA})")
     print("="*60)
     print(f"A matrix shape: {se_result.A_matrix.shape}")
     print(f"B matrix shape: {se_result.B_matrix.shape}")
@@ -131,20 +201,54 @@ if rank == 0 and se_result is not None:
         t_val = se_result.t_stats[i]
         print(f"  θ[{idx}] = {theta_val:.4f}, SE = {se_val:.4f}, t = {t_val:.2f}")
     
-    
     # Save results
     OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
+    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    
     np.save(os.path.join(OUTPUT_DIR, "se_non_fe.npy"), se_result.se)
     np.save(os.path.join(OUTPUT_DIR, "A_non_fe.npy"), se_result.A_matrix)
     np.save(os.path.join(OUTPUT_DIR, "B_non_fe.npy"), se_result.B_matrix)
-    print(f"\nSaved to: {OUTPUT_DIR}/se_non_fe.npy")
     
-    # Print total execution time
-    end_time = time.time()
-    total_time = end_time - start_time
+    # Save to CSV with metadata
+    CSV_PATH = os.path.join(OUTPUT_DIR, "se_non_fe.csv")
+    num_mpi = comm.Get_size()
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    
+    # Prepare row data
+    row_data = {
+        "timestamp": timestamp,
+        "delta": DELTA,
+        "num_mpi": num_mpi,
+        "num_agents": num_agents,
+        "num_items": num_items,
+        "num_features": num_features,
+        "num_simulations_se": NUM_SIMULS,
+        "step_size": STEP_SIZE,
+        "total_time_sec": total_time,
+        "A_cond_number": np.linalg.cond(se_result.A_matrix),
+        "B_cond_number": np.linalg.cond(se_result.B_matrix),
+    }
+    
+    # Add theta, SE, and t-stats for each non-FE parameter
+    for i, (idx, name) in enumerate(zip(NON_FE_INDICES, PARAM_NAMES)):
+        row_data[f"theta_{name}"] = theta_hat[idx]
+        row_data[f"se_{name}"] = se_result.se[i]
+        row_data[f"t_{name}"] = se_result.t_stats[i]
+    
+    # Write to CSV (append if exists)
+    file_exists = os.path.exists(CSV_PATH)
+    with open(CSV_PATH, 'a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=row_data.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row_data)
+    
+    print(f"\nSaved to: {OUTPUT_DIR}/")
+    print(f"  - se_non_fe.npy")
+    print(f"  - A_non_fe.npy")
+    print(f"  - B_non_fe.npy")
+    print(f"  - se_non_fe.csv (delta={DELTA})")
+    
     print(f"\n" + "="*60)
     print(f"Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
     print("="*60)
-
-
-
