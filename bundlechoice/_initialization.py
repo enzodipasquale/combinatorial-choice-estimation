@@ -47,24 +47,33 @@ def try_init_feature_manager(bc: Any) -> FeatureManager:
 
 def try_init_subproblem_manager(bc: Any) -> SubproblemManager:
     """Initialize SubproblemManager if subproblem_cfg is set."""
-    if bc.data_manager is None or bc.feature_manager is None or bc.config is None or bc.config.subproblem is None:
+    # Check required components (except features which can be auto-built)
+    if bc.data_manager is None or bc.config is None or bc.config.subproblem is None:
         missing = []
         if bc.config is None or bc.config.subproblem is None:
             missing.append("config with 'subproblem' section")
         if bc.data_manager is None:
             missing.append("data")
-        if bc.feature_manager is None:
-            missing.append("features")
         
         raise SetupError(
             f"Cannot initialize subproblem manager - missing: {', '.join(missing)}",
             suggestion=(
                 "Complete these steps:\n"
                 "  1. bc.load_config(config_dict)  # Include 'subproblem' section\n"
-                "  2. bc.data.load_and_scatter(input_data)\n"
-                "  3. bc.features.build_from_data() or bc.features.set_oracle(fn)"
+                "  2. bc.data.load_and_scatter(input_data)"
             )
         )
+
+    # Auto-initialize feature_manager if not set
+    if bc.feature_manager is None:
+        try_init_feature_manager(bc)
+
+    # Auto-build oracles if not already set
+    if bc.feature_manager._features_oracle is None:
+        bc.feature_manager.build_from_data()
+    elif bc.feature_manager._error_oracle is None:
+        # Features oracle was set manually but error oracle wasn't - build error oracle
+        bc.feature_manager.build_error_oracle_from_data()
 
     bc.subproblem_manager = SubproblemManager(
         dimensions_cfg=bc.config.dimensions,
