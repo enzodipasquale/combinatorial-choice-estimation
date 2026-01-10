@@ -5,6 +5,7 @@ Main estimation script for combinatorial auction v2.
 Usage:
     srun ./run-gurobi.bash python run_estimation.py --delta 4
     srun ./run-gurobi.bash python run_estimation.py --delta 2
+    srun ./run-gurobi.bash python run_estimation.py --delta 4 --winners-only
 """
 
 import argparse
@@ -33,8 +34,11 @@ rank = comm.Get_rank()
 parser = argparse.ArgumentParser(description="Run estimation for combinatorial auction")
 parser.add_argument("--delta", "-d", type=int, choices=[2, 4], required=True,
                     help="Distance parameter delta (must match prepare_data.py)")
+parser.add_argument("--winners-only", "-w", action="store_true",
+                    help="Use winners-only sample (must match prepare_data.py)")
 args = parser.parse_args()
 DELTA = args.delta
+WINNERS_ONLY = args.winners_only
 
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
@@ -47,16 +51,31 @@ THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
-# Load data on rank 0 from delta-specific directory
+# Build input directory name from parameters
+def get_input_dir(delta, winners_only):
+    suffix = f"_delta{delta}"
+    if winners_only:
+        suffix += "_winners"
+    return os.path.join(BASE_DIR, f"input_data{suffix}")
+
+# Load data on rank 0 from parameter-specific directory
 if rank == 0:
-    INPUT_DIR = os.path.join(BASE_DIR, f"input_data_delta{DELTA}")
+    INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY)
     if not os.path.exists(INPUT_DIR):
+        cmd = f"./run-gurobi.bash python prepare_data.py --delta {DELTA}"
+        if WINNERS_ONLY:
+            cmd += " --winners-only"
         print(f"Error: Input data not found at {INPUT_DIR}")
-        print(f"  Run: ./run-gurobi.bash python prepare_data.py --delta {DELTA}")
+        print(f"  Run: {cmd}")
         sys.exit(1)
+    
+    # Load metadata to get actual num_agents (varies with winners_only)
+    with open(os.path.join(INPUT_DIR, "metadata.json"), "r") as f:
+        input_metadata = json.load(f)
+    
     obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
 
-    num_agents = config["dimensions"]["num_agents"]
+    num_agents = input_metadata["num_agents"]  # From input data, not config
     num_items = config["dimensions"]["num_items"]
     num_features = config["dimensions"]["num_features"]
     num_simulations = config["dimensions"]["num_simulations"]
@@ -100,6 +119,24 @@ combinatorial_auction.data.load_and_scatter(input_data)
 combinatorial_auction.features.build_from_data()
 combinatorial_auction.subproblems.load()
 
+# Custom bounds for delta=2 (per Fox & Bajari specification)
+if DELTA == 2:
+    theta_lbs = np.zeros(num_features)
+    theta_ubs = np.full(num_features, 1000.0)
+    # theta[0] >= 75 (modular parameter)
+    theta_lbs[0] = 75
+    # theta[-3] between 400 and 650 (pop/distance)
+    theta_lbs[-3] = 400
+    theta_ubs[-3] = 650
+    # theta[-2] >= -75 (travel survey)
+    theta_lbs[-2] = -75
+    # theta[-1] >= -75 (air travel)
+    theta_lbs[-1] = -75
+    combinatorial_auction.config.row_generation.theta_lbs = theta_lbs
+    combinatorial_auction.config.row_generation.theta_ubs = theta_ubs
+    if rank == 0:
+        print(f"Custom bounds for delta=2: theta_lbs[-3:]={theta_lbs[-3:]}, theta_ubs[-3:]={theta_ubs[-3:]}")
+
 # Load previous theta if requested
 theta_init = None
 if USE_PREVIOUS_THETA and os.path.exists(THETA_PATH):
@@ -117,15 +154,17 @@ if rank == 0:
     OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     
-    # Delta is known from command-line argument
+    # Parameters from command-line
     delta = DELTA
+    winners_only = WINNERS_ONLY
     
     # Save theta_hat as numpy array
     np.save(os.path.join(OUTPUT_DIR, "theta.npy"), result.theta_hat)
     
-    # Save theta metadata (for SE computation to know which delta was used)
+    # Save theta metadata (for SE computation)
     theta_metadata = {
         "delta": delta,
+        "winners_only": winners_only,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "converged": result.converged,
         "num_iterations": result.num_iterations,
@@ -141,7 +180,8 @@ if rank == 0:
     # Prepare row data
     row_data = {
         "timestamp": timestamp,
-        "delta": delta if delta is not None else "",
+        "delta": delta,
+        "winners_only": winners_only,
         "num_mpi": num_mpi,
         "num_agents": num_agents,
         "num_items": num_items,

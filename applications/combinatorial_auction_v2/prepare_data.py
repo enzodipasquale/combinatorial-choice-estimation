@@ -23,9 +23,12 @@ from datetime import datetime
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
-def get_output_dir(delta: int) -> Path:
-    """Get delta-specific output directory."""
-    return BASE_DIR / f"input_data_delta{delta}"
+def get_output_dir(delta: int, winners_only: bool = False) -> Path:
+    """Get output directory based on parameters."""
+    suffix = f"_delta{delta}"
+    if winners_only:
+        suffix += "_winners"
+    return BASE_DIR / f"input_data{suffix}"
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000
@@ -232,9 +235,10 @@ def save_processed_data(
     modular_characteristics_i_j_k: np.ndarray,
     quadratic_characteristic_j_j_k: np.ndarray,
     delta: int = 4,
+    winners_only: bool = False,
 ) -> None:
-    """Save all processed data to numpy files in delta-specific directory."""
-    output_dir = get_output_dir(delta)
+    """Save all processed data to numpy files."""
+    output_dir = get_output_dir(delta, winners_only)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     np.save(output_dir / "matching_i_j.npy", matching_i_j)
@@ -246,6 +250,7 @@ def save_processed_data(
     # Save metadata
     metadata = {
         "delta": delta,
+        "winners_only": winners_only,
         "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
         "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
         "num_agents": int(capacity_i.shape[0]),
@@ -263,7 +268,7 @@ def save_processed_data(
     print(f"  capacity_i.npy: {capacity_i.shape}")
     print(f"  modular_characteristics_i_j_k.npy: {modular_characteristics_i_j_k.shape}")
     print(f"  quadratic_characteristic_j_j_k.npy: {quadratic_characteristic_j_j_k.shape}")
-    print(f"  metadata.json: delta={delta}")
+    print(f"  metadata.json: delta={delta}, winners_only={winners_only}")
 
 
 def compute_feature_statistics(
@@ -293,9 +298,9 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python prepare_data.py              # Uses default delta=4
-    python prepare_data.py --delta 2    # Uses delta=2
-    python prepare_data.py --delta 4    # Uses delta=4 (explicit)
+    python prepare_data.py                       # delta=4, all bidders
+    python prepare_data.py --delta 2             # delta=2, all bidders
+    python prepare_data.py --delta 4 --winners-only  # delta=4, winners only
         """
     )
     parser.add_argument(
@@ -305,18 +310,25 @@ Examples:
         default=4,
         help="Distance decay exponent for population/centroid feature (default: 4)"
     )
+    parser.add_argument(
+        "--winners-only", "-w",
+        action="store_true",
+        help="Filter to winning bidders only (those who win at least one item)"
+    )
     return parser.parse_args()
 
 
-def main(delta: int = 4):
+def main(delta: int = 4, winners_only: bool = False):
     """Main data preparation pipeline.
     
     Args:
         delta: Distance decay exponent (2 or 4)
+        winners_only: If True, filter to winning bidders only
     """
     print("=" * 70)
     print("Combinatorial Auction Data Preparation")
     print(f"  Distance parameter δ = {delta}")
+    print(f"  Winners only: {winners_only}")
     print("=" * 70)
     
     # Load raw data
@@ -344,7 +356,7 @@ def main(delta: int = 4):
         bidder_num_to_index,
     )
     
-    # Build features
+    # Build features (before filtering agents)
     modular_characteristics_i_j_k = build_modular_features(capacity_i, weight_j)
     quadratic_characteristic_j_j_k = build_quadratic_features(
         weight_j,
@@ -353,6 +365,18 @@ def main(delta: int = 4):
         raw_data["air_travel_j_j"],
         delta=delta,
     )
+    
+    # Filter to winners only if requested
+    if winners_only:
+        winner_indices = np.where(matching_i_j.sum(axis=1) > 0)[0]
+        print(f"\nFiltering to winning bidders only:")
+        print(f"  Original agents: {len(capacity_i)}")
+        print(f"  Winning agents: {len(winner_indices)}")
+        
+        # Filter agent-level arrays
+        capacity_i = capacity_i[winner_indices]
+        matching_i_j = matching_i_j[winner_indices, :]
+        modular_characteristics_i_j_k = modular_characteristics_i_j_k[winner_indices, :, :]
     
     # Compute statistics
     compute_feature_statistics(
@@ -369,14 +393,15 @@ def main(delta: int = 4):
         modular_characteristics_i_j_k,
         quadratic_characteristic_j_j_k,
         delta=delta,
+        winners_only=winners_only,
     )
     
     print("\n" + "=" * 70)
-    print(f"Data preparation complete! (δ = {delta})")
+    print(f"Data preparation complete! (δ = {delta}, winners_only = {winners_only})")
     print("=" * 70)
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta)
+    main(delta=args.delta, winners_only=args.winners_only)
 
