@@ -5,8 +5,8 @@
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
-#SBATCH --time=02:00:00
-#SBATCH --output=slurm-auction-se-%j.out
+#SBATCH --time=00:10:00
+#SBATCH --output=logs/se-%j.out
 
 # Distance parameter delta (2 or 4) - REQUIRED
 DELTA=${1:?Error: delta argument required. Usage: sbatch auction_se_non_fe.sbatch 4}

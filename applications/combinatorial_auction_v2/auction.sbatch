@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
 #SBATCH --time=05:00:00
-#SBATCH --output=slurm-estimation-%j.out
+#SBATCH --output=logs/estimation-%j.out
 
 # Usage: sbatch auction.sbatch <delta> [winners]
 #   delta: 2 or 4 (default: 4)

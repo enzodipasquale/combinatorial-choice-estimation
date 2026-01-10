@@ -107,7 +107,7 @@ else:
 
 # Load data from delta-specific directory
 if rank == 0:
-    INPUT_DIR = os.path.join(BASE_DIR, f"input_data_delta{DELTA}")
+    INPUT_DIR = os.path.join(BASE_DIR, "input_data", f"delta{DELTA}")
     if not os.path.exists(INPUT_DIR):
         print(f"Error: Input data not found at {INPUT_DIR}")
         print(f"  Run: ./run-gurobi.bash python prepare_data.py --delta {DELTA}")

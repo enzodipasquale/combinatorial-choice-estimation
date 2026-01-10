@@ -53,10 +53,10 @@ with open(CONFIG_PATH, 'r') as file:
 
 # Build input directory name from parameters
 def get_input_dir(delta, winners_only):
-    suffix = f"_delta{delta}"
+    suffix = f"delta{delta}"
     if winners_only:
         suffix += "_winners"
-    return os.path.join(BASE_DIR, f"input_data{suffix}")
+    return os.path.join(BASE_DIR, "input_data", suffix)
 
 # Load data on rank 0 from parameter-specific directory
 if rank == 0:

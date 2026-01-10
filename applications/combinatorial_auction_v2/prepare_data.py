@@ -25,10 +25,10 @@ DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 def get_output_dir(delta: int, winners_only: bool = False) -> Path:
     """Get output directory based on parameters."""
-    suffix = f"_delta{delta}"
+    suffix = f"delta{delta}"
     if winners_only:
         suffix += "_winners"
-    return BASE_DIR / f"input_data{suffix}"
+    return BASE_DIR / "input_data" / suffix
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000
