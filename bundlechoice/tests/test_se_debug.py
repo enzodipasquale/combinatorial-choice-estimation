@@ -75,8 +75,6 @@ def test_greedy():
         print(f"  B cond: {np.linalg.cond(se_result.B_matrix):.2e}")
         assert np.all(se_result.se > 0), "SEs should be positive"
         print("  ✓ PASS")
-    
-    return se_result
 
 
 def test_knapsack():
@@ -129,8 +127,6 @@ def test_knapsack():
         print(f"  B cond: {np.linalg.cond(se_result.B_matrix):.2e}")
         assert np.all(se_result.se > 0), "SEs should be positive"
         print("  ✓ PASS")
-    
-    return se_result
 
 
 def main():

@@ -31,6 +31,11 @@ class BaseSubproblem(HasDimensions, HasData, ABC):
         """Compute features for agent/bundle."""
         return self.feature_manager.features_oracle(agent_id, bundle, data_override)
     
+    def error_oracle(self, agent_id: int, bundle: NDArray[np.float64],
+                    data_override: Optional[Any] = None) -> float:
+        """Compute error for agent/bundle."""
+        return self.feature_manager.error_oracle(agent_id, bundle, data_override)
+    
     @abstractmethod
     def initialize_all(self) -> Any:
         """Initialize all subproblems for this rank. Returns None (batch) or list (serial)."""
