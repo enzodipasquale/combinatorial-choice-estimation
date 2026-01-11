@@ -239,14 +239,41 @@ if rank == 0:
     for i, theta_val in enumerate(result.theta_hat):
         row_data[f"theta_{i}"] = theta_val
     
-    # Write to CSV (append if file exists, create with headers if not)
-    file_exists = os.path.exists(CSV_PATH)
-    
-    with open(CSV_PATH, 'a', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=row_data.keys())
-        if not file_exists:
+    # Write to CSV - handle case where new row has more columns than existing file
+    if os.path.exists(CSV_PATH):
+        # Read existing data to check columns
+        with open(CSV_PATH, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            existing_rows = list(reader)
+            existing_fieldnames = reader.fieldnames if reader.fieldnames else []
+        
+        # Check if we have new columns
+        new_fieldnames = list(row_data.keys())
+        all_fieldnames = list(existing_fieldnames)
+        for col in new_fieldnames:
+            if col not in all_fieldnames:
+                all_fieldnames.append(col)
+        
+        if len(all_fieldnames) > len(existing_fieldnames):
+            # Rewrite entire CSV with expanded header
+            print(f"  Expanding CSV columns: {len(existing_fieldnames)} -> {len(all_fieldnames)}")
+            with open(CSV_PATH, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=all_fieldnames)
+                writer.writeheader()
+                for row in existing_rows:
+                    writer.writerow(row)
+                writer.writerow(row_data)
+        else:
+            # Simple append
+            with open(CSV_PATH, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=existing_fieldnames)
+                writer.writerow(row_data)
+    else:
+        # Create new file
+        with open(CSV_PATH, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
             writer.writeheader()
-        writer.writerow(row_data)
+            writer.writerow(row_data)
     
     print(f"\nResults saved to {OUTPUT_DIR}/")
     print(f"  - theta.npy")
