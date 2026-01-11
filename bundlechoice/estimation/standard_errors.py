@@ -88,6 +88,15 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         self.subproblem_manager = subproblem_manager
         self.se_cfg = se_cfg
         self._obs_features: Optional[NDArray[np.float64]] = None
+        # Caches for mean observed features (avoid recomputation in Jacobian)
+        self._mean_obs_full: Optional[NDArray[np.float64]] = None
+        self._mean_obs_subset: Optional[dict] = None  # keyed by tuple(beta_indices)
+    
+    def clear_cache(self) -> None:
+        """Clear cached values. Call if underlying data changes."""
+        self._obs_features = None
+        self._mean_obs_full = None
+        self._mean_obs_subset = None
     
     def compute(
         self,
@@ -451,13 +460,21 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         num_simulations = len(errors_all_sims)
         num_beta = len(beta_indices)
         
-        obs_local = self.data_manager.local_data["obs_bundles"]
-        obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
-        obs_sum_local = obs_feat_local[:, beta_indices].sum(axis=0) if obs_feat_local.size else np.zeros(num_beta)
+        # Use cached mean_obs for this subset if available (doesn't depend on theta)
+        cache_key = tuple(beta_indices)
+        if self._mean_obs_subset is None:
+            self._mean_obs_subset = {}
         
-        obs_sum_global = np.zeros(num_beta)
-        self.comm.Allreduce(obs_sum_local, obs_sum_global, op=MPI.SUM)
-        mean_obs = obs_sum_global / self.num_agents
+        if cache_key not in self._mean_obs_subset:
+            obs_local = self.data_manager.local_data["obs_bundles"]
+            obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
+            obs_sum_local = obs_feat_local[:, beta_indices].sum(axis=0) if obs_feat_local.size else np.zeros(num_beta)
+            
+            obs_sum_global = np.zeros(num_beta)
+            self.comm.Allreduce(obs_sum_local, obs_sum_global, op=MPI.SUM)
+            self._mean_obs_subset[cache_key] = obs_sum_global / self.num_agents
+        
+        mean_obs = self._mean_obs_subset[cache_key]
         
         sim_sum_local = np.zeros(num_beta)
         for s in range(num_simulations):
@@ -493,14 +510,17 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         num_simulations = len(errors_all_sims)
         K = self.num_features
         
-        # Local observed features sum
-        obs_local = self.data_manager.local_data["obs_bundles"]
-        obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
-        obs_sum_local = obs_feat_local.sum(axis=0) if obs_feat_local.size else np.zeros(K)
+        # Use cached mean_obs if available (doesn't depend on theta)
+        if self._mean_obs_full is None:
+            obs_local = self.data_manager.local_data["obs_bundles"]
+            obs_feat_local = self.feature_manager.compute_rank_features(obs_local)
+            obs_sum_local = obs_feat_local.sum(axis=0) if obs_feat_local.size else np.zeros(K)
+            
+            obs_sum_global = np.zeros(K)
+            self.comm.Allreduce(obs_sum_local, obs_sum_global, op=MPI.SUM)
+            self._mean_obs_full = obs_sum_global / self.num_agents
         
-        obs_sum_global = np.zeros(K)
-        self.comm.Allreduce(obs_sum_local, obs_sum_global, op=MPI.SUM)
-        mean_obs = obs_sum_global / self.num_agents
+        mean_obs = self._mean_obs_full
         
         # Simulated features sum
         sim_sum_local = np.zeros(K)
