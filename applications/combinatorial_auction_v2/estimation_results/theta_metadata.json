@@ -1,6 +1,7 @@
 {
-  "delta": 4,
-  "timestamp": "2026-01-10T13:15:34",
+  "delta": 2,
+  "winners_only": false,
+  "timestamp": "2026-01-10T20:09:18",
   "converged": true,
-  "num_iterations": 18
+  "num_iterations": 21
 }
