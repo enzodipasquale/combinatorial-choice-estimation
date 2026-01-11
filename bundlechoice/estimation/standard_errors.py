@@ -106,6 +106,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
         optimize_for_subset: bool = True,
+        error_sigma: Optional[float] = None,
     ) -> Optional[StandardErrorsResult]:
         """
         Compute sandwich standard errors.
@@ -118,6 +119,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             seed: Random seed for error generation
             optimize_for_subset: If True and beta_indices provided, only compute
                 matrices for the subset (faster). If False, compute full matrices.
+            error_sigma: Std dev of errors (should match estimation errors, default: 1.0)
             
         Returns:
             StandardErrorsResult on root rank, None on other ranks
@@ -126,6 +128,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         num_simulations = num_simulations or self.se_cfg.num_simulations
         step_size = step_size or self.se_cfg.step_size
         seed = seed if seed is not None else self.se_cfg.seed
+        error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
         
         # Broadcast theta to all ranks
         theta_hat = self.comm.bcast(theta_hat, root=0)
@@ -136,7 +139,7 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
         beta_indices = self.comm.bcast(beta_indices, root=0)
         
         # Generate errors for SE computation
-        errors_all_sims = self._generate_se_errors(num_simulations, seed)
+        errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
         
         # Cache observed features (gathered to root)
         if self._obs_features is None:
@@ -273,14 +276,296 @@ class StandardErrorsManager(HasDimensions, HasData, HasComm):
             )
         return None
     
+    def compute_B_inverse(
+        self,
+        theta_hat: NDArray[np.float64],
+        num_simulations: Optional[int] = None,
+        beta_indices: Optional[NDArray[np.int64]] = None,
+        seed: Optional[int] = None,
+        error_sigma: Optional[float] = None,
+    ) -> Optional[StandardErrorsResult]:
+        """
+        Compute standard errors using B^{-1} only (no finite differences).
+        
+        This is faster than the full sandwich estimator since it doesn't require
+        computing the A matrix via finite differences. Uses Var(θ) = (1/N) B^{-1}.
+        
+        Args:
+            theta_hat: Estimated parameter vector (root rank only)
+            num_simulations: Number of simulations for B matrix
+            beta_indices: Which parameters to compute SE for (default: all)
+            seed: Random seed for error generation
+            error_sigma: Std dev of errors (should match estimation errors, default: 1.0)
+            
+        Returns:
+            StandardErrorsResult on root rank, None on other ranks
+        """
+        num_simulations = num_simulations or self.se_cfg.num_simulations
+        seed = seed if seed is not None else self.se_cfg.seed
+        error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
+        
+        theta_hat = self.comm.bcast(theta_hat, root=0)
+        
+        if beta_indices is None:
+            beta_indices = np.arange(self.num_features, dtype=np.int64)
+        beta_indices = self.comm.bcast(beta_indices, root=0)
+        
+        errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
+        
+        if self._obs_features is None:
+            obs_bundles = self.local_data["obs_bundles"]
+            self._obs_features = self.feature_manager.compute_gathered_features(obs_bundles)
+        
+        is_subset = len(beta_indices) < self.num_features
+        
+        if self.is_root():
+            print("\n" + "=" * 70)
+            print("STANDARD ERRORS (B-INVERSE METHOD)")
+            print("=" * 70)
+            print(f"  Simulations: {num_simulations}")
+            print(f"  Parameters: {len(beta_indices)}")
+        
+        if is_subset:
+            B_mat = self._compute_B_matrix_subset(theta_hat, errors_all_sims, beta_indices)
+        else:
+            B_mat = self._compute_B_matrix(theta_hat, errors_all_sims)
+        
+        self.comm.Barrier()
+        
+        if self.is_root():
+            B_cond = np.linalg.cond(B_mat)
+            print(f"\n  B matrix: cond={B_cond:.2e}")
+            
+            if not np.isfinite(B_cond) or B_cond > 1e16:
+                print("\n  ❌ ERROR: B matrix is singular!")
+                return None
+            
+            try:
+                B_inv = np.linalg.solve(B_mat, np.eye(len(beta_indices)))
+            except np.linalg.LinAlgError:
+                print("\n  ❌ ERROR: B matrix is singular, cannot invert!")
+                return None
+            
+            # Variance = (1/N) B^{-1}
+            V = B_inv / self.num_agents
+            
+            diag_V = np.diag(V)
+            if np.any(diag_V < 0):
+                neg_count = np.sum(diag_V < 0)
+                print(f"\n  ⚠ WARNING: {neg_count} negative variances detected!")
+            
+            se = np.sqrt(np.maximum(np.diag(V), 0))
+            theta_beta = theta_hat[beta_indices]
+            t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+            
+            print("\n" + "-" * 70)
+            print("Standard Errors (B-inverse):")
+            print("-" * 70)
+            for i, idx in enumerate(beta_indices):
+                print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
+            
+            # Create dummy A matrix (identity) for result structure
+            A_dummy = np.eye(len(beta_indices))
+            
+            return StandardErrorsResult(
+                se=se,
+                se_all=se,
+                theta_beta=theta_beta,
+                beta_indices=beta_indices,
+                variance=V,
+                A_matrix=A_dummy,
+                B_matrix=B_mat,
+                t_stats=t_stats,
+            )
+        return None
+    
+    def compute_bootstrap(
+        self,
+        theta_hat: NDArray[np.float64],
+        solve_fn,  # Function that takes (bc, data) and returns theta_hat
+        num_bootstrap: int = 100,
+        beta_indices: Optional[NDArray[np.int64]] = None,
+        seed: Optional[int] = None,
+    ) -> Optional[StandardErrorsResult]:
+        """
+        Compute standard errors via bootstrap resampling of agents.
+        
+        Resamples agents with replacement and re-estimates theta for each bootstrap sample.
+        SE = std(theta_hat across bootstrap samples).
+        
+        Args:
+            theta_hat: Original parameter estimate
+            solve_fn: Function(bc) -> theta_hat that runs estimation
+            num_bootstrap: Number of bootstrap samples
+            beta_indices: Which parameters to report (default: all)
+            seed: Random seed
+        """
+        if beta_indices is None:
+            beta_indices = np.arange(self.num_features, dtype=np.int64)
+        
+        if self.is_root():
+            print("\n" + "=" * 70)
+            print("STANDARD ERRORS (BOOTSTRAP)")
+            print("=" * 70)
+            print(f"  Bootstrap samples: {num_bootstrap}")
+            print(f"  Parameters: {len(beta_indices)}")
+            
+            if seed is not None:
+                np.random.seed(seed)
+            
+            # Get original data
+            obs_bundles = self.data_manager.full_data["obs_bundles"]
+            agent_data = self.data_manager.full_data["agent_data"]
+            item_data = self.data_manager.full_data.get("item_data")
+            N = self.num_agents
+            
+            theta_boots = []
+            for b in range(num_bootstrap):
+                if (b + 1) % 20 == 0:
+                    print(f"  Bootstrap {b+1}/{num_bootstrap}...")
+                
+                # Resample agents with replacement
+                idx = np.random.choice(N, size=N, replace=True)
+                
+                boot_data = {
+                    "obs_bundle": obs_bundles[idx],
+                    "agent_data": {k: v[idx] for k, v in agent_data.items()},
+                    "errors": np.random.randn(N, self.num_items),
+                }
+                if item_data is not None:
+                    boot_data["item_data"] = item_data
+                
+                # Re-estimate on bootstrap sample
+                theta_b = solve_fn(boot_data)
+                if theta_b is not None:
+                    theta_boots.append(theta_b)
+            
+            if len(theta_boots) < 10:
+                print("  ❌ Too few successful bootstrap samples")
+                return None
+            
+            theta_boots = np.array(theta_boots)
+            se_all = np.std(theta_boots, axis=0, ddof=1)
+            se = se_all[beta_indices]
+            theta_beta = theta_hat[beta_indices]
+            t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+            
+            print("\n" + "-" * 70)
+            print("Standard Errors (Bootstrap):")
+            print("-" * 70)
+            for i, idx in enumerate(beta_indices):
+                print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
+            
+            return StandardErrorsResult(
+                se=se, se_all=se_all, theta_beta=theta_beta,
+                beta_indices=beta_indices,
+                variance=np.diag(se**2),
+                A_matrix=np.eye(len(beta_indices)),
+                B_matrix=np.eye(len(beta_indices)),
+                t_stats=t_stats,
+            )
+        return None
+    
+    def compute_subsampling(
+        self,
+        theta_hat: NDArray[np.float64],
+        solve_fn,  # Function that takes data dict and returns theta_hat
+        subsample_size: Optional[int] = None,
+        num_subsamples: int = 100,
+        beta_indices: Optional[NDArray[np.int64]] = None,
+        seed: Optional[int] = None,
+    ) -> Optional[StandardErrorsResult]:
+        """
+        Compute standard errors via subsampling.
+        
+        Draws subsamples of size b < N without replacement and re-estimates.
+        SE = sqrt(b/N) * std(theta_hat across subsamples).
+        
+        Args:
+            theta_hat: Original parameter estimate
+            solve_fn: Function(data_dict) -> theta_hat that runs estimation
+            subsample_size: Size of each subsample (default: N^0.7)
+            num_subsamples: Number of subsamples
+            beta_indices: Which parameters to report
+            seed: Random seed
+        """
+        if beta_indices is None:
+            beta_indices = np.arange(self.num_features, dtype=np.int64)
+        
+        N = self.num_agents
+        if subsample_size is None:
+            subsample_size = int(N ** 0.7)  # Standard choice
+        b = min(subsample_size, N - 1)
+        
+        if self.is_root():
+            print("\n" + "=" * 70)
+            print("STANDARD ERRORS (SUBSAMPLING)")
+            print("=" * 70)
+            print(f"  Subsamples: {num_subsamples}, size: {b} (N={N})")
+            print(f"  Parameters: {len(beta_indices)}")
+            
+            if seed is not None:
+                np.random.seed(seed)
+            
+            obs_bundles = self.data_manager.full_data["obs_bundles"]
+            agent_data = self.data_manager.full_data["agent_data"]
+            item_data = self.data_manager.full_data.get("item_data")
+            
+            theta_subs = []
+            for s in range(num_subsamples):
+                if (s + 1) % 20 == 0:
+                    print(f"  Subsample {s+1}/{num_subsamples}...")
+                
+                # Sample without replacement
+                idx = np.random.choice(N, size=b, replace=False)
+                
+                sub_data = {
+                    "obs_bundle": obs_bundles[idx],
+                    "agent_data": {k: v[idx] for k, v in agent_data.items()},
+                    "errors": np.random.randn(b, self.num_items),
+                }
+                if item_data is not None:
+                    sub_data["item_data"] = item_data
+                
+                theta_s = solve_fn(sub_data)
+                if theta_s is not None:
+                    theta_subs.append(theta_s)
+            
+            if len(theta_subs) < 10:
+                print("  ❌ Too few successful subsamples")
+                return None
+            
+            theta_subs = np.array(theta_subs)
+            # Subsampling scaling: SE = sqrt(b/N) * std
+            se_all = np.sqrt(b / N) * np.std(theta_subs, axis=0, ddof=1)
+            se = se_all[beta_indices]
+            theta_beta = theta_hat[beta_indices]
+            t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+            
+            print("\n" + "-" * 70)
+            print("Standard Errors (Subsampling):")
+            print("-" * 70)
+            for i, idx in enumerate(beta_indices):
+                print(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
+            
+            return StandardErrorsResult(
+                se=se, se_all=se_all, theta_beta=theta_beta,
+                beta_indices=beta_indices,
+                variance=np.diag(se**2),
+                A_matrix=np.eye(len(beta_indices)),
+                B_matrix=np.eye(len(beta_indices)),
+                t_stats=t_stats,
+            )
+        return None
+    
     def _generate_se_errors(
-        self, num_simulations: int, seed: Optional[int]
+        self, num_simulations: int, seed: Optional[int], error_sigma: float = 1.0
     ) -> NDArray[np.float64]:
         """Generate errors for SE computation."""
         if self.is_root():
             if seed is not None:
                 np.random.seed(seed)
-            errors = np.random.normal(0, 1, (num_simulations, self.num_agents, self.num_items))
+            errors = error_sigma * np.random.normal(0, 1, (num_simulations, self.num_agents, self.num_items))
         else:
             errors = None
         return self.comm.bcast(errors, root=0)

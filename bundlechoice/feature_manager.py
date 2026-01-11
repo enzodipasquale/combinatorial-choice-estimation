@@ -145,6 +145,8 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         """
         Build features_oracle from data structure (modular/quadratic keys).
         
+        Also auto-sets feature names from data sources if not already set.
+        
         Returns:
             Generated features_oracle function
         """
@@ -161,6 +163,13 @@ class FeatureManager(HasDimensions, HasComm, HasData):
                 data_info["has_modular_item"],
                 data_info["has_quadratic_item"]
             )
+            
+            # Auto-set feature names from data sources if not already set
+            if self.dimensions_cfg.feature_names is None:
+                auto_names = self.data_manager.get_feature_names_from_data()
+                if auto_names:
+                    self.dimensions_cfg.feature_names = auto_names
+                    logger.info(f"Auto-set {len(auto_names)} feature names from data sources")
         else:
             flags = None
         
