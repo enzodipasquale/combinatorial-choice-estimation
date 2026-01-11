@@ -500,3 +500,134 @@ class RowGenerationManager(BaseEstimationManager):
             'bundles': np.array(bundles, dtype=np.float64)
         }
 
+    def strip_slack_constraints(self, tolerance: float = 1e-6) -> int:
+        """
+        Remove non-binding (slack) constraints from the model in-place.
+        Keeps only constraints with slack ≈ 0.
+        
+        Args:
+            tolerance: Tolerance for considering a constraint binding
+        
+        Returns:
+            Number of constraints removed
+        """
+        if not self.is_root() or self.master_model is None:
+            return 0
+        
+        to_remove = []
+        for constr in self.master_model.getConstrs():
+            if constr in self.constraint_info:
+                if abs(constr.Slack) > tolerance:
+                    to_remove.append(constr)
+        
+        for constr in to_remove:
+            self.master_model.remove(constr)
+            self.constraint_info.pop(constr, None)
+            self.slack_counter.pop(constr, None)
+        
+        if len(to_remove) > 0:
+            self.master_model.update()
+            logger.info("Stripped %d slack constraints, %d binding remain", 
+                       len(to_remove), self.master_model.NumConstrs)
+        
+        return len(to_remove)
+
+    def update_objective_for_weights(self, agent_weights: NDArray[np.float64]) -> None:
+        """
+        Update objective coefficients for new agent weights without rebuilding the model.
+        This enables true Gurobi warm-start by reusing the LP basis.
+        
+        Args:
+            agent_weights: New agent weights, shape (num_agents,)
+        """
+        if not self.is_root() or self.master_model is None:
+            return
+        
+        theta, u = self.master_variables
+        
+        # Update theta objective: -sum_i w_i * x_obs_i
+        obs_features = (agent_weights[:, None] * self.agents_obs_features).sum(0)
+        for k in range(self.num_features):
+            theta[k].Obj = -obs_features[k]
+        
+        # Update u objective: w_i for each agent (repeated for simulations)
+        u_obj = np.tile(agent_weights, self.num_simulations)
+        for i in range(len(u_obj)):
+            u[i].Obj = u_obj[i]
+        
+        self.master_model.update()
+
+    def solve_reuse_model(self, agent_weights: NDArray[np.float64],
+                          strip_slack: bool = False) -> EstimationResult:
+        """
+        Solve using existing model with updated weights (true Gurobi warm-start).
+        
+        This method reuses the existing Gurobi model and LP basis, only updating
+        the objective coefficients. This is much faster than rebuilding the model.
+        
+        Args:
+            agent_weights: Per-agent weights for the new solve
+            strip_slack: If True, remove non-binding constraints before solving
+        
+        Returns:
+            EstimationResult with theta_hat and diagnostics
+        """
+        # Store and broadcast weights
+        self._agent_weights = self.comm_manager.broadcast_array(
+            np.asarray(agent_weights, dtype=np.float64) if self.is_root() else np.empty(self.num_agents),
+            root=0
+        )
+        
+        tic = time.perf_counter()
+        self.subproblem_manager.initialize_local()
+        
+        if self.is_root():
+            if self.master_model is None:
+                raise RuntimeError("No existing model to reuse. Call solve() first.")
+            
+            # Optionally strip slack constraints
+            if strip_slack:
+                self.strip_slack_constraints()
+            
+            # Update objective coefficients in-place
+            self.update_objective_for_weights(self._agent_weights)
+            
+            # Re-optimize (Gurobi uses warm-start from previous basis)
+            self.master_model.optimize()
+            
+            theta, u = self.master_variables
+            if self.master_model.Status == GRB.OPTIMAL:
+                self.theta_val = theta.X
+            else:
+                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
+        else:
+            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+        
+        self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
+        
+        # Run row generation iterations
+        iteration = 0
+        while iteration < self.row_generation_cfg.max_iters:
+            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+            stop = self._master_iteration(local_pricing_results)
+            if stop and iteration >= self.row_generation_cfg.min_iters:
+                break
+            iteration += 1
+        
+        toc = time.perf_counter()
+        
+        # Build result
+        if self.is_root():
+            theta, u = self.master_variables
+            return EstimationResult(
+                theta_hat=self.theta_val.copy(),
+                objective=self.master_model.ObjVal if self.master_model.Status == GRB.OPTIMAL else float('inf'),
+                iterations=iteration + 1,
+                converged=iteration < self.row_generation_cfg.max_iters,
+                time_seconds=toc - tic,
+                diagnostics={}
+            )
+        return EstimationResult(
+            theta_hat=self.theta_val.copy(),
+            objective=0.0, iterations=iteration + 1, converged=True, time_seconds=0.0, diagnostics={}
+        )

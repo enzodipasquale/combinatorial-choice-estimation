@@ -147,7 +147,7 @@ class ResamplingMixin:
         num_bootstrap: int = 100,
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
-        warmstart: str = "constraints",
+        warmstart: str = "model",
     ) -> Optional[StandardErrorsResult]:
         """
         Bayesian bootstrap: reweight agents with Exp(1) weights instead of resampling.
@@ -157,6 +157,8 @@ class ResamplingMixin:
                 - "none": No warm-start (baseline)
                 - "constraints": Reuse constraints from previous solve
                 - "theta": Use theta from previous solve as initial point
+                - "model": Reuse Gurobi model, update objective only (fastest)
+                - "model_strip": Same as model but strip slack constraints each iteration
         """
         if beta_indices is None:
             beta_indices = np.arange(self.num_features, dtype=np.int64)
@@ -188,7 +190,11 @@ class ResamplingMixin:
             
             try:
                 # Choose warm-start strategy
-                if warmstart == "constraints":
+                if warmstart == "model":
+                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False)
+                elif warmstart == "model_strip":
+                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True)
+                elif warmstart == "constraints":
                     result = row_generation.solve(agent_weights=weights, initial_constraints=constraints)
                 elif warmstart == "theta":
                     result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
