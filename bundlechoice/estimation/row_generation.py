@@ -126,16 +126,20 @@ class RowGenerationManager(BaseEstimationManager):
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
                 indices = initial_constraints['indices']
                 bundles = initial_constraints['bundles']
+                errors = self.input_data["errors"]
+                has_sim_dim = errors.ndim == 3
+                
                 for i, idx in enumerate(indices):
                     agent_id = idx % self.num_agents
                     sim_id = idx // self.num_agents
                     bundle = bundles[i]
                     
-                    # Compute features and errors
                     features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
-                    error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
+                    if has_sim_dim:
+                        error = (errors[sim_id, agent_id] * bundle).sum()
+                    else:
+                        error = (errors[agent_id] * bundle).sum()
                     
-                    # Add constraint (no name needed, store info in mapping)
                     constr = self.master_model.addConstr(u[idx] >= error + features @ theta)
                     self.constraint_info[constr] = (idx, bundle.copy())
                 
@@ -222,21 +226,17 @@ class RowGenerationManager(BaseEstimationManager):
 
     def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None,
               theta_init: Optional[NDArray[np.float64]] = None,
-              agent_weights: Optional[NDArray[np.float64]] = None) -> EstimationResult:
+              agent_weights: Optional[NDArray[np.float64]] = None,
+              initial_constraints: Optional[Dict[str, NDArray]] = None) -> EstimationResult:
         """
         Run the row generation algorithm to estimate model parameters.
 
         Args:
             callback: Optional callback function called after each iteration.
-                     Signature: callback(info: dict) where info contains:
-                     - 'iteration': Current iteration number (int)
-                     - 'theta': Current parameter estimate (np.ndarray)
-                     - 'objective': Current objective value (float)
-                     - 'pricing_time': Time spent solving subproblems in seconds (float)
-                     - 'master_time': Time spent on master problem in seconds (float)
-            theta_init: Optional initial parameter vector. If None, uses default initialization.
+            theta_init: Optional initial parameter vector for warm-start.
             agent_weights: Optional per-agent weights for Bayesian bootstrap. Shape (num_agents,).
-                          If None, uniform weights (1.0) are used.
+            initial_constraints: Optional dict with 'indices' and 'bundles' for warm-starting.
+                               Use get_constraints() from a previous solve to pass here.
         
         Returns:
             EstimationResult: Result object containing theta_hat and diagnostics.
@@ -274,12 +274,14 @@ class RowGenerationManager(BaseEstimationManager):
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
         
-        # Initialize with theta_init if provided
-        initial_constraints = None
-        if theta_init is not None:
+        # Use provided initial_constraints or compute from theta_init
+        if initial_constraints is not None:
+            if self.is_root():
+                n_init = len(initial_constraints.get('indices', []))
+                logger.info("Using %d provided initial constraints (warm start)", n_init)
+        elif theta_init is not None:
             if self.is_root():
                 logger.info("Initializing with provided theta (warm start)")
-                # Handle both EstimationResult and numpy array
                 if hasattr(theta_init, 'theta_hat'):
                     theta_init_array = theta_init.theta_hat
                 else:
@@ -289,10 +291,7 @@ class RowGenerationManager(BaseEstimationManager):
                 self.theta_val = np.empty(self.num_features, dtype=np.float64)
             self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
             
-            # Solve subproblems at initial theta to get initial constraints
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            
-            # Gather bundles - all processes must participate
             bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
             
             if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
@@ -450,12 +449,12 @@ class RowGenerationManager(BaseEstimationManager):
         indices = []
         bundles = []
         
-        # Extract constraints from mapping
-        for constr in self.master_model.getConstrs():
-            if constr in self.constraint_info:
-                idx, bundle = self.constraint_info[constr]
-                indices.append(idx)
-                bundles.append(bundle)
+        # Use constraint_info directly (faster and more reliable)
+        for constr, (idx, bundle) in self.constraint_info.items():
+            indices.append(idx)
+            bundles.append(bundle)
+        
+        logger.debug("get_constraints: extracted %d constraints from constraint_info", len(indices))
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
