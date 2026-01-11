@@ -126,6 +126,13 @@ num_simulations = comm.bcast(num_simulations, root=0)
 # Run the estimation
 combinatorial_auction = BundleChoice()
 combinatorial_auction.load_config(CONFIG_PATH)
+
+# Override config dimensions with actual data dimensions (varies with winners_only, hq_distance)
+combinatorial_auction.config.dimensions.num_agents = num_agents
+combinatorial_auction.config.dimensions.num_items = num_items
+combinatorial_auction.config.dimensions.num_features = num_features
+combinatorial_auction.config.dimensions.num_simulations = num_simulations
+
 combinatorial_auction.data.load_and_scatter(input_data)
 combinatorial_auction.features.build_from_data()
 combinatorial_auction.subproblems.load()
@@ -139,8 +146,8 @@ if DELTA == 2:
     # theta[-3] between 400 and 650 (pop/distance)
     theta_lbs[-3] = 400
     theta_ubs[-3] = 650
-    # theta[-2] >= -75 (travel survey)
-    theta_lbs[-2] = -75
+    # theta[-2] >= -120 (travel survey)
+    theta_lbs[-2] = -120
     # theta[-1] >= -75 (air travel)
     theta_lbs[-1] = -75
     combinatorial_auction.config.row_generation.theta_lbs = theta_lbs
@@ -247,27 +254,23 @@ if rank == 0:
             existing_rows = list(reader)
             existing_fieldnames = reader.fieldnames if reader.fieldnames else []
         
-        # Check if we have new columns
+        # Check if we have new columns (filter out None values from existing)
         new_fieldnames = list(row_data.keys())
-        all_fieldnames = list(existing_fieldnames)
+        all_fieldnames = [f for f in existing_fieldnames if f is not None]
         for col in new_fieldnames:
             if col not in all_fieldnames:
                 all_fieldnames.append(col)
         
-        if len(all_fieldnames) > len(existing_fieldnames):
-            # Rewrite entire CSV with expanded header
-            print(f"  Expanding CSV columns: {len(existing_fieldnames)} -> {len(all_fieldnames)}")
-            with open(CSV_PATH, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=all_fieldnames)
-                writer.writeheader()
-                for row in existing_rows:
-                    writer.writerow(row)
-                writer.writerow(row_data)
-        else:
-            # Simple append
-            with open(CSV_PATH, 'a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=existing_fieldnames)
-                writer.writerow(row_data)
+        # Always rewrite to ensure clean CSV (no None fields, consistent columns)
+        print(f"  Writing CSV with {len(all_fieldnames)} columns")
+        with open(CSV_PATH, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=all_fieldnames)
+            writer.writeheader()
+            for row in existing_rows:
+                # Filter out None keys from existing rows
+                clean_row = {k: v for k, v in row.items() if k is not None}
+                writer.writerow(clean_row)
+            writer.writerow(row_data)
     else:
         # Create new file
         with open(CSV_PATH, 'w', newline='') as f:
