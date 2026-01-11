@@ -1,5 +1,8 @@
 """
-Benchmark Bayesian bootstrap with and without constraint warm-starting.
+Benchmark Bayesian bootstrap warm-start strategies:
+- none: No warm-start (baseline)
+- constraints: Reuse constraints from previous solve
+- theta: Use theta from previous solve as initial point
 """
 import time
 import numpy as np
@@ -94,36 +97,32 @@ def run_benchmark(subproblem_name, num_agents, num_bootstrap=30):
     if rank == 0:
         print(f"  θ_hat: {theta_hat}")
     
-    # Benchmark WITHOUT warm-start
-    comm.Barrier()
-    t0 = time.perf_counter()
-    se_cold = bc.standard_errors.compute_bayesian_bootstrap(
-        theta_hat, bc.row_generation, num_bootstrap=num_bootstrap, 
-        seed=777, reuse_constraints=False
-    )
-    comm.Barrier()
-    t_cold = time.perf_counter() - t0
+    results = {}
     
-    # Benchmark WITH warm-start
-    comm.Barrier()
-    t0 = time.perf_counter()
-    se_warm = bc.standard_errors.compute_bayesian_bootstrap(
-        theta_hat, bc.row_generation, num_bootstrap=num_bootstrap, 
-        seed=777, reuse_constraints=True
-    )
-    comm.Barrier()
-    t_warm = time.perf_counter() - t0
+    # Test each warm-start strategy
+    for strategy in ["none", "constraints", "theta"]:
+        comm.Barrier()
+        t0 = time.perf_counter()
+        se = bc.standard_errors.compute_bayesian_bootstrap(
+            theta_hat, bc.row_generation, num_bootstrap=num_bootstrap, 
+            seed=777, warmstart=strategy
+        )
+        comm.Barrier()
+        elapsed = time.perf_counter() - t0
+        
+        if rank == 0:
+            results[strategy] = elapsed
+            print(f"  {strategy:12s}: {elapsed:.2f}s")
     
     if rank == 0:
-        speedup = t_cold / t_warm if t_warm > 0 else 0
-        print(f"\n  Results:")
-        print(f"    Cold start: {t_cold:.2f}s")
-        print(f"    Warm start: {t_warm:.2f}s")
-        print(f"    Speedup:    {speedup:.2f}x")
-        if se_cold and se_warm:
-            print(f"    SE (cold):  {se_cold.se}")
-            print(f"    SE (warm):  {se_warm.se}")
-        return {"cold": t_cold, "warm": t_warm, "speedup": speedup}
+        # Compute speedups relative to baseline
+        baseline = results["none"]
+        print(f"\n  Speedups vs baseline:")
+        for s in ["constraints", "theta"]:
+            speedup = baseline / results[s] if results[s] > 0 else 0
+            print(f"    {s:12s}: {speedup:.2f}x")
+        
+        return results
     return None
 
 
@@ -131,29 +130,31 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    results = {}
+    all_results = {}
     
     # Greedy benchmarks
     for n in [100, 250]:
         res = run_benchmark("Greedy", n, num_bootstrap=30)
         if rank == 0 and res:
-            results[f"Greedy_{n}"] = res
+            all_results[f"Greedy_{n}"] = res
     
-    # Knapsack benchmarks
+    # Knapsack benchmarks  
     for n in [100, 250]:
         res = run_benchmark("LinearKnapsack", n, num_bootstrap=30)
         if rank == 0 and res:
-            results[f"Knapsack_{n}"] = res
+            all_results[f"Knapsack_{n}"] = res
     
-    # Summary
+    # Summary table
     if rank == 0:
-        print("\n" + "=" * 70)
-        print("SUMMARY: Warm-start Speedup")
-        print("=" * 70)
-        print(f"{'Setting':<20} {'Cold (s)':<12} {'Warm (s)':<12} {'Speedup':<10}")
-        print("-" * 55)
-        for name, r in results.items():
-            print(f"{name:<20} {r['cold']:>10.2f}  {r['warm']:>10.2f}  {r['speedup']:>8.2f}x")
+        print("\n" + "=" * 80)
+        print("SUMMARY: Warm-start Comparison")
+        print("=" * 80)
+        print(f"{'Setting':<20} {'None (s)':<12} {'Constr (s)':<12} {'Theta (s)':<12} {'Best':<10}")
+        print("-" * 70)
+        for name, r in all_results.items():
+            best = min(r, key=r.get)
+            speedup = r["none"] / r[best] if r[best] > 0 else 0
+            print(f"{name:<20} {r['none']:>10.2f}  {r['constraints']:>10.2f}  {r['theta']:>10.2f}  {best} ({speedup:.2f}x)")
 
 
 if __name__ == "__main__":
