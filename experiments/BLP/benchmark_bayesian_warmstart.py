@@ -3,6 +3,8 @@ Benchmark Bayesian bootstrap warm-start strategies:
 - none: No warm-start (baseline)
 - constraints: Reuse constraints from previous solve
 - theta: Use theta from previous solve as initial point
+- model: Reuse Gurobi model, update objective only (true LP warm-start)
+- model_strip: Same as model but strip slack constraints
 """
 import time
 import numpy as np
@@ -10,8 +12,11 @@ from mpi4py import MPI
 from bundlechoice.core import BundleChoice
 
 
-def run_benchmark(subproblem_name, num_agents, num_bootstrap=30):
+def run_benchmark(subproblem_name, num_agents, num_bootstrap=30, strategies=None):
     """Run benchmark for a given subproblem type and agent count."""
+    if strategies is None:
+        strategies = ["model", "model_strip"]
+    
     num_items = 10
     num_features = 2
     sigma = 1.5
@@ -100,7 +105,7 @@ def run_benchmark(subproblem_name, num_agents, num_bootstrap=30):
     results = {}
     
     # Test each warm-start strategy
-    for strategy in ["none", "constraints", "theta"]:
+    for strategy in strategies:
         comm.Barrier()
         t0 = time.perf_counter()
         se = bc.standard_errors.compute_bayesian_bootstrap(
@@ -115,13 +120,6 @@ def run_benchmark(subproblem_name, num_agents, num_bootstrap=30):
             print(f"  {strategy:12s}: {elapsed:.2f}s")
     
     if rank == 0:
-        # Compute speedups relative to baseline
-        baseline = results["none"]
-        print(f"\n  Speedups vs baseline:")
-        for s in ["constraints", "theta"]:
-            speedup = baseline / results[s] if results[s] > 0 else 0
-            print(f"    {s:12s}: {speedup:.2f}x")
-        
         return results
     return None
 
@@ -130,31 +128,37 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
+    # Only test new strategies (model and model_strip)
+    # Previous results: theta gave 1.31-1.39x speedup
+    strategies = ["model", "model_strip"]
+    
     all_results = {}
     
     # Greedy benchmarks
     for n in [100, 250]:
-        res = run_benchmark("Greedy", n, num_bootstrap=30)
+        res = run_benchmark("Greedy", n, num_bootstrap=30, strategies=strategies)
         if rank == 0 and res:
             all_results[f"Greedy_{n}"] = res
     
     # Knapsack benchmarks  
     for n in [100, 250]:
-        res = run_benchmark("LinearKnapsack", n, num_bootstrap=30)
+        res = run_benchmark("LinearKnapsack", n, num_bootstrap=30, strategies=strategies)
         if rank == 0 and res:
             all_results[f"Knapsack_{n}"] = res
     
     # Summary table
     if rank == 0:
         print("\n" + "=" * 80)
-        print("SUMMARY: Warm-start Comparison")
+        print("SUMMARY: Model Warm-start Comparison")
         print("=" * 80)
-        print(f"{'Setting':<20} {'None (s)':<12} {'Constr (s)':<12} {'Theta (s)':<12} {'Best':<10}")
-        print("-" * 70)
+        print(f"{'Setting':<20} {'model (s)':<12} {'model_strip (s)':<15}")
+        print("-" * 50)
         for name, r in all_results.items():
-            best = min(r, key=r.get)
-            speedup = r["none"] / r[best] if r[best] > 0 else 0
-            print(f"{name:<20} {r['none']:>10.2f}  {r['constraints']:>10.2f}  {r['theta']:>10.2f}  {best} ({speedup:.2f}x)")
+            model_t = r.get("model", float('inf'))
+            strip_t = r.get("model_strip", float('inf'))
+            print(f"{name:<20} {model_t:>10.2f}  {strip_t:>13.2f}")
+        
+        print("\nPrevious best (theta): Greedy_100=2.43s, Greedy_250=5.50s, Knapsack_100=1.50s, Knapsack_250=3.61s")
 
 
 if __name__ == "__main__":
