@@ -23,11 +23,13 @@ from datetime import datetime
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
-def get_output_dir(delta: int, winners_only: bool = False) -> Path:
+def get_output_dir(delta: int, winners_only: bool = False, hq_distance: bool = False) -> Path:
     """Get output directory based on parameters."""
     suffix = f"delta{delta}"
     if winners_only:
         suffix += "_winners"
+    if hq_distance:
+        suffix += "_hqdist"
     return BASE_DIR / "input_data" / suffix
 
 # Processing parameters
@@ -214,13 +216,56 @@ def build_quadratic_features(
 def build_modular_features(
     capacity_i: np.ndarray,
     weight_j: np.ndarray,
+    home_bta_i: np.ndarray = None,
+    geo_distance_j_j: np.ndarray = None,
+    include_hq_distance: bool = False,
 ) -> np.ndarray:
-    """Build modular agent-item features."""
-    # eligibility_i * pop_j (normalized)
+    """Build modular agent-item features.
+    
+    Args:
+        capacity_i: Bidder capacities
+        weight_j: Item weights (population)
+        home_bta_i: Home BTA for each bidder (1-indexed), required if include_hq_distance=True
+        geo_distance_j_j: Geographic distance matrix, required if include_hq_distance=True
+        include_hq_distance: Whether to include HQ-to-item distance features
+    """
+    modular_list = []
+    
+    # Feature 1: eligibility_i * pop_j (normalized)
     modular_feat = (capacity_i[:, None] / weight_j.sum()) * (weight_j[None, :] / weight_j.sum())
+    modular_list.append(modular_feat)
+    
+    # Features 2-3: HQ-to-item distance and distance squared
+    if include_hq_distance:
+        assert home_bta_i is not None, "home_bta_i required for HQ distance features"
+        assert geo_distance_j_j is not None, "geo_distance_j_j required for HQ distance features"
+        
+        num_agents = len(capacity_i)
+        num_items = geo_distance_j_j.shape[0]
+        
+        # Distance from bidder i's home BTA to item j's BTA
+        hq_distance_i_j = np.zeros((num_agents, num_items))
+        for i in range(num_agents):
+            hq_idx = int(home_bta_i[i]) - 1  # Convert to 0-indexed
+            hq_distance_i_j[i, :] = geo_distance_j_j[hq_idx, :]
+        
+        # Normalize distance (divide by max to keep scale reasonable)
+        max_dist = hq_distance_i_j.max()
+        if max_dist > 0:
+            hq_distance_normalized = hq_distance_i_j / max_dist
+        else:
+            hq_distance_normalized = hq_distance_i_j
+        
+        modular_list.append(hq_distance_normalized)
+        
+        # Distance squared (normalized)
+        hq_distance_sq_normalized = hq_distance_normalized ** 2
+        modular_list.append(hq_distance_sq_normalized)
+        
+        print(f"  HQ distance features: mean={hq_distance_normalized.mean():.4f}, max={hq_distance_normalized.max():.4f}")
     
     # Stack into (num_agents, num_items, num_modular_features)
-    modular_characteristics_i_j_k = modular_feat[:, :, None]
+    modular_characteristics_i_j_k = np.stack(modular_list, axis=2)
     
     print(f"Built modular features:")
     print(f"  Shape: {modular_characteristics_i_j_k.shape}")
@@ -236,9 +281,10 @@ def save_processed_data(
     quadratic_characteristic_j_j_k: np.ndarray,
     delta: int = 4,
     winners_only: bool = False,
+    hq_distance: bool = False,
 ) -> None:
     """Save all processed data to numpy files."""
-    output_dir = get_output_dir(delta, winners_only)
+    output_dir = get_output_dir(delta, winners_only, hq_distance)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     np.save(output_dir / "matching_i_j.npy", matching_i_j)
@@ -251,6 +297,7 @@ def save_processed_data(
     metadata = {
         "delta": delta,
         "winners_only": winners_only,
+        "hq_distance": hq_distance,
         "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
         "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
         "num_agents": int(capacity_i.shape[0]),
@@ -268,7 +315,7 @@ def save_processed_data(
     print(f"  capacity_i.npy: {capacity_i.shape}")
     print(f"  modular_characteristics_i_j_k.npy: {modular_characteristics_i_j_k.shape}")
     print(f"  quadratic_characteristic_j_j_k.npy: {quadratic_characteristic_j_j_k.shape}")
-    print(f"  metadata.json: delta={delta}, winners_only={winners_only}")
+    print(f"  metadata.json: delta={delta}, winners_only={winners_only}, hq_distance={hq_distance}")
 
 
 def compute_feature_statistics(
@@ -301,6 +348,7 @@ Examples:
     python prepare_data.py                       # delta=4, all bidders
     python prepare_data.py --delta 2             # delta=2, all bidders
     python prepare_data.py --delta 4 --winners-only  # delta=4, winners only
+    python prepare_data.py --delta 4 --hq-distance   # include HQ distance features
         """
     )
     parser.add_argument(
@@ -315,20 +363,27 @@ Examples:
         action="store_true",
         help="Filter to winning bidders only (those who win at least one item)"
     )
+    parser.add_argument(
+        "--hq-distance",
+        action="store_true",
+        help="Include HQ-to-item distance features (adds 2 modular features)"
+    )
     return parser.parse_args()
 
 
-def main(delta: int = 4, winners_only: bool = False):
+def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     """Main data preparation pipeline.
     
     Args:
         delta: Distance decay exponent (2 or 4)
         winners_only: If True, filter to winning bidders only
+        hq_distance: If True, include HQ-to-item distance features
     """
     print("=" * 70)
     print("Combinatorial Auction Data Preparation")
     print(f"  Distance parameter δ = {delta}")
     print(f"  Winners only: {winners_only}")
+    print(f"  HQ distance features: {hq_distance}")
     print("=" * 70)
     
     # Load raw data
@@ -342,6 +397,20 @@ def main(delta: int = 4, winners_only: bool = False):
         bidder_num: idx
         for idx, bidder_num in enumerate(raw_data["bidder_data"]['bidder_num_fox'].values)
     }
+    
+    # Load bidder home BTAs if needed
+    home_bta_i = None
+    if hq_distance:
+        # Load from bidder_data.csv which has home BTA for each bidder
+        bidder_hq_data = pd.read_csv(BASE_DIR / "bidder_data.csv")
+        # Create mapping from bidder_num_fox to home BTA
+        bidder_to_bta = dict(zip(bidder_hq_data['bidder_num_fox'], bidder_hq_data['bta']))
+        # Get home BTA for each bidder in order
+        home_bta_i = np.array([
+            bidder_to_bta.get(bidder_num, 1)  # Default to BTA 1 if not found
+            for bidder_num in raw_data["bidder_data"]['bidder_num_fox'].values
+        ])
+        print(f"Loaded home BTAs for {len(home_bta_i)} bidders")
     
     # Process weights and capacities
     weight_j, capacity_i = process_weights_capacities(
@@ -357,7 +426,13 @@ def main(delta: int = 4, winners_only: bool = False):
     )
     
     # Build features (before filtering agents)
-    modular_characteristics_i_j_k = build_modular_features(capacity_i, weight_j)
+    modular_characteristics_i_j_k = build_modular_features(
+        capacity_i, 
+        weight_j,
+        home_bta_i=home_bta_i,
+        geo_distance_j_j=raw_data["geo_distance_j_j"] if hq_distance else None,
+        include_hq_distance=hq_distance,
+    )
     quadratic_characteristic_j_j_k = build_quadratic_features(
         weight_j,
         raw_data["geo_distance_j_j"],
@@ -394,14 +469,15 @@ def main(delta: int = 4, winners_only: bool = False):
         quadratic_characteristic_j_j_k,
         delta=delta,
         winners_only=winners_only,
+        hq_distance=hq_distance,
     )
     
     print("\n" + "=" * 70)
-    print(f"Data preparation complete! (δ = {delta}, winners_only = {winners_only})")
+    print(f"Data preparation complete! (δ = {delta}, winners_only = {winners_only}, hq_distance = {hq_distance})")
     print("=" * 70)
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only)
+    main(delta=args.delta, winners_only=args.winners_only, hq_distance=args.hq_distance)
 

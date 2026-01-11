@@ -36,9 +36,12 @@ parser.add_argument("--delta", "-d", type=int, choices=[2, 4], required=True,
                     help="Distance parameter delta (must match prepare_data.py)")
 parser.add_argument("--winners-only", "-w", action="store_true",
                     help="Use winners-only sample (must match prepare_data.py)")
+parser.add_argument("--hq-distance", action="store_true",
+                    help="Use HQ-to-item distance features (must match prepare_data.py)")
 args = parser.parse_args()
 DELTA = args.delta
 WINNERS_ONLY = args.winners_only
+HQ_DISTANCE = args.hq_distance
 
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
@@ -52,19 +55,23 @@ with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
 # Build input directory name from parameters
-def get_input_dir(delta, winners_only):
+def get_input_dir(delta, winners_only, hq_distance=False):
     suffix = f"delta{delta}"
     if winners_only:
         suffix += "_winners"
+    if hq_distance:
+        suffix += "_hqdist"
     return os.path.join(BASE_DIR, "input_data", suffix)
 
 # Load data on rank 0 from parameter-specific directory
 if rank == 0:
-    INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY)
+    INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY, HQ_DISTANCE)
     if not os.path.exists(INPUT_DIR):
         cmd = f"./run-gurobi.bash python prepare_data.py --delta {DELTA}"
         if WINNERS_ONLY:
             cmd += " --winners-only"
+        if HQ_DISTANCE:
+            cmd += " --hq-distance"
         print(f"Error: Input data not found at {INPUT_DIR}")
         print(f"  Run: {cmd}")
         sys.exit(1)
@@ -77,8 +84,12 @@ if rank == 0:
 
     num_agents = input_metadata["num_agents"]  # From input data, not config
     num_items = config["dimensions"]["num_items"]
-    num_features = config["dimensions"]["num_features"]
     num_simulations = config["dimensions"]["num_simulations"]
+    # Compute num_features from metadata: modular + FE + quadratic
+    num_modular = input_metadata.get("num_modular_features", 1)
+    num_quadratic = input_metadata.get("num_quadratic_features", 3)
+    num_features = num_modular + num_items + num_quadratic
+    print(f"Features: {num_modular} modular + {num_items} FE + {num_quadratic} quadratic = {num_features}")
 
     item_data = {
         "modular": -np.eye(num_items),
@@ -137,12 +148,16 @@ if DELTA == 2:
     if rank == 0:
         print(f"Custom bounds for delta=2: theta_lbs[-3:]={theta_lbs[-3:]}, theta_ubs[-3:]={theta_ubs[-3:]}")
 
-# Load previous theta if requested
+# Load previous theta if requested (only if dimensions match)
 theta_init = None
 if USE_PREVIOUS_THETA and os.path.exists(THETA_PATH):
     if rank == 0:
-        theta_init = np.load(THETA_PATH)
-        print(f"Loading previous theta from {THETA_PATH}")
+        prev_theta = np.load(THETA_PATH)
+        if prev_theta.shape[0] == num_features:
+            theta_init = prev_theta
+            print(f"Loading previous theta from {THETA_PATH}")
+        else:
+            print(f"Skipping previous theta (dimension mismatch: {prev_theta.shape[0]} vs {num_features})")
     theta_init = comm.bcast(theta_init, root=0)
 
 result = combinatorial_auction.row_generation.solve(theta_init=theta_init)
@@ -165,6 +180,8 @@ if rank == 0:
     theta_metadata = {
         "delta": delta,
         "winners_only": winners_only,
+        "hq_distance": HQ_DISTANCE,
+        "num_features": num_features,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "converged": result.converged,
         "num_iterations": result.num_iterations,
@@ -182,6 +199,7 @@ if rank == 0:
         "timestamp": timestamp,
         "delta": delta,
         "winners_only": winners_only,
+        "hq_distance": HQ_DISTANCE,
         "num_mpi": num_mpi,
         "num_agents": num_agents,
         "num_items": num_items,
