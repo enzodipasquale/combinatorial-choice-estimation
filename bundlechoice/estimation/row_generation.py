@@ -86,7 +86,16 @@ class RowGenerationManager(BaseEstimationManager):
         Args:
             initial_constraints: Optional dict with keys 'indices' and 'bundles' for warm-starting
         """
-        obs_features = self.get_obs_features()
+        # Compute observed features (weighted if agent_weights provided)
+        if hasattr(self, '_agent_weights') and self._agent_weights is not None:
+            # Weighted observed features: sum_i w_i * x_i
+            if self.is_root():
+                obs_features = (self._agent_weights[:, None] * self.agents_obs_features).sum(0)
+            else:
+                obs_features = None
+        else:
+            obs_features = self.get_obs_features()
+        
         if self.is_root():
             # Clear constraint info when creating a new model (old constraint objects become invalid)
             self.constraint_info.clear()
@@ -105,7 +114,13 @@ class RowGenerationManager(BaseEstimationManager):
             if hasattr(self, '_theta_init_for_start') and self._theta_init_for_start is not None:
                 theta.Start = self._theta_init_for_start
 
-            u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
+            # Utility variables with (optionally weighted) objective coefficients
+            if hasattr(self, '_agent_weights') and self._agent_weights is not None:
+                # Weighted objective: w_i for each agent i (repeated for each simulation)
+                u_obj = np.tile(self._agent_weights, self.num_simulations)
+                u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=u_obj, name='utility')
+            else:
+                u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
             
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
@@ -206,7 +221,8 @@ class RowGenerationManager(BaseEstimationManager):
         return stop
 
     def solve(self, callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-              theta_init: Optional[NDArray[np.float64]] = None) -> EstimationResult:
+              theta_init: Optional[NDArray[np.float64]] = None,
+              agent_weights: Optional[NDArray[np.float64]] = None) -> EstimationResult:
         """
         Run the row generation algorithm to estimate model parameters.
 
@@ -219,6 +235,8 @@ class RowGenerationManager(BaseEstimationManager):
                      - 'pricing_time': Time spent solving subproblems in seconds (float)
                      - 'master_time': Time spent on master problem in seconds (float)
             theta_init: Optional initial parameter vector. If None, uses default initialization.
+            agent_weights: Optional per-agent weights for Bayesian bootstrap. Shape (num_agents,).
+                          If None, uniform weights (1.0) are used.
         
         Returns:
             EstimationResult: Result object containing theta_hat and diagnostics.
@@ -242,7 +260,19 @@ class RowGenerationManager(BaseEstimationManager):
                 print(f"  Tolerance decay: {self.row_generation_cfg.row_generation_decay}")
             print()  # Blank line before starting
             print("  Starting row generation algorithm...")
+            if agent_weights is not None:
+                print("  Using agent weights (Bayesian bootstrap)")
             print()  # Blank line before iterations
+        
+        # Store agent weights (broadcast if needed)
+        if agent_weights is not None:
+            self._agent_weights = self.comm_manager.broadcast_array(
+                np.asarray(agent_weights, dtype=np.float64) if self.is_root() else np.empty(self.num_agents),
+                root=0
+            )
+        else:
+            self._agent_weights = None
+        
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
         

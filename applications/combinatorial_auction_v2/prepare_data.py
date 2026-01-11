@@ -283,15 +283,52 @@ def save_processed_data(
     winners_only: bool = False,
     hq_distance: bool = False,
 ) -> None:
-    """Save all processed data to numpy files."""
+    """Save all processed data to CSV files with clean names."""
     output_dir = get_output_dir(delta, winners_only, hq_distance)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    np.save(output_dir / "matching_i_j.npy", matching_i_j)
-    np.save(output_dir / "weight_j.npy", weight_j)
-    np.save(output_dir / "capacity_i.npy", capacity_i)
-    np.save(output_dir / "modular_characteristics_i_j_k.npy", modular_characteristics_i_j_k)
-    np.save(output_dir / "quadratic_characteristic_j_j_k.npy", quadratic_characteristic_j_j_k)
+    num_agents, num_items = matching_i_j.shape
+    num_modular = modular_characteristics_i_j_k.shape[2]
+    num_quadratic = quadratic_characteristic_j_j_k.shape[2]
+    
+    # Define feature names
+    if num_modular == 1:
+        modular_names = ["bidder_elig_pop"]
+    else:
+        modular_names = ["bidder_elig_pop", "hq_distance", "hq_distance_sq"]
+    quadratic_names = ["pop_distance", "travel_survey", "air_travel"]
+    
+    # 1. obs_bundle.csv - (num_agents, num_items) boolean matrix
+    obs_df = pd.DataFrame(matching_i_j.astype(int), columns=[f"item_{j}" for j in range(num_items)])
+    obs_df.to_csv(output_dir / "obs_bundle.csv", index=False)
+    
+    # 2. capacity.csv - (num_agents,) vector
+    pd.DataFrame({"capacity": capacity_i}).to_csv(output_dir / "capacity.csv", index=False)
+    
+    # 3. weight.csv - (num_items,) vector
+    pd.DataFrame({"weight": weight_j}).to_csv(output_dir / "weight.csv", index=False)
+    
+    # 4. modular_agent.csv - (num_agents, num_items, num_modular) flattened
+    # Store as (num_agents * num_items, num_modular) with agent_id, item_id columns
+    modular_rows = []
+    for i in range(num_agents):
+        for j in range(num_items):
+            row = {"agent_id": i, "item_id": j}
+            for k, name in enumerate(modular_names):
+                row[name] = modular_characteristics_i_j_k[i, j, k]
+            modular_rows.append(row)
+    pd.DataFrame(modular_rows).to_csv(output_dir / "modular_agent.csv", index=False)
+    
+    # 5. quadratic_item.csv - (num_items, num_items, num_quadratic) flattened
+    # Store as (num_items * num_items, num_quadratic) with item_i, item_j columns
+    quadratic_rows = []
+    for i in range(num_items):
+        for j in range(num_items):
+            row = {"item_i": i, "item_j": j}
+            for k, name in enumerate(quadratic_names):
+                row[name] = quadratic_characteristic_j_j_k[i, j, k]
+            quadratic_rows.append(row)
+    pd.DataFrame(quadratic_rows).to_csv(output_dir / "quadratic_item.csv", index=False)
     
     # Save metadata
     metadata = {
@@ -300,22 +337,24 @@ def save_processed_data(
         "hq_distance": hq_distance,
         "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
         "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
-        "num_agents": int(capacity_i.shape[0]),
-        "num_items": int(weight_j.shape[0]),
-        "num_modular_features": int(modular_characteristics_i_j_k.shape[2]),
-        "num_quadratic_features": int(quadratic_characteristic_j_j_k.shape[2]),
+        "num_agents": num_agents,
+        "num_items": num_items,
+        "num_modular_features": num_modular,
+        "num_quadratic_features": num_quadratic,
+        "modular_names": modular_names,
+        "quadratic_names": quadratic_names,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
     }
     with open(output_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
     
     print(f"\nSaved processed data to {output_dir}:")
-    print(f"  matching_i_j.npy: {matching_i_j.shape}")
-    print(f"  weight_j.npy: {weight_j.shape}")
-    print(f"  capacity_i.npy: {capacity_i.shape}")
-    print(f"  modular_characteristics_i_j_k.npy: {modular_characteristics_i_j_k.shape}")
-    print(f"  quadratic_characteristic_j_j_k.npy: {quadratic_characteristic_j_j_k.shape}")
-    print(f"  metadata.json: delta={delta}, winners_only={winners_only}, hq_distance={hq_distance}")
+    print(f"  obs_bundle.csv: {matching_i_j.shape}")
+    print(f"  capacity.csv: {capacity_i.shape}")
+    print(f"  weight.csv: {weight_j.shape}")
+    print(f"  modular_agent.csv: {modular_characteristics_i_j_k.shape} → features: {modular_names}")
+    print(f"  quadratic_item.csv: {quadratic_characteristic_j_j_k.shape} → features: {quadratic_names}")
+    print(f"  metadata.json")
 
 
 def compute_feature_statistics(

@@ -1,5 +1,8 @@
 import numpy as np
-from typing import Optional, Dict, Any, List
+import pandas as pd
+import json
+from pathlib import Path
+from typing import Optional, Dict, Any, List, Union
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.base import HasDimensions, HasComm
@@ -33,6 +36,11 @@ class DataManager(HasDimensions, HasComm):
         # Cache for get_data_info() results
         self._cached_data_info: Optional[Dict[str, Any]] = None
         self._cached_data_info_source: Optional[str] = None  # 'input' or 'local'
+        # Store data source names (from filenames) for auto feature naming
+        self.data_sources: Dict[str, Dict[str, List[str]]] = {
+            "agent_data": {},  # e.g., {"modular": ["bidder_elig_pop", "hq_distance"]}
+            "item_data": {},   # e.g., {"quadratic": ["pop_distance", "travel_survey"]}
+        }
 
     # ============================================================================
     # Data Loading
@@ -57,6 +65,227 @@ class DataManager(HasDimensions, HasComm):
         self.load(input_data)
         self.scatter()
         return self.local_data
+
+    def load_from_directory(
+        self,
+        path: Union[str, Path],
+        generate_errors: bool = True,
+        error_seed: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Load input data from a directory following BundleChoice conventions.
+        
+        File pattern detection:
+            - metadata.json: Dimensions, feature names, and counts
+            - matching_*.npy or obs_bundle*.npy: Observed bundles
+            - modular_*_i_j_k.npy: Agent modular features
+            - modular_*_j_k.npy or modular_*_j.npy: Item modular features
+            - quadratic_*_j_j_k.npy: Item quadratic features
+            - capacity_*.npy: Agent capacities
+            - weight_*.npy: Item weights
+        
+        Args:
+            path: Directory containing .npy files and optional metadata.json
+            generate_errors: If True, generate random errors
+            error_seed: Random seed for error generation
+        
+        Returns:
+            Loaded input_data dictionary
+        """
+        path = Path(path)
+        
+        if self.is_root():
+            if not path.exists():
+                raise FileNotFoundError(f"Directory not found: {path}")
+            
+            input_data = self._load_arrays_from_directory(path)
+            
+            # Load metadata if present
+            metadata_path = path / "metadata.json"
+            if metadata_path.exists():
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                self._update_dimensions_from_metadata(metadata)
+            
+            # Generate errors if requested
+            if generate_errors:
+                if error_seed is not None:
+                    np.random.seed(error_seed)
+                errors = np.random.normal(
+                    0, 1, 
+                    (self.num_simulations, self.num_agents, self.num_items)
+                )
+                input_data["errors"] = errors
+        else:
+            input_data = None
+        
+        return input_data
+    
+    def _load_arrays_from_directory(self, path: Path) -> Dict[str, Any]:
+        """
+        Auto-detect and load arrays from directory. Supports both CSV and NPY.
+        
+        CSV files use clean names: obs_bundle.csv, modular_agent.csv, quadratic_item.csv
+        NPY files use legacy names with suffixes: matching_i_j.npy, modular_*_i_j_k.npy
+        
+        Feature names are extracted from CSV column headers.
+        """
+        agent_data = {}
+        item_data = {}
+        input_data = {}
+        
+        # Reset data sources
+        self.data_sources = {"agent_data": {}, "item_data": {}}
+        
+        # Try CSV first (preferred), then fall back to NPY
+        csv_files = {f.stem.lower(): f for f in path.glob("*.csv")}
+        npy_files = {f.stem.lower(): f for f in path.glob("*.npy")}
+        
+        # Load observed bundles
+        if "obs_bundle" in csv_files:
+            df = pd.read_csv(csv_files["obs_bundle"])
+            input_data["obs_bundle"] = df.values.astype(bool)
+        elif any(n.startswith("matching") or n.startswith("obs_bundle") for n in npy_files):
+            for name, npy_path in npy_files.items():
+                if name.startswith("matching") or name.startswith("obs_bundle"):
+                    input_data["obs_bundle"] = np.load(npy_path)
+                    break
+        
+        # Load capacity
+        if "capacity" in csv_files:
+            df = pd.read_csv(csv_files["capacity"])
+            agent_data["capacity"] = df.iloc[:, 0].values
+        elif any("capacity" in n for n in npy_files):
+            for name, npy_path in npy_files.items():
+                if "capacity" in name:
+                    agent_data["capacity"] = np.load(npy_path)
+                    break
+        
+        # Load weights (item-level data)
+        if "weight" in csv_files:
+            df = pd.read_csv(csv_files["weight"])
+            item_data["weights"] = df.iloc[:, 0].values
+        elif any("weight" in n for n in npy_files):
+            for name, npy_path in npy_files.items():
+                if "weight" in name:
+                    item_data["weights"] = np.load(npy_path)
+                    break
+        
+        # Load modular agent features (CSV with feature names in columns)
+        if "modular_agent" in csv_files:
+            arr, feature_names = self._load_agent_features_csv(csv_files["modular_agent"])
+            agent_data["modular"] = arr
+            self.data_sources["agent_data"]["modular"] = feature_names
+        elif any("modular" in n and "_i_j_k" in n for n in npy_files):
+            for name, npy_path in npy_files.items():
+                if "modular" in name and "_i_j_k" in name:
+                    agent_data["modular"] = np.load(npy_path)
+                    break
+        
+        # Load quadratic item features (CSV with feature names in columns)
+        if "quadratic_item" in csv_files:
+            arr, feature_names = self._load_item_quadratic_csv(csv_files["quadratic_item"])
+            item_data["quadratic"] = arr
+            self.data_sources["item_data"]["quadratic"] = feature_names
+        elif any("quadratic" in n and "_j_j_k" in n and "_i_j_j" not in n for n in npy_files):
+            for name, npy_path in npy_files.items():
+                if "quadratic" in name and "_j_j_k" in name and "_i_j_j" not in name:
+                    item_data["quadratic"] = np.load(npy_path)
+                    break
+        
+        if agent_data:
+            input_data["agent_data"] = agent_data
+        if item_data:
+            input_data["item_data"] = item_data
+        
+        return input_data
+    
+    def _load_agent_features_csv(self, csv_path: Path) -> tuple:
+        """Load agent modular features from CSV. Returns (array, feature_names)."""
+        df = pd.read_csv(csv_path)
+        
+        # Expect columns: agent_id, item_id, feature1, feature2, ...
+        feature_cols = [c for c in df.columns if c not in ("agent_id", "item_id")]
+        
+        # Reshape from (num_agents * num_items, k) to (num_agents, num_items, k)
+        num_agents = df["agent_id"].max() + 1
+        num_items = df["item_id"].max() + 1
+        num_features = len(feature_cols)
+        
+        arr = np.zeros((num_agents, num_items, num_features))
+        for _, row in df.iterrows():
+            i, j = int(row["agent_id"]), int(row["item_id"])
+            arr[i, j, :] = [row[c] for c in feature_cols]
+        
+        return arr, feature_cols
+    
+    def _load_item_quadratic_csv(self, csv_path: Path) -> tuple:
+        """Load item quadratic features from CSV. Returns (array, feature_names)."""
+        df = pd.read_csv(csv_path)
+        
+        # Expect columns: item_i, item_j, feature1, feature2, ...
+        feature_cols = [c for c in df.columns if c not in ("item_i", "item_j")]
+        
+        # Reshape from (num_items * num_items, k) to (num_items, num_items, k)
+        num_items = max(df["item_i"].max(), df["item_j"].max()) + 1
+        num_features = len(feature_cols)
+        
+        arr = np.zeros((num_items, num_items, num_features))
+        for _, row in df.iterrows():
+            i, j = int(row["item_i"]), int(row["item_j"])
+            arr[i, j, :] = [row[c] for c in feature_cols]
+        
+        return arr, feature_cols
+    
+    def _update_dimensions_from_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Update dimensions config from metadata.json."""
+        if "num_agents" in metadata:
+            self.dimensions_cfg.num_agents = metadata["num_agents"]
+        if "num_items" in metadata:
+            self.dimensions_cfg.num_items = metadata["num_items"]
+        if "num_features" in metadata:
+            self.dimensions_cfg.num_features = metadata["num_features"]
+        if "feature_names" in metadata:
+            self.dimensions_cfg.feature_names = metadata["feature_names"]
+        
+        # Store feature names from metadata for auto-naming (if not from CSV)
+        if "modular_names" in metadata and "modular" not in self.data_sources.get("agent_data", {}):
+            self.data_sources["agent_data"]["modular"] = metadata["modular_names"]
+        if "quadratic_names" in metadata and "quadratic" not in self.data_sources.get("item_data", {}):
+            self.data_sources["item_data"]["quadratic"] = metadata["quadratic_names"]
+        
+        # Auto-compute num_features from structure if not set
+        if self.dimensions_cfg.num_features is None:
+            num_modular = metadata.get("num_modular_features", 0)
+            num_quadratic = metadata.get("num_quadratic_features", 0)
+            num_items = metadata.get("num_items", 0)
+            if num_modular or num_quadratic:
+                self.dimensions_cfg.num_features = num_modular + num_items + num_quadratic
+    
+    def get_feature_names_from_data(self) -> Optional[List[str]]:
+        """
+        Build feature names from loaded data sources.
+        
+        Returns names in order: [modular_agent...] + [FE_0...FE_{num_items-1}] + [quadratic_item...]
+        """
+        if not self.data_sources:
+            return None
+        
+        names = []
+        
+        # Modular agent features
+        modular_names = self.data_sources.get("agent_data", {}).get("modular", [])
+        names.extend(modular_names)
+        
+        # Fixed effects (item modular = negative identity)
+        if self.num_items:
+            names.extend([f"FE_{j}" for j in range(self.num_items)])
+        
+        # Quadratic item features
+        quadratic_names = self.data_sources.get("item_data", {}).get("quadratic", [])
+        names.extend(quadratic_names)
+        
+        return names if names else None
 
     # ============================================================================
     # Data Scattering (MPI)
