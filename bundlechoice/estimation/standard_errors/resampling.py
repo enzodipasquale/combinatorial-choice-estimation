@@ -147,18 +147,28 @@ class ResamplingMixin:
         num_bootstrap: int = 100,
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
+        reuse_constraints: bool = True,
     ) -> Optional[StandardErrorsResult]:
-        """Bayesian bootstrap: reweight agents with Exp(1) weights instead of resampling."""
+        """
+        Bayesian bootstrap: reweight agents with Exp(1) weights instead of resampling.
+        
+        Args:
+            reuse_constraints: If True, warm-start each solve with constraints from previous solve.
+                             This significantly speeds up computation since only weights change.
+        """
         if beta_indices is None:
             beta_indices = np.arange(self.num_features, dtype=np.int64)
         
         if self.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (BAYESIAN BOOTSTRAP)", "=" * 70]
             lines.append(f"  Samples: {num_bootstrap}, Parameters: {len(beta_indices)}")
+            if reuse_constraints:
+                lines.append("  Warm-start: reusing constraints across samples")
             logger.info("\n".join(lines))
         
         N = self.num_agents
         theta_boots = []
+        constraints = None  # Will hold constraints from previous solve
         
         if seed is not None:
             np.random.seed(seed)
@@ -175,9 +185,19 @@ class ResamplingMixin:
             weights = self.comm.bcast(weights, root=0)
             
             try:
-                result = row_generation.solve(agent_weights=weights)
+                # Pass constraints from previous solve for warm-start
+                result = row_generation.solve(
+                    agent_weights=weights,
+                    initial_constraints=constraints if reuse_constraints else None
+                )
                 if self.is_root():
                     theta_boots.append(result.theta_hat)
+                    # Get constraints for next iteration (only on first or if reusing)
+                    if reuse_constraints:
+                        constraints = row_generation.get_constraints()
+                        if b == 0:
+                            n_constr = len(constraints.get('indices', [])) if constraints else 0
+                            logger.debug("After first solve: got %d constraints for warm-start", n_constr)
             except Exception:
                 pass
         
