@@ -618,16 +618,15 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Build result
         if self.is_root():
-            theta, u = self.master_variables
             return EstimationResult(
                 theta_hat=self.theta_val.copy(),
-                objective=self.master_model.ObjVal if self.master_model.Status == GRB.OPTIMAL else float('inf'),
-                iterations=iteration + 1,
                 converged=iteration < self.row_generation_cfg.max_iters,
-                time_seconds=toc - tic,
-                diagnostics={}
+                num_iterations=iteration + 1,
+                final_objective=self.master_model.ObjVal if self.master_model.Status == GRB.OPTIMAL else float('inf'),
+                timing={'total': toc - tic},
             )
         return EstimationResult(
             theta_hat=self.theta_val.copy(),
-            objective=0.0, iterations=iteration + 1, converged=True, time_seconds=0.0, diagnostics={}
+            converged=True,
+            num_iterations=iteration + 1,
         )
