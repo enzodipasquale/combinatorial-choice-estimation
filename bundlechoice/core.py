@@ -1,21 +1,24 @@
-from .config import DimensionsConfig, RowGenerationConfig, SubproblemConfig, BundleChoiceConfig, EllipsoidConfig
-from .data_manager import DataManager
-from .feature_manager import FeatureManager
-from .subproblems.subproblem_manager import SubproblemManager
-from mpi4py import MPI
-from typing import Optional, Callable, Any, Dict, Union
+"""
+BundleChoice: Main orchestrator for bundle choice estimation.
+"""
+
+from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 import numpy as np
-from bundlechoice.utils import get_logger
-from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager
-from bundlechoice.estimation.ellipsoid import EllipsoidManager
+from mpi4py import MPI
+from bundlechoice.config import BundleChoiceConfig
 from bundlechoice.base import HasComm, HasConfig
-from .comm_manager import CommManager
+from bundlechoice.comm_manager import CommManager
+from bundlechoice.utils import get_logger
+
+if TYPE_CHECKING:
+    from bundlechoice.data_manager import DataManager
+    from bundlechoice.feature_manager import FeatureManager
+    from bundlechoice.subproblems.subproblem_manager import SubproblemManager
+    from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager, ColumnGenerationManager
+    from bundlechoice.estimation.ellipsoid import EllipsoidManager
+
 logger = get_logger(__name__)
 
-
-# ============================================================================
-# Main BundleChoice Class
-# ============================================================================
 
 class BundleChoice(HasComm, HasConfig):
     """
@@ -31,142 +34,129 @@ class BundleChoice(HasComm, HasConfig):
         bc.features.build_from_data()
         theta = bc.row_generation.solve()
     """
-    config: Optional[BundleChoiceConfig]
-    data_manager: Optional[DataManager]
-    feature_manager: Optional[FeatureManager]
-    subproblem_manager: Optional[SubproblemManager]
-    row_generation_manager: Optional[RowGenerationManager]
-    ellipsoid_manager: Optional[EllipsoidManager]
-    standard_errors_manager: Optional[StandardErrorsManager]
-    comm: MPI.Comm
-    comm_manager: Optional[CommManager]
-
+    
     def __init__(self) -> None:
-        """Initialize empty BundleChoice instance. Config and data must be loaded separately."""
-        self.config = None
-        self.comm_manager = CommManager(MPI.COMM_WORLD)
-        self.data_manager = None
-        self.feature_manager = None
-        self.subproblem_manager = None
-        self.row_generation_manager = None
-        self.ellipsoid_manager = None
-        self.standard_errors_manager = None
+        """Initialize empty BundleChoice instance."""
+        self.config: Optional[BundleChoiceConfig] = None
+        self.comm_manager: CommManager = CommManager(MPI.COMM_WORLD)
+        self.data_manager: Optional['DataManager'] = None
+        self.feature_manager: Optional['FeatureManager'] = None
+        self.subproblem_manager: Optional['SubproblemManager'] = None
+        self.row_generation_manager: Optional['RowGenerationManager'] = None
+        self.column_generation_manager: Optional['ColumnGenerationManager'] = None
+        self.ellipsoid_manager: Optional['EllipsoidManager'] = None
+        self.standard_errors_manager: Optional['StandardErrorsManager'] = None
 
-    # ============================================================================
+    # ========================================================================
     # Component Initialization
-    # ============================================================================
-    def _try_init_data_manager(self) -> DataManager:
-        """Initialize DataManager from dimensions config."""
+    # ========================================================================
+    
+    def _try_init_data_manager(self) -> 'DataManager':
         from bundlechoice._initialization import try_init_data_manager
         return try_init_data_manager(self)
         
-    def _try_init_feature_manager(self) -> FeatureManager:
-        """Initialize FeatureManager from dimensions config."""
+    def _try_init_feature_manager(self) -> 'FeatureManager':
         from bundlechoice._initialization import try_init_feature_manager
         return try_init_feature_manager(self)
         
-    def _try_init_subproblem_manager(self) -> SubproblemManager:
-        """Initialize SubproblemManager and load algorithm."""
+    def _try_init_subproblem_manager(self) -> 'SubproblemManager':
         from bundlechoice._initialization import try_init_subproblem_manager
         manager = try_init_subproblem_manager(self)
-        # Auto-load subproblem on initialization (consistent with original behavior)
         manager.load()
         return manager
     
-    def _try_init_row_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> RowGenerationManager:
-        """Initialize RowGenerationManager."""
+    def _try_init_row_generation_manager(self) -> 'RowGenerationManager':
         from bundlechoice._initialization import try_init_row_generation_manager
         return try_init_row_generation_manager(self)
 
-    def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> EllipsoidManager:
-        """Initialize EllipsoidManager."""
+    def _try_init_ellipsoid_manager(self, theta_init: Optional[np.ndarray] = None) -> 'EllipsoidManager':
         from bundlechoice._initialization import try_init_ellipsoid_manager
         return try_init_ellipsoid_manager(self, theta_init)
 
-    def _try_init_standard_errors_manager(self) -> StandardErrorsManager:
-        """Initialize StandardErrorsManager."""
+    def _try_init_column_generation_manager(self, theta_init: Optional[np.ndarray] = None) -> 'ColumnGenerationManager':
+        from bundlechoice._initialization import try_init_column_generation_manager
+        return try_init_column_generation_manager(self, theta_init)
+
+    def _try_init_standard_errors_manager(self) -> 'StandardErrorsManager':
         from bundlechoice._initialization import try_init_standard_errors_manager
         return try_init_standard_errors_manager(self)
 
-    # ============================================================================
+    # ========================================================================
     # Property Accessors (Lazy Initialization)
-    # ============================================================================
+    # ========================================================================
 
     @property
-    def data(self) -> DataManager:
+    def data(self) -> 'DataManager':
         if self.data_manager is None:
             self._try_init_data_manager()
         return self.data_manager
 
     @property
-    def features(self) -> FeatureManager:
+    def features(self) -> 'FeatureManager':
         if self.feature_manager is None:
             self._try_init_feature_manager()
         return self.feature_manager
 
     @property
-    def subproblems(self) -> SubproblemManager:
+    def subproblems(self) -> 'SubproblemManager':
         if self.subproblem_manager is None:
             self._try_init_subproblem_manager()
         return self.subproblem_manager
 
     @property
-    def row_generation(self) -> RowGenerationManager:
+    def row_generation(self) -> 'RowGenerationManager':
         if self.row_generation_manager is None:
             self._try_init_row_generation_manager()
         return self.row_generation_manager
         
     @property
-    def ellipsoid(self) -> EllipsoidManager:
+    def ellipsoid(self) -> 'EllipsoidManager':
         if self.ellipsoid_manager is None:
             self._try_init_ellipsoid_manager()
         return self.ellipsoid_manager
+
+    @property
+    def column_generation(self) -> 'ColumnGenerationManager':
+        if self.column_generation_manager is None:
+            self._try_init_column_generation_manager()
+        return self.column_generation_manager
         
     @property
-    def standard_errors(self) -> StandardErrorsManager:
+    def standard_errors(self) -> 'StandardErrorsManager':
         if self.standard_errors_manager is None:
             self._try_init_standard_errors_manager()
         return self.standard_errors_manager
     
-    # ============================================================================
+    # ========================================================================
     # Setup Status
-    # ============================================================================
+    # ========================================================================
     
     def print_status(self) -> None:
-        """Print formatted setup status to stdout."""
-        print("\n=== BundleChoice Status ===")
-        print(f"Config:      {'OK' if self.config is not None else 'Not set'}")
-        print(f"Data:        {'OK' if self.data_manager is not None and self.data_manager.local_data is not None else 'Not set'}")
-        print(f"Features:    {'OK' if self.feature_manager is not None and self.feature_manager._features_oracle is not None else 'Not set'}")
-        print(f"Subproblems: {'OK' if self.subproblem_manager is not None and self.subproblem_manager.subproblem_instance is not None else 'Not set'}")
+        """Print formatted setup status."""
+        lines = ["\n=== BundleChoice Status ==="]
+        lines.append(f"Config:      {'OK' if self.config else 'Not set'}")
+        lines.append(f"Data:        {'OK' if self.data_manager and self.data_manager.local_data else 'Not set'}")
+        lines.append(f"Features:    {'OK' if self.feature_manager and self.feature_manager._features_oracle else 'Not set'}")
+        lines.append(f"Subproblems: {'OK' if self.subproblem_manager and self.subproblem_manager.subproblem_instance else 'Not set'}")
         
         if self.config and self.config.dimensions:
-            dimensions_str = f"agents={self.config.dimensions.num_agents}, items={self.config.dimensions.num_items}, features={self.config.dimensions.num_features}"
+            d = self.config.dimensions
+            lines.append(f"\nDimensions:  agents={d.num_agents}, items={d.num_items}, features={d.num_features}")
         else:
-            dimensions_str = 'Not set'
-        print(f"\nDimensions:  {dimensions_str}")
+            lines.append("\nDimensions:  Not set")
         
-        if self.config and self.config.subproblem and self.config.subproblem.name:
-            subproblem_str = self.config.subproblem.name
-        else:
-            subproblem_str = 'Not set'
-        print(f"Algorithm:   {subproblem_str}")
-        print(f"MPI:         rank {self.rank}/{self.comm_size}")
+        algo = self.config.subproblem.name if self.config and self.config.subproblem else 'Not set'
+        lines.append(f"Algorithm:   {algo}")
+        lines.append(f"MPI:         rank {self.rank}/{self.comm_size}")
+        
+        logger.info("\n".join(lines))
 
-    # ============================================================================
+    # ========================================================================
     # Workflow Methods
-    # ============================================================================
+    # ========================================================================
 
     def generate_observations(self, theta_true: np.ndarray) -> Optional[np.ndarray]:
-        """
-        Generate observed bundles from true parameters, then reload data.
-        
-        Args:
-            theta_true: True parameter vector
-            
-        Returns:
-            Observed bundles (rank 0 only, None on other ranks)
-        """
+        """Generate observed bundles from true parameters, then reload data."""
         obs_bundles = self.subproblems.init_and_solve(theta_true)
         
         if self.is_root():
@@ -179,7 +169,6 @@ class BundleChoice(HasComm, HasConfig):
         
         self.data.load_and_scatter(updated_data)
         
-        # Rebuild features if using auto-generated oracle
         if self.feature_manager._features_oracle is not None:
             oracle_code = self.feature_manager._features_oracle.__code__
             if 'features_oracle' in oracle_code.co_name:
@@ -187,9 +176,9 @@ class BundleChoice(HasComm, HasConfig):
         
         return obs_bundles
 
-    # ============================================================================
+    # ========================================================================
     # Configuration Management
-    # ============================================================================
+    # ========================================================================
         
     def load_config(self, cfg: Union[Dict[str, Any], str]) -> 'BundleChoice':
         """Load configuration from dict or YAML file. Merges with existing config."""
@@ -206,48 +195,49 @@ class BundleChoice(HasComm, HasConfig):
             self.config.update_in_place(new_config)
         
         self.config.validate()
-
-        # Use print for configuration to avoid logging prefix clutter
+        
         if self.is_root():
-            print("=" * 70)
-            print("BUNDLECHOICE CONFIGURATION")
-            print("=" * 70)
-            
-            # Problem dimensions
-            print("Problem Dimensions:")
-            if self.config.dimensions.num_agents is not None:
-                print(f"  • Agents: {self.config.dimensions.num_agents}")
-            if self.config.dimensions.num_items is not None:
-                print(f"  • Items: {self.config.dimensions.num_items}")
-            if self.config.dimensions.num_features is not None:
-                print(f"  • Features: {self.config.dimensions.num_features}")
-            if self.config.dimensions.num_simulations > 1:
-                print(f"  • Simulations: {self.config.dimensions.num_simulations}")
-            
-            # Subproblem configuration
-            if self.config.subproblem.name:
-                print("\nSubproblem:")
-                print(f"  • Algorithm: {self.config.subproblem.name}")
-                settings = self.config.subproblem.settings
-                if settings:
-                    if 'TimeLimit' in settings:
-                        print(f"  • TimeLimit: {settings['TimeLimit']}s")
-                    if 'MIPGap_tol' in settings:
-                        print(f"  • MIPGap tolerance: {settings['MIPGap_tol']}")
-                    if 'OutputFlag' in settings:
-                        print(f"  • Gurobi output: {'enabled' if settings['OutputFlag'] == 1 else 'disabled'}")
-            
-            # Ellipsoid configuration
-            if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:
-                print("\nEllipsoid:")
-                print(f"  • Max iterations: {self.config.ellipsoid.max_iterations}")
-                if self.config.ellipsoid.tolerance != 1e-6:
-                    print(f"  • Tolerance: {self.config.ellipsoid.tolerance}")
-            
-            # MPI information
-            if self.comm_manager is not None:
-                print("\nParallelization:")
-                print(f"  • MPI workers: {self.comm_manager.comm.Get_size()}")
-            
-            print()  # Blank line to separate from next section
+            self._log_config()
         return self
+    
+    def _log_config(self) -> None:
+        """Log configuration summary."""
+        lines = ["=" * 70, "BUNDLECHOICE CONFIGURATION", "=" * 70]
+        
+        # Problem dimensions
+        lines.append("Problem Dimensions:")
+        d = self.config.dimensions
+        if d.num_agents is not None:
+            lines.append(f"  • Agents: {d.num_agents}")
+        if d.num_items is not None:
+            lines.append(f"  • Items: {d.num_items}")
+        if d.num_features is not None:
+            lines.append(f"  • Features: {d.num_features}")
+        if d.num_simulations > 1:
+            lines.append(f"  • Simulations: {d.num_simulations}")
+        
+        # Subproblem configuration
+        if self.config.subproblem.name:
+            lines.append("\nSubproblem:")
+            lines.append(f"  • Algorithm: {self.config.subproblem.name}")
+            settings = self.config.subproblem.settings
+            if settings:
+                if 'TimeLimit' in settings:
+                    lines.append(f"  • TimeLimit: {settings['TimeLimit']}s")
+                if 'MIPGap_tol' in settings:
+                    lines.append(f"  • MIPGap tolerance: {settings['MIPGap_tol']}")
+        
+        # Ellipsoid configuration (only if non-default)
+        if hasattr(self.config, 'ellipsoid') and self.config.ellipsoid.max_iterations != 1000:
+            lines.append("\nEllipsoid:")
+            lines.append(f"  • Max iterations: {self.config.ellipsoid.max_iterations}")
+            if self.config.ellipsoid.tolerance != 1e-6:
+                lines.append(f"  • Tolerance: {self.config.ellipsoid.tolerance}")
+        
+        # MPI information
+        if self.comm_manager:
+            lines.append("\nParallelization:")
+            lines.append(f"  • MPI workers: {self.comm_manager.comm.Get_size()}")
+        
+        lines.append("")
+        logger.info("\n".join(lines))

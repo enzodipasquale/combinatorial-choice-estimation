@@ -411,38 +411,19 @@ class ColumnGenerationManager(BaseEstimationManager):
 
         elapsed = time.perf_counter() - tic
         num_iters = iteration + 1
+        converged = num_iters < self.row_generation_cfg.max_iters
         
         if self.is_root():
             logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, num_iters)
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
             self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, header="COLUMN GENERATION SUMMARY")
-            converged = iteration + 1 < self.row_generation_cfg.max_iters
-            result = EstimationResult(
-                theta_hat=self.theta_val.copy(),
-                converged=converged,
-                num_iterations=num_iters,
-                final_objective=obj_val,
-                timing=self.timing_stats,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
         else:
+            obj_val = None
             self.timing_stats = None
-            result = EstimationResult(
-                theta_hat=self.theta_val.copy(),
-                converged=iteration + 1 < self.row_generation_cfg.max_iters,
-                num_iterations=num_iters,
-                final_objective=None,
-                timing=None,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
 
         self.theta_hat = self.theta_val.copy()
-        return result
+        return self._create_result(self.theta_hat, converged, num_iters, obj_val)
 
     def _expand_bounds(self, bound, fill_value: float) -> NDArray[np.float64]:
         arr = np.full(self.num_features, fill_value, dtype=np.float64)

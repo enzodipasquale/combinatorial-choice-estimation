@@ -1,0 +1,422 @@
+"""Sandwich standard errors: full sandwich (A^-1 B A^-1) and B-inverse methods."""
+
+from typing import Optional
+import numpy as np
+from numpy.typing import NDArray
+from mpi4py import MPI
+
+from .result import StandardErrorsResult
+from bundlechoice.utils import get_logger
+
+logger = get_logger(__name__)
+
+
+def compute_adaptive_step_size(theta_k: float, base_step: float = 1e-4) -> float:
+    """Compute adaptive step size for finite differences."""
+    eps = np.finfo(np.float64).eps
+    min_step = np.sqrt(eps)
+    scale = max(1.0, abs(theta_k))
+    h = base_step * scale
+    h = max(h, min_step * scale)
+    if abs(theta_k) > 0:
+        h = min(h, 0.1 * abs(theta_k))
+    return h
+
+
+class SandwichMixin:
+    """Mixin providing sandwich SE methods for StandardErrorsManager."""
+    
+    def compute(
+        self,
+        theta_hat: NDArray[np.float64],
+        num_simulations: Optional[int] = None,
+        step_size: Optional[float] = None,
+        beta_indices: Optional[NDArray[np.int64]] = None,
+        seed: Optional[int] = None,
+        optimize_for_subset: bool = True,
+        error_sigma: Optional[float] = None,
+    ) -> Optional[StandardErrorsResult]:
+        """
+        Compute full sandwich standard errors: Var(θ) = (1/N) A^{-1} B A^{-1}.
+        """
+        num_simulations = num_simulations or self.se_cfg.num_simulations
+        step_size = step_size or self.se_cfg.step_size
+        seed = seed if seed is not None else self.se_cfg.seed
+        error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
+        
+        theta_hat = self.comm.bcast(theta_hat, root=0)
+        
+        if beta_indices is None:
+            beta_indices = np.arange(self.num_features, dtype=np.int64)
+        beta_indices = self.comm.bcast(beta_indices, root=0)
+        
+        errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
+        self._cache_obs_features()
+        
+        is_subset = len(beta_indices) < self.num_features
+        use_subset_opt = optimize_for_subset and is_subset
+        
+        if self.is_root():
+            lines = ["=" * 70, "STANDARD ERRORS (SANDWICH)", "=" * 70]
+            lines.append(f"  Simulations: {num_simulations}, Step: {step_size}")
+            if use_subset_opt:
+                lines.append(f"  Computing subset: {len(beta_indices)} params (optimized)")
+            logger.info("\n".join(lines))
+        
+        if use_subset_opt:
+            B = self._compute_B_matrix_subset(theta_hat, errors_all_sims, beta_indices)
+            A = self._compute_A_matrix_subset(theta_hat, errors_all_sims, step_size, beta_indices)
+        else:
+            B = self._compute_B_matrix(theta_hat, errors_all_sims)
+            A = self._compute_A_matrix(theta_hat, errors_all_sims, step_size)
+        
+        self.comm.Barrier()
+        
+        if not self.is_root():
+            return None
+        
+        return self._finalize_sandwich(theta_hat, A, B, beta_indices, use_subset_opt)
+    
+    def compute_B_inverse(
+        self,
+        theta_hat: NDArray[np.float64],
+        num_simulations: Optional[int] = None,
+        beta_indices: Optional[NDArray[np.int64]] = None,
+        seed: Optional[int] = None,
+        error_sigma: Optional[float] = None,
+    ) -> Optional[StandardErrorsResult]:
+        """Compute SE using B^{-1} only (no finite differences): Var(θ) = (1/N) B^{-1}."""
+        num_simulations = num_simulations or self.se_cfg.num_simulations
+        seed = seed if seed is not None else self.se_cfg.seed
+        error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
+        
+        theta_hat = self.comm.bcast(theta_hat, root=0)
+        
+        if beta_indices is None:
+            beta_indices = np.arange(self.num_features, dtype=np.int64)
+        beta_indices = self.comm.bcast(beta_indices, root=0)
+        
+        errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
+        self._cache_obs_features()
+        
+        is_subset = len(beta_indices) < self.num_features
+        
+        if self.is_root():
+            lines = ["=" * 70, "STANDARD ERRORS (B-INVERSE)", "=" * 70]
+            lines.append(f"  Simulations: {num_simulations}, Parameters: {len(beta_indices)}")
+            logger.info("\n".join(lines))
+        
+        if is_subset:
+            B = self._compute_B_matrix_subset(theta_hat, errors_all_sims, beta_indices)
+        else:
+            B = self._compute_B_matrix(theta_hat, errors_all_sims)
+        
+        self.comm.Barrier()
+        
+        if not self.is_root():
+            return None
+        
+        B_cond = np.linalg.cond(B)
+        logger.info("  B matrix: cond=%.2e", B_cond)
+        
+        if not np.isfinite(B_cond) or B_cond > 1e16:
+            logger.error("  B matrix is singular!")
+            return None
+        
+        try:
+            B_inv = np.linalg.solve(B, np.eye(len(beta_indices)))
+        except np.linalg.LinAlgError:
+            logger.error("  B matrix singular!")
+            return None
+        
+        V = B_inv / self.num_agents
+        se = np.sqrt(np.maximum(np.diag(V), 0))
+        theta_beta = theta_hat[beta_indices]
+        t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+        
+        self._log_se_table(theta_hat, se, beta_indices, t_stats, "B-inverse")
+        
+        return StandardErrorsResult(
+            se=se, se_all=se, theta_beta=theta_beta, beta_indices=beta_indices,
+            variance=V, A_matrix=np.eye(len(beta_indices)), B_matrix=B, t_stats=t_stats,
+        )
+    
+    def _finalize_sandwich(
+        self,
+        theta_hat: NDArray[np.float64],
+        A: NDArray[np.float64],
+        B: NDArray[np.float64],
+        beta_indices: NDArray[np.int64],
+        is_subset: bool,
+    ) -> Optional[StandardErrorsResult]:
+        """Finalize sandwich computation: invert A, compute variance, format output."""
+        A_cond, B_cond = np.linalg.cond(A), np.linalg.cond(B)
+        logger.info("  A matrix: cond=%.2e\n  B matrix: cond=%.2e", A_cond, B_cond)
+        
+        if not np.isfinite(A_cond) or A_cond > 1e16:
+            logger.error("  A matrix singular/ill-conditioned!")
+            return None
+        
+        try:
+            A_inv = np.linalg.solve(A, np.eye(len(beta_indices) if is_subset else self.num_features))
+        except np.linalg.LinAlgError:
+            logger.error("  A matrix singular!")
+            return None
+        
+        V = (1.0 / self.num_agents) * (A_inv @ B @ A_inv.T)
+        
+        diag_V = np.diag(V)
+        if np.any(diag_V < 0):
+            logger.warning("  %d negative variances!", np.sum(diag_V < 0))
+        
+        se_all = np.sqrt(np.maximum(diag_V, 0))
+        se = se_all if is_subset else se_all[beta_indices]
+        theta_beta = theta_hat[beta_indices]
+        t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+        
+        self._log_se_table(theta_hat, se, beta_indices, t_stats, "Sandwich")
+        
+        return StandardErrorsResult(
+            se=se, se_all=se_all, theta_beta=theta_beta, beta_indices=beta_indices,
+            variance=V, A_matrix=A, B_matrix=B, t_stats=t_stats,
+        )
+    
+    def _log_se_table(self, theta_hat, se, beta_indices, t_stats, method):
+        """Log SE results table."""
+        lines = ["-" * 70, f"Standard Errors ({method}):", "-" * 70]
+        for i, idx in enumerate(beta_indices):
+            lines.append(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
+        logger.info("\n".join(lines))
+    
+    # =========================================================================
+    # B Matrix computation
+    # =========================================================================
+    
+    def _compute_B_matrix(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute B = (1/N) sum_i g_i g_i^T."""
+        num_sims = len(errors_all_sims)
+        
+        if self.is_root():
+            logger.info("Computing B matrix (%d×%d)...", self.num_features, self.num_features)
+        
+        all_features = []
+        for s in range(num_sims):
+            if self.is_root():
+                logger.info("  Simulation %d/%d...", s + 1, num_sims)
+            
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            local_bundles = self._solve_local_or_empty(theta)
+            features = self.feature_manager.compute_gathered_features(local_bundles)
+            if self.is_root():
+                all_features.append(features)
+        
+        self.comm.Barrier()
+        
+        if self.is_root():
+            features_all = np.stack(all_features, axis=0)
+            g_i = features_all.mean(axis=0) - self._obs_features
+            B = (g_i.T @ g_i) / self.num_agents
+            logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
+            return B
+        return None
+    
+    def _compute_B_matrix_subset(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
+        beta_indices: NDArray[np.int64]
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute B for parameter subset only."""
+        num_sims = len(errors_all_sims)
+        num_beta = len(beta_indices)
+        
+        if self.is_root():
+            logger.info("Computing B matrix (%d×%d)...", num_beta, num_beta)
+        
+        all_features = []
+        for s in range(num_sims):
+            if self.is_root():
+                logger.info("  Simulation %d/%d...", s + 1, num_sims)
+            
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            local_bundles = self._solve_local_or_empty(theta)
+            features = self.feature_manager.compute_gathered_features(local_bundles)
+            if self.is_root():
+                all_features.append(features)
+        
+        self.comm.Barrier()
+        
+        if self.is_root():
+            features_all = np.stack(all_features, axis=0)
+            g_i = features_all.mean(axis=0)[:, beta_indices] - self._obs_features[:, beta_indices]
+            B = (g_i.T @ g_i) / self.num_agents
+            logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
+            return B
+        return None
+    
+    # =========================================================================
+    # A Matrix computation (finite differences)
+    # =========================================================================
+    
+    def _compute_A_matrix(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64], step_size: float
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute A via finite differences: A[:,k] = (g(θ+h_k) - g(θ-h_k)) / (2h_k)."""
+        K = self.num_features
+        
+        if self.is_root():
+            logger.info("Computing A matrix (%d×%d)...", K, K)
+            A = np.zeros((K, K))
+        else:
+            A = None
+        
+        for k in range(K):
+            if self.is_root():
+                logger.info("  Column %d/%d...", k + 1, K)
+            
+            h_k = compute_adaptive_step_size(theta[k], step_size)
+            theta_plus, theta_minus = theta.copy(), theta.copy()
+            theta_plus[k] += h_k
+            theta_minus[k] -= h_k
+            
+            g_plus = self._compute_avg_subgradient(theta_plus, errors_all_sims)
+            g_minus = self._compute_avg_subgradient(theta_minus, errors_all_sims)
+            
+            if self.is_root():
+                A[:, k] = (g_plus - g_minus) / (2 * h_k)
+        
+        self.comm.Barrier()
+        return A
+    
+    def _compute_A_matrix_subset(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
+        step_size: float, beta_indices: NDArray[np.int64]
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute A for parameter subset only."""
+        num_beta = len(beta_indices)
+        
+        if self.is_root():
+            logger.info("Computing A matrix (%d×%d)...", num_beta, num_beta)
+            A = np.zeros((num_beta, num_beta))
+        else:
+            A = None
+        
+        for k_idx, k in enumerate(beta_indices):
+            if self.is_root():
+                logger.info("  Column %d/%d (param %d)...", k_idx + 1, num_beta, k)
+            
+            h_k = compute_adaptive_step_size(theta[k], step_size)
+            theta_plus, theta_minus = theta.copy(), theta.copy()
+            theta_plus[k] += h_k
+            theta_minus[k] -= h_k
+            
+            g_plus = self._compute_avg_subgradient_subset(theta_plus, errors_all_sims, beta_indices)
+            g_minus = self._compute_avg_subgradient_subset(theta_minus, errors_all_sims, beta_indices)
+            
+            if self.is_root():
+                A[:, k_idx] = (g_plus - g_minus) / (2 * h_k)
+        
+        self.comm.Barrier()
+        return A
+    
+    # =========================================================================
+    # Subgradient computation
+    # =========================================================================
+    
+    def _compute_avg_subgradient(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute g_bar(θ) = mean(simulated) - mean(observed)."""
+        num_sims = len(errors_all_sims)
+        K = self.num_features
+        
+        if self._mean_obs_full is None:
+            self._cache_mean_obs_full()
+        
+        sim_sum_local = np.zeros(K)
+        for s in range(num_sims):
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            local_bundles = self._solve_local_or_empty(theta)
+            feat_local = self.feature_manager.compute_rank_features(local_bundles)
+            if feat_local.size:
+                sim_sum_local += feat_local.sum(axis=0)
+        
+        sim_sum_global = np.zeros(K)
+        self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
+        mean_sim = (sim_sum_global / num_sims) / self.num_agents
+        
+        return mean_sim - self._mean_obs_full if self.is_root() else None
+    
+    def _compute_avg_subgradient_subset(
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
+        beta_indices: NDArray[np.int64]
+    ) -> Optional[NDArray[np.float64]]:
+        """Compute g_bar(θ) for parameter subset."""
+        num_sims = len(errors_all_sims)
+        num_beta = len(beta_indices)
+        cache_key = tuple(beta_indices)
+        
+        if self._mean_obs_subset is None:
+            self._mean_obs_subset = {}
+        
+        if cache_key not in self._mean_obs_subset:
+            obs_local = self.data_manager.local_data["obs_bundles"]
+            obs_feat = self.feature_manager.compute_rank_features(obs_local)
+            obs_sum = obs_feat[:, beta_indices].sum(axis=0) if obs_feat.size else np.zeros(num_beta)
+            
+            obs_sum_global = np.zeros(num_beta)
+            self.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
+            self._mean_obs_subset[cache_key] = obs_sum_global / self.num_agents
+        
+        sim_sum_local = np.zeros(num_beta)
+        for s in range(num_sims):
+            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            local_bundles = self._solve_local_or_empty(theta)
+            feat_local = self.feature_manager.compute_rank_features(local_bundles)
+            if feat_local.size:
+                sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
+        
+        sim_sum_global = np.zeros(num_beta)
+        self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
+        mean_sim = (sim_sum_global / num_sims) / self.num_agents
+        
+        return mean_sim - self._mean_obs_subset[cache_key] if self.is_root() else None
+    
+    # =========================================================================
+    # Helper methods
+    # =========================================================================
+    
+    def _solve_local_or_empty(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Solve local subproblems or return empty array."""
+        if self.num_local_agents > 0:
+            return self.subproblem_manager.solve_local(theta)
+        return np.empty((0, self.num_items), dtype=bool)
+    
+    def _cache_obs_features(self):
+        """Cache observed features (gathered to root)."""
+        if self._obs_features is None:
+            obs_bundles = self.local_data["obs_bundles"]
+            self._obs_features = self.feature_manager.compute_gathered_features(obs_bundles)
+    
+    def _cache_mean_obs_full(self):
+        """Cache mean observed features (via Allreduce)."""
+        K = self.num_features
+        obs_local = self.data_manager.local_data["obs_bundles"]
+        obs_feat = self.feature_manager.compute_rank_features(obs_local)
+        obs_sum = obs_feat.sum(axis=0) if obs_feat.size else np.zeros(K)
+        
+        obs_sum_global = np.zeros(K)
+        self.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
+        self._mean_obs_full = obs_sum_global / self.num_agents
+    
+    def _generate_se_errors(
+        self, num_simulations: int, seed: Optional[int], error_sigma: float = 1.0
+    ) -> NDArray[np.float64]:
+        """Generate errors for SE computation."""
+        if self.is_root():
+            if seed is not None:
+                np.random.seed(seed)
+            errors = error_sigma * np.random.randn(num_simulations, self.num_agents, self.num_items)
+        else:
+            errors = None
+        return self.comm.bcast(errors, root=0)

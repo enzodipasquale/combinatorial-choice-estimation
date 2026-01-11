@@ -161,30 +161,14 @@ class EllipsoidManager(BaseEstimationManager):
         if self.is_root():
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient)
             self._log_timing_summary(self.timing_stats, best_obj, best_theta, header="ELLIPSOID METHOD SUMMARY")
-            result = EstimationResult(
-                theta_hat=best_theta.copy(),
-                converged=True,
-                num_iterations=num_iters,
-                final_objective=best_obj,
-                timing=self.timing_stats,
-                iteration_history=None,
-                warnings=[] if best_obj is not None else ['All iterations were constraint violations'],
-                metadata={'best_iteration': best_iter}
-            )
+            warnings = [] if best_obj is not None else ['All iterations were constraint violations']
+            metadata = {'best_iteration': best_iter}
         else:
             self.timing_stats = None
-            result = EstimationResult(
-                theta_hat=best_theta.copy(),
-                converged=True,
-                num_iterations=num_iters,
-                final_objective=None,
-                timing=None,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
+            warnings = []
+            metadata = {}
         
-        return result
+        return self._create_result(best_theta, True, num_iters, best_obj, warnings, metadata)
 
     def _initialize_ellipsoid(self) -> None:
         """Initialize the ellipsoid with starting parameters and matrix."""

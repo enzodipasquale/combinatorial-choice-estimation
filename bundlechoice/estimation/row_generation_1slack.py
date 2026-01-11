@@ -133,23 +133,21 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         return stop
 
     def solve(self) -> EstimationResult:
-        """Run row generation with 1slack formulation. Returns EstimationResult with theta_hat and diagnostics."""
+        """Run row generation with 1slack formulation."""
         if self.is_root():
-            print("=" * 70)
-            print("ROW GENERATION (1SLACK)")
-            print("=" * 70)
-            print()
-            print(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
+            lines = ["=" * 70, "ROW GENERATION (1SLACK)", "=" * 70, ""]
+            lines.append(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
             if self.dimensions_cfg.num_simulations > 1:
-                print(f"  Simulations: {self.dimensions_cfg.num_simulations}")
-            print(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
-            print(f"  Min iterations: {self.row_generation_cfg.min_iters}")
-            print(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
+                lines.append(f"  Simulations: {self.dimensions_cfg.num_simulations}")
+            lines.append(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
+            lines.append(f"  Min iterations: {self.row_generation_cfg.min_iters}")
+            lines.append(f"  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}")
             if self.row_generation_cfg.max_slack_counter < float('inf'):
-                print(f"  Max slack counter: {self.row_generation_cfg.max_slack_counter}")
-            print()
-            print("  Starting row generation algorithm (1slack formulation)...")
-            print()
+                lines.append(f"  Max slack counter: {self.row_generation_cfg.max_slack_counter}")
+            lines.append("")
+            lines.append("  Starting row generation algorithm (1slack formulation)...")
+            lines.append("")
+            logger.info("\n".join(lines))
         
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
@@ -177,45 +175,17 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         
         elapsed = time.perf_counter() - tic
         num_iters = iteration + 1
+        converged = iteration < self.row_generation_cfg.max_iters
         
         if self.is_root():
-            converged = iteration < self.row_generation_cfg.max_iters
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation (1slack) {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
             self._log_timing_summary(self.timing_stats, obj_val, self.theta_val, header="ROW GENERATION (1-SLACK) SUMMARY")
         else:
+            obj_val = None
             self.timing_stats = None
         
         self.theta_hat = self.theta_val.copy()
-        
-        # Create result object
-        if self.is_root():
-            obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
-            converged = iteration < self.row_generation_cfg.max_iters
-            result = EstimationResult(
-                theta_hat=self.theta_hat.copy(),
-                converged=converged,
-                num_iterations=num_iters,
-                final_objective=obj_val,
-                timing=self.timing_stats,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
-        else:
-            result = EstimationResult(
-                theta_hat=self.theta_val.copy(),
-                converged=iteration < self.row_generation_cfg.max_iters,
-                num_iterations=num_iters,
-                final_objective=None,
-                timing=None,
-                iteration_history=None,
-                warnings=[],
-                metadata={}
-            )
-        
-        return result
-
-    # _enforce_slack_counter, _log_timing_summary, log_parameter inherited from BaseEstimationManager
+        return self._create_result(self.theta_hat, converged, num_iters, obj_val)

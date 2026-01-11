@@ -107,11 +107,16 @@ class DimensionMismatchError(ValidationError):
 class DataError(ValidationError):
     """Raised when input data contains invalid values (NaN, Inf, etc.)."""
     
-    def __init__(self, message: str, invalid_fields: Optional[Dict[str, str]] = None):
+    def __init__(self, message: str, invalid_fields: Optional[Dict[str, str]] = None,
+                 suggestion: Optional[str] = None):
         self.invalid_fields = invalid_fields or {}
         
         details = {}
         suggestions = []
+        
+        # Add suggestion if provided directly
+        if suggestion:
+            suggestions.append(suggestion)
         
         for field, issues in self.invalid_fields.items():
             details[field] = issues
@@ -120,7 +125,7 @@ class DataError(ValidationError):
             if 'Inf' in issues:
                 suggestions.append(f"Clip values in '{field}' using np.clip() to prevent overflow")
         
-        super().__init__(message, details=details, suggestions=suggestions)
+        super().__init__(message, details=details, suggestions=suggestions if suggestions else None)
 
 
 # ============================================================================

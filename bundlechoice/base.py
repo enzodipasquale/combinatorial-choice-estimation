@@ -1,90 +1,88 @@
-from typing import Optional, Dict, Any
+"""
+Base mixin classes for BundleChoice components.
 
-# ============================================================================
-# Mixin Classes
-# ============================================================================
+Provides property accessors for shared dependencies.
+"""
+
+from typing import TYPE_CHECKING, Optional, Dict, Any
+
+if TYPE_CHECKING:
+    from mpi4py import MPI
+    from .comm_manager import CommManager
+    from .config import DimensionsConfig, BundleChoiceConfig
+    from .data_manager import DataManager
+
 
 class HasComm:
-    """Mixin for MPI communicator access (rank, size, is_root, comm)."""
-    comm_manager: 'CommManager'  # type: ignore
+    """Mixin for MPI communicator access."""
+    comm_manager: 'CommManager'
 
     @property
-    def comm(self) -> Optional['MPI.Comm']:  # type: ignore
-        """MPI communicator object."""
-        return self.comm_manager.comm if self.comm_manager is not None else None
+    def comm(self) -> Optional['MPI.Comm']:
+        return self.comm_manager.comm if self.comm_manager else None
 
     @property
-    def rank(self) -> Optional[int]:
-        """MPI rank of this process."""
-        return self.comm_manager.rank if self.comm_manager is not None else None
+    def rank(self) -> int:
+        return self.comm_manager.rank if self.comm_manager else 0
 
     @property
-    def comm_size(self) -> Optional[int]:
-        """Total number of MPI processes."""
-        return self.comm_manager.size if self.comm_manager is not None else None
+    def comm_size(self) -> int:
+        return self.comm_manager.size if self.comm_manager else 1
     
     def is_root(self) -> bool:
-        """Check if current rank is root (rank 0)."""
-        return self.comm_manager.is_root() if self.comm_manager is not None else False
+        return self.comm_manager.is_root() if self.comm_manager else True
+
 
 class HasDimensions:
-    """Mixin for problem dimensions access (num_agents, num_items, etc.)."""
-    dimensions_cfg: 'DimensionsConfig'  # type: ignore
+    """Mixin for problem dimensions access."""
+    dimensions_cfg: 'DimensionsConfig'
 
     @property
-    def num_agents(self) -> Optional[int]:
-        """Number of agents in the problem."""
-        return self.dimensions_cfg.num_agents if self.dimensions_cfg else None
+    def num_agents(self) -> int:
+        return self.dimensions_cfg.num_agents if self.dimensions_cfg else 0
 
     @property
-    def num_items(self) -> Optional[int]:
-        """Number of items available for choice."""
-        return self.dimensions_cfg.num_items if self.dimensions_cfg else None
+    def num_items(self) -> int:
+        return self.dimensions_cfg.num_items if self.dimensions_cfg else 0
 
     @property
-    def num_features(self) -> Optional[int]:
-        """Number of features per agent-item combination."""
-        return self.dimensions_cfg.num_features if self.dimensions_cfg else None
+    def num_features(self) -> int:
+        return self.dimensions_cfg.num_features if self.dimensions_cfg else 0
 
     @property
     def num_simulations(self) -> int:
-        """Number of simulation runs."""
         return self.dimensions_cfg.num_simulations if self.dimensions_cfg else 1
 
+
 class HasConfig:
-    """Mixin for configuration access (subproblem_cfg, row_generation_cfg, etc.)."""
-    config: 'BundleChoiceConfig'  # type: ignore
+    """Mixin for configuration access."""
+    config: 'BundleChoiceConfig'
 
     @property
-    def subproblem_cfg(self) -> Optional['SubproblemConfig']:
-        """Subproblem algorithm configuration."""
+    def subproblem_cfg(self):
         return self.config.subproblem if self.config else None
 
     @property
-    def row_generation_cfg(self) -> Optional['RowGenerationConfig']:
-        """Row generation solver configuration."""
+    def row_generation_cfg(self):
         return self.config.row_generation if self.config else None
 
     @property
-    def ellipsoid_cfg(self) -> Optional['EllipsoidConfig']:
-        """Ellipsoid method solver configuration."""
+    def ellipsoid_cfg(self):
         return self.config.ellipsoid if self.config else None
 
+
 class HasData:
-    """Mixin for data access (input_data, local_data, num_local_agents)."""
-    data_manager: 'DataManager'  # type: ignore
+    """Mixin for data access."""
+    data_manager: 'DataManager'
 
     @property
-    def input_data(self) -> Optional[Any]:
-        """Input data dictionary containing all problem data."""
-        return self.data_manager.input_data if self.data_manager is not None else None
+    def input_data(self) -> Optional[Dict[str, Any]]:
+        return self.data_manager.input_data if self.data_manager else None
 
     @property
-    def local_data(self) -> Optional[Any]:
-        """Local data dictionary for this MPI rank."""
-        return self.data_manager.local_data if self.data_manager is not None else None
+    def local_data(self) -> Optional[Dict[str, Any]]:
+        return self.data_manager.local_data if self.data_manager else None
 
     @property
-    def num_local_agents(self) -> Optional[int]:
-        """Number of agents assigned to this MPI rank."""
-        return self.data_manager.num_local_agents if self.data_manager is not None else None
+    def num_local_agents(self) -> int:
+        return self.data_manager.num_local_agents if self.data_manager else 0
