@@ -320,16 +320,15 @@ class DataManager(HasDimensions, HasComm):
             has_obs_bundles = obs_bundles is not None
             has_item_data = item_data is not None
             
-            print("=" * 70)
-            print("DATA SCATTER")
-            print("=" * 70)
+            lines = ["=" * 70, "DATA SCATTER", "=" * 70]
             total_agents = self.num_simulations * self.num_agents
             sim_info = f" ({self.num_simulations} simuls × {self.num_agents} agents)" if self.num_simulations > 1 else ""
-            print(f"  Scattering: {total_agents} agents{sim_info} → {self.comm_size} ranks")
+            lines.append(f"  Scattering: {total_agents} agents{sim_info} → {self.comm_size} ranks")
             if len(set(counts)) == 1:
-                print(f"  Distribution: {counts[0]} agents/rank (balanced)")
+                lines.append(f"  Distribution: {counts[0]} agents/rank (balanced)")
             else:
-                print(f"  Distribution: {min(counts)}-{max(counts)} agents/rank")
+                lines.append(f"  Distribution: {min(counts)}-{max(counts)} agents/rank")
+            logger.info("\n".join(lines))
         else:
             errors = None
             obs_bundles = None
@@ -349,8 +348,7 @@ class DataManager(HasDimensions, HasComm):
         
         flat_counts = [c * self.num_items for c in counts]
         if self.is_root():
-            print("  Arrays:")
-            print(f"    Errors: shape=({self.num_simulations * self.num_agents}, {self.num_items})")
+            logger.info("  Arrays:\n    Errors: shape=(%d, %d)", self.num_simulations * self.num_agents, self.num_items)
         local_errors_flat = self.comm_manager.scatter_array(
             send_array=errors, counts=flat_counts, root=0, 
             dtype=errors.dtype if self.is_root() else np.float64
@@ -359,7 +357,7 @@ class DataManager(HasDimensions, HasComm):
         
         if has_obs_bundles:
             if self.is_root():
-                print(f"    Obs_bundles: shape=({self.num_agents}, {self.num_items})")
+                logger.info("    Obs_bundles: shape=(%d, %d)", self.num_agents, self.num_items)
             if self.is_root():
                 # Optimized: use advanced indexing instead of list comprehension + concatenate
                 # Concatenate all index chunks, compute modulo (vectorized), then index
@@ -379,9 +377,8 @@ class DataManager(HasDimensions, HasComm):
         
         if has_agent_data:
             if self.is_root():
-                print("  Dictionaries:")
                 keys_str = ", ".join(agent_data.keys())
-                print(f"    Agent_data: {len(agent_data)} keys [{keys_str}], {self.num_agents} agents")
+                logger.info("  Dictionaries:\n    Agent_data: %d keys [%s], %d agents", len(agent_data), keys_str, self.num_agents)
                 # Prepare agent_data for buffer-based scatter: repeat arrays across simulations
                 agent_data_expanded = {}
                 for k, array in agent_data.items():
@@ -404,10 +401,9 @@ class DataManager(HasDimensions, HasComm):
         
         if has_item_data:
             if self.is_root():
-                if not has_agent_data:
-                    print("  Dictionaries:")
+                prefix = "" if has_agent_data else "  Dictionaries:\n"
                 keys_str = ", ".join(item_data.keys())
-                print(f"    Item_data: {len(item_data)} keys [{keys_str}], {self.num_items} items")
+                logger.info("%s    Item_data: %d keys [%s], %d items", prefix, len(item_data), keys_str, self.num_items)
             item_data = self.comm_manager.broadcast_dict(item_data, root=0)
         else:
             item_data = None
@@ -423,8 +419,7 @@ class DataManager(HasDimensions, HasComm):
         self._cached_data_info = None
         self._cached_data_info_source = None
         if self.is_root():
-            print(f"  Complete: {num_local_agents} local agents/rank")
-            print() 
+            logger.info("  Complete: %d local agents/rank\n", num_local_agents)
 
     # --- Helper Methods ---
     def _prepare_errors(self, errors: Optional[np.ndarray]) -> Optional[np.ndarray]:

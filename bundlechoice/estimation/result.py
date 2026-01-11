@@ -136,7 +136,3 @@ class EstimationResult:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.save(path, self.theta_hat)
-
-
-
-

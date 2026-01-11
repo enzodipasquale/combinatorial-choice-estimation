@@ -27,7 +27,6 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         self.data_manager = data_manager
         self._features_oracle: Optional[Callable] = None
         self._supports_batch: Optional[bool] = None
-        self.num_global_agents = self.num_simulations * self.num_agents
 
     # ============================================================================
     # Oracle Management
