@@ -389,8 +389,18 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     # Load raw data
     raw_data = load_raw_data()
     
-    # Filter bidder data (remove FCC row with bidder_num_fox == 9999, if present)
-    raw_data["bidder_data"] = raw_data["bidder_data"][raw_data["bidder_data"]['bidder_num_fox'] != 9999].reset_index(drop=True)
+    # Filter bidder data:
+    # 1. Remove FCC (bidder_num_fox == 9999) if present
+    # 2. Remove bidder 256 (has NaN capacity and is not in original Fox-Bajari sample)
+    bidder_data = raw_data["bidder_data"]
+    n_before = len(bidder_data)
+    bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 9999]
+    bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 256]
+    bidder_data = bidder_data.reset_index(drop=True)
+    raw_data["bidder_data"] = bidder_data
+    n_after = len(bidder_data)
+    if n_before != n_after:
+        print(f"Filtered bidders: {n_before} → {n_after} (removed FCC/bidder 256)")
     
     # Create mapping from bidder_num_fox to index (0-based) for matching matrix
     bidder_num_to_index = {
