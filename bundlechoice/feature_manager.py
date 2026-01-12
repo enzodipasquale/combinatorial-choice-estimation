@@ -318,4 +318,3 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             self.build_error_oracle_from_data()
         
         return self._features_oracle
-
