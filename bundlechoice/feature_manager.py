@@ -14,10 +14,11 @@ logger = get_logger(__name__)
 
 class FeatureManager(HasDimensions, HasComm, HasData):
     """
-    Manages feature extraction for bundle choice model.
+    Manages feature and error extraction for bundle choice model.
     
     User supplies features_oracle(agent_id, bundle, data) function.
-    Supports batch computation when oracle supports it.
+    User can optionally supply error_oracle(agent_id, bundle, data) function.
+    Supports batch/vectorized computation when oracles are built from data.
     """
 
     def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager, data_manager: DataManager) -> None:
@@ -26,15 +27,20 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         self.comm_manager = comm_manager
         self.data_manager = data_manager
         self._features_oracle: Optional[Callable] = None
+        self._error_oracle: Optional[Callable] = None
+        # Vectorized versions (used when oracles are built from data)
+        self._vectorized_features: Optional[Callable] = None
+        self._vectorized_errors: Optional[Callable] = None
         self._supports_batch: Optional[bool] = None
 
     # ============================================================================
-    # Oracle Management
+    # Feature Oracle Management
     # ============================================================================
 
     def set_oracle(self, _features_oracle: Callable[[int, NDArray[np.float64], Dict[str, Any]], NDArray[np.float64]]) -> None:
         """Set user-supplied feature extraction function."""
         self._features_oracle = _features_oracle
+        self._vectorized_features = None  # Clear vectorized version
         self.validate_oracle()
 
     def validate_oracle(self) -> None:
@@ -60,6 +66,51 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         
         assert test_features.shape == (self.num_features,), \
             f"features_oracle must return shape ({self.num_features},), got {test_features.shape}"
+
+    # ============================================================================
+    # Error Oracle Management
+    # ============================================================================
+
+    def set_error_oracle(self, _error_oracle: Callable[[int, NDArray[np.float64], Dict[str, Any]], float]) -> None:
+        """Set user-supplied error oracle function."""
+        self._error_oracle = _error_oracle
+        self._vectorized_errors = None  # Clear vectorized version
+
+    def error_oracle(self, agent_id: int, bundle: NDArray[np.float64], 
+                    data_override: Optional[Dict[str, Any]] = None) -> float:
+        """Compute error for single agent/bundle."""
+        if self._error_oracle is None:
+            raise RuntimeError("_error_oracle function is not set. Call build_error_oracle_from_data() first.")
+        data = data_override if data_override is not None else self.local_data
+        return self._error_oracle(agent_id, bundle, data)
+
+    def build_error_oracle_from_data(self) -> Callable[[int, NDArray[np.float64], Dict[str, Any]], float]:
+        """
+        Build modular error oracle from data['errors'] with vectorized support.
+        
+        Returns:
+            Generated error_oracle function: (agent_id, bundle, data) -> float
+        """
+        if self._error_oracle is not None:
+            logger.info("Rebuilding error oracle (overwriting existing)")
+        
+        # Single-agent oracle (for compatibility with user-defined scenarios)
+        def modular_error_oracle(agent_id: int, bundle: NDArray[np.float64], data: Dict[str, Any]) -> float:
+            errors = data.get("errors")
+            if errors is None:
+                return 0.0
+            return float((errors[agent_id] * bundle).sum())
+        
+        # Vectorized oracle (for efficient batch computation)
+        def vectorized_modular_errors(bundles: NDArray[np.float64], data: Dict[str, Any]) -> NDArray[np.float64]:
+            errors = data.get("errors")
+            if errors is None:
+                return np.zeros(len(bundles), dtype=np.float64)
+            return (errors * bundles).sum(axis=1)
+        
+        self._error_oracle = modular_error_oracle
+        self._vectorized_errors = vectorized_modular_errors
+        return modular_error_oracle
 
     # ============================================================================
     # Feature Computation
@@ -91,16 +142,22 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         return self._supports_batch
 
     def compute_rank_features(self, local_bundles: Optional[NDArray[np.float64]]) -> NDArray[np.float64]:
-        """Compute features for all local agents on this rank. Uses batch if supported."""
+        """Compute features for all local agents on this rank. Uses vectorized if available."""
         if self.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
             return np.empty((0, self.num_features), dtype=np.float64)
         
         assert self.num_local_agents == len(local_bundles), \
             f"num_local_agents ({self.num_local_agents}) != len(local_bundles) ({len(local_bundles)})"
         
+        # Use vectorized version if available (built from data)
+        if self._vectorized_features is not None:
+            return self._vectorized_features(local_bundles, self.local_data)
+        
+        # Fallback to batch support check (user-defined oracle)
         if self._check_batch_support():
             return self._features_oracle(None, local_bundles, self.local_data)
         
+        # Final fallback: loop over agents
         return np.stack([self.features_oracle(i, local_bundles[i], self.local_data) 
                         for i in range(self.num_local_agents)])
 
@@ -108,6 +165,22 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         """Compute features for all agents, gather to rank 0."""
         features_local = self.compute_rank_features(local_bundles)
         return self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+
+    def compute_rank_errors(self, local_bundles: Optional[NDArray[np.float64]]) -> NDArray[np.float64]:
+        """Compute errors for all local agents on this rank. Uses vectorized if available."""
+        if self.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
+            return np.empty(0, dtype=np.float64)
+        
+        if self._error_oracle is None:
+            raise RuntimeError("_error_oracle function is not set. Call build_error_oracle_from_data() first.")
+        
+        # Use vectorized version if available (built from data)
+        if self._vectorized_errors is not None:
+            return self._vectorized_errors(local_bundles, self.local_data)
+        
+        # Fallback: loop over agents
+        return np.array([self._error_oracle(i, local_bundles[i], self.local_data) 
+                        for i in range(self.num_local_agents)])
 
     def compute_gathered_features_and_errors(self, local_bundles: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
         """
@@ -117,7 +190,7 @@ class FeatureManager(HasDimensions, HasComm, HasData):
             Tuple of (features, errors) arrays, both None on non-root ranks
         """
         features_local = self.compute_rank_features(local_bundles)
-        errors_local = (self.data_manager.local_data["errors"] * local_bundles).sum(1)
+        errors_local = self.compute_rank_errors(local_bundles)
         features = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
         errors = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
         return features, errors
@@ -126,23 +199,42 @@ class FeatureManager(HasDimensions, HasComm, HasData):
                                    theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
         """Compute utilities for all agents, gather to rank 0."""
         features_local = self.compute_rank_features(local_bundles)
-        errors_local = (self.data_manager.local_data["errors"] * local_bundles).sum(1)
+        errors_local = self.compute_rank_errors(local_bundles)
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             utilities_local = features_local @ theta + errors_local
         return self.comm_manager.concatenate_array_at_root_fast(utilities_local, root=0)
 
     def compute_gathered_errors(self, local_bundles: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
         """Compute errors for all agents, gather to rank 0."""
-        errors_local = (self.data_manager.local_data["errors"] * local_bundles).sum(1)
+        errors_local = self.compute_rank_errors(local_bundles)
         return self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
 
     # ============================================================================
-    # Auto-Generated Oracle Builder
+    # Auto-Generated Oracle Builders
     # ============================================================================
 
-    def build_from_data(self) -> Callable[[int, NDArray[np.float64], Dict[str, Any]], NDArray[np.float64]]:
+    def build_oracles_from_data(self) -> None:
         """
-        Build features_oracle from data structure (modular/quadratic keys).
+        Auto-build both feature and error oracles from data structure.
+        
+        Builds feature oracle from modular/quadratic keys in data.
+        Builds modular error oracle from data['errors'].
+        """
+        self.build_features_oracle_from_data()
+        self.build_error_oracle_from_data()
+
+    # Backward compatibility alias
+    def build_from_data(self, build_error_oracle: bool = True) -> Callable:
+        """Alias for build_features_oracle_from_data (backward compatibility)."""
+        return self.build_features_oracle_from_data(build_error_oracle=build_error_oracle)
+
+    def build_features_oracle_from_data(self, build_error_oracle: bool = True) -> Callable[[int, NDArray[np.float64], Dict[str, Any]], NDArray[np.float64]]:
+        """
+        Build features_oracle from data structure (modular/quadratic keys) with vectorized support.
+        Also builds error_oracle automatically if build_error_oracle=True.
+        
+        Args:
+            build_error_oracle: If True, also builds modular error oracle
         
         Also auto-sets feature names from data sources if not already set.
         
@@ -175,26 +267,55 @@ class FeatureManager(HasDimensions, HasComm, HasData):
         flags = self.comm_manager.broadcast_from_root(flags, root=0)
         has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item = flags
 
-        code_lines = ["def features_oracle(agent_id, bundle, data):", "    feats = []"]
-        if has_modular_agent:
-            code_lines.append("    modular = data['agent_data']['modular'][agent_id]")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, bundle))")
-        if has_quadratic_agent:
-            code_lines.append("    quadratic = data['agent_data']['quadratic'][agent_id]")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))")
-        if has_modular_item:
-            code_lines.append("    modular = data['item_data']['modular']")
-            code_lines.append("    feats.append(np.einsum('jk,j->k', modular, bundle))")
-        if has_quadratic_item:
-            code_lines.append("    quadratic = data['item_data']['quadratic']")
-            code_lines.append("    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))")
-        code_lines.append("    return np.concatenate(feats)")
-        code_str = "\n".join(code_lines)
-
-        namespace = {}
-        exec(code_str, {"np": np}, namespace)
-        _features_oracle = namespace["features_oracle"]
-        self._features_oracle = _features_oracle
-        return _features_oracle 
-            
+        # Build single-agent oracle using closure
+        def make_features_oracle(ma, qa, mi, qi):
+            def features_oracle(agent_id: int, bundle: NDArray[np.float64], data: Dict[str, Any]) -> NDArray[np.float64]:
+                feats = []
+                if ma:
+                    modular = data['agent_data']['modular'][agent_id]
+                    feats.append(np.einsum('jk,j->k', modular, bundle))
+                if qa:
+                    quadratic = data['agent_data']['quadratic'][agent_id]
+                    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))
+                if mi:
+                    modular = data['item_data']['modular']
+                    feats.append(np.einsum('jk,j->k', modular, bundle))
+                if qi:
+                    quadratic = data['item_data']['quadratic']
+                    feats.append(np.einsum('jlk,j,l->k', quadratic, bundle, bundle))
+                return np.concatenate(feats)
+            return features_oracle
+        
+        # Build vectorized oracle using closure
+        def make_vectorized_features(ma, qa, mi, qi):
+            def vectorized_features(bundles: NDArray[np.float64], data: Dict[str, Any]) -> NDArray[np.float64]:
+                """Vectorized feature computation for all agents at once."""
+                feats = []
+                if ma:
+                    # modular: (num_agents, num_items, num_features), bundles: (num_agents, num_items)
+                    modular = data['agent_data']['modular']
+                    feats.append(np.einsum('ijk,ij->ik', modular, bundles))
+                if qa:
+                    # quadratic: (num_agents, num_items, num_items, num_features)
+                    quadratic = data['agent_data']['quadratic']
+                    feats.append(np.einsum('ijlk,ij,il->ik', quadratic, bundles, bundles))
+                if mi:
+                    # modular: (num_items, num_features), bundles: (num_agents, num_items)
+                    modular = data['item_data']['modular']
+                    feats.append(np.einsum('jk,ij->ik', modular, bundles))
+                if qi:
+                    # quadratic: (num_items, num_items, num_features)
+                    quadratic = data['item_data']['quadratic']
+                    feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
+                return np.concatenate(feats, axis=1)
+            return vectorized_features
+        
+        self._features_oracle = make_features_oracle(has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item)
+        self._vectorized_features = make_vectorized_features(has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item)
+        
+        # Also build error oracle automatically
+        if build_error_oracle and self._error_oracle is None:
+            self.build_error_oracle_from_data()
+        
+        return self._features_oracle
 

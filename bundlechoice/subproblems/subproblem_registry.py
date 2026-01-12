@@ -25,6 +25,7 @@ class LazyRegistry:
         "QuadSupermodularNetwork": (".registry.quad_supermodular", "QuadraticSOptNetwork"),
         "QuadSupermodularLovasz": (".registry.quad_supermodular", "QuadraticSOptLovasz"),
         "PlainSingleItem": (".registry.plain_single_item", "PlainSingleItemSubproblem"),
+        "BruteForce": (".registry.brute_force", "BruteForceSubproblem"),
     }
     _cache: Dict[str, Type["BaseSubproblem"]] = {}
     
