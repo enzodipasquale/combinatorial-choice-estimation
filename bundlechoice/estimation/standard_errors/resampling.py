@@ -172,7 +172,7 @@ class ResamplingMixin:
         N = self.num_agents
         theta_boots = []
         constraints = None
-        prev_theta = None
+        prev_theta = theta_hat.copy()  # Initialize with estimated theta for first iteration
         
         if seed is not None:
             np.random.seed(seed)
@@ -189,17 +189,17 @@ class ResamplingMixin:
             weights = self.comm.bcast(weights, root=0)
             
             try:
-                # Choose warm-start strategy
+                # Choose warm-start strategy (all use theta_hat for first iteration via prev_theta)
                 if warmstart == "model":
                     result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False)
                 elif warmstart == "model_strip":
                     result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True)
                 elif warmstart == "constraints":
-                    result = row_generation.solve(agent_weights=weights, initial_constraints=constraints)
+                    result = row_generation.solve(agent_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
                 elif warmstart == "theta":
                     result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
                 else:  # "none"
-                    result = row_generation.solve(agent_weights=weights)
+                    result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
                 
                 if self.is_root():
                     theta_boots.append(result.theta_hat)
