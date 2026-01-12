@@ -193,8 +193,8 @@ class RowGenerationManager(BaseEstimationManager):
         features_local = self.feature_manager.compute_rank_features(local_pricing_results)
         x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
         
-        # Compute and gather errors
-        errors_local = (self.data_manager.local_data["errors"] * local_pricing_results).sum(1)
+        # Compute and gather errors using error oracle
+        errors_local = self.feature_manager.compute_rank_errors(local_pricing_results)
         errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
         
         stop = False
