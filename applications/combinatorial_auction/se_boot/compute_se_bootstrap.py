@@ -70,7 +70,7 @@ def get_input_dir(delta, winners_only, hq_distance=False):
     return os.path.join(APP_DIR, "data", "114402-V1", "input_data", suffix)
 
 
-# Initialize BundleChoice
+# Initialize BundleChoice (load_config auto-broadcasts dimensions to all ranks)
 bc = BundleChoice()
 bc_config = {k: v for k, v in config.items() 
              if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]}
@@ -85,29 +85,16 @@ if rank == 0:
         sys.exit(1)
     
     input_data = bc.data.load_from_directory(INPUT_DIR, error_seed=SEED)
-    num_items = bc.config.dimensions.num_items
-    input_data["item_data"]["modular"] = -np.eye(num_items)
+    input_data["item_data"]["modular"] = -np.eye(bc.num_items)
     
     print(f"\nLoaded data from {INPUT_DIR}")
 else:
     input_data = None
 
-# Broadcast dimensions
-num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
-num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
-num_agents = comm.bcast(bc.config.dimensions.num_agents if rank == 0 else None, root=0)
-num_simulations = comm.bcast(bc.config.dimensions.num_simulations if rank == 0 else None, root=0)
-
-if rank != 0:
-    bc.config.dimensions.num_features = num_features
-    bc.config.dimensions.num_items = num_items
-    bc.config.dimensions.num_agents = num_agents
-    bc.config.dimensions.num_simulations = num_simulations
-
 # Apply theta bounds from config
 theta_bounds = config.get("theta_bounds", {})
 if theta_bounds:
-    theta_lbs = np.zeros(num_features)
+    theta_lbs = np.zeros(bc.num_features)
     if "air_travel_lb" in theta_bounds:
         theta_lbs[-1] = theta_bounds["air_travel_lb"]
     if "travel_survey_lb" in theta_bounds:
@@ -137,22 +124,12 @@ bc.data.load_and_scatter(input_data)
 bc.oracles.build_from_data()
 bc.subproblems.load()
 
-# Broadcast feature names
-feature_names = comm.bcast(bc.config.dimensions.feature_names if rank == 0 else None, root=0)
-if rank != 0:
-    bc.config.dimensions.feature_names = feature_names
-
-# Get structural indices (non-FE parameters)
-if feature_names:
-    structural_indices = np.array([i for i, name in enumerate(feature_names) 
-                                   if not name.startswith("FE_")], dtype=np.int64)
-    structural_names = [feature_names[i] for i in structural_indices]
-else:
-    structural_indices = np.array(bc.config.dimensions.get_structural_indices(), dtype=np.int64)
-    structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
+# Get structural indices (non-FE parameters) - uses DimensionsConfig method
+structural_indices = np.array(bc.config.dimensions.get_structural_indices(), dtype=np.int64)
+structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"Problem: {num_agents} agents, {num_items} items, {num_features} features")
+    print(f"Problem: {bc.num_agents} agents, {bc.num_items} items, {bc.num_features} features")
     print(f"Structural parameters ({len(structural_indices)}): {structural_names}")
     print(f"MPI ranks: {comm.Get_size()}")
 
@@ -218,10 +195,10 @@ if rank == 0 and se_result is not None:
         "winners_only": WINNERS_ONLY,
         "hq_distance": HQ_DISTANCE,
         "num_mpi": comm.Get_size(),
-        "num_agents": num_agents,
-        "num_items": num_items,
-        "num_features": num_features,
-        "num_simulations": num_simulations,
+        "num_agents": bc.num_agents,
+        "num_items": bc.num_items,
+        "num_features": bc.num_features,
+        "num_simulations": bc.num_simulations,
         "num_bootstrap": NUM_BOOTSTRAP,
         "warmstart": WARMSTART,
         "seed": SEED,

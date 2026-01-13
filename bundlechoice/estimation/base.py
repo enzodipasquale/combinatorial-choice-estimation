@@ -147,10 +147,15 @@ class BaseEstimationManager:
         for constr in to_remove:
             self.master_model.remove(constr)
             self.slack_counter.pop(constr, None)
+            self._on_constraint_removed(constr)  # Hook for subclasses
         
         if to_remove:
             logger.info("Removed %d slack constraints", len(to_remove))
         return len(to_remove)
+
+    def _on_constraint_removed(self, constr: Any) -> None:
+        """Hook called when a constraint is removed. Override in subclasses for cleanup."""
+        pass
 
     def _log_timing_summary(
         self,

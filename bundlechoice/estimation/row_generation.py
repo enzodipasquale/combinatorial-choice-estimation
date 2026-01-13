@@ -6,7 +6,7 @@ Future solvers can be added to this folder as well.
 import time
 import numpy as np
 from numpy.typing import NDArray
-from typing import Optional, Any, Dict, Callable
+from typing import Optional, Any, Dict, List, Callable
 import gurobipy as gp
 from gurobipy import GRB
 from bundlechoice.utils import get_logger, suppress_output, make_timing_stats
@@ -80,6 +80,20 @@ class RowGenerationManager(BaseEstimationManager):
                 hit_upper.append(k)
         
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
+
+    def _log_bounds_warnings(self, bounds_info: Dict[str, Any]) -> List[str]:
+        """Log warnings for parameters hitting bounds. Returns list of warning messages."""
+        warnings_list = []
+        if self.comm_manager.is_root() and bounds_info['any_hit']:
+            if bounds_info['hit_lower']:
+                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+            if bounds_info['hit_upper']:
+                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+        return warnings_list
 
     def _setup_gurobi_model_params(self) -> Any:
         """Create and set up Gurobi model with parameters from configuration."""    
@@ -341,12 +355,9 @@ class RowGenerationManager(BaseEstimationManager):
             lines.append("")
             logger.info("\n".join(lines))
         
-        # Store agent weights (broadcast if needed)
-        if agent_weights is not None:
-            self._agent_weights = self.comm_manager.broadcast_array(
-                np.asarray(agent_weights, dtype=np.float64) if self.comm_manager.is_root() else np.empty(self.dimensions_cfg.num_agents),
-                root=0
-            )
+        # Store agent weights (root-only, used for master problem objective)
+        if agent_weights is not None and self.comm_manager.is_root():
+            self._agent_weights = np.asarray(agent_weights, dtype=np.float64)
         else:
             self._agent_weights = None
         
@@ -443,16 +454,7 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Check bounds
         bounds_info = self._check_bounds_hit()
-        warnings_list = []
-        if self.comm_manager.is_root() and bounds_info['any_hit']:
-            if bounds_info['hit_lower']:
-                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
-            if bounds_info['hit_upper']:
-                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
+        warnings_list = self._log_bounds_warnings(bounds_info)
         
         if self.comm_manager.is_root():
             msg = "ended" if converged else "reached max iterations"
@@ -470,32 +472,9 @@ class RowGenerationManager(BaseEstimationManager):
         result.metadata['bounds_hit'] = bounds_info
         return result
 
-    def _enforce_slack_counter(self) -> int:
-        """Update slack counter and remove constraints that have been slack too long. Returns number removed."""
-        if self.row_generation_cfg.max_slack_counter < float('inf'):
-            to_remove = []
-            for constr in self.master_model.getConstrs():
-                if constr.Slack < -1e-6:
-                    # Only add to counter when constraint is actually slack
-                    if constr not in self.slack_counter:
-                        self.slack_counter[constr] = 0
-                    self.slack_counter[constr] += 1
-                    if self.slack_counter[constr] >= self.row_generation_cfg.max_slack_counter:
-                        to_remove.append(constr)
-                if constr.Pi > 1e-6:
-                    self.slack_counter.pop(constr, None)
-            # Remove all constraints that exceeded the slack counter limit
-            for constr in to_remove:
-                self.master_model.remove(constr)
-                self.slack_counter.pop(constr, None)
-                # Also remove from constraint_info (RowGenerationManager specific)
-                if hasattr(self, 'constraint_info'):
-                    self.constraint_info.pop(constr, None)
-            num_removed = len(to_remove)
-            if num_removed > 0:
-                logger.info("Removed %d slack constraints", num_removed)
-            return num_removed
-        return 0
+    def _on_constraint_removed(self, constr) -> None:
+        """Hook: clean up constraint_info when constraint is removed."""
+        self.constraint_info.pop(constr, None)
 
 
     def add_constraints(self, indices: NDArray[np.int64], bundles: NDArray[np.float64]) -> None:
@@ -670,11 +649,11 @@ class RowGenerationManager(BaseEstimationManager):
         Returns:
             EstimationResult with theta_hat and diagnostics
         """
-        # Store and broadcast weights
-        self._agent_weights = self.comm_manager.broadcast_array(
-            np.asarray(agent_weights, dtype=np.float64) if self.comm_manager.is_root() else np.empty(self.dimensions_cfg.num_agents),
-            root=0
-        )
+        # Store weights (root-only, used for master problem objective)
+        if self.comm_manager.is_root():
+            self._agent_weights = np.asarray(agent_weights, dtype=np.float64)
+        else:
+            self._agent_weights = None
         
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
@@ -725,35 +704,23 @@ class RowGenerationManager(BaseEstimationManager):
             iteration += 1
         
         toc = time.perf_counter()
+        num_iters = iteration + 1
+        converged = iteration < self.row_generation_cfg.max_iters
         
         # Check bounds
         bounds_info = self._check_bounds_hit()
-        warnings_list = []
-        if self.comm_manager.is_root() and bounds_info['any_hit']:
-            if bounds_info['hit_lower']:
-                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
-            if bounds_info['hit_upper']:
-                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
+        warnings_list = self._log_bounds_warnings(bounds_info)
         
-        # Build result
+        # Set timing stats for _create_result
         if self.comm_manager.is_root():
-            result = EstimationResult(
-                theta_hat=self.theta_val.copy(),
-                converged=iteration < self.row_generation_cfg.max_iters,
-                num_iterations=iteration + 1,
-                final_objective=self.master_model.ObjVal if self.master_model.Status == GRB.OPTIMAL else float('inf'),
-                timing={'total': toc - tic},
-            )
-            result.warnings.extend(warnings_list)
-            result.metadata['bounds_hit'] = bounds_info
-            return result
-        return EstimationResult(
-            theta_hat=self.theta_val.copy(),
-            converged=True,
-            num_iterations=iteration + 1,
-            metadata={'bounds_hit': {'hit_lower': [], 'hit_upper': [], 'any_hit': False}},
-        )
+            obj_val = self.master_model.ObjVal if self.master_model.Status == GRB.OPTIMAL else float('inf')
+            self.timing_stats = {'total_time': toc - tic, 'num_iterations': num_iters}
+        else:
+            obj_val = None
+            self.timing_stats = None
+        
+        # Build result using shared helper
+        result = self._create_result(self.theta_val, converged, num_iters, obj_val)
+        result.warnings.extend(warnings_list)
+        result.metadata['bounds_hit'] = bounds_info
+        return result

@@ -173,7 +173,10 @@ class BundleChoice:
         return obs_bundles
         
     def load_config(self, cfg: Union[Dict[str, Any], str]) -> 'BundleChoice':
-        """Load configuration from dict or YAML file. Merges with existing config."""
+        """Load configuration from dict or YAML file. Merges with existing config.
+        
+        Automatically broadcasts dimensions to all MPI ranks.
+        """
         if isinstance(cfg, str):
             new_config = BundleChoiceConfig.from_yaml(cfg)
         elif isinstance(cfg, dict):
@@ -188,9 +191,39 @@ class BundleChoice:
         
         self.config.validate()
         
+        # Broadcast dimensions to all ranks (cheap and enables early access)
+        self.broadcast_dimensions()
+        
         if self.comm_manager.is_root():
             self._log_config()
         return self
+    
+    def broadcast_dimensions(self) -> None:
+        """Broadcast dimensions config to all MPI ranks.
+        
+        Called automatically by load_config(). Only needs manual call if
+        dimensions are modified after initial config load.
+        """
+        if self.config is None:
+            return
+        
+        dims = self.config.dimensions
+        # Pack dimensions into a dict for single broadcast
+        dims_data = self.comm_manager.comm.bcast({
+            'num_agents': dims.num_agents,
+            'num_items': dims.num_items,
+            'num_features': dims.num_features,
+            'num_simulations': dims.num_simulations,
+            'feature_names': dims.feature_names,
+        } if self.comm_manager.is_root() else None, root=0)
+        
+        # Unpack on non-root ranks
+        if not self.comm_manager.is_root():
+            dims.num_agents = dims_data['num_agents']
+            dims.num_items = dims_data['num_items']
+            dims.num_features = dims_data['num_features']
+            dims.num_simulations = dims_data['num_simulations']
+            dims.feature_names = dims_data['feature_names']
     
     def _log_config(self) -> None:
         """Log configuration summary."""
