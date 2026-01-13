@@ -1,8 +1,8 @@
 #!/bin/bash 
 
 #SBATCH --job-name=se_bootstrap
-#SBATCH --nodes=20
-#SBATCH --ntasks-per-node=20
+#SBATCH --nodes=15
+#SBATCH --ntasks-per-node=17
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
 #SBATCH --time=02:00:00

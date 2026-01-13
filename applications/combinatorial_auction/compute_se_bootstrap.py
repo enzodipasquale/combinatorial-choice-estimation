@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 import numpy as np
 from bundlechoice import BundleChoice
+from bundlechoice.estimation import adaptive_gurobi_timeout
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -49,7 +50,7 @@ if rank == 0:
 
 BASE_DIR = os.path.dirname(__file__)
 OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
-TIMELIMIT_SEC = 30
+TIMELIMIT_SEC = 10
 
 
 def get_input_dir(delta, winners_only, hq_distance=False):
@@ -125,7 +126,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "confi
 bc = BundleChoice()
 bc.load_config(CONFIG_PATH)
 
-# Use 10 simulations to reduce MC variance
+# Use 10 simulations for reduced MC variance in bootstrap
 bc.load_config({"dimensions": {"num_simulations": 10}})
 
 if rank == 0:
@@ -156,11 +157,35 @@ if rank != 0:
     bc.config.dimensions.num_agents = num_agents
     bc.config.dimensions.num_simulations = num_simulations
 
-# Update config for this run
+# Update config for this run (must include num_simulations to avoid default=1 overwrite)
 bc.load_config({
+    "dimensions": {"num_simulations": num_simulations},
     "subproblem": {"name": "QuadKnapsack", "settings": {"TimeLimit": TIMELIMIT_SEC, "MIPGap_tol": 1e-2}},
     "row_generation": {"max_iters": 200, "tolerance_optimality": 0.01},
 })
+
+# Adaptive timeout: fast cuts early, precise cuts near convergence
+adaptive_callback = adaptive_gurobi_timeout(
+    initial_timeout=1.0,
+    final_timeout=30.0,
+    transition_iterations=15,
+    strategy="linear",
+    log=True
+)
+bc.config.row_generation.subproblem_callback = adaptive_callback
+
+# Set lower bounds for travel_survey and air_travel parameters
+theta_lbs = np.zeros(num_features)
+theta_lbs[-1] = -150  # air_travel
+theta_lbs[-2] = -150  # travel_survey
+bc.config.row_generation.theta_lbs = theta_lbs
+
+# Custom constraint: pop_distance >= travel_survey + air_travel
+def add_custom_constraints(model, theta, u):
+    model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
+
+bc.config.row_generation.master_init_callback = add_custom_constraints
+
 bc.data.load_and_scatter(input_data)
 bc.oracles.build_from_data()
 bc.subproblems.load()

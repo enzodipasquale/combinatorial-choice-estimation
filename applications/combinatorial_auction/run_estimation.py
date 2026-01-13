@@ -22,6 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from bundlechoice import BundleChoice
+from bundlechoice.estimation import adaptive_gurobi_timeout
 import numpy as np
 from mpi4py import MPI
 
@@ -149,6 +150,18 @@ if DELTA == 2 and feature_names:
     
     if rank == 0:
         print(f"Custom bounds for delta=2 applied")
+
+# =============================================================================
+# Adaptive Gurobi Timeout (fast early iterations, precise later)
+# =============================================================================
+adaptive_callback = adaptive_gurobi_timeout(
+    initial_timeout=1.0,
+    final_timeout=30.0,
+    transition_iterations=15,
+    strategy="linear",
+    log=True
+)
+bc.config.row_generation.subproblem_callback = adaptive_callback
 
 # =============================================================================
 # Load Previous Theta (warm start)

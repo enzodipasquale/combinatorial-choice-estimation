@@ -73,6 +73,7 @@ class RowGenerationConfig(AutoUpdateMixin):
     theta_lbs: Any = None
     parameters_to_log: Optional[List[int]] = None
     subproblem_callback: Optional[Callable[[int, Any, Optional[Any]], None]] = None
+    master_init_callback: Optional[Callable[[Any, Any, Any], None]] = None  # (model, theta, u)
     verbose: bool = True
 
 

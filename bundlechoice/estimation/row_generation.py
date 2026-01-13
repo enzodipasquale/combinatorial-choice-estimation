@@ -168,6 +168,10 @@ class RowGenerationManager(BaseEstimationManager):
                 
                 logger.info("Added %d initial constraints for warm-start", len(indices))
 
+            # Call master init callback if configured (for custom constraints)
+            if self.row_generation_cfg.master_init_callback is not None:
+                self.row_generation_cfg.master_init_callback(self.master_model, theta, u)
+
             self.master_model.optimize()
             logger.info("Master Initialized")
             self.master_variables = (theta, u)
