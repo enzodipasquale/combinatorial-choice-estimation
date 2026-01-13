@@ -18,8 +18,8 @@ from pathlib import Path
 from datetime import datetime
 import csv
 
-BASE_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))
+BASE_DIR = os.path.dirname(__file__)  # combinatorial_auction/
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))  # combinatorial-choice-estimation/
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -36,7 +36,7 @@ NUM_AGENTS_SUBSET = 40  # Restrict to 40 agents for faster computation
 NUM_SIMULATIONS = 1     # Use 1 simulation
 
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
-CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
+CONFIG_PATH = os.path.join(BASE_DIR, "point_estimate", "config_local.yaml" if IS_LOCAL else "config.yaml")
 
 # Load configuration
 with open(CONFIG_PATH, 'r') as file:
@@ -44,7 +44,7 @@ with open(CONFIG_PATH, 'r') as file:
 
 # Load data on rank 0
 if rank == 0:
-    INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+    INPUT_DIR = os.path.join(BASE_DIR, "data", "114402-V1", "input_data", "delta4")
     obs_bundle_full = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
     
     num_agents_full = config["dimensions"]["num_agents"]

@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
 #SBATCH --time=00:10:00
-#SBATCH --output=logs/se_sandwich-%j.out
+#SBATCH --output=../logs/se_sandwich-%j.out
 
 # Usage: sbatch se_sandwich.sbatch <delta> [winners] [hqdist]
 #   delta: 2 or 4 (REQUIRED)
@@ -30,8 +30,8 @@ export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"
 
 # Step 1: Regenerate input_data with correct parameters
 echo "Preparing input data with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
-./run-gurobi.bash python prepare_data.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
+../run-gurobi.bash python ../data/prepare_data.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
 
 # Step 2: Compute SE (MPI)
 echo "Computing sandwich SE for delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
-srun ./run-gurobi.bash python compute_se_sandwich.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
+srun ../run-gurobi.bash python compute_se_sandwich.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}

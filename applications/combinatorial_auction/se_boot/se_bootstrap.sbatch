@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
 #SBATCH --time=02:00:00
-#SBATCH --output=logs/se_bootstrap-%j.out
+#SBATCH --output=../logs/se_bootstrap-%j.out
 
 # Compute SE using Bayesian Bootstrap with model warm-start (~20x faster)
 #
@@ -36,14 +36,14 @@ export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"
 
 # Ensure input data exists
 echo "Checking input data with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
-./run-gurobi.bash python prepare_data.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
+../run-gurobi.bash python ../data/prepare_data.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
 
 # Compute SE via Bayesian Bootstrap with model_strip warm-start
 echo ""
 echo "Computing bootstrap SE..."
 echo "  delta=${DELTA}, num_bootstrap=${NUM_BOOTSTRAP}, warmstart=model_strip"
 echo ""
-srun ./run-gurobi.bash python compute_se_bootstrap.py \
+srun ../run-gurobi.bash python compute_se_bootstrap.py \
     --delta ${DELTA} \
     --num-bootstrap ${NUM_BOOTSTRAP} \
     --warmstart model_strip \

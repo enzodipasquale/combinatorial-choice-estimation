@@ -17,7 +17,8 @@ import json
 
 # Add project root to Python path
 BASE_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))
+APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # combinatorial_auction/
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../.."))  # combinatorial-choice-estimation/
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -46,8 +47,8 @@ IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
 USE_PREVIOUS_THETA = True
-THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
-OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
+THETA_PATH = os.path.join(APP_DIR, "estimation_results", "theta.npy")
+OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
 
 
 def get_input_dir(delta, winners_only, hq_distance=False):
@@ -57,7 +58,7 @@ def get_input_dir(delta, winners_only, hq_distance=False):
         suffix += "_winners"
     if hq_distance:
         suffix += "_hqdist"
-    return os.path.join(BASE_DIR, "input_data", suffix)
+    return os.path.join(APP_DIR, "data", "114402-V1", "input_data", suffix)
 
 
 # =============================================================================
@@ -72,7 +73,7 @@ bc.load_config(CONFIG_PATH)
 if rank == 0:
     INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY, HQ_DISTANCE)
     if not os.path.exists(INPUT_DIR):
-        cmd = f"./run-gurobi.bash python prepare_data.py --delta {DELTA}"
+        cmd = f"./run-gurobi.bash python data/prepare_data.py --delta {DELTA}"
         if WINNERS_ONLY:
             cmd += " --winners-only"
         if HQ_DISTANCE:
