@@ -140,15 +140,21 @@ class CommManager:
     def scatter_array(self, send_array: Optional[np.ndarray] = None, counts: Optional[List[int]] = None, 
                      root: int = 0, dtype: Optional[np.dtype] = None) -> np.ndarray:
         """Scatter numpy array using MPI buffers (5-20x faster than pickle)."""
+        # Determine if we need to broadcast counts/dtype
+        need_bcast = counts is None  # If counts not provided, need to compute and broadcast
+        
         if self.is_root():
             if send_array is None:
                 raise ValueError("send_array required on root")
-            counts = counts or self._compute_counts(len(send_array))
+            if counts is None:
+                counts = self._compute_counts(len(send_array))
             dtype = send_array.dtype
         elif dtype is None:
             raise ValueError("dtype required on non-root if send_array is None")
         
-        counts, dtype = self.comm.bcast((counts, dtype), root=root)
+        # Only broadcast if counts wasn't provided (avoids redundant pickle bcast)
+        if need_bcast:
+            counts, dtype = self.comm.bcast((counts, dtype), root=root)
         
         sendbuf = [send_array, counts, self._compute_displacements(counts), _get_mpi_type(dtype)] if self.is_root() else None
         recvbuf = np.empty(counts[self.rank], dtype=dtype)
