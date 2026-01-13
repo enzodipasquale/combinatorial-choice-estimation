@@ -1,0 +1,2 @@
+# Ignore all slurm output files
+*.out
