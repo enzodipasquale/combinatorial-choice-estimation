@@ -123,18 +123,12 @@ class RowGenerationManager(BaseEstimationManager):
         Args:
             initial_constraints: Optional dict with keys 'indices' and 'bundles' for warm-starting
         """
-        # Compute observed features (weighted if agent_weights provided)
-        if hasattr(self, '_agent_weights') and self._agent_weights is not None:
-            # Weighted observed features: sum_i w_i * x_i
-            # agents_obs_features has shape (num_agents * num_simulations, num_features)
-            # so tile weights to match
-            if self.comm_manager.is_root():
-                weights_tiled = np.tile(self._agent_weights, self.dimensions_cfg.num_simulations)
-                obs_features = (weights_tiled[:, None] * self.agents_obs_features).sum(0)
-            else:
-                obs_features = None
-        else:
-            obs_features = self.get_obs_features()
+        # Compute observed features (all ranks must call get_obs_features for MPI sync)
+        obs_features = self.get_obs_features()
+        if self.comm_manager.is_root() and hasattr(self, '_agent_weights') and self._agent_weights is not None:
+            # Override with weighted version: sum_i w_i * x_i
+            weights_tiled = np.tile(self._agent_weights, self.dimensions_cfg.num_simulations)
+            obs_features = (weights_tiled[:, None] * self.agents_obs_features).sum(0)
         
         if self.comm_manager.is_root():
             # Clear constraint info when creating a new model (old constraint objects become invalid)
