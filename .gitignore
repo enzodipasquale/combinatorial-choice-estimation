@@ -33,9 +33,11 @@ Makefile
 
 # Project-specific directories
 bundlechoice/_legacy/
+bundlechoice/scenarios/
 /applications/firms_export/
+experiments/
 paper/
-paper/_table1/
+debug_se/
 
 # Batch job scripts
 slurm-*.out
