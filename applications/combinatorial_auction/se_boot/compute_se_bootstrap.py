@@ -158,12 +158,13 @@ if rank == 0:
     boot_start = time.time()
 
 se_result = bc.standard_errors.compute_bayesian_bootstrap(
-    theta_hat=theta_hat,
     row_generation=bc.row_generation,
     num_bootstrap=NUM_BOOTSTRAP,
     beta_indices=structural_indices,
     seed=SEED,
     warmstart=WARMSTART,
+    theta_hat=theta_hat,
+    initial_estimation=True,  # Use theta_hat from estimation as point estimate
 )
 
 if rank == 0:

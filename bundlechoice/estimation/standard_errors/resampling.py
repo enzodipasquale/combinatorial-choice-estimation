@@ -142,25 +142,37 @@ class ResamplingMixin:
     
     def compute_bayesian_bootstrap(
         self,
-        theta_hat: NDArray[np.float64],
         row_generation: "RowGenerationManager",
         num_bootstrap: int = 100,
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
         warmstart: str = "model",
+        theta_hat: Optional[NDArray[np.float64]] = None,
+        initial_estimation: bool = False,
     ) -> Optional[StandardErrorsResult]:
         """
         Bayesian bootstrap: reweight agents with Exp(1) weights instead of resampling.
         
         Args:
-            warmstart: Warm-start strategy:
+            row_generation: RowGenerationManager instance.
+            num_bootstrap: Number of bootstrap samples.
+            beta_indices: Indices of parameters to report SE for.
+            seed: Random seed for reproducibility.
+            warmstart: Warm-start strategy for subsequent samples:
                 - "none": No warm-start (baseline)
                 - "constraints": Reuse constraints from previous solve
                 - "theta": Use theta from previous solve as initial point
                 - "model": Reuse Gurobi model with LP warm-start (fastest)
                 - "model_reset": Reuse model but reset LP each iteration (no LP warm-start)
                 - "model_strip": Same as model but strip slack constraints each iteration
+            theta_hat: Optional point estimate. If provided with initial_estimation=False,
+                used only to warm-start the first bootstrap sample.
+            initial_estimation: If True, theta_hat is treated as the actual point estimate
+                (requires theta_hat). If False (default), point estimate = mean of bootstrap samples.
         """
+        if initial_estimation and theta_hat is None:
+            raise ValueError("initial_estimation=True requires theta_hat to be provided")
+        
         if beta_indices is None:
             beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
         
@@ -168,12 +180,13 @@ class ResamplingMixin:
             lines = ["=" * 70, "STANDARD ERRORS (BAYESIAN BOOTSTRAP)", "=" * 70]
             lines.append(f"  Samples: {num_bootstrap}, Parameters: {len(beta_indices)}")
             lines.append(f"  Warm-start: {warmstart}")
+            lines.append(f"  Initial estimation: {initial_estimation}")
             logger.info("\n".join(lines))
         
         N = self.dimensions_cfg.num_agents
         theta_boots = []
         constraints = None
-        prev_theta = theta_hat.copy()  # Initialize with estimated theta for first iteration
+        prev_theta = theta_hat.copy() if theta_hat is not None else None
         
         if seed is not None:
             np.random.seed(seed)
@@ -188,37 +201,45 @@ class ResamplingMixin:
             else:
                 weights = None  # Non-root ranks don't need weights (master problem is root-only)
             
-            try:
-                # Choose warm-start strategy (all use theta_hat for first iteration via prev_theta)
-                if warmstart == "model":
-                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=False)
-                elif warmstart == "model_reset":
-                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=True)
-                elif warmstart == "model_strip":
-                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True, reset_lp=False)
-                elif warmstart == "constraints":
-                    result = row_generation.solve(agent_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
-                elif warmstart == "theta":
-                    result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
-                else:  # "none"
-                    result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
-                
-                if self.comm_manager.is_root():
-                    theta_boots.append(result.theta_hat)
-                    if warmstart == "constraints":
-                        constraints = row_generation.get_constraints()
-                
-                # For theta warmstart, broadcast prev_theta to all ranks
-                if warmstart == "theta":
-                    prev_theta = self.comm_manager.comm.bcast(result.theta_hat.copy() if self.comm_manager.is_root() else None, root=0)
-            except Exception as e:
-                if self.comm_manager.is_root():
-                    logger.warning("Bayesian bootstrap sample %d failed: %s", b + 1, e)
+            # First sample: always use solve() (cold or warm from theta_hat)
+            # Subsequent samples: use chosen warmstart strategy
+            is_first = (b == 0)
+            
+            if is_first:
+                # First sample must call solve() to build the model
+                result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
+            elif warmstart == "model":
+                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=False)
+            elif warmstart == "model_reset":
+                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=True)
+            elif warmstart == "model_strip":
+                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True, reset_lp=False)
+            elif warmstart == "constraints":
+                result = row_generation.solve(agent_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
+            elif warmstart == "theta":
+                result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
+            else:  # "none"
+                result = row_generation.solve(agent_weights=weights)
+            
+            if self.comm_manager.is_root():
+                theta_boots.append(result.theta_hat)
+                if warmstart == "constraints":
+                    constraints = row_generation.get_constraints()
+            
+            # For theta warmstart, broadcast prev_theta to all ranks
+            if warmstart == "theta":
+                prev_theta = self.comm_manager.comm.bcast(result.theta_hat.copy() if self.comm_manager.is_root() else None, root=0)
         
         if not self.comm_manager.is_root():
             return None
         
-        return self._finalize_resampling_result(theta_hat, theta_boots, beta_indices, "Bayesian Bootstrap")
+        # Compute point estimate: use provided theta_hat or mean of bootstrap samples
+        if initial_estimation:
+            final_theta_hat = theta_hat
+        else:
+            final_theta_hat = np.mean(theta_boots, axis=0)
+        
+        return self._finalize_resampling_result(final_theta_hat, theta_boots, beta_indices, "Bayesian Bootstrap")
     
     def _finalize_resampling_result(
         self,
