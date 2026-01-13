@@ -84,7 +84,7 @@ def run_experiment(num_agents=200, num_se_simulations=100, num_bootstrap=100):
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.set_oracle(_greedy_oracle)
+    bc_gen.oracles.set_features_oracle(_greedy_oracle)
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -97,7 +97,7 @@ def run_experiment(num_agents=200, num_se_simulations=100, num_bootstrap=100):
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.set_oracle(_greedy_oracle)
+    bc.oracles.set_features_oracle(_greedy_oracle)
     bc.subproblems.load()
     
     result = bc.row_generation.solve()
@@ -128,7 +128,7 @@ def run_experiment(num_agents=200, num_se_simulations=100, num_bootstrap=100):
         bc_b = BundleChoice()
         bc_b.load_config(config)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.set_oracle(_greedy_oracle)
+        bc_b.oracles.set_features_oracle(_greedy_oracle)
         bc_b.subproblems.load()
         
         try:
@@ -151,7 +151,7 @@ def run_experiment(num_agents=200, num_se_simulations=100, num_bootstrap=100):
     bc_bayes = BundleChoice()
     bc_bayes.load_config(config)
     bc_bayes.data.load_and_scatter(est_data if rank == 0 else None)
-    bc_bayes.features.set_oracle(_greedy_oracle)
+    bc_bayes.oracles.set_features_oracle(_greedy_oracle)
     bc_bayes.subproblems.load()
     
     for b_idx in range(num_bootstrap):

@@ -46,7 +46,7 @@ def test_generate_data_linear():
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
 
     # Solve pricing
     theta_0 = np.ones(num_features)

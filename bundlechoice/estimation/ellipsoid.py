@@ -28,7 +28,7 @@ class EllipsoidManager(BaseEstimationManager):
         dimensions_cfg: Any,
         ellipsoid_cfg: Any,
         data_manager: Any,
-        feature_manager: Any,
+        oracles_manager: Any,
         subproblem_manager: Any,
         theta_init: Optional[NDArray[np.float64]] = None
     ) -> None:
@@ -40,7 +40,7 @@ class EllipsoidManager(BaseEstimationManager):
             dimensions_cfg: DimensionsConfig instance
             ellipsoid_cfg: EllipsoidConfig instance with method-specific parameters
             data_manager: DataManager instance
-            feature_manager: FeatureManager instance
+            oracles_manager: OraclesManager instance
             subproblem_manager: SubproblemManager instance
             theta_init: Optional initial theta for warm start
         """
@@ -48,7 +48,7 @@ class EllipsoidManager(BaseEstimationManager):
             comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
-            feature_manager=feature_manager,
+            oracles_manager=oracles_manager,
             subproblem_manager=subproblem_manager
         )
         

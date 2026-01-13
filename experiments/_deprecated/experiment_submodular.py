@@ -78,7 +78,7 @@ def features_oracle(i_id, bundle, data):
         coverage = (weights[:,None,:] * bundle[:,:,None]).max(-1).sum(0)
         return np.vstack((modular_agent.T @ bundle, coverage))
 
-greedy_experiment.features.set_oracle(features_oracle)
+greedy_experiment.oracles.set_features_oracle(features_oracle)
 theta_0 = np.ones(num_features)
 greedy_experiment.subproblems.initialize_local()
 obs_bundles = greedy_experiment.subproblems.init_and_solve(theta_0)
@@ -94,7 +94,7 @@ if rank == 0:
 
 # greedy_experiment.load_config(cfg)
 # greedy_experiment.data.load_and_scatter(data)
-# greedy_experiment.features.set_oracle(features_oracle)
+# greedy_experiment.oracles.set_features_oracle(features_oracle)
 # greedy_experiment.subproblems.load()
 # tic = datetime.now()
 # lambda_k_iter = greedy_experiment.row_generation.solve()

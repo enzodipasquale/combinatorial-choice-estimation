@@ -6,6 +6,9 @@ such as adaptive timeout schedules and other iterative strategies.
 """
 
 from typing import Any, Optional
+from bundlechoice.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def adaptive_gurobi_timeout(
@@ -65,8 +68,8 @@ def adaptive_gurobi_timeout(
         
         # Optional: log on root process
         if log and master_model is not None:
-            print(f"  [Iter {iteration}] Subproblem timeout: {timeout:.2f}s "
-                  f"(suboptimal={subproblem_manager._suboptimal_mode})")
+            logger.info(f"[Iter {iteration}] Subproblem timeout: {timeout:.2f}s "
+                        f"(suboptimal={subproblem_manager._suboptimal_mode})")
     
     return callback
 
@@ -88,7 +91,7 @@ def constant_timeout(timeout: float, log: bool = False):
         subproblem_manager._suboptimal_mode = False
         
         if log and master_model is not None:
-            print(f"  [Iter {iteration}] Subproblem timeout: {timeout:.2f}s")
+            logger.info(f"[Iter {iteration}] Subproblem timeout: {timeout:.2f}s")
     
     return callback
 

@@ -11,33 +11,25 @@ import numpy as np
 from numpy.typing import NDArray
 from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
-from bundlechoice.feature_manager import FeatureManager
+from bundlechoice.oracles_manager import OraclesManager
 from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-# ============================================================================
-# SubproblemManager
-# ============================================================================
-
 class SubproblemManager(HasDimensions, HasComm, HasData):
     """Manages subproblem initialization and solving (batch or serial)."""
     
     def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager: Any, 
-                 data_manager: DataManager, feature_manager: FeatureManager, 
+                 data_manager: DataManager, oracles_manager: OraclesManager, 
                  subproblem_cfg: SubproblemConfig) -> None:
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
         self.data_manager = data_manager
-        self.feature_manager = feature_manager
+        self.oracles_manager = oracles_manager
         self.subproblem_cfg = subproblem_cfg
         self.subproblem_instance: Optional[BaseSubproblem] = None
-
-    # ============================================================================
-    # Subproblem Loading
-    # ============================================================================
 
     def load(self, subproblem: Optional[Union[str, type]] = None) -> BaseSubproblem:
         """Load and instantiate subproblem from registry or custom class."""
@@ -61,16 +53,12 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         
         subproblem_instance = subproblem_cls(
             data_manager=self.data_manager,
-            feature_manager=self.feature_manager,
+            oracles_manager=self.oracles_manager,
             subproblem_cfg=self.subproblem_cfg,
             dimensions_cfg=self.dimensions_cfg
         )
         self.subproblem_instance = cast(BaseSubproblem, subproblem_instance)
         return self.subproblem_instance
-
-    # ============================================================================
-    # Initialization & Solving
-    # ============================================================================
 
     def initialize_local(self) -> Optional[List[Any]]:
         """Initialize local subproblems (returns None for batch, list for serial)."""
@@ -116,63 +104,58 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             num_agents_total = bundles.shape[0]
             max_possible = num_agents_total * num_items
             
-            print("=" * 70)
-            print("BUNDLE GENERATION STATISTICS")
-            print("=" * 70)
-            print(f"  Bundle sizes: min={bundle_sizes.min()}, max={bundle_sizes.max()}, mean={bundle_sizes.mean():.2f}, std={bundle_sizes.std():.2f}")
-            print(f"  Aggregate demands: min={item_demands.min()}, max={item_demands.max()}, mean={item_demands.mean():.2f}")
-            print(f"  Total items selected: {bundles.sum()} out of {max_possible}")
+            lines = ["=" * 70, "BUNDLE GENERATION STATISTICS", "=" * 70]
+            lines.append(f"  Bundle sizes: min={bundle_sizes.min()}, max={bundle_sizes.max()}, mean={bundle_sizes.mean():.2f}, std={bundle_sizes.std():.2f}")
+            lines.append(f"  Aggregate demands: min={item_demands.min()}, max={item_demands.max()}, mean={item_demands.mean():.2f}")
+            lines.append(f"  Total items selected: {bundles.sum()} out of {max_possible}")
             
             if bundle_sizes.max() == 0:
-                print("\n  WARNING: All agents have empty bundles (no items selected)!")
+                lines.append("\n  WARNING: All agents have empty bundles (no items selected)!")
             elif bundle_sizes.min() == num_items:
-                print(f"\n  WARNING: All agents have full bundles (all {num_items} items selected)!")
+                lines.append(f"\n  WARNING: All agents have full bundles (all {num_items} items selected)!")
             
-            print()
+            logger.info("\n".join(lines))
         
         if return_values:
-            utilities = self.feature_manager.compute_gathered_utilities(local_bundles, theta)
+            utilities = self.oracles_manager.compute_gathered_utilities(local_bundles, theta)
             return bundles, utilities
         else:
             return bundles
-
-    def brute_force(self, theta: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
-        """Find maximum bundle value for each local agent using brute force."""
+    
+    def brute_force(self, theta: NDArray[np.float64]) -> Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]]:
+        """
+        Run brute force solver for comparison/testing (temporary subproblem instance).
+        
+        Returns:
+            On rank 0: (bundles, values) tuple
+            On other ranks: None
+        """
+        # Create temporary BruteForce instance
+        bf_cls = SUBPROBLEM_REGISTRY.get("BruteForce")
+        if bf_cls is None:
+            raise RuntimeError("BruteForce subproblem not found in registry")
+        
+        bf_instance = bf_cls(
+            data_manager=self.data_manager,
+            oracles_manager=self.oracles_manager,
+            subproblem_cfg=self.subproblem_cfg,
+            dimensions_cfg=self.dimensions_cfg
+        )
+        
         if self.is_root():
             theta = np.asarray(theta, dtype=np.float64)
         else:
             theta = np.empty(self.num_features, dtype=np.float64)
         theta = self.comm_manager.broadcast_array(theta, root=0)
         
-        from itertools import product
-        num_local_agents = self.num_local_agents
-        num_items = self.num_items
-        if num_items is None:
-            raise RuntimeError("num_items is not set in dimensions_cfg.")
-        max_values = np.zeros(num_local_agents)
-        best_bundles = np.zeros((num_local_agents, num_items), dtype=bool)
-        all_bundles = list(product([0, 1], repeat=num_items))
-        for local_id in range(num_local_agents):
-            max_value = float('-inf')
-            best_bundle = None
-            for bundle_tuple in all_bundles:
-                bundle = np.array(bundle_tuple, dtype=bool)
-                features = self.feature_manager.features_oracle(local_id, bundle, self.local_data)
-                error = self.feature_manager.error_oracle(local_id, bundle, self.local_data)
-                bundle_value = features @ theta + error
-                if bundle_value > max_value:
-                    max_value = bundle_value
-                    best_bundle = bundle.copy()
-            max_values[local_id] = max_value
-            best_bundles[local_id] = best_bundle
-        all_max_values = self.comm_manager.concatenate_array_at_root_fast(max_values, root=0)
-        all_best_bundles = self.comm_manager.concatenate_array_at_root_fast(best_bundles, root=0)
-        return all_best_bundles, all_max_values
-    
-    # ============================================================================
-    # Settings Management
-    # ============================================================================
-    
+        local_subproblems = bf_instance.initialize_all()
+        local_bundles = bf_instance.solve_all(theta, local_subproblems)
+        
+        bundles = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
+        values = self.oracles_manager.compute_gathered_utilities(local_bundles, theta)
+        
+        return bundles, values
+
     def update_settings(self, settings: Dict[str, Any]) -> None:
         """Update subproblem settings and apply to initialized models."""
         self.subproblem_cfg.settings.update(settings)

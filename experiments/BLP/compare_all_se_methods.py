@@ -59,7 +59,7 @@ def run_knapsack_experiment(num_se_sims=250, num_bootstrap=100):
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.build_from_data()
+    bc_gen.oracles.build_from_data()
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -74,7 +74,7 @@ def run_knapsack_experiment(num_se_sims=250, num_bootstrap=100):
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     
     if rank == 0:
@@ -142,7 +142,7 @@ def run_knapsack_experiment(num_se_sims=250, num_bootstrap=100):
         bc_b = BundleChoice()
         bc_b.load_config(config)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.build_from_data()
+        bc_b.oracles.build_from_data()
         bc_b.subproblems.load()
         res_b = bc_b.row_generation.solve()
         if rank == 0:
@@ -174,7 +174,7 @@ def run_knapsack_experiment(num_se_sims=250, num_bootstrap=100):
         bc_s = BundleChoice()
         bc_s.load_config(sub_config)
         bc_s.data.load_and_scatter(sub_data if rank == 0 else None)
-        bc_s.features.build_from_data()
+        bc_s.oracles.build_from_data()
         bc_s.subproblems.load()
         res_s = bc_s.row_generation.solve()
         if rank == 0:

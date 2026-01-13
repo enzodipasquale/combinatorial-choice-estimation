@@ -56,7 +56,7 @@ def test_row_generation_mpi_optimizations():
         "subproblem": {"name": "Greedy"}
     })
     bc_obs.data.load_and_scatter(input_data)
-    bc_obs.features.build_from_data()
+    bc_obs.oracles.build_from_data()
     obs_bundles = bc_obs.subproblems.init_and_solve(theta_true)
     
     if rank == 0:
@@ -84,7 +84,7 @@ def test_row_generation_mpi_optimizations():
         }
     })
     bc_rg.data.load_and_scatter(input_data)
-    bc_rg.features.build_from_data()
+    bc_rg.oracles.build_from_data()
     bc_rg.subproblems.load()
     
     result_rg = bc_rg.row_generation.solve()

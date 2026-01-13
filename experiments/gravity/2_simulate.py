@@ -72,10 +72,10 @@ def prepare_data(features, distances, home_countries):
             "quadratic": item_quadratic
         },
         "agent_data": {
-            "modular": agent_modular
+            "modular": agent_modular,
+            "constraint_mask": np.array(constraint_mask)  # HOME EXCLUSION!
         },
         "errors": errors,
-        "constraint_mask": constraint_mask  # HOME EXCLUSION!
     }
     
     return input_data
@@ -136,7 +136,7 @@ def main():
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     
     bundles = bc.subproblems.init_and_solve(theta)
     

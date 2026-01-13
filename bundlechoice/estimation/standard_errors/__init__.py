@@ -17,7 +17,7 @@ from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.config import DimensionsConfig, StandardErrorsConfig
 from bundlechoice.comm_manager import CommManager
 from bundlechoice.data_manager import DataManager
-from bundlechoice.feature_manager import FeatureManager
+from bundlechoice.oracles_manager import OraclesManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 
 from .result import StandardErrorsResult
@@ -42,14 +42,14 @@ class StandardErrorsManager(SandwichMixin, ResamplingMixin, HasDimensions, HasDa
         comm_manager: CommManager,
         dimensions_cfg: DimensionsConfig,
         data_manager: DataManager,
-        feature_manager: FeatureManager,
+        oracles_manager: OraclesManager,
         subproblem_manager: SubproblemManager,
         se_cfg: StandardErrorsConfig,
     ):
         self.comm_manager = comm_manager
         self.dimensions_cfg = dimensions_cfg
         self.data_manager = data_manager
-        self.feature_manager = feature_manager
+        self.oracles_manager = oracles_manager
         self.subproblem_manager = subproblem_manager
         self.se_cfg = se_cfg
         

@@ -155,7 +155,7 @@ bc.load_config({
 bc.data.load_and_scatter(input_data)
 
 # Build features oracle from data (for -bundle @ p part)
-bc.features.build_features_oracle_from_data()
+bc.oracles.build_features_oracle_from_data()
 
 
 def make_equilibrium_error_oracle(theta_hat, oracle_data, global_start_idx, num_items):
@@ -210,7 +210,7 @@ remainder = num_agents % size
 global_start_idx = rank * agents_per_rank + min(rank, remainder)
 
 # Set the custom error oracle
-bc.features.set_error_oracle(make_equilibrium_error_oracle(theta_hat, oracle_data, global_start_idx, num_items))
+bc.oracles.set_error_oracle(make_equilibrium_error_oracle(theta_hat, oracle_data, global_start_idx, num_items))
 
 bc.subproblems.load()
 bc.subproblems.initialize_local()

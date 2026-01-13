@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from typing import cast
-from bundlechoice.feature_manager import FeatureManager
+from bundlechoice.oracles_manager import OraclesManager
 from bundlechoice.config import DimensionsConfig
 from mpi4py import MPI
 from bundlechoice.comm_manager import CommManager
@@ -43,12 +43,12 @@ def test_compute_rank_features():
     )
     data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
-    features = FeatureManager(
+    features = OraclesManager(
         dimensions_cfg=dimensions_cfg,
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.set_oracle(dummy_get_x_k)
+    features.set_features_oracle(dummy_get_x_k)
     
     # Create bundles for local agents (as numpy array)
     local_bundles = np.array([[1, 2] for _ in range(data_manager.num_local_agents)], dtype=np.float64)
@@ -75,12 +75,12 @@ def test_compute_gathered_features():
     )
     data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
-    features = FeatureManager(
+    features = OraclesManager(
         dimensions_cfg=dimensions_cfg,
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.set_oracle(dummy_get_x_k)
+    features.set_features_oracle(dummy_get_x_k)
     
     # Create bundles for local agents (as numpy array)
     local_bundles = np.array([[1, 1] for _ in range(data_manager.num_local_agents)], dtype=np.float64)
@@ -111,12 +111,12 @@ def test_compute_gathered_features_consistency():
     )
     data_manager = DummyDataManager(num_agents, num_simulations)
     comm_manager = CommManager(MPI.COMM_WORLD)
-    features = FeatureManager(
+    features = OraclesManager(
         dimensions_cfg=dimensions_cfg,
         comm_manager=comm_manager,
         data_manager=data_manager
     )
-    features.set_oracle(dummy_get_x_k)
+    features.set_features_oracle(dummy_get_x_k)
     
     # Create bundles for local agents
     local_bundles = [np.array([1, 1]) for _ in range(data_manager.num_local_agents)]

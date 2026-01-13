@@ -68,7 +68,7 @@ def run_greedy_experiment():
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(input_data)
-    bc_gen.features.set_oracle(_greedy_oracle)
+    bc_gen.oracles.set_features_oracle(_greedy_oracle)
     bc_gen.subproblems.load()
     _install_greedy_find_best(bc_gen.subproblems.subproblem_instance)
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
@@ -93,7 +93,7 @@ def run_greedy_experiment():
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data)
-    bc.features.set_oracle(_greedy_oracle)
+    bc.oracles.set_features_oracle(_greedy_oracle)
     bc.subproblems.load()
     _install_greedy_find_best(bc.subproblems.subproblem_instance)
     
@@ -223,7 +223,7 @@ def run_knapsack_experiment():
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(input_data)
-    bc_gen.features.build_from_data()
+    bc_gen.oracles.build_from_data()
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     
@@ -246,7 +246,7 @@ def run_knapsack_experiment():
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     
     if rank == 0:

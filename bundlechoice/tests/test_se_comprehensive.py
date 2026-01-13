@@ -59,13 +59,13 @@ def run_greedy_lowdim(comm):
     
     bc = BundleChoice()
     config = {
-        "dimensions": {"num_agents": 200, "num_items": 30, "num_features": NUM_FEATURES, "num_simuls": 1},
+        "dimensions": {"num_agents": 200, "num_items": 30, "num_features": NUM_FEATURES, "num_simulations": 1},
         "subproblem": {"name": "Greedy"},
         "row_generation": {"max_iters": 100, "theta_ubs": 100},
     }
     bc.load_config(config)
     bc.data.load_and_scatter(prepared.estimation_data if rank == 0 else None)
-    bc.features.set_oracle(greedy_oracle)
+    bc.oracles.set_features_oracle(greedy_oracle)
     bc.subproblems.load()
     
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
@@ -124,13 +124,13 @@ def run_greedy_fe(comm):
     
     bc = BundleChoice()
     config = {
-        "dimensions": {"num_agents": 200, "num_items": NUM_ITEMS, "num_features": NUM_FEATURES, "num_simuls": 1},
+        "dimensions": {"num_agents": 200, "num_items": NUM_ITEMS, "num_features": NUM_FEATURES, "num_simulations": 1},
         "subproblem": {"name": "Greedy"},
         "row_generation": {"max_iters": 100, "theta_ubs": 100},
     }
     bc.load_config(config)
     bc.data.load_and_scatter(est_data)
-    bc.features.set_oracle(greedy_fe_oracle)
+    bc.oracles.set_features_oracle(greedy_fe_oracle)
     bc.subproblems.load()
     
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
@@ -181,13 +181,13 @@ def run_knapsack_lowdim(comm):
     
     bc = BundleChoice()
     config = {
-        "dimensions": {"num_agents": 150, "num_items": 20, "num_features": 4, "num_simuls": 1},
+        "dimensions": {"num_agents": 150, "num_items": 20, "num_features": 4, "num_simulations": 1},
         "subproblem": {"name": "LinearKnapsack", "settings": {"TimeLimit": 1.0}},
         "row_generation": {"max_iters": 100, "theta_ubs": 100},
     }
     bc.load_config(config)
     bc.data.load_and_scatter(prepared.estimation_data if rank == 0 else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     bc.subproblems.initialize_local()
     
@@ -242,13 +242,13 @@ def run_knapsack_fe(comm):
     
     bc = BundleChoice()
     config = {
-        "dimensions": {"num_agents": 150, "num_items": NUM_ITEMS, "num_features": NUM_FEATURES, "num_simuls": 1},
+        "dimensions": {"num_agents": 150, "num_items": NUM_ITEMS, "num_features": NUM_FEATURES, "num_simulations": 1},
         "subproblem": {"name": "LinearKnapsack", "settings": {"TimeLimit": 1.0}},
         "row_generation": {"max_iters": 100, "theta_ubs": 100},
     }
     bc.load_config(config)
     bc.data.load_and_scatter(est_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     bc.subproblems.initialize_local()
     

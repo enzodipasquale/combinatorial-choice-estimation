@@ -7,7 +7,7 @@ import numpy as np
 import tempfile
 from pathlib import Path
 
-from bundlechoice.config import DimensionsConfig, RowGenerationConfig, BoundsManager
+from bundlechoice.config import DimensionsConfig, RowGenerationConfig
 from bundlechoice.estimation.result import EstimationResult
 
 
@@ -61,41 +61,6 @@ class TestFeatureNaming:
         )
         structural = dims.get_structural_indices()
         assert structural == [0, 1, 7]  # excludes FE indices [2,3,4,5,6]
-
-
-class TestBoundsManager:
-    """Tests for BoundsManager."""
-    
-    def test_set_by_name(self):
-        dims = DimensionsConfig()
-        dims.set_feature_names(["pop", "dist", "travel"])
-        bounds = BoundsManager(dims)
-        bounds.set("pop", lower=75)
-        bounds.set("dist", lower=400, upper=650)
-        lbs, ubs = bounds.get_arrays(3, default_lower=0, default_upper=1000)
-        assert lbs[0] == 75
-        assert lbs[1] == 400
-        assert ubs[1] == 650
-        assert lbs[2] == 0  # default
-    
-    def test_set_by_index(self):
-        dims = DimensionsConfig(num_features=3)
-        bounds = BoundsManager(dims)
-        bounds.set(0, lower=10).set(2, upper=500)
-        lbs, ubs = bounds.get_arrays(3)
-        assert lbs[0] == 10
-        assert ubs[2] == 500
-    
-    def test_set_pattern(self):
-        dims = DimensionsConfig()
-        dims.set_feature_names(["m", "FE_0", "FE_1", "FE_2", "q"])
-        bounds = BoundsManager(dims)
-        bounds.set_pattern("FE_*", lower=0, upper=100)
-        lbs, ubs = bounds.get_arrays(5, default_lower=-999, default_upper=999)
-        assert lbs[1] == lbs[2] == lbs[3] == 0
-        assert ubs[1] == ubs[2] == ubs[3] == 100
-        assert lbs[0] == -999  # unaffected
-        assert ubs[4] == 999   # unaffected
 
 
 class TestResultExport:

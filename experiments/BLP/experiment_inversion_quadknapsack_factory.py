@@ -246,7 +246,7 @@ def run_row_generation_quadknapsack_experiment():
     bc_blp.data.load_and_scatter(est_data_blp if rank == 0 else None)
     # Quadratic knapsack uses FeatureSpec.build() which auto-generates from data
     # So we don't need to set an oracle - it will build from the identity matrix
-    bc_blp.features.build_from_data()
+    bc_blp.oracles.build_from_data()
     bc_blp.subproblems.load()
     
     start_time = time.time()

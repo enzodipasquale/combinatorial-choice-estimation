@@ -63,10 +63,10 @@ def prepare_data(features, distances, home_countries, error_std=1.5,
             "quadratic": item_quadratic
         },
         "agent_data": {
-            "modular": agent_modular
+            "modular": agent_modular,
+            "constraint_mask": np.array(constraint_mask)
         },
         "errors": errors,
-        "constraint_mask": constraint_mask
     }
     
     return input_data
@@ -107,7 +107,7 @@ def simulate_with_params(features, distances, theta, error_std=1.5,
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     
     bundles = bc.subproblems.init_and_solve(theta)
     

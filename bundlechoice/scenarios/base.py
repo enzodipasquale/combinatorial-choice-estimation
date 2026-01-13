@@ -32,14 +32,14 @@ class FeatureSpec:
     @staticmethod
     def oracle(oracle_fn: Callable) -> "FeatureSpec":
         def _init(bc: BundleChoice) -> None:
-            bc.features.set_oracle(oracle_fn)
+            bc.oracles.set_features_oracle(oracle_fn)
 
         return FeatureSpec(mode="oracle", initializer=_init)
 
     @staticmethod
     def build() -> "FeatureSpec":
         def _init(bc: BundleChoice) -> None:
-            bc.features.build_from_data()
+            bc.oracles.build_from_data()
 
         return FeatureSpec(mode="build", initializer=_init)
 

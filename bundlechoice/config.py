@@ -1,23 +1,18 @@
 from dataclasses import dataclass, field, fields
 from typing import Optional, List, Any, Dict, Union, Callable
 from pathlib import Path
-import numpy as np
 import yaml
 
-
-# ============================================================================
-# Configuration Mixins & Base Classes
-# ============================================================================
 
 class AutoUpdateMixin:
     """Mixin for automatic in-place config updates using dataclass reflection."""
     
     def update_in_place(self, other: Any) -> None:
         """Update config in place with values from other (merges nested configs)."""
-        for field in fields(self):
-            if hasattr(self, field.name) and hasattr(other, field.name):
-                current_value = getattr(self, field.name)
-                other_value = getattr(other, field.name)
+        for f in fields(self):
+            if hasattr(self, f.name) and hasattr(other, f.name):
+                current_value = getattr(self, f.name)
+                other_value = getattr(other, f.name)
                 
                 if other_value is not None:
                     if isinstance(current_value, dict):
@@ -25,12 +20,8 @@ class AutoUpdateMixin:
                     elif hasattr(current_value, 'update_in_place') and hasattr(other_value, 'update_in_place'):
                         current_value.update_in_place(other_value)
                     else:
-                        setattr(self, field.name, other_value)
+                        setattr(self, f.name, other_value)
 
-
-# ============================================================================
-# Configuration Classes
-# ============================================================================
 
 @dataclass
 class DimensionsConfig(AutoUpdateMixin):
@@ -40,18 +31,7 @@ class DimensionsConfig(AutoUpdateMixin):
     num_features: Optional[int] = None
     num_simulations: int = 1
     feature_names: Optional[List[str]] = None
-    # Feature structure for grouping (modular, fixed_effects, quadratic, etc.)
     _feature_groups: Dict[str, List[int]] = field(default_factory=dict)
-    
-    # Backward compatibility alias
-    @property
-    def num_simuls(self) -> int:
-        """Backward compatibility alias for num_simulations."""
-        return self.num_simulations
-    
-    # ============================================================================
-    # Feature Naming API
-    # ============================================================================
     
     def set_feature_names(self, names: List[str]) -> 'DimensionsConfig':
         """Set feature names. Length must match num_features."""
@@ -88,14 +68,7 @@ class DimensionsConfig(AutoUpdateMixin):
         fixed_effects: Optional[Union[int, List[str]]] = None,
         quadratic: Optional[List[str]] = None,
     ) -> 'DimensionsConfig':
-        """
-        Define feature groups for structured access.
-        
-        Args:
-            modular: Names for modular features (first block)
-            fixed_effects: Number of FE (auto-generates FE_0, FE_1, ...) or list of names
-            quadratic: Names for quadratic features (last block)
-        """
+        """Define feature groups for structured access."""
         names = []
         groups = {}
         
@@ -142,69 +115,6 @@ class SubproblemConfig(AutoUpdateMixin):
     settings: dict = field(default_factory=dict)
 
 
-class BoundsManager:
-    """
-    Manages parameter bounds with name-based access.
-    
-    Example:
-        bounds = BoundsManager(dims_cfg)
-        bounds.set("bidder_elig_pop", lower=75)
-        bounds.set("pop_distance", lower=400, upper=650)
-        bounds.set_pattern("FE_*", lower=0, upper=1000)
-    """
-    
-    def __init__(self, dimensions_cfg: 'DimensionsConfig'):
-        self.dimensions_cfg = dimensions_cfg
-        self._lower: Dict[int, float] = {}
-        self._upper: Dict[int, float] = {}
-    
-    def set(
-        self,
-        name_or_index: Union[str, int],
-        lower: Optional[float] = None,
-        upper: Optional[float] = None,
-    ) -> 'BoundsManager':
-        """Set bounds for a parameter by name or index."""
-        if isinstance(name_or_index, str):
-            idx = self.dimensions_cfg.get_feature_index(name_or_index)
-        else:
-            idx = name_or_index
-        
-        if lower is not None:
-            self._lower[idx] = lower
-        if upper is not None:
-            self._upper[idx] = upper
-        return self
-    
-    def set_pattern(
-        self,
-        pattern: str,
-        lower: Optional[float] = None,
-        upper: Optional[float] = None,
-    ) -> 'BoundsManager':
-        """Set bounds for all features matching a glob pattern (e.g., 'FE_*')."""
-        for idx in self.dimensions_cfg.get_indices_by_pattern(pattern):
-            self.set(idx, lower=lower, upper=upper)
-        return self
-    
-    def get_arrays(
-        self,
-        num_features: int,
-        default_lower: float = 0.0,
-        default_upper: float = 1000.0,
-    ) -> tuple:
-        """Return (theta_lbs, theta_ubs) as numpy arrays."""
-        lbs = np.full(num_features, default_lower)
-        ubs = np.full(num_features, default_upper)
-        for idx, val in self._lower.items():
-            if idx < num_features:
-                lbs[idx] = val
-        for idx, val in self._upper.items():
-            if idx < num_features:
-                ubs[idx] = val
-        return lbs, ubs
-
-
 @dataclass
 class RowGenerationConfig(AutoUpdateMixin):
     """Row generation solver parameters: tolerances, iteration limits, bounds."""
@@ -219,22 +129,6 @@ class RowGenerationConfig(AutoUpdateMixin):
     theta_lbs: Any = None
     parameters_to_log: Optional[List[int]] = None
     subproblem_callback: Optional[Callable[[int, Any, Optional[Any]], None]] = None
-    _bounds_manager: Optional[BoundsManager] = None
-    
-    def bounds(self, dimensions_cfg: 'DimensionsConfig') -> BoundsManager:
-        """Get or create bounds manager for name-based bounds setting."""
-        if self._bounds_manager is None:
-            self._bounds_manager = BoundsManager(dimensions_cfg)
-        return self._bounds_manager
-    
-    def apply_bounds(self, num_features: int) -> None:
-        """Apply bounds from BoundsManager to theta_lbs/theta_ubs arrays."""
-        if self._bounds_manager is not None:
-            default_lower = 0.0 if self.theta_lbs is None else float(self.theta_lbs) if np.isscalar(self.theta_lbs) else 0.0
-            default_upper = float(self.theta_ubs) if np.isscalar(self.theta_ubs) else 1000.0
-            self.theta_lbs, self.theta_ubs = self._bounds_manager.get_arrays(
-                num_features, default_lower, default_upper
-            )
 
 
 @dataclass
@@ -256,8 +150,8 @@ class StandardErrorsConfig(AutoUpdateMixin):
     num_simulations: int = 10
     step_size: float = 1e-2
     seed: Optional[int] = None
-    beta_indices: Optional[List[int]] = None  # Which parameters to report SE for (default: all)
-    error_sigma: float = 1.0  # Standard deviation of errors (should match estimation errors)
+    beta_indices: Optional[List[int]] = None
+    error_sigma: float = 1.0
 
 
 @dataclass
@@ -269,18 +163,10 @@ class BundleChoiceConfig(AutoUpdateMixin):
     ellipsoid: EllipsoidConfig = field(default_factory=EllipsoidConfig)
     standard_errors: StandardErrorsConfig = field(default_factory=StandardErrorsConfig)
 
-    # ============================================================================
-    # Factory Methods
-    # ============================================================================
-
     @classmethod
     def from_dict(cls, cfg: Dict[str, Any]) -> 'BundleChoiceConfig':
         """Create configuration from dictionary."""
         dims_cfg = cfg.get("dimensions", {}).copy()
-        # Backward compatibility: convert num_simuls to num_simulations
-        if "num_simuls" in dims_cfg and "num_simulations" not in dims_cfg:
-            dims_cfg["num_simulations"] = dims_cfg.pop("num_simuls")
-        # Handle _feature_groups (internal field)
         dims_cfg.pop("_feature_groups", None)
         return cls(
             dimensions=DimensionsConfig(**dims_cfg),
@@ -306,10 +192,6 @@ class BundleChoiceConfig(AutoUpdateMixin):
             return cls.from_dict(cfg)
         else:
             raise ValueError("cfg must be a string, Path, or a dictionary.")
-
-    # ============================================================================
-    # Validation
-    # ============================================================================
 
     def validate(self) -> None:
         """Validate all configuration parameters. Raises ValueError if invalid."""
@@ -341,5 +223,3 @@ class BundleChoiceConfig(AutoUpdateMixin):
             raise ValueError("decay_factor must be between 0 and 1")
         if self.ellipsoid.min_volume <= 0:
             raise ValueError("min_volume must be positive")
-
-

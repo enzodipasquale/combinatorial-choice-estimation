@@ -1,13 +1,14 @@
 import numpy as np
 import gurobipy as gp
-from ..base import BaseSerialSubproblem
+from ..base import SerialSubproblemBase
 import logging
 from typing import Any
 from bundlechoice.utils import suppress_output
 
 logger = logging.getLogger(__name__)
 
-class LinearKnapsackSubproblem(BaseSerialSubproblem):
+
+class LinearKnapsackSubproblem(SerialSubproblemBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
@@ -63,4 +64,4 @@ class LinearKnapsackSubproblem(BaseSerialSubproblem):
                 logger.warning(
                     f"Subproblem {local_id} (rank {getattr(self.data_manager, 'rank', '?')}): "
                     f"MIPGap {subproblem.MIPGap:.4g} > tol {MIPGap_tol}, value: {subproblem.objVal}"
-                ) 
+                )

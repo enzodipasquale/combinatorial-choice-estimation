@@ -89,7 +89,7 @@ def main():
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.set_oracle(_greedy_oracle_fe)
+    bc_gen.oracles.set_features_oracle(_greedy_oracle_fe)
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -125,7 +125,7 @@ def main():
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.set_oracle(_greedy_oracle_fe)
+    bc.oracles.set_features_oracle(_greedy_oracle_fe)
     bc.subproblems.load()
     
     result = bc.row_generation.solve()
@@ -179,7 +179,7 @@ def main():
         bc_b = BundleChoice()
         bc_b.load_config(config)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.set_oracle(_greedy_oracle_fe)
+        bc_b.oracles.set_features_oracle(_greedy_oracle_fe)
         bc_b.subproblems.load()
         
         try:
@@ -218,7 +218,7 @@ def main():
         bc_s = BundleChoice()
         bc_s.load_config(subs_config)
         bc_s.data.load_and_scatter(subs_data if rank == 0 else None)
-        bc_s.features.set_oracle(_greedy_oracle_fe)
+        bc_s.oracles.set_features_oracle(_greedy_oracle_fe)
         bc_s.subproblems.load()
         
         try:

@@ -15,10 +15,6 @@ except ImportError:
     MPI = None
 
 
-# ============================================================================
-# Theta Extraction
-# ============================================================================
-
 def extract_theta(theta: Any) -> NDArray[np.float64]:
     """
     Extract theta array from EstimationResult or raw array.
@@ -33,10 +29,6 @@ def extract_theta(theta: Any) -> NDArray[np.float64]:
         return np.asarray(theta.theta_hat, dtype=np.float64)
     return np.asarray(theta, dtype=np.float64)
 
-
-# ============================================================================
-# Logging Utilities
-# ============================================================================
 
 class MPIRankFilter(logging.Filter):
     """Logging filter: only allows messages from MPI rank 0."""
@@ -69,10 +61,6 @@ def get_logger(name: str = __name__) -> logging.Logger:
     
     return logger
 
-# ============================================================================
-# Output Suppression
-# ============================================================================
-
 @contextmanager
 def suppress_output():
     """Context manager: suppress stdout/stderr (useful for Gurobi output)."""
@@ -89,10 +77,6 @@ def suppress_output():
             sys.stdout = old_stdout
             sys.stderr = old_stderr
             logging.getLogger().setLevel(old_logging_level)
-
-# ============================================================================
-# Timing Statistics
-# ============================================================================
 
 def make_timing_stats(elapsed: float, num_iterations: int,
                       pricing_times: Any = None, master_times: Any = None) -> Dict[str, Any]:

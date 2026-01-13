@@ -4,17 +4,13 @@ Plain single-item subproblem solver.
 Selects the single item with maximum utility per agent.
 """
 
-from bundlechoice.subproblems.base import BaseBatchSubproblem
+from bundlechoice.subproblems.base import BatchSubproblemBase
 import numpy as np
 from typing import Optional, Any
 from numpy.typing import NDArray
 
 
-# ============================================================================
-# Plain Single Item Subproblem Solver
-# ============================================================================
-
-class PlainSingleItemSubproblem(BaseBatchSubproblem):
+class PlainSingleItemSubproblem(BatchSubproblemBase):
     """Selects single item with maximum utility per agent."""
     
     def initialize(self) -> None:

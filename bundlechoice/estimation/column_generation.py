@@ -43,7 +43,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         dimensions_cfg: Any,
         row_generation_cfg: Any,
         data_manager: Any,
-        feature_manager: Any,
+        oracles_manager: Any,
         subproblem_manager: Any,
         theta_init: Optional[NDArray[np.float64]] = None,
     ) -> None:
@@ -51,7 +51,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
-            feature_manager=feature_manager,
+            oracles_manager=oracles_manager,
             subproblem_manager=subproblem_manager,
         )
 
@@ -179,8 +179,8 @@ class ColumnGenerationManager(BaseEstimationManager):
             raise
 
         bundles_all = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
-        features_all = self.feature_manager.compute_gathered_features(local_bundles)
-        errors_all = self.feature_manager.compute_gathered_errors(local_bundles)
+        features_all = self.oracles_manager.compute_gathered_features(local_bundles)
+        errors_all = self.oracles_manager.compute_gathered_errors(local_bundles)
 
         max_reduced_cost = 0.0
         if self.is_root() and features_all is not None and errors_all is not None:

@@ -29,7 +29,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
                 dimensions_cfg: Any,
                 row_generation_cfg: Any,
                 data_manager: Any,
-                feature_manager: Any,
+                oracles_manager: Any,
                 subproblem_manager: Any
                 ) -> None:
         """
@@ -40,14 +40,14 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             dimensions_cfg: DimensionsConfig instance
             row_generation_cfg: RowGenerationConfig instance
             data_manager: DataManager instance
-            feature_manager: FeatureManager instance
+            oracles_manager: OraclesManager instance
             subproblem_manager: SubproblemManager instance
         """
         super().__init__(
             comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
-            feature_manager=feature_manager,
+            oracles_manager=oracles_manager,
             subproblem_manager=subproblem_manager
         )
         
@@ -98,8 +98,8 @@ class RowGeneration1SlackManager(BaseEstimationManager):
 
     def _master_iteration(self, optimal_bundles: NDArray[np.float64]) -> bool:
         """Perform one iteration of master problem (1slack). Returns True if stopping criterion met."""
-        x_sim = self.feature_manager.compute_gathered_features(optimal_bundles)
-        errors_sim = self.feature_manager.compute_gathered_errors(optimal_bundles)
+        x_sim = self.oracles_manager.compute_gathered_features(optimal_bundles)
+        errors_sim = self.oracles_manager.compute_gathered_errors(optimal_bundles)
         
         stop = False
         if self.is_root():

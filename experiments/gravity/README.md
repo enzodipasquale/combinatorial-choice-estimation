@@ -50,7 +50,7 @@ python 4_analyze_mexico.py
 
 ### Home Exclusion (Constraint Mask)
 - Each firm **cannot export to its home country**
-- Implemented via `constraint_mask` in `input_data`
+- Implemented via `constraint_mask` in `agent_data`
 - Boolean mask per firm: `True` = feasible, `False` = excluded
 - Properly scattered across MPI ranks in `data_manager.py`
 

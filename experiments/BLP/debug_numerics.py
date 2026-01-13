@@ -57,7 +57,7 @@ def main():
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.build_from_data()
+    bc_gen.oracles.build_from_data()
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -71,7 +71,7 @@ def main():
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     
     if rank == 0:
@@ -89,7 +89,7 @@ def main():
         print("=" * 80)
     
     # Get observed features
-    obs_features = bc.features.compute_gathered_features(obs_bundles)
+    obs_features = bc.oracles.compute_gathered_features(obs_bundles)
     
     # Compute per-agent subgradients with multiple simulations
     all_g_i = []  # List of (N, K) arrays, one per simulation
@@ -104,7 +104,7 @@ def main():
         
         bc.data.update_errors(sim_errors if rank == 0 else None)
         sim_bundles = bc.subproblems.solve_local(theta_hat)
-        sim_features = bc.features.compute_gathered_features(sim_bundles)
+        sim_features = bc.oracles.compute_gathered_features(sim_bundles)
         
         if rank == 0:
             g_i_s = sim_features - obs_features  # (N, K)
@@ -165,11 +165,11 @@ def main():
                 bc.data.update_errors(sim_errors if rank == 0 else None)
                 
                 sim_bundles_plus = bc.subproblems.solve_local(theta_plus)
-                sim_features_plus = bc.features.compute_gathered_features(sim_bundles_plus)
+                sim_features_plus = bc.oracles.compute_gathered_features(sim_bundles_plus)
                 g_bar_plus += (sim_features_plus - obs_features).mean(axis=0)
                 
                 sim_bundles_minus = bc.subproblems.solve_local(theta_minus)
-                sim_features_minus = bc.features.compute_gathered_features(sim_bundles_minus)
+                sim_features_minus = bc.oracles.compute_gathered_features(sim_bundles_minus)
                 g_bar_minus += (sim_features_minus - obs_features).mean(axis=0)
             
             g_bar_plus /= min(20, num_se_simulations)
@@ -219,7 +219,7 @@ def main():
         bc_b = BundleChoice()
         bc_b.load_config(config)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.build_from_data()
+        bc_b.oracles.build_from_data()
         bc_b.subproblems.load()
         
         res_b = bc_b.row_generation.solve()

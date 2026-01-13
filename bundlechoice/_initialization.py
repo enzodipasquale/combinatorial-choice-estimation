@@ -9,7 +9,7 @@ from bundlechoice.errors import SetupError
 
 if TYPE_CHECKING:
     from bundlechoice.data_manager import DataManager
-    from bundlechoice.feature_manager import FeatureManager
+    from bundlechoice.oracles_manager import OraclesManager
     from bundlechoice.subproblems.subproblem_manager import SubproblemManager
     from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager, ColumnGenerationManager
     from bundlechoice.estimation.ellipsoid import EllipsoidManager
@@ -17,35 +17,22 @@ if TYPE_CHECKING:
 
 def _check_requirements(bc: Any, requirements: List[str], manager_name: str) -> None:
     """Check that required components are initialized."""
-    missing = []
-    hints = {
-        "config": ("config", "Call bc.load_config(config_dict)"),
-        "dimensions": ("config.dimensions", "Add 'dimensions' section to config"),
-        "subproblem": ("config.subproblem", "Add 'subproblem' section to config"),
-        "row_generation": ("config.row_generation", "Add 'row_generation' to your config"),
-        "ellipsoid": ("config.ellipsoid", "Add 'ellipsoid' to your config"),
-        "data": ("data_manager", "Call bc.data.load_and_scatter(input_data)"),
-        "features": ("feature_manager", "Call bc.features.build_from_data() or set_oracle()"),
-        "subproblems": ("subproblem_manager", "Call bc.subproblems.load()"),
+    checks = {
+        "config": (bc.config, "Call bc.load_config()"),
+        "dimensions": (bc.config and bc.config.dimensions, "Add 'dimensions' to config"),
+        "subproblem": (bc.config and bc.config.subproblem, "Add 'subproblem' to config"),
+        "row_generation": (bc.config and bc.config.row_generation, "Add 'row_generation' to config"),
+        "ellipsoid": (bc.config and bc.config.ellipsoid, "Add 'ellipsoid' to config"),
+        "data": (bc.data_manager and bc.data_manager.local_data, "Call bc.data.load_and_scatter()"),
+        "features": (bc.oracles_manager and bc.oracles_manager._features_oracle, "Call bc.oracles.build_from_data()"),
+        "subproblems": (bc.subproblem_manager, "Initialize subproblems"),
     }
-    
-    for req in requirements:
-        attr, _ = hints.get(req, (req, ""))
-        parts = attr.split(".")
-        obj = bc
-        for part in parts:
-            obj = getattr(obj, part, None)
-            if obj is None:
-                break
-        if obj is None:
-            _, hint = hints.get(req, (req, f"Initialize {req}"))
-            missing.append(f"{req} ({hint})")
-    
+    missing = [(req, checks[req][1]) for req in requirements if not checks.get(req, (True,))[0]]
     if missing:
         raise SetupError(
-            f"Cannot initialize {manager_name} - missing: {', '.join(r.split(' (')[0] for r in missing)}",
-            suggestion="\n  ".join(f"- {m}" for m in missing) + "\n\nRun bc.print_status() to see current setup.",
-            missing=[m.split(" (")[0] for m in missing],
+            f"Cannot initialize {manager_name} - missing: {', '.join(r for r, _ in missing)}",
+            suggestion="\n  ".join(f"- {r}: {h}" for r, h in missing),
+            missing=[r for r, _ in missing],
         )
 
 
@@ -57,19 +44,19 @@ def try_init_data_manager(bc: Any) -> 'DataManager':
     return bc.data_manager
 
 
-def try_init_feature_manager(bc: Any) -> 'FeatureManager':
-    """Initialize FeatureManager."""
-    from bundlechoice.feature_manager import FeatureManager
-    _check_requirements(bc, ["config", "dimensions"], "feature manager")
-    bc.feature_manager = FeatureManager(bc.config.dimensions, bc.comm_manager, bc.data_manager)
-    return bc.feature_manager
+def try_init_oracles_manager(bc: Any) -> 'OraclesManager':
+    """Initialize OraclesManager."""
+    from bundlechoice.oracles_manager import OraclesManager
+    _check_requirements(bc, ["config", "dimensions"], "oracles manager")
+    bc.oracles_manager = OraclesManager(bc.config.dimensions, bc.comm_manager, bc.data_manager)
+    return bc.oracles_manager
 
 
 def try_init_subproblem_manager(bc: Any) -> 'SubproblemManager':
-    """Initialize SubproblemManager with auto-initialization of feature manager and oracles."""
+    """Initialize SubproblemManager with auto-initialization of oracles manager."""
     from bundlechoice.subproblems.subproblem_manager import SubproblemManager
     
-    # Check required components (except features which can be auto-built)
+    # Check required components (except oracles which can be auto-built)
     if bc.data_manager is None or bc.config is None or bc.config.subproblem is None:
         missing = []
         if bc.config is None or bc.config.subproblem is None:
@@ -86,19 +73,19 @@ def try_init_subproblem_manager(bc: Any) -> 'SubproblemManager':
             )
         )
 
-    # Auto-initialize feature_manager if not set
-    if bc.feature_manager is None:
-        try_init_feature_manager(bc)
+    # Auto-initialize oracles_manager if not set
+    if bc.oracles_manager is None:
+        try_init_oracles_manager(bc)
 
     # Auto-build oracles if not already set
-    if bc.feature_manager._features_oracle is None:
-        bc.feature_manager.build_from_data()
-    elif bc.feature_manager._error_oracle is None:
+    if bc.oracles_manager._features_oracle is None:
+        bc.oracles_manager.build_from_data()
+    elif bc.oracles_manager._error_oracle is None:
         # Features oracle was set manually but error oracle wasn't - build error oracle
-        bc.feature_manager.build_error_oracle_from_data()
+        bc.oracles_manager.build_error_oracle_from_data()
 
     bc.subproblem_manager = SubproblemManager(
-        bc.config.dimensions, bc.comm_manager, bc.data_manager, bc.feature_manager, bc.config.subproblem
+        bc.config.dimensions, bc.comm_manager, bc.data_manager, bc.oracles_manager, bc.config.subproblem
     )
     return bc.subproblem_manager
 
@@ -109,7 +96,7 @@ def try_init_row_generation_manager(bc: Any) -> 'RowGenerationManager':
     _check_requirements(bc, ["data", "features", "subproblems", "row_generation"], "row generation solver")
     bc.row_generation_manager = RowGenerationManager(
         bc.comm_manager, bc.config.dimensions, bc.config.row_generation,
-        bc.data_manager, bc.feature_manager, bc.subproblem_manager
+        bc.data_manager, bc.oracles_manager, bc.subproblem_manager
     )
     return bc.row_generation_manager
 
@@ -120,7 +107,7 @@ def try_init_ellipsoid_manager(bc: Any, theta_init: Optional[Any] = None) -> 'El
     _check_requirements(bc, ["data", "features", "subproblems", "ellipsoid"], "ellipsoid solver")
     bc.ellipsoid_manager = EllipsoidManager(
         bc.comm_manager, bc.config.dimensions, bc.config.ellipsoid,
-        bc.data_manager, bc.feature_manager, bc.subproblem_manager, theta_init
+        bc.data_manager, bc.oracles_manager, bc.subproblem_manager, theta_init
     )
     return bc.ellipsoid_manager
 
@@ -131,7 +118,7 @@ def try_init_column_generation_manager(bc: Any, theta_init: Optional[Any] = None
     _check_requirements(bc, ["data", "features", "subproblems", "row_generation"], "column generation solver")
     bc.column_generation_manager = ColumnGenerationManager(
         bc.comm_manager, bc.config.dimensions, bc.config.row_generation,
-        bc.data_manager, bc.feature_manager, bc.subproblem_manager, theta_init
+        bc.data_manager, bc.oracles_manager, bc.subproblem_manager, theta_init
     )
     return bc.column_generation_manager
 
@@ -142,6 +129,6 @@ def try_init_standard_errors_manager(bc: Any) -> 'StandardErrorsManager':
     _check_requirements(bc, ["config", "data", "features", "subproblems"], "standard errors manager")
     bc.standard_errors_manager = StandardErrorsManager(
         bc.comm_manager, bc.config.dimensions, bc.data_manager,
-        bc.feature_manager, bc.subproblem_manager, bc.config.standard_errors
+        bc.oracles_manager, bc.subproblem_manager, bc.config.standard_errors
     )
     return bc.standard_errors_manager

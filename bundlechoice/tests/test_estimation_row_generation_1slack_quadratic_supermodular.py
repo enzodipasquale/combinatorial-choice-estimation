@@ -66,7 +66,7 @@ def test_row_generation_1slack_quadsupermodular():
         dimensions_cfg=quad_demo.config.dimensions,
         row_generation_cfg=quad_demo.config.row_generation,
         data_manager=quad_demo.data_manager,
-        feature_manager=quad_demo.feature_manager,
+        oracles_manager=quad_demo.oracles_manager,
         subproblem_manager=quad_demo.subproblem_manager
     )
     result = solver.solve()

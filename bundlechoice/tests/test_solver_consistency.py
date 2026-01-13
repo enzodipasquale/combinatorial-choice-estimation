@@ -67,7 +67,7 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_gen = BundleChoice()
     bc_gen.load_config(cfg_base)
     bc_gen.data.load_and_scatter(input_data)
-    bc_gen.features.set_oracle(features_oracle)
+    bc_gen.oracles.set_features_oracle(features_oracle)
     observed_bundles = bc_gen.subproblems.init_and_solve(np.ones(num_features))
     
     if rank == 0:
@@ -84,7 +84,7 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_rg = BundleChoice()
     bc_rg.load_config(cfg_rg)
     bc_rg.data.load_and_scatter(input_data)
-    bc_rg.features.set_oracle(features_oracle)
+    bc_rg.oracles.set_features_oracle(features_oracle)
     bc_rg.subproblems.load()
     result_rg = bc_rg.row_generation.solve()
     
@@ -103,7 +103,7 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_1s = BundleChoice()
     bc_1s.load_config(cfg_1s)
     bc_1s.data.load_and_scatter(input_data)
-    bc_1s.features.set_oracle(features_oracle)
+    bc_1s.oracles.set_features_oracle(features_oracle)
     bc_1s.subproblems.load()
     
     solver_1s = RowGeneration1SlackManager(
@@ -111,7 +111,7 @@ def test_row_generation_vs_1slack_identical_objval():
         dimensions_cfg=bc_1s.config.dimensions,
         row_generation_cfg=bc_1s.config.row_generation,
         data_manager=bc_1s.data_manager,
-        feature_manager=bc_1s.feature_manager,
+        oracles_manager=bc_1s.oracles_manager,
         subproblem_manager=bc_1s.subproblem_manager
     )
     result_1s = solver_1s.solve()

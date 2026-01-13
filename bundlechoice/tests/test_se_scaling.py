@@ -37,13 +37,13 @@ def run_with_sample_size(comm, num_agents, seed):
     
     bc = BundleChoice()
     config = {
-        "dimensions": {"num_agents": num_agents, "num_items": 30, "num_features": NUM_FEATURES, "num_simuls": 1},
+        "dimensions": {"num_agents": num_agents, "num_items": 30, "num_features": NUM_FEATURES, "num_simulations": 1},
         "subproblem": {"name": "Greedy"},
         "row_generation": {"max_iters": 200, "theta_ubs": 100, "tolerance_optimality": 1e-8},
     }
     bc.load_config(config)
     bc.data.load_and_scatter(prepared.estimation_data if rank == 0 else None)
-    bc.features.set_oracle(greedy_oracle)
+    bc.oracles.set_features_oracle(greedy_oracle)
     bc.subproblems.load()
     
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem

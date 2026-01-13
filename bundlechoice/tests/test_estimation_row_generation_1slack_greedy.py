@@ -53,7 +53,7 @@ def test_row_generation_1slack_greedy():
         dimensions_cfg=greedy_demo.config.dimensions,
         row_generation_cfg=greedy_demo.config.row_generation,
         data_manager=greedy_demo.data_manager,
-        feature_manager=greedy_demo.feature_manager,
+        oracles_manager=greedy_demo.oracles_manager,
         subproblem_manager=greedy_demo.subproblem_manager
     )
     result = solver.solve()
