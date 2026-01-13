@@ -112,8 +112,11 @@ class RowGenerationManager(BaseEstimationManager):
         # Compute observed features (weighted if agent_weights provided)
         if hasattr(self, '_agent_weights') and self._agent_weights is not None:
             # Weighted observed features: sum_i w_i * x_i
+            # agents_obs_features has shape (num_agents * num_simulations, num_features)
+            # so tile weights to match
             if self.comm_manager.is_root():
-                obs_features = (self._agent_weights[:, None] * self.agents_obs_features).sum(0)
+                weights_tiled = np.tile(self._agent_weights, self.dimensions_cfg.num_simulations)
+                obs_features = (weights_tiled[:, None] * self.agents_obs_features).sum(0)
             else:
                 obs_features = None
         else:
@@ -638,7 +641,10 @@ class RowGenerationManager(BaseEstimationManager):
         theta, u = self.master_variables
         
         # Update theta objective: -sum_i w_i * x_obs_i
-        obs_features = (agent_weights[:, None] * self.agents_obs_features).sum(0)
+        # agents_obs_features has shape (num_agents * num_simulations, num_features)
+        # so tile weights to match
+        weights_tiled = np.tile(agent_weights, self.dimensions_cfg.num_simulations)
+        obs_features = (weights_tiled[:, None] * self.agents_obs_features).sum(0)
         for k in range(self.dimensions_cfg.num_features):
             theta[k].Obj = -obs_features[k]
         
