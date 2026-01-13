@@ -38,6 +38,7 @@ bundlechoice/scenarios/
 experiments/
 paper/
 debug_se/
+debug/
 
 # Batch job scripts
 slurm-*.out
