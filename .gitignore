@@ -14,6 +14,7 @@ __pycache__/
 
 # Build and system files
 Makefile
+run_with_timeout.sh
 .DS_Store
 
 # Editor settings
@@ -39,6 +40,7 @@ experiments/
 paper/
 debug_se/
 debug/
+benchmark_warmstart.py
 
 # Batch job scripts
 slurm-*.out
