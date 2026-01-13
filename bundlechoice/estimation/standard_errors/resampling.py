@@ -209,8 +209,9 @@ class ResamplingMixin:
                 # For theta warmstart, broadcast prev_theta to all ranks
                 if warmstart == "theta":
                     prev_theta = self.comm_manager.comm.bcast(result.theta_hat.copy() if self.comm_manager.is_root() else None, root=0)
-            except Exception:
-                pass
+            except Exception as e:
+                if self.comm_manager.is_root():
+                    logger.warning("Bayesian bootstrap sample %d failed: %s", b + 1, e)
         
         if not self.comm_manager.is_root():
             return None
