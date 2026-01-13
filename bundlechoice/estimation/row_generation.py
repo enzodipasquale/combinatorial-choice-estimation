@@ -609,7 +609,7 @@ class RowGenerationManager(BaseEstimationManager):
     def update_objective_for_weights(self, agent_weights: NDArray[np.float64]) -> None:
         """
         Update objective coefficients for new agent weights without rebuilding the model.
-        This enables true Gurobi warm-start by reusing the LP basis.
+        Reuses accumulated constraints for fast re-solve (Bayesian bootstrap).
         
         Args:
             agent_weights: New agent weights, shape (num_agents,)
@@ -619,28 +619,23 @@ class RowGenerationManager(BaseEstimationManager):
         
         theta, u = self.master_variables
         
-        # Update theta objective: -sum_i w_i * x_obs_i
-        # agents_obs_features has shape (num_agents * num_simulations, num_features)
-        # so tile weights to match
+        # Update theta objective: -sum_i w_i * x_obs_i (vectorized)
         weights_tiled = np.tile(agent_weights, self.dimensions_cfg.num_simulations)
         obs_features = (weights_tiled[:, None] * self.agents_obs_features).sum(0)
-        for k in range(self.dimensions_cfg.num_features):
-            theta[k].Obj = -obs_features[k]
+        theta.Obj = -obs_features
         
-        # Update u objective: w_i for each agent (repeated for simulations)
-        u_obj = np.tile(agent_weights, self.dimensions_cfg.num_simulations)
-        for i in range(len(u_obj)):
-            u[i].Obj = u_obj[i]
+        # Update u objective: w_i for each agent (vectorized)
+        u.Obj = np.tile(agent_weights, self.dimensions_cfg.num_simulations)
         
         self.master_model.update()
 
     def solve_reuse_model(self, agent_weights: NDArray[np.float64],
                           strip_slack: bool = False) -> EstimationResult:
         """
-        Solve using existing model with updated weights (true Gurobi warm-start).
+        Solve using existing model with updated weights (Bayesian bootstrap).
         
-        This method reuses the existing Gurobi model and LP basis, only updating
-        the objective coefficients. This is much faster than rebuilding the model.
+        Reuses accumulated constraints from previous solve for fast convergence.
+        Requires solve() to have been called first.
         
         Args:
             agent_weights: Per-agent weights for the new solve
@@ -656,7 +651,7 @@ class RowGenerationManager(BaseEstimationManager):
             self._agent_weights = None
         
         tic = time.perf_counter()
-        self.subproblem_manager.initialize_local()
+        # Note: subproblems already initialized from prior solve(), no need to re-init
         
         # Root does master problem update; must sync error status to avoid deadlock
         error_msg = None
@@ -669,11 +664,10 @@ class RowGenerationManager(BaseEstimationManager):
                 if strip_slack:
                     self.strip_slack_constraints()
                 
-                # Update objective coefficients in-place
+                # Update objective coefficients in-place (preserves LP basis for warm-start)
                 self.update_objective_for_weights(self._agent_weights)
                 
-                # Reset LP basis so Gurobi actually re-solves with new objective
-                self.master_model.reset(0)
+                # Re-optimize with new objective (Gurobi warm-starts from previous basis)
                 self.master_model.optimize()
                 
                 theta, u = self.master_variables
