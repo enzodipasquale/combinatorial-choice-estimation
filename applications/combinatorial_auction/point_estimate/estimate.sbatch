@@ -8,30 +8,16 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=../logs/point_est-%j.out
 
-# Usage: sbatch estimate.sbatch <delta> [winners] [hqdist]
-#   delta: 2 or 4 (default: 4)
-#   winners: optional, pass "winners" for winners-only sample
-#   hqdist: optional, pass "hqdist" for HQ distance features
-DELTA=${1:-4}
-WINNERS_FLAG=""
-HQDIST_FLAG=""
-for arg in "$@"; do
-    if [ "$arg" == "winners" ]; then
-        WINNERS_FLAG="--winners-only"
-    fi
-    if [ "$arg" == "hqdist" ]; then
-        HQDIST_FLAG="--hq-distance"
-    fi
-done
+# All parameters are read from config.yaml
+# Edit config.yaml to change delta, winners_only, hq_distance, etc.
 
 module purge
-
 export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"
 
-# Step 1: Prepare data (no MPI needed, runs on single node)
-echo "Preparing data with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
-../run-gurobi.bash python ../data/prepare_data.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
+# Prepare data (reads parameters from config)
+echo "Preparing data..."
+../run-gurobi.bash python ../data/prepare_data.py --config config.yaml
 
-# Step 2: Run estimation (MPI)
-echo "Running estimation with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
-srun ../run-gurobi.bash python run_estimation.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
+# Run estimation
+echo "Running estimation..."
+srun ../run-gurobi.bash python run_estimation.py

@@ -378,23 +378,28 @@ def compute_feature_statistics(
 
 
 def parse_args():
-    """Parse command-line arguments."""
+    """Parse command-line arguments or read from config file."""
     parser = argparse.ArgumentParser(
         description="Prepare data for combinatorial auction estimation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python prepare_data.py                       # delta=4, all bidders
-    python prepare_data.py --delta 2             # delta=2, all bidders
-    python prepare_data.py --delta 4 --winners-only  # delta=4, winners only
-    python prepare_data.py --delta 4 --hq-distance   # include HQ distance features
+    python prepare_data.py                              # delta=4, all bidders
+    python prepare_data.py --delta 2                    # delta=2, all bidders
+    python prepare_data.py --config ../point_estimate/config.yaml  # read from config
         """
+    )
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        default=None,
+        help="Path to config file (reads delta, winners_only, hq_distance from application section)"
     )
     parser.add_argument(
         "--delta", "-d",
         type=int,
         choices=[2, 4],
-        default=4,
+        default=None,
         help="Distance decay exponent for population/centroid feature (default: 4)"
     )
     parser.add_argument(
@@ -407,7 +412,23 @@ Examples:
         action="store_true",
         help="Include HQ-to-item distance features (adds 2 modular features)"
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # If config provided, read parameters from it
+    if args.config:
+        import yaml
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
+        app_cfg = config.get("application", {})
+        args.delta = app_cfg.get("delta", 4)
+        args.winners_only = app_cfg.get("winners_only", False)
+        args.hq_distance = app_cfg.get("hq_distance", False)
+    
+    # Default delta if not set
+    if args.delta is None:
+        args.delta = 4
+    
+    return args
 
 
 def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):

@@ -679,29 +679,39 @@ class RowGenerationManager(BaseEstimationManager):
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
         
+        # Root does master problem update; must sync error status to avoid deadlock
+        error_msg = None
         if self.comm_manager.is_root():
-            if self.master_model is None:
-                raise RuntimeError("No existing model to reuse. Call solve() first.")
-            
-            # Optionally strip slack constraints
-            if strip_slack:
-                self.strip_slack_constraints()
-            
-            # Update objective coefficients in-place
-            self.update_objective_for_weights(self._agent_weights)
-            
-            # Reset LP basis so Gurobi actually re-solves with new objective
-            # reset(0) discards solution; this forces Gurobi to re-optimize
-            self.master_model.reset(0)
-            self.master_model.optimize()
-            
-            theta, u = self.master_variables
-            if self.master_model.Status == GRB.OPTIMAL:
-                self.theta_val = theta.X
-            else:
+            try:
+                if self.master_model is None:
+                    raise RuntimeError("No existing model to reuse. Call solve() first.")
+                
+                # Optionally strip slack constraints
+                if strip_slack:
+                    self.strip_slack_constraints()
+                
+                # Update objective coefficients in-place
+                self.update_objective_for_weights(self._agent_weights)
+                
+                # Reset LP basis so Gurobi actually re-solves with new objective
+                self.master_model.reset(0)
+                self.master_model.optimize()
+                
+                theta, u = self.master_variables
+                if self.master_model.Status == GRB.OPTIMAL:
+                    self.theta_val = theta.X
+                else:
+                    self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
+            except Exception as e:
+                error_msg = str(e)
                 self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
         else:
             self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+        
+        # Sync error status before broadcast to prevent deadlock
+        error_msg = self.comm_manager.comm.bcast(error_msg, root=0)
+        if error_msg is not None:
+            raise RuntimeError(f"Root process failed: {error_msg}")
         
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
         
