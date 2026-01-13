@@ -4,17 +4,19 @@ Compute competitive equilibrium using estimated theta.
 
 The equilibrium problem is:
     min_{p >= 0} sum_i u_i + sum_j p_j
-    s.t. u_i >= sum_k feature_iBk * theta_hat_k - sum_{j in B} p_j + error_iB
+    s.t. u_i >= sum_k feature_iBk * theta_hat_k - sum_{j in B}p_j + error_iB
 
-We reformulate this for row generation:
-- New "features" = -bundle (item indicators with -1), so feature @ p = -sum_{j in B} p_j
-- New "error oracle" = original_features @ theta_hat + modular_error (without item FE)
+Strategy: Use full feature structure but fix non-price theta components.
+- theta = [p_1, ..., p_J, theta_agent_mod (fixed), theta_item_quad (fixed)]
+- Prices (first num_items components) are free in [0, max_price]
+- Other components are fixed to theta_hat values via bounds
 """
 
 import sys
 import os
-import numpy as np
-from mpi4py import MPI
+from pathlib import Path
+from datetime import datetime
+import csv
 
 BASE_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))
@@ -22,15 +24,16 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from bundlechoice import BundleChoice
+import numpy as np
 import yaml
+from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Config - use smaller subset for debugging
-DEBUG_MODE = True
-NUM_AGENTS_DEBUG = 40  # Use subset of agents
-NUM_ITEMS_DEBUG = 10   # Small enough for brute force (2^10 = 1024 bundles)
+# Config
+NUM_AGENTS_SUBSET = 40  # Restrict to 40 agents for faster computation
+NUM_SIMULATIONS = 1     # Use 1 simulation
 
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
 CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
@@ -39,199 +42,134 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "confi
 with open(CONFIG_PATH, 'r') as file:
     config = yaml.safe_load(file)
 
+# Load data on rank 0
 if rank == 0:
     INPUT_DIR = os.path.join(BASE_DIR, "input_data")
+    obs_bundle_full = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
     
-    # Load original data
-    obs_bundle = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
-    modular_chars = np.load(os.path.join(INPUT_DIR, "modular_characteristics_i_j_k.npy"))
-    quadratic_chars = np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy"))
-    capacity = np.load(os.path.join(INPUT_DIR, "capacity_i.npy"))
-    weights = np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
+    num_agents_full = config["dimensions"]["num_agents"]
+    num_items = config["dimensions"]["num_items"]
+    num_features = config["dimensions"]["num_features"]
     
-    # Load or estimate theta_hat
+    # Subset to top agents by bundle size
+    agent_bundle_sizes = obs_bundle_full.sum(axis=1)
+    top_agent_ids = np.argsort(agent_bundle_sizes)[-NUM_AGENTS_SUBSET:]
+    
+    num_agents = len(top_agent_ids)
+    obs_bundle = obs_bundle_full[top_agent_ids]
+    
+    print(f"Selected {num_agents} agents (top by bundle size)")
+    print(f"Bundle sizes: min={obs_bundle.sum(axis=1).min()}, max={obs_bundle.sum(axis=1).max()}, mean={obs_bundle.sum(axis=1).mean():.1f}")
+    
+    # Load feature data (subset agents)
+    item_data = {
+        "modular": -np.eye(num_items),  # Item fixed effects (will become prices)
+        "quadratic": np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy")),
+        "weights": np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
+    }
+    agent_data = {
+        "modular": np.load(os.path.join(INPUT_DIR, "modular_characteristics_i_j_k.npy"))[top_agent_ids],
+        "capacity": np.load(os.path.join(INPUT_DIR, "capacity_i.npy"))[top_agent_ids],
+    }
+    
+    # Generate errors (1 simulation only)
+    np.random.seed(1995)
+    errors_full = np.random.normal(0, 1, size=(NUM_SIMULATIONS, num_agents_full, num_items))
+    errors = errors_full[:, top_agent_ids, :]  # Shape: (1, num_agents, num_items)
+    
+    # Load estimated theta
     THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
     if os.path.exists(THETA_PATH):
         theta_hat = np.load(THETA_PATH)
         print(f"Loaded theta_hat from {THETA_PATH}")
     else:
-        # Use dummy theta for testing (should run estimation first)
-        num_items_full = obs_bundle.shape[1]
-        theta_hat = np.ones(num_items_full + 4)  # item FE + 1 agent mod + 3 quad
-        print("WARNING: Using dummy theta_hat. Run estimation first for real values.")
+        raise FileNotFoundError(f"theta_hat not found at {THETA_PATH}. Run estimation first.")
     
-    # For debugging, use subset - pick agents with actual bundles
-    if DEBUG_MODE:
-        # Find agents with largest bundles
-        agent_bundle_sizes = obs_bundle.sum(axis=1)
-        top_agent_ids = np.argsort(agent_bundle_sizes)[-NUM_AGENTS_DEBUG:]
-        
-        # Get items that these agents actually want
-        selected_bundles = obs_bundle[top_agent_ids]
-        item_demand = selected_bundles.sum(axis=0)
-        top_item_ids = np.argsort(item_demand)[-NUM_ITEMS_DEBUG:]
-        top_item_ids = np.sort(top_item_ids)  # Keep sorted for consistency
-        
-        # Subset data
-        num_agents = len(top_agent_ids)
-        num_items = len(top_item_ids)
-        obs_bundle = obs_bundle[np.ix_(top_agent_ids, top_item_ids)]
-        modular_chars = modular_chars[np.ix_(top_agent_ids, top_item_ids, np.arange(modular_chars.shape[2]))]
-        quadratic_chars = quadratic_chars[np.ix_(top_item_ids, top_item_ids, np.arange(quadratic_chars.shape[2]))]
-        capacity = capacity[top_agent_ids]
-        weights = weights[top_item_ids]
-        
-        # Subset theta_hat: selected item FE + last 4 (agent mod + quad)
-        # Original structure: 493 item FE + 1 agent modular + 3 item quadratic = 497
-        theta_hat = np.concatenate([theta_hat[top_item_ids], theta_hat[-4:]])
-        
-        print(f"Selected {num_agents} agents with bundle sizes: {obs_bundle.sum(axis=1)}")
-        print(f"Selected {num_items} items")
-    else:
-        num_agents = obs_bundle.shape[0]
-        num_items = obs_bundle.shape[1]
-    
-    print(f"Equilibrium computation: {num_agents} agents, {num_items} items")
-    print(f"Theta hat shape: {theta_hat.shape}")
-    
-    # Generate errors (same as estimation for reproducibility)
-    np.random.seed(1995)
-    num_simulations = config["dimensions"]["num_simulations"]
-    all_errors = np.random.normal(0, 1, size=(num_simulations, config["dimensions"]["num_agents"], num_items))
-    # Take just first simulation for equilibrium computation
-    if DEBUG_MODE:
-        modular_errors = all_errors[0, top_agent_ids, :]
-    else:
-        modular_errors = all_errors[0, :num_agents, :]
-    
-    # item_data modular = -I (gives -sum_{j in B} p_j when multiplied by p)
-    item_modular_for_prices = -np.eye(num_items)
+    print(f"theta_hat shape: {theta_hat.shape}")
+    print(f"First 5 (item FE): {theta_hat[:5]}")
+    print(f"Last 4 (agent_mod + quad): {theta_hat[-4:]}")
     
     input_data = {
-        "item_data": {
-            "modular": item_modular_for_prices,  # -I for price features only
-        },
-        "agent_data": {},  # No agent features for equilibrium prices
-        "errors": modular_errors,
-        "obs_bundle": obs_bundle,
-    }
-    
-    # Prepare data for error oracle (to be broadcast)
-    oracle_data = {
-        "modular_chars": modular_chars,
-        "quadratic_chars": quadratic_chars,
-        "modular_errors": modular_errors,
+        "item_data": item_data,
+        "agent_data": agent_data,
+        "errors": errors,
+        "obs_bundle": obs_bundle
     }
 else:
     input_data = None
     num_agents = None
     num_items = None
+    num_features = None
     theta_hat = None
-    oracle_data = None
 
-# Broadcast all necessary data
+# Broadcast dimensions to all ranks
 num_agents = comm.bcast(num_agents, root=0)
 num_items = comm.bcast(num_items, root=0)
+num_features = comm.bcast(num_features, root=0)
 theta_hat = comm.bcast(theta_hat, root=0)
-oracle_data = comm.bcast(oracle_data, root=0)
 
-# Create the equilibrium BundleChoice
+# For equilibrium:
+# - First num_items theta components are prices (free, >= 0)
+# - Last 4 theta components are fixed to theta_hat values (agent_mod=1, item_quad=3)
+MAX_PRICE = 1000.0
+
+# Build bounds: prices in [0, MAX_PRICE], other components fixed to theta_hat
+theta_lbs = [0.0] * num_items + list(theta_hat[-4:])
+theta_ubs = [MAX_PRICE] * num_items + list(theta_hat[-4:])
+
+if rank == 0:
+    print(f"\nEquilibrium setup:")
+    print(f"  Agents: {num_agents}, Items: {num_items}, Features: {num_features}")
+    print(f"  Price variables: {num_items} (bounds [0, {MAX_PRICE}])")
+    print(f"  Fixed theta components: {theta_hat[-4:]}")
+
+# Run the equilibrium computation
 bc = BundleChoice()
 bc.load_config({
     'dimensions': {
         'num_agents': num_agents,
         'num_items': num_items,
-        'num_features': num_items,  # prices are the "features" now
+        'num_features': num_features,
+        'num_simulations': NUM_SIMULATIONS,
     },
-    # Use BruteForce solver - works with custom error oracles (only for small J)
-    'subproblem': {'name': 'BruteForce'},
+    'subproblem': config['subproblem'],  # Use same subproblem as estimation (QuadKnapsack)
     'row_generation': {
-        'max_iters': 100,
-        'theta_ubs': [1000] * num_items,  # Upper bound on prices
-        'theta_lbs': [0] * num_items,     # Prices >= 0
+        'max_iters': 200,
+        'theta_lbs': theta_lbs,
+        'theta_ubs': theta_ubs,
     },
 })
 
 bc.data.load_and_scatter(input_data)
-
-# Build features oracle from data (for -bundle @ p part)
-bc.oracles.build_features_oracle_from_data()
-
-
-def make_equilibrium_error_oracle(theta_hat, oracle_data, global_start_idx, num_items):
-    """Create error oracle that includes deterministic utility WITHOUT item fixed effects.
-    
-    In the original estimation:
-      U_iB = agent_modular @ theta_1 + (-I) @ theta_item_fe + quadratic @ theta_quad + error
-    
-    The item FE represent "prices" in the estimation. For equilibrium, we replace 
-    them with the new price variables p_j. So the error oracle computes:
-      utility_iB = agent_modular @ theta_agent + quadratic @ theta_quad + modular_error
-    
-    The prices enter through the features (-I @ p).
-    """
-    modular_chars = oracle_data["modular_chars"]
-    quadratic_chars = oracle_data["quadratic_chars"]
-    modular_errors = oracle_data["modular_errors"]
-    
-    # Extract theta components:
-    # theta_hat = [theta_item_fe (num_items), theta_agent_mod (1), theta_item_quad (3)]
-    theta_agent_mod = theta_hat[num_items:num_items+1]  # 1 feature
-    theta_item_quad = theta_hat[num_items+1:]           # 3 features
-    
-    def equilibrium_error_oracle(local_id, bundle, data):
-        # Convert local_id to global agent id
-        global_id = global_start_idx + local_id
-        
-        # Get modular error
-        modular_err = (modular_errors[global_id] * bundle).sum()
-        
-        # Compute utility WITHOUT item FE (they become price variables)
-        # Agent modular features
-        agent_modular_i = modular_chars[global_id]
-        agent_feat = np.einsum('jk,j->k', agent_modular_i, bundle)
-        agent_utility = agent_feat @ theta_agent_mod
-        
-        # Item quadratic 
-        quad_feat = np.einsum('jlk,j,l->k', quadratic_chars, bundle, bundle)
-        quad_utility = quad_feat @ theta_item_quad
-        
-        total_utility = agent_utility + quad_utility + modular_err
-        
-        return float(total_utility)
-    
-    return equilibrium_error_oracle
-
-
-# Compute global start index for this rank
-size = comm.Get_size()
-agents_per_rank = num_agents // size
-remainder = num_agents % size
-global_start_idx = rank * agents_per_rank + min(rank, remainder)
-
-# Set the custom error oracle
-bc.oracles.set_error_oracle(make_equilibrium_error_oracle(theta_hat, oracle_data, global_start_idx, num_items))
-
+bc.oracles.build_from_data()
 bc.subproblems.load()
-bc.subproblems.initialize_local()
 
 if rank == 0:
-    print("Starting equilibrium row generation...")
-    print(f"Price bounds: [0, 1000]")
+    print("\nStarting equilibrium row generation...")
 
-# Solve for equilibrium prices
 result = bc.row_generation.solve()
 
 if rank == 0:
     print(f"\n{result.summary()}")
     
     if result.converged:
-        prices = result.theta_hat
-        print(f"\nEquilibrium prices: min={prices.min():.2f}, max={prices.max():.2f}, mean={prices.mean():.2f}")
+        # Extract prices (first num_items components)
+        prices = result.theta_hat[:num_items]
+        fixed_theta = result.theta_hat[num_items:]
+        
+        print(f"\n=== EQUILIBRIUM RESULTS ===")
+        print(f"Prices: min={prices.min():.2f}, max={prices.max():.2f}, mean={prices.mean():.2f}")
+        print(f"Fixed theta (should match theta_hat): {fixed_theta}")
+        print(f"Theta_hat[-4:] for comparison: {theta_hat[-4:]}")
+        
+        # Verify fixed components didn't change
+        if np.allclose(fixed_theta, theta_hat[-4:], atol=1e-6):
+            print("✅ Fixed theta components match theta_hat")
+        else:
+            print("⚠️ Fixed theta components differ from theta_hat")
         
         # Save results
-        from pathlib import Path
         OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         np.save(os.path.join(OUTPUT_DIR, "equilibrium_prices.npy"), prices)
-        print(f"Saved equilibrium prices to {OUTPUT_DIR}/equilibrium_prices.npy")
+        print(f"\nSaved equilibrium prices to {OUTPUT_DIR}/equilibrium_prices.npy")

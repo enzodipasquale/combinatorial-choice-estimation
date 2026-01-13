@@ -1,16 +1,17 @@
 dimensions:
     num_agents: 255
     num_items: 493
-    num_features:  497
-    num_simulations: 1
+    num_features: 497
+    num_simulations: 2
 
 subproblem: 
     name: QuadKnapsack
     settings:
-        TimeLimit: 3
+        TimeLimit: 2
         MIPGap_tol: 1e-2
 row_generation:
     max_iters: 200
     theta_ubs: 1000
     parameters_to_log: [0, -3,-2,-1]
+
 

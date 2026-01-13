@@ -125,7 +125,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "confi
 bc = BundleChoice()
 bc.load_config(CONFIG_PATH)
 
-# For Bayesian bootstrap, we only need 1 simulation (no MC errors)
+# Use 10 simulations to reduce MC variance
 bc.load_config({"dimensions": {"num_simulations": 10}})
 
 if rank == 0:
@@ -148,11 +148,13 @@ else:
 num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
 num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
 num_agents = comm.bcast(bc.config.dimensions.num_agents if rank == 0 else None, root=0)
+num_simulations = comm.bcast(bc.config.dimensions.num_simulations if rank == 0 else None, root=0)
 
 if rank != 0:
     bc.config.dimensions.num_features = num_features
     bc.config.dimensions.num_items = num_items
     bc.config.dimensions.num_agents = num_agents
+    bc.config.dimensions.num_simulations = num_simulations
 
 # Update config for this run
 bc.load_config({

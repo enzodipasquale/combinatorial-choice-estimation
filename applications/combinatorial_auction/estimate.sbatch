@@ -1,14 +1,14 @@
 #!/bin/bash 
 
-#SBATCH --job-name=auction_estimation
+#SBATCH --job-name=point_est
 #SBATCH --nodes=20
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
 #SBATCH --time=01:00:00
-#SBATCH --output=logs/estimation-%j.out
+#SBATCH --output=logs/point_est-%j.out
 
-# Usage: sbatch auction.sbatch <delta> [winners] [hqdist]
+# Usage: sbatch estimate.sbatch <delta> [winners] [hqdist]
 #   delta: 2 or 4 (default: 4)
 #   winners: optional, pass "winners" for winners-only sample
 #   hqdist: optional, pass "hqdist" for HQ distance features
@@ -35,12 +35,3 @@ echo "Preparing data with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
 # Step 2: Run estimation (MPI)
 echo "Running estimation with delta=${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}..."
 srun ./run-gurobi.bash python run_estimation.py --delta ${DELTA} ${WINNERS_FLAG} ${HQDIST_FLAG}
-
-
-
-
-
-
-
-
-
