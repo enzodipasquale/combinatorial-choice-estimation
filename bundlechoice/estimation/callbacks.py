@@ -69,7 +69,7 @@ def adaptive_gurobi_timeout(
         # Optional: log on root process
         if log and master_model is not None:
             logger.info(f"[Iter {iteration}] Subproblem timeout: {timeout:.2f}s "
-                        f"(suboptimal={subproblem_manager._suboptimal_mode})")
+                  f"(suboptimal={subproblem_manager._suboptimal_mode})")
     
     return callback
 

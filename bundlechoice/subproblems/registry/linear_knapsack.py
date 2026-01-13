@@ -21,10 +21,10 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
             if time_limit is not None:
                 subproblem.setParam("TimeLimit", time_limit)
             subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-            B_j = subproblem.addVars(self.num_items, vtype=gp.GRB.BINARY)
-            weights = self.local_data["item_data"]["weights"]
-            capacity = self.local_data["agent_data"]["capacity"][local_id]
-            subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.num_items)) <= capacity)
+            B_j = subproblem.addVars(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
+            weights = self.data_manager.local_data["item_data"]["weights"]
+            capacity = self.data_manager.local_data["agent_data"]["capacity"][local_id]
+            subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.dimensions_cfg.num_items)) <= capacity)
             subproblem.update()
         return subproblem
 
@@ -39,12 +39,12 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         return optimal_bundle
 
     def _build_L_j(self, local_id, theta):
-        error_j = self.local_data["errors"][local_id]
+        error_j = self.data_manager.local_data["errors"][local_id]
         # Agent modular
-        agent_modular = self.local_data["agent_data"].get("modular", None)
+        agent_modular = self.data_manager.local_data["agent_data"].get("modular", None)
         agent_modular_dim = agent_modular.shape[-1] if agent_modular is not None else 0
         # Item modular
-        item_modular_k = self.local_data["item_data"].get("modular", None)
+        item_modular_k = self.data_manager.local_data["item_data"].get("modular", None)
         item_modular_dim = item_modular_k.shape[-1] if item_modular_k is not None else 0
         # Slicing theta
         lambda_agent = theta[:agent_modular_dim] if agent_modular_dim > 0 else None

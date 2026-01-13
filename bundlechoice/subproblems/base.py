@@ -8,14 +8,13 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional, List
 import numpy as np
 from numpy.typing import NDArray
-from bundlechoice.base import HasDimensions, HasData
 
 
-class BaseSubproblem(HasDimensions, HasData, ABC):
+class BaseSubproblem(ABC):
     """Base class for all subproblem solvers."""
     
     def __init__(self, data_manager: Any, oracles_manager: Any, 
-                 subproblem_cfg: Any, dimensions_cfg: Optional[Any] = None) -> None:
+                 subproblem_cfg: Any, dimensions_cfg: Any) -> None:
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
         self.subproblem_cfg = subproblem_cfg
@@ -83,7 +82,7 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
     
     def initialize_all(self) -> List[Any]:
         """Initialize serial subproblems for all agents on this rank."""
-        return [self.initialize(id) for id in range(self.num_local_agents)]
+        return [self.initialize(id) for id in range(self.data_manager.num_local_agents)]
     
     def solve_all(self, theta: NDArray[np.float64], subproblems: Optional[List[Any]] = None) -> NDArray[np.float64]:
         """Solve serial subproblems using problem states."""

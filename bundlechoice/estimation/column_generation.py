@@ -98,7 +98,7 @@ class ColumnGenerationManager(BaseEstimationManager):
     def _initialize_master_problem(self) -> None:
         obs_features = self.get_obs_features()
 
-        if self.is_root():
+        if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model()
             self.feature_constrs = []
             self.agent_constrs = {}
@@ -108,7 +108,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             self.alpha_vars = []
             self.beta_vars = []
 
-            for k in range(self.num_features):
+            for k in range(self.dimensions_cfg.num_features):
                 expr = gp.LinExpr()
 
                 alpha_var: Optional[gp.Var] = None
@@ -133,7 +133,7 @@ class ColumnGenerationManager(BaseEstimationManager):
                     expr.addTerms(-1.0, beta_var)
                 self.beta_vars.append(beta_var)
 
-                rhs = float(obs_features[k] * max(1, self.num_simulations))
+                rhs = float(obs_features[k] * max(1, self.dimensions_cfg.num_simulations))
                 if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
                     constr = self.master_model.addConstr(expr >= rhs, name=f"feature_match[{k}]")
                 else:
@@ -143,13 +143,13 @@ class ColumnGenerationManager(BaseEstimationManager):
             if self.theta_init is not None:
                 self.theta_val = self.theta_init.astype(np.float64).copy()
             else:
-                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
+                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
 
             self.master_model.update()
             self._add_initial_columns()
             logger.info("Column generation master initialised (dual).")
         else:
-            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
 
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
@@ -183,9 +183,9 @@ class ColumnGenerationManager(BaseEstimationManager):
         errors_all = self.oracles_manager.compute_gathered_errors(local_bundles)
 
         max_reduced_cost = 0.0
-        if self.is_root() and features_all is not None and errors_all is not None:
+        if self.comm_manager.is_root() and features_all is not None and errors_all is not None:
             penalties = agent_penalties[: len(errors_all)]
-            scaled_errors = errors_all / max(1, self.num_simulations)
+            scaled_errors = errors_all / max(1, self.dimensions_cfg.num_simulations)
             reduced_costs = scaled_errors - features_all @ dual_prices - penalties
             max_reduced_cost = float(np.max(reduced_costs))
             self._pricing_cache = (bundles_all, features_all, scaled_errors, reduced_costs)
@@ -211,7 +211,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         errors: Optional[NDArray[np.float64]],
         reduced_costs: Optional[NDArray[np.float64]],
     ) -> int:
-        if not self.is_root() or bundles is None or features is None or errors is None or reduced_costs is None:
+        if not self.comm_manager.is_root() or bundles is None or features is None or errors is None or reduced_costs is None:
             return 0
 
         tolerance = self.row_generation_cfg.tolerance_optimality
@@ -233,7 +233,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             column.addTerms(1.0, agent_constr)
 
             var = self.master_model.addVar(
-                obj=float(errors[idx] / max(1, self.num_simulations)),
+                obj=float(errors[idx] / max(1, self.dimensions_cfg.num_simulations)),
                 lb=0.0,
                 column=column,
                 name=f"mu_{idx}_{len(self.column_vars)}",
@@ -260,7 +260,7 @@ class ColumnGenerationManager(BaseEstimationManager):
 
     def _add_initial_columns(self) -> None:
         """Add observed bundles as initial columns to ensure master feasibility."""
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return
 
         input_data = getattr(self.data_manager, "input_data", None)
@@ -276,7 +276,7 @@ class ColumnGenerationManager(BaseEstimationManager):
 
         errors_tensor = input_data.get("errors") if input_data else None
         if errors_tensor is None:
-            errors_tensor = np.zeros((self.num_simulations, self.num_agents, self.num_items), dtype=np.float64)
+            errors_tensor = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.num_items), dtype=np.float64)
         else:
             errors_tensor = np.asarray(errors_tensor, dtype=np.float64)
             if errors_tensor.ndim == 2:
@@ -284,21 +284,21 @@ class ColumnGenerationManager(BaseEstimationManager):
             if errors_tensor.ndim != 3:
                 raise ValueError(f"Unexpected errors dimensionality: {errors_tensor.shape}")
 
-        bundles_arr = np.zeros((self.num_simulations, self.num_agents, self.num_items), dtype=bool)
-        features_arr = np.zeros((self.num_simulations, self.num_agents, self.num_features), dtype=np.float64)
-        errors_arr = np.zeros((self.num_simulations, self.num_agents), dtype=np.float64)
+        bundles_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.num_items), dtype=bool)
+        features_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.dimensions_cfg.num_features), dtype=np.float64)
+        errors_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents), dtype=np.float64)
 
-        for s in range(self.num_simulations):
+        for s in range(self.dimensions_cfg.num_simulations):
             bundle_slice = obs_bundles[min(s, obs_bundles.shape[0] - 1)]
             error_slice = errors_tensor[min(s, errors_tensor.shape[0] - 1)]
-            for i in range(self.num_agents):
+            for i in range(self.dimensions_cfg.num_agents):
                 bundle = bundle_slice[i]
                 bundles_arr[s, i] = bundle
                 features_arr[s, i] = self.agents_obs_features[i]
                 errors_arr[s, i] = error_slice[i] @ bundle
 
         flat_bundles = bundles_arr.reshape(-1, self.num_items)
-        flat_features = features_arr.reshape(-1, self.num_features)
+        flat_features = features_arr.reshape(-1, self.dimensions_cfg.num_features)
         flat_errors = errors_arr.reshape(-1)
 
         reduced_costs = np.full(
@@ -316,9 +316,9 @@ class ColumnGenerationManager(BaseEstimationManager):
     def _master_iteration(self) -> Tuple[bool, float]:
         """Perform one iteration. Returns (stop, pricing_time)."""
         stop = False
-        num_si = self.num_simulations * self.num_agents
+        num_si = self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents
 
-        if self.is_root():
+        if self.comm_manager.is_root():
             if self.has_columns:
                 assert self.master_model is not None
                 if self.master_model.Status != GRB.OPTIMAL:
@@ -340,18 +340,18 @@ class ColumnGenerationManager(BaseEstimationManager):
                         if idx < num_si:
                             agent_penalties[idx] = pi_val
                 
-                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
-                for k in range(self.num_features):
+                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
+                for k in range(self.dimensions_cfg.num_features):
                     if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
                         self.theta_val[k] = max(self.theta_lower[k], -dual_prices[k])
                     else:
                         self.theta_val[k] = -dual_prices[k]
                 self.theta_val = np.clip(self.theta_val, self.theta_lower, self.theta_upper)
             else:
-                dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.num_features, dtype=np.float64)
+                dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
                 agent_penalties = np.zeros(num_si, dtype=np.float64)
         else:
-            dual_prices = np.empty(self.num_features, dtype=np.float64)
+            dual_prices = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             agent_penalties = np.empty(num_si, dtype=np.float64)
 
         dual_prices = self.comm_manager.broadcast_array(dual_prices, root=0)
@@ -362,7 +362,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         bundles, features, errors, reduced_costs, max_rc = self._solve_pricing_problem(dual_prices, agent_penalties)
         pricing_time = time.perf_counter() - t_pricing
 
-        if self.is_root():
+        if self.comm_manager.is_root():
             logger.info("Max reduced cost: %.6e", max_rc)
             if max_rc <= self.row_generation_cfg.tolerance_optimality:
                 stop = True
@@ -371,10 +371,10 @@ class ColumnGenerationManager(BaseEstimationManager):
                 if added > 0:
                     self.master_model.optimize()
 
-        if self.is_root():
-            theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.num_features, dtype=np.float64)
+        if self.comm_manager.is_root():
+            theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         else:
-            theta_to_send = np.empty(self.num_features, dtype=np.float64)
+            theta_to_send = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
 
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_send, stop, root=0)
 
@@ -399,7 +399,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             stop, pricing_time = self._master_iteration()
             total_pricing += pricing_time
 
-            if callback and self.is_root():
+            if callback and self.comm_manager.is_root():
                 callback({
                     "iteration": iteration + 1,
                     "theta": None if self.theta_val is None else self.theta_val.copy(),
@@ -413,7 +413,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         num_iters = iteration + 1
         converged = num_iters < self.row_generation_cfg.max_iters
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             logger.info("Column generation completed in %.2fs after %d iterations.", elapsed, num_iters)
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_pricing)
@@ -426,14 +426,14 @@ class ColumnGenerationManager(BaseEstimationManager):
         return self._create_result(self.theta_hat, converged, num_iters, obj_val)
 
     def _expand_bounds(self, bound, fill_value: float) -> NDArray[np.float64]:
-        arr = np.full(self.num_features, fill_value, dtype=np.float64)
+        arr = np.full(self.dimensions_cfg.num_features, fill_value, dtype=np.float64)
         if bound is None:
             return arr
         if np.isscalar(bound):
             arr[:] = float(bound)
             return arr
         bound_list = list(bound)
-        if len(bound_list) != self.num_features:
+        if len(bound_list) != self.dimensions_cfg.num_features:
             raise ValueError("Length of theta bounds does not match number of features.")
         for idx, val in enumerate(bound_list):
             if val is None:

@@ -44,19 +44,19 @@ class SandwichMixin:
         seed = seed if seed is not None else self.se_cfg.seed
         error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
         
-        theta_hat = self.comm.bcast(theta_hat, root=0)
+        theta_hat = self.comm_manager.comm.bcast(theta_hat, root=0)
         
         if beta_indices is None:
-            beta_indices = np.arange(self.num_features, dtype=np.int64)
-        beta_indices = self.comm.bcast(beta_indices, root=0)
+            beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
+        beta_indices = self.comm_manager.comm.bcast(beta_indices, root=0)
         
         errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
         self._cache_obs_features()
         
-        is_subset = len(beta_indices) < self.num_features
+        is_subset = len(beta_indices) < self.dimensions_cfg.num_features
         use_subset_opt = optimize_for_subset and is_subset
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (SANDWICH)", "=" * 70]
             lines.append(f"  Simulations: {num_simulations}, Step: {step_size}")
             if use_subset_opt:
@@ -70,9 +70,9 @@ class SandwichMixin:
             B = self._compute_B_matrix(theta_hat, errors_all_sims)
             A = self._compute_A_matrix(theta_hat, errors_all_sims, step_size)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return None
         
         return self._finalize_sandwich(theta_hat, A, B, beta_indices, use_subset_opt)
@@ -90,18 +90,18 @@ class SandwichMixin:
         seed = seed if seed is not None else self.se_cfg.seed
         error_sigma = error_sigma if error_sigma is not None else self.se_cfg.error_sigma
         
-        theta_hat = self.comm.bcast(theta_hat, root=0)
+        theta_hat = self.comm_manager.comm.bcast(theta_hat, root=0)
         
         if beta_indices is None:
-            beta_indices = np.arange(self.num_features, dtype=np.int64)
-        beta_indices = self.comm.bcast(beta_indices, root=0)
+            beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
+        beta_indices = self.comm_manager.comm.bcast(beta_indices, root=0)
         
         errors_all_sims = self._generate_se_errors(num_simulations, seed, error_sigma)
         self._cache_obs_features()
         
-        is_subset = len(beta_indices) < self.num_features
+        is_subset = len(beta_indices) < self.dimensions_cfg.num_features
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (B-INVERSE)", "=" * 70]
             lines.append(f"  Simulations: {num_simulations}, Parameters: {len(beta_indices)}")
             logger.info("\n".join(lines))
@@ -111,9 +111,9 @@ class SandwichMixin:
         else:
             B = self._compute_B_matrix(theta_hat, errors_all_sims)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return None
         
         B_cond = np.linalg.cond(B)
@@ -129,7 +129,7 @@ class SandwichMixin:
             logger.error("  B matrix singular!")
             return None
         
-        V = B_inv / self.num_agents
+        V = B_inv / self.dimensions_cfg.num_agents
         se = np.sqrt(np.maximum(np.diag(V), 0))
         theta_beta = theta_hat[beta_indices]
         t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
@@ -158,12 +158,12 @@ class SandwichMixin:
             return None
         
         try:
-            A_inv = np.linalg.solve(A, np.eye(len(beta_indices) if is_subset else self.num_features))
+            A_inv = np.linalg.solve(A, np.eye(len(beta_indices) if is_subset else self.dimensions_cfg.num_features))
         except np.linalg.LinAlgError:
             logger.error("  A matrix singular!")
             return None
         
-        V = (1.0 / self.num_agents) * (A_inv @ B @ A_inv.T)
+        V = (1.0 / self.dimensions_cfg.num_agents) * (A_inv @ B @ A_inv.T)
         
         diag_V = np.diag(V)
         if np.any(diag_V < 0):
@@ -194,26 +194,26 @@ class SandwichMixin:
         """Compute B = (1/N) sum_i g_i g_i^T."""
         num_sims = len(errors_all_sims)
         
-        if self.is_root():
-            logger.info("Computing B matrix (%d×%d)...", self.num_features, self.num_features)
+        if self.comm_manager.is_root():
+            logger.info("Computing B matrix (%d×%d)...", self.dimensions_cfg.num_features, self.dimensions_cfg.num_features)
         
         all_features = []
         for s in range(num_sims):
-            if self.is_root():
+            if self.comm_manager.is_root():
                 logger.info("  Simulation %d/%d...", s + 1, num_sims)
             
-            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
             features = self.oracles_manager.compute_gathered_features(local_bundles)
-            if self.is_root():
+            if self.comm_manager.is_root():
                 all_features.append(features)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             features_all = np.stack(all_features, axis=0)
             g_i = features_all.mean(axis=0) - self._obs_features
-            B = (g_i.T @ g_i) / self.num_agents
+            B = (g_i.T @ g_i) / self.dimensions_cfg.num_agents
             logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
             return B
         return None
@@ -226,26 +226,26 @@ class SandwichMixin:
         num_sims = len(errors_all_sims)
         num_beta = len(beta_indices)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             logger.info("Computing B matrix (%d×%d)...", num_beta, num_beta)
         
         all_features = []
         for s in range(num_sims):
-            if self.is_root():
+            if self.comm_manager.is_root():
                 logger.info("  Simulation %d/%d...", s + 1, num_sims)
             
-            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
             features = self.oracles_manager.compute_gathered_features(local_bundles)
-            if self.is_root():
+            if self.comm_manager.is_root():
                 all_features.append(features)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             features_all = np.stack(all_features, axis=0)
             g_i = features_all.mean(axis=0)[:, beta_indices] - self._obs_features[:, beta_indices]
-            B = (g_i.T @ g_i) / self.num_agents
+            B = (g_i.T @ g_i) / self.dimensions_cfg.num_agents
             logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
             return B
         return None
@@ -254,16 +254,16 @@ class SandwichMixin:
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64], step_size: float
     ) -> Optional[NDArray[np.float64]]:
         """Compute A via finite differences: A[:,k] = (g(θ+h_k) - g(θ-h_k)) / (2h_k)."""
-        K = self.num_features
+        K = self.dimensions_cfg.num_features
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             logger.info("Computing A matrix (%d×%d)...", K, K)
             A = np.zeros((K, K))
         else:
             A = None
         
         for k in range(K):
-            if self.is_root():
+            if self.comm_manager.is_root():
                 logger.info("  Column %d/%d...", k + 1, K)
             
             h_k = compute_adaptive_step_size(theta[k], step_size)
@@ -274,10 +274,10 @@ class SandwichMixin:
             g_plus = self._compute_avg_subgradient(theta_plus, errors_all_sims)
             g_minus = self._compute_avg_subgradient(theta_minus, errors_all_sims)
             
-            if self.is_root():
+            if self.comm_manager.is_root():
                 A[:, k] = (g_plus - g_minus) / (2 * h_k)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         return A
     
     def _compute_A_matrix_subset(
@@ -287,14 +287,14 @@ class SandwichMixin:
         """Compute A for parameter subset only."""
         num_beta = len(beta_indices)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             logger.info("Computing A matrix (%d×%d)...", num_beta, num_beta)
             A = np.zeros((num_beta, num_beta))
         else:
             A = None
         
         for k_idx, k in enumerate(beta_indices):
-            if self.is_root():
+            if self.comm_manager.is_root():
                 logger.info("  Column %d/%d (param %d)...", k_idx + 1, num_beta, k)
             
             h_k = compute_adaptive_step_size(theta[k], step_size)
@@ -305,10 +305,10 @@ class SandwichMixin:
             g_plus = self._compute_avg_subgradient_subset(theta_plus, errors_all_sims, beta_indices)
             g_minus = self._compute_avg_subgradient_subset(theta_minus, errors_all_sims, beta_indices)
             
-            if self.is_root():
+            if self.comm_manager.is_root():
                 A[:, k_idx] = (g_plus - g_minus) / (2 * h_k)
         
-        self.comm.Barrier()
+        self.comm_manager.comm.Barrier()
         return A
     
     def _compute_avg_subgradient(
@@ -316,24 +316,24 @@ class SandwichMixin:
     ) -> Optional[NDArray[np.float64]]:
         """Compute g_bar(θ) = mean(simulated) - mean(observed)."""
         num_sims = len(errors_all_sims)
-        K = self.num_features
+        K = self.dimensions_cfg.num_features
         
         if self._mean_obs_full is None:
             self._cache_mean_obs_full()
         
         sim_sum_local = np.zeros(K)
         for s in range(num_sims):
-            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
             feat_local = self.oracles_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local.sum(axis=0)
         
         sim_sum_global = np.zeros(K)
-        self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
-        mean_sim = (sim_sum_global / num_sims) / self.num_agents
+        self.comm_manager.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
+        mean_sim = (sim_sum_global / num_sims) / self.dimensions_cfg.num_agents
         
-        return mean_sim - self._mean_obs_full if self.is_root() else None
+        return mean_sim - self._mean_obs_full if self.comm_manager.is_root() else None
     
     def _compute_avg_subgradient_subset(
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
@@ -353,54 +353,54 @@ class SandwichMixin:
             obs_sum = obs_feat[:, beta_indices].sum(axis=0) if obs_feat.size else np.zeros(num_beta)
             
             obs_sum_global = np.zeros(num_beta)
-            self.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
-            self._mean_obs_subset[cache_key] = obs_sum_global / self.num_agents
+            self.comm_manager.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
+            self._mean_obs_subset[cache_key] = obs_sum_global / self.dimensions_cfg.num_agents
         
         sim_sum_local = np.zeros(num_beta)
         for s in range(num_sims):
-            self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
+            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
             feat_local = self.oracles_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
         
         sim_sum_global = np.zeros(num_beta)
-        self.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
-        mean_sim = (sim_sum_global / num_sims) / self.num_agents
+        self.comm_manager.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
+        mean_sim = (sim_sum_global / num_sims) / self.dimensions_cfg.num_agents
         
-        return mean_sim - self._mean_obs_subset[cache_key] if self.is_root() else None
+        return mean_sim - self._mean_obs_subset[cache_key] if self.comm_manager.is_root() else None
     
     def _solve_local_or_empty(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Solve local subproblems or return empty array."""
-        if self.num_local_agents > 0:
+        if self.data_manager.num_local_agents > 0:
             return self.subproblem_manager.solve_local(theta)
-        return np.empty((0, self.num_items), dtype=bool)
+        return np.empty((0, self.dimensions_cfg.num_items), dtype=bool)
     
     def _cache_obs_features(self):
         """Cache observed features (gathered to root)."""
         if self._obs_features is None:
-            obs_bundles = self.local_data["obs_bundles"]
+            obs_bundles = self.data_manager.local_data["obs_bundles"]
             self._obs_features = self.oracles_manager.compute_gathered_features(obs_bundles)
     
     def _cache_mean_obs_full(self):
         """Cache mean observed features (via Allreduce)."""
-        K = self.num_features
+        K = self.dimensions_cfg.num_features
         obs_local = self.data_manager.local_data["obs_bundles"]
         obs_feat = self.oracles_manager.compute_rank_features(obs_local)
         obs_sum = obs_feat.sum(axis=0) if obs_feat.size else np.zeros(K)
         
         obs_sum_global = np.zeros(K)
-        self.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
-        self._mean_obs_full = obs_sum_global / self.num_agents
+        self.comm_manager.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
+        self._mean_obs_full = obs_sum_global / self.dimensions_cfg.num_agents
     
     def _generate_se_errors(
         self, num_simulations: int, seed: Optional[int], error_sigma: float = 1.0
     ) -> NDArray[np.float64]:
         """Generate errors for SE computation."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             if seed is not None:
                 np.random.seed(seed)
-            errors = error_sigma * np.random.randn(num_simulations, self.num_agents, self.num_items)
+            errors = error_sigma * np.random.randn(num_simulations, self.dimensions_cfg.num_agents, self.dimensions_cfg.num_items)
         else:
             errors = None
-        return self.comm.bcast(errors, root=0)
+        return self.comm_manager.comm.bcast(errors, root=0)

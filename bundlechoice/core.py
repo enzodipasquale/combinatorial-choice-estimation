@@ -4,7 +4,6 @@ from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 import numpy as np
 from mpi4py import MPI
 from bundlechoice.config import BundleChoiceConfig
-from bundlechoice.base import HasComm, HasConfig
 from bundlechoice.comm_manager import CommManager
 from bundlechoice.utils import get_logger
 
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class BundleChoice(HasComm, HasConfig):
+class BundleChoice:
     """
     Main orchestrator for bundle choice estimation.
     
@@ -117,26 +116,30 @@ class BundleChoice(HasComm, HasConfig):
         if self.standard_errors_manager is None:
             self._try_init_standard_errors_manager()
         return self.standard_errors_manager
-    
-    def print_status(self) -> None:
-        """Print formatted setup status."""
-        lines = ["\n=== BundleChoice Status ==="]
-        lines.append(f"Config:      {'OK' if self.config else 'Not set'}")
-        lines.append(f"Data:        {'OK' if self.data_manager and self.data_manager.local_data else 'Not set'}")
-        lines.append(f"Oracles:     {'OK' if self.oracles_manager and self.oracles_manager._features_oracle else 'Not set'}")
-        lines.append(f"Subproblems: {'OK' if self.subproblem_manager and self.subproblem_manager.subproblem_instance else 'Not set'}")
-        
-        if self.config and self.config.dimensions:
-            d = self.config.dimensions
-            lines.append(f"\nDimensions:  agents={d.num_agents}, items={d.num_items}, features={d.num_features}")
-        else:
-            lines.append("\nDimensions:  Not set")
-        
-        algo = self.config.subproblem.name if self.config and self.config.subproblem else 'Not set'
-        lines.append(f"Algorithm:   {algo}")
-        lines.append(f"MPI:         rank {self.rank}/{self.comm_size}")
-        
-        logger.info("\n".join(lines))
+
+    # Convenience properties for user-facing API
+    @property
+    def num_agents(self) -> int:
+        return self.config.dimensions.num_agents
+
+    @property
+    def num_items(self) -> int:
+        return self.config.dimensions.num_items
+
+    @property
+    def num_features(self) -> int:
+        return self.config.dimensions.num_features
+
+    @property
+    def num_simulations(self) -> int:
+        return self.config.dimensions.num_simulations
+
+    @property
+    def rank(self) -> int:
+        return self.comm_manager.rank
+
+    def is_root(self) -> bool:
+        return self.comm_manager.is_root()
 
     def generate_observations(self, theta_true: np.ndarray) -> Optional[np.ndarray]:
         """Generate observed bundles from true parameters, then reload data."""
@@ -146,7 +149,7 @@ class BundleChoice(HasComm, HasConfig):
         if self.data_manager.local_data is not None:
             local_errors_backup = self.data_manager.local_data.get("errors")
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             if self.data_manager.input_data is None:
                 raise RuntimeError("Cannot generate observations without input_data")
             self.data_manager.input_data["obs_bundle"] = obs_bundles
@@ -163,10 +166,9 @@ class BundleChoice(HasComm, HasConfig):
         if not has_errors_in_input and local_errors_backup is not None:
             self.data_manager.local_data["errors"] = local_errors_backup
         
-        if self.oracles_manager._features_oracle is not None:
-            oracle_code = self.oracles_manager._features_oracle.__code__
-            if 'features_oracle' in oracle_code.co_name:
-                self.oracles.build_from_data()
+        if (self.oracles_manager._features_oracle is not None and 
+            self.oracles_manager._vectorized_features is not None):
+            self.oracles.build_from_data()
         
         return obs_bundles
         
@@ -186,7 +188,7 @@ class BundleChoice(HasComm, HasConfig):
         
         self.config.validate()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             self._log_config()
         return self
     

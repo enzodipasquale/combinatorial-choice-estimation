@@ -40,10 +40,10 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
                 if time_limit is not None:
                     subproblem.setParam("TimeLimit", time_limit)
                 subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-                B_j = subproblem.addVars(self.num_items, vtype=gp.GRB.BINARY)
-                weights = self.local_data["item_data"]["weights"]
-                capacity = self.local_data["agent_data"]["capacity"][local_id]
-                subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.num_items)) <= capacity)
+                B_j = subproblem.addVars(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
+                weights = self.data_manager.local_data["item_data"]["weights"]
+                capacity = self.data_manager.local_data["agent_data"]["capacity"][local_id]
+                subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.dimensions_cfg.num_items)) <= capacity)
                 subproblem.update()        
         finally:
             if output_flag == 1 and old_gurobi_level is not None:
@@ -88,19 +88,19 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
                     if self._last_bundles is not None and local_id < len(self._last_bundles):
                         optimal_bundle = self._last_bundles[local_id].copy()
                     else:
-                        optimal_bundle = np.zeros(self.num_items, dtype=bool)
+                        optimal_bundle = np.zeros(self.dimensions_cfg.num_items, dtype=bool)
             except (gp.GurobiError, AttributeError):
                 # Gurobi has no solution (e.g., timeout before any solution found)
                 if self._last_bundles is not None and local_id < len(self._last_bundles):
                     optimal_bundle = self._last_bundles[local_id].copy()
                 else:
-                    optimal_bundle = np.zeros(self.num_items, dtype=bool)
+                    optimal_bundle = np.zeros(self.dimensions_cfg.num_items, dtype=bool)
             
             self._check_mip_gap(pb, local_id)
             
             # Cache solution for next solve
             if self._last_bundles is None:
-                self._last_bundles = np.zeros((self.num_local_agents, self.num_items), dtype=bool)
+                self._last_bundles = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), dtype=bool)
             self._last_bundles[local_id] = optimal_bundle
         finally:
             if output_flag == 1 and old_gurobi_level is not None:
@@ -111,10 +111,10 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     def _build_Q_j_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build quadratic matrix Q_j_j from agent/item quadratic features."""
         info = self.data_manager.get_data_info()
-        agent_data = self.local_data.get("agent_data", {})
-        item_data = self.local_data.get("item_data", {})
+        agent_data = self.data_manager.local_data.get("agent_data", {})
+        item_data = self.data_manager.local_data.get("item_data", {})
         
-        Q_j_j = np.zeros((self.num_items, self.num_items))
+        Q_j_j = np.zeros((self.dimensions_cfg.num_items, self.dimensions_cfg.num_items))
         offset = 0
         
         if info["has_modular_agent"]:
@@ -138,9 +138,9 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     def _build_L_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build linear coefficients L_j from agent/item modular features."""
         info = self.data_manager.get_data_info()
-        error_j = self.local_data["errors"][local_id]
-        agent_data = self.local_data.get("agent_data", {})
-        item_data = self.local_data.get("item_data", {})
+        error_j = self.data_manager.local_data["errors"][local_id]
+        agent_data = self.data_manager.local_data.get("agent_data", {})
+        item_data = self.data_manager.local_data.get("item_data", {})
         
         L_j = error_j.copy()
         offset = 0
@@ -149,6 +149,10 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
             modular_agent = agent_data["modular"]
             L_j += (modular_agent[local_id] @ theta[offset:offset + info["num_modular_agent"]])
             offset += info["num_modular_agent"]
+        
+        # Skip quadratic_agent features in theta (handled by _build_Q_j_j)
+        if info["has_quadratic_agent"]:
+            offset += info["num_quadratic_agent"]
         
         if info["has_modular_item"]:
             modular_item = item_data["modular"]

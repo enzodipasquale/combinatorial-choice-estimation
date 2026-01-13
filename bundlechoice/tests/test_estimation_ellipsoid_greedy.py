@@ -45,11 +45,6 @@ def test_ellipsoid_greedy():
     # Apply estimation data
     prepared.apply(greedy_demo, comm=comm, stage="estimation")
     greedy_demo.subproblems.load()
-    theta_ = np.ones(num_features) 
-    # theta_[0] = .99
-    gradient = greedy_demo.ellipsoid.obj_gradient(theta_)
- 
-    
     result = greedy_demo.ellipsoid.solve()
     
     # Extract theta_hat on all ranks (result object exists on all ranks)

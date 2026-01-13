@@ -8,7 +8,6 @@ import time
 import logging
 import traceback
 import sys
-from contextlib import contextmanager
 
 
 def _get_mpi_type(dtype: np.dtype) -> MPI.Datatype:
@@ -112,10 +111,6 @@ class CommManager:
     def barrier(self) -> None:
         """Synchronize all ranks at a barrier."""
         self.comm.Barrier()
-    
-    def execute_at_root(self, func: Callable, *args, **kwargs) -> Optional[Any]:
-        """Execute function only on root rank."""
-        return func(*args, **kwargs) if self.is_root() else None
 
     @_mpi_error_handler
     def broadcast_array(self, array: np.ndarray, root: int = 0) -> np.ndarray:
@@ -245,15 +240,6 @@ class CommManager:
         
         return final_result
 
-    def get_comm_profile(self) -> Optional[Dict[str, float]]:
-        """Get communication profiling data (operation name → total time)."""
-        return self._comm_times if self.enable_profiling else None
-    
-    def reset_comm_profile(self) -> None:
-        """Reset communication profiling counters."""
-        if self.enable_profiling:
-            self._comm_times = {}
-
     def _handle_failure(self, exc: Exception, operation: Optional[str] = None, errorcode: int = 1) -> None:
         """Log the local failure and abort all ranks."""
         op = operation or "MPI operation"
@@ -273,26 +259,3 @@ class CommManager:
                 self.comm.Abort(errorcode)
             except Exception:
                 sys.exit(errorcode)
-
-    @contextmanager
-    def fail_fast(self, operation: Optional[str] = None, errorcode: int = 1) -> Iterator[None]:
-        """Context manager that aborts all ranks if an exception escapes the block."""
-        try:
-            yield
-        except Exception as exc:
-            self._handle_failure(exc, operation=operation, errorcode=errorcode)
-            raise
-
-    def abort_all(self, message: Optional[str] = None, errorcode: int = 1) -> None:
-        """Explicitly abort all ranks, propagating a message for diagnostics."""
-        if message:
-            diagnostic = f"Rank {self.rank}/{self.size} aborting all ranks: {message}"
-            if self._logger:
-                self._logger.error(diagnostic)
-            else:
-                sys.stderr.write(diagnostic + "\n")
-                sys.stderr.flush()
-        try:
-            self.comm.Abort(errorcode)
-        except Exception:
-            sys.exit(errorcode)

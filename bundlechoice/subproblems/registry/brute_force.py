@@ -18,7 +18,7 @@ class BruteForceSubproblem(SerialSubproblemBase):
     def initialize(self, local_id: int) -> None:
         """Pre-compute all bundles for efficiency."""
         if not hasattr(self, '_all_bundles'):
-            self._all_bundles = np.array(list(product([0, 1], repeat=self.num_items)), dtype=np.float64)
+            self._all_bundles = np.array(list(product([0, 1], repeat=self.dimensions_cfg.num_items)), dtype=np.float64)
         return None
     
     def solve(self, local_id: int, theta: NDArray[np.float64], 
@@ -28,8 +28,8 @@ class BruteForceSubproblem(SerialSubproblemBase):
         best_bundle = None
         
         for bundle in self._all_bundles:
-            features = self.features_oracle(local_id, bundle, self.local_data)
-            error = self.error_oracle(local_id, bundle, self.local_data)
+            features = self.features_oracle(local_id, bundle, self.data_manager.local_data)
+            error = self.error_oracle(local_id, bundle, self.data_manager.local_data)
             value = features @ theta + error
             
             if value > max_value:

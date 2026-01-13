@@ -381,9 +381,9 @@ def _find_best_item(
     - If a_j ∈ H: marginal = 2 * n_{a_j}(base) + 1
     - If a_j ∉ H: marginal = 0
     """
-    modular_item = self.local_data["item_data"]["modular"]  # (num_items, num_modular_features)
-    origin_city = self.local_data["item_data"]["origin_city"]  # (num_items,)
-    agent_hubs = self.local_data["agent_data"]["hubs"][local_id]  # (num_cities,) boolean
+    modular_item = self.data_manager.local_data["item_data"]["modular"]  # (num_items, num_modular_features)
+    origin_city = self.data_manager.local_data["item_data"]["origin_city"]  # (num_items,)
+    agent_hubs = self.data_manager.local_data["agent_data"]["hubs"][local_id]  # (num_cities,) boolean
     
     theta_gs = theta[-1]
     theta_modular = theta[:-1]

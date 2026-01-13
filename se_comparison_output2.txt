@@ -1,0 +1,117 @@
+
+======================================================================
+SCENARIO: Greedy
+======================================================================
+θ_true = [1.  1.  0.1]
+20:16:42 - Config: 150 agents, 15 items, 3 features | algo=Greedy | 10 MPI workers
+20:16:42 - Scattering: 150 agents → 10 ranks
+20:16:43 - ======================================================================
+BUNDLE GENERATION STATISTICS
+======================================================================
+  Bundle sizes: min=5, max=10, mean=7.68, std=1.02
+  Aggregate demands: min=69, max=84, mean=76.80
+  Total items selected: 1152 out of 2250
+20:16:43 - Config: 150 agents, 15 items, 3 features | algo=Greedy | 10 MPI workers
+20:16:43 - Scattering: 150 agents → 10 ranks
+20:16:45 - ======================================================================
+ROW GENERATION
+======================================================================
+
+  Problem: 150 agents × 15 items, 3 features
+  Max iterations: 200
+  Min iterations: 0
+  Optimality tolerance: 1e-06
+
+  Starting row generation algorithm...
+
+20:16:45 - Master Initialized
+20:16:45 - Parameters: [100. 100.   0.]
+20:16:45 - ITERATION 1
+20:16:47 - Parameters: [100. 100.   0.]
+20:16:47 - ObjVal: -229303.31140118281
+20:16:47 - Reduced cost: 3108.0296029717424
+20:16:47 - New constraints: 150
+20:16:48 - Number of constraints: 0
+20:16:48 - ITERATION 2
+20:16:49 - Parameters: [100.    100.     11.612]
+20:16:49 - ObjVal: -118947.98516274645
+20:16:49 - Reduced cost: 1368.4433301266472
+20:16:49 - New constraints: 150
+20:16:49 - Number of constraints: 150
+20:16:49 - ITERATION 3
+20:16:50 - Parameters: [0.6   0.062 0.035]
+20:16:50 - ObjVal: 140.29284252223349
+20:16:50 - Reduced cost: 9.179424492622404
+20:16:50 - New constraints: 150
+20:16:50 - Number of constraints: 300
+20:16:50 - ITERATION 4
+20:16:52 - Parameters: [0.634 1.971 0.086]
+20:16:52 - ObjVal: 517.0626025861865
+20:16:52 - Reduced cost: 5.825437263167252
+20:16:52 - New constraints: 149
+20:16:52 - Number of constraints: 450
+20:16:52 - ITERATION 5
+20:16:53 - Parameters: [1.242 1.184 0.139]
+20:16:53 - ObjVal: 604.9398292435116
+20:16:53 - Reduced cost: 2.6986667095341073
+20:16:53 - New constraints: 139
+20:16:54 - Number of constraints: 599
+20:16:54 - ITERATION 6
+20:16:55 - Parameters: [0.98  0.832 0.08 ]
+20:16:55 - ObjVal: 680.5443503098979
+20:16:55 - Reduced cost: 0.9317873329198036
+20:16:55 - New constraints: 94
+20:16:55 - Number of constraints: 738
+20:16:55 - ITERATION 7
+20:16:57 - Parameters: [0.863 0.849 0.087]
+20:16:57 - ObjVal: 697.9421567056186
+20:16:57 - Reduced cost: 0.22882549516051043
+20:16:57 - New constraints: 46
+20:16:57 - Number of constraints: 832
+20:16:57 - ITERATION 8
+20:16:58 - Parameters: [0.923 0.84  0.084]
+20:16:58 - ObjVal: 700.7480113489178
+20:16:58 - Reduced cost: 0.03891079848460599
+20:16:58 - New constraints: 4
+20:16:58 - Number of constraints: 878
+20:16:58 - ITERATION 9
+20:17:00 - Parameters: [0.927 0.849 0.085]
+20:17:00 - ObjVal: 700.8259088208608
+20:17:00 - Reduced cost: 3.552713678800501e-15
+20:17:00 - New constraints: 0
+20:17:00 - Number of constraints: 882
+20:17:00 - Row generation ended after 9 iterations in 15.20 seconds.
+20:17:00 - ======================================================================
+ROW GENERATION SUMMARY
+======================================================================
+Objective value: 700.825909
+Theta: [0.926785 0.8485   0.084542]
+Iterations: 9
+Total time: 15.20s (1.69s/iter avg)
+
+Timing:                  Total           [min  /  avg  /  max  per iter]
+  Pricing (subproblems):  0.19s (  1.2%)  [0.001s / 0.021s / 0.100s]
+  Master problem:        14.60s ( 96.1%)  [1.335s / 1.622s / 2.418s]
+  Other (sync/overhead):  0.41s (  2.7%)
+
+20:17:01 - ======================================================================
+STANDARD ERRORS (SANDWICH)
+======================================================================
+  Simulations: 100, Step: 0.01
+20:17:01 - Computing B matrix (3×3)...
+20:17:01 -   Simulation 1/100...
+20:17:02 -   Simulation 2/100...
+20:17:02 -   Simulation 3/100...
+20:17:03 -   Simulation 4/100...
+20:17:03 -   Simulation 5/100...
+20:17:04 -   Simulation 6/100...
+20:17:04 -   Simulation 7/100...
+20:17:05 -   Simulation 8/100...
+20:17:05 -   Simulation 9/100...
+20:17:06 -   Simulation 10/100...
+20:17:06 -   Simulation 11/100...
+20:17:07 -   Simulation 12/100...
+20:17:07 -   Simulation 13/100...
+20:17:08 -   Simulation 14/100...
+20:17:08 -   Simulation 15/100...
+20:17:09 -   Simulation 16/100...

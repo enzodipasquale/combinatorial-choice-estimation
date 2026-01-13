@@ -65,13 +65,13 @@ class RowGenerationManager(BaseEstimationManager):
         Returns:
             Dict with 'hit_lower', 'hit_upper' (lists of indices), and 'any_hit' (bool)
         """
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
         
         theta = self.master_variables[0]
         hit_lower, hit_upper = [], []
         
-        for k in range(self.num_features):
+        for k in range(self.dimensions_cfg.num_features):
             val = theta[k].X
             lb, ub = theta[k].LB, theta[k].UB
             if lb > -GRB.INFINITY and abs(val - lb) < tolerance:
@@ -112,21 +112,21 @@ class RowGenerationManager(BaseEstimationManager):
         # Compute observed features (weighted if agent_weights provided)
         if hasattr(self, '_agent_weights') and self._agent_weights is not None:
             # Weighted observed features: sum_i w_i * x_i
-            if self.is_root():
+            if self.comm_manager.is_root():
                 obs_features = (self._agent_weights[:, None] * self.agents_obs_features).sum(0)
             else:
                 obs_features = None
         else:
             obs_features = self.get_obs_features()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             # Clear constraint info when creating a new model (old constraint objects become invalid)
             self.constraint_info.clear()
             self.master_model = self._setup_gurobi_model_params()    
-            theta = self.master_model.addMVar(self.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
+            theta = self.master_model.addMVar(self.dimensions_cfg.num_features, obj= - obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 # Set bounds per variable, None means unbounded (don't set)
-                for k in range(self.num_features):
+                for k in range(self.dimensions_cfg.num_features):
                     if k < len(self.row_generation_cfg.theta_lbs) and self.row_generation_cfg.theta_lbs[k] is not None:
                         theta[k].lb = float(self.row_generation_cfg.theta_lbs[k])
             else:
@@ -140,24 +140,24 @@ class RowGenerationManager(BaseEstimationManager):
             # Utility variables with (optionally weighted) objective coefficients
             if hasattr(self, '_agent_weights') and self._agent_weights is not None:
                 # Weighted objective: w_i for each agent i (repeated for each simulation)
-                u_obj = np.tile(self._agent_weights, self.num_simulations)
-                u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=u_obj, name='utility')
+                u_obj = np.tile(self._agent_weights, self.dimensions_cfg.num_simulations)
+                u = self.master_model.addMVar(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, obj=u_obj, name='utility')
             else:
-                u = self.master_model.addMVar(self.num_simulations * self.num_agents, obj=1, name='utility')
+                u = self.master_model.addMVar(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, obj=1, name='utility')
             
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
                 indices = initial_constraints['indices']
                 bundles = initial_constraints['bundles']
-                errors = self.input_data["errors"]
+                errors = self.data_manager.input_data["errors"]
                 has_sim_dim = errors.ndim == 3
                 
                 for i, idx in enumerate(indices):
-                    agent_id = idx % self.num_agents
-                    sim_id = idx // self.num_agents
+                    agent_id = idx % self.dimensions_cfg.num_agents
+                    sim_id = idx // self.dimensions_cfg.num_agents
                     bundle = bundles[i]
                     
-                    features = self.oracles_manager.features_oracle(agent_id, bundle, self.input_data)
+                    features = self.oracles_manager.features_oracle(agent_id, bundle, self.data_manager.input_data)
                     if has_sim_dim:
                         error = (errors[sim_id, agent_id] * bundle).sum()
                     else:
@@ -175,10 +175,10 @@ class RowGenerationManager(BaseEstimationManager):
                 self.theta_val = theta.X
             else:
                 logger.warning("Master problem not optimal at initialization, status=%s", self.master_model.Status)
-                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
+                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
             self.log_parameter()
         else:
-            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
     
@@ -198,17 +198,17 @@ class RowGenerationManager(BaseEstimationManager):
         errors_local = self.oracles_manager.compute_rank_errors(local_pricing_results)
         
         # Get global indices and per-rank counts (stored during scatter)
-        global_indices_local = self.local_data["global_indices"]
-        all_counts = self.local_data["agent_counts"]
+        global_indices_local = self.data_manager.local_data["global_indices"]
+        all_counts = self.data_manager.local_data["agent_counts"]
         
         # Scatter u_master from root to all ranks using consistent counts
-        if self.is_root():
+        if self.comm_manager.is_root():
             theta, u = self.master_variables
             u_master_all = u.X
             theta_current = theta.X
         else:
-            u_master_all = np.empty(self.num_simulations * self.num_agents, dtype=np.float64)
-            theta_current = np.empty(self.num_features, dtype=np.float64)
+            u_master_all = np.empty(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, dtype=np.float64)
+            theta_current = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         
         u_master_local = self.comm_manager.scatter_array(u_master_all, counts=all_counts, root=0, dtype=np.float64)
         theta_current = self.comm_manager.broadcast_array(theta_current, root=0)
@@ -251,7 +251,7 @@ class RowGenerationManager(BaseEstimationManager):
         all_viol_errors = self.comm_manager.concatenate_array_at_root_fast(viol_errors, root=0)
         
         stop = False
-        if self.is_root():
+        if self.comm_manager.is_root():
             self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
             logger.info("Reduced cost: %s", max_reduced_cost)
@@ -288,10 +288,10 @@ class RowGenerationManager(BaseEstimationManager):
             stop = False
         
         # Broadcast theta and stop flag using buffer-based method
-        if self.is_root():
+        if self.comm_manager.is_root():
             theta_to_broadcast = theta_val
         else:
-            theta_to_broadcast = np.empty(self.num_features, dtype=np.float64)
+            theta_to_broadcast = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_broadcast, stop, root=0)
         
         return stop
@@ -313,9 +313,9 @@ class RowGenerationManager(BaseEstimationManager):
         Returns:
             EstimationResult: Result object containing theta_hat and diagnostics.
         """
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "ROW GENERATION", "=" * 70, ""]
-            lines.append(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
+            lines.append(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.dimensions_cfg.num_features} features")
             if self.dimensions_cfg.num_simulations > 1:
                 lines.append(f"  Simulations: {self.dimensions_cfg.num_simulations}")
             lines.append(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
@@ -337,7 +337,7 @@ class RowGenerationManager(BaseEstimationManager):
         # Store agent weights (broadcast if needed)
         if agent_weights is not None:
             self._agent_weights = self.comm_manager.broadcast_array(
-                np.asarray(agent_weights, dtype=np.float64) if self.is_root() else np.empty(self.num_agents),
+                np.asarray(agent_weights, dtype=np.float64) if self.comm_manager.is_root() else np.empty(self.dimensions_cfg.num_agents),
                 root=0
             )
         else:
@@ -348,11 +348,11 @@ class RowGenerationManager(BaseEstimationManager):
         
         # Use provided initial_constraints or compute from theta_init
         if initial_constraints is not None:
-            if self.is_root():
+            if self.comm_manager.is_root():
                 n_init = len(initial_constraints.get('indices', []))
                 logger.info("Using %d provided initial constraints (warm start)", n_init)
         elif theta_init is not None:
-            if self.is_root():
+            if self.comm_manager.is_root():
                 logger.info("Initializing with provided theta (warm start)")
                 if hasattr(theta_init, 'theta_hat'):
                     theta_init_array = theta_init.theta_hat
@@ -360,14 +360,14 @@ class RowGenerationManager(BaseEstimationManager):
                     theta_init_array = theta_init
                 self.theta_val = np.asarray(theta_init_array, dtype=np.float64).copy()
             else:
-                self.theta_val = np.empty(self.num_features, dtype=np.float64)
+                self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
             
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
             bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
             
-            if self.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
-                indices = np.arange(self.num_simulations * self.num_agents, dtype=np.int64)
+            if self.comm_manager.is_root() and bundles_sim is not None and len(bundles_sim) > 0:
+                indices = np.arange(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, dtype=np.int64)
                 initial_constraints = {
                     'indices': indices,
                     'bundles': bundles_sim.astype(np.float64)
@@ -397,7 +397,7 @@ class RowGenerationManager(BaseEstimationManager):
             
             # Subproblem callback (if configured)
             if self.row_generation_cfg.subproblem_callback is not None:
-                master_model = self.master_model if self.is_root() else None
+                master_model = self.master_model if self.comm_manager.is_root() else None
                 self.row_generation_cfg.subproblem_callback(
                     iteration, 
                     self.subproblem_manager, 
@@ -417,7 +417,7 @@ class RowGenerationManager(BaseEstimationManager):
             master_times.append(master_time)
             
             # Callback
-            if callback and self.is_root():
+            if callback and self.comm_manager.is_root():
                 callback({
                     'iteration': iteration + 1,
                     'theta': self.theta_val.copy() if self.theta_val is not None else None,
@@ -437,7 +437,7 @@ class RowGenerationManager(BaseEstimationManager):
         # Check bounds
         bounds_info = self._check_bounds_hit()
         warnings_list = []
-        if self.is_root() and bounds_info['any_hit']:
+        if self.comm_manager.is_root() and bounds_info['any_hit']:
             if bounds_info['hit_lower']:
                 msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
                 logger.warning(msg)
@@ -447,7 +447,7 @@ class RowGenerationManager(BaseEstimationManager):
                 logger.warning(msg)
                 warnings_list.append(msg)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
@@ -531,7 +531,7 @@ class RowGenerationManager(BaseEstimationManager):
             Dict with keys 'indices', 'bundles' containing numpy arrays,
             or None if not on root process or model not initialized.
         """
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return None
         
         indices = []
@@ -546,7 +546,7 @@ class RowGenerationManager(BaseEstimationManager):
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
-                    'bundles': np.array([], dtype=np.float64).reshape(0, self.num_items)}
+                    'bundles': np.array([], dtype=np.float64).reshape(0, self.dimensions_cfg.num_items)}
         
         return {
             'indices': np.array(indices, dtype=np.int64),
@@ -564,7 +564,7 @@ class RowGenerationManager(BaseEstimationManager):
             Dict with keys 'indices', 'bundles' containing numpy arrays,
             or None if not on root process or model not initialized.
         """
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return None
         
         indices = []
@@ -581,7 +581,7 @@ class RowGenerationManager(BaseEstimationManager):
         
         if len(indices) == 0:
             return {'indices': np.array([], dtype=np.int64),
-                    'bundles': np.array([], dtype=np.float64).reshape(0, self.num_items)}
+                    'bundles': np.array([], dtype=np.float64).reshape(0, self.dimensions_cfg.num_items)}
         
         return {
             'indices': np.array(indices, dtype=np.int64),
@@ -599,7 +599,7 @@ class RowGenerationManager(BaseEstimationManager):
         Returns:
             Number of constraints removed
         """
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return 0
         
         to_remove = []
@@ -628,18 +628,18 @@ class RowGenerationManager(BaseEstimationManager):
         Args:
             agent_weights: New agent weights, shape (num_agents,)
         """
-        if not self.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return
         
         theta, u = self.master_variables
         
         # Update theta objective: -sum_i w_i * x_obs_i
         obs_features = (agent_weights[:, None] * self.agents_obs_features).sum(0)
-        for k in range(self.num_features):
+        for k in range(self.dimensions_cfg.num_features):
             theta[k].Obj = -obs_features[k]
         
         # Update u objective: w_i for each agent (repeated for simulations)
-        u_obj = np.tile(agent_weights, self.num_simulations)
+        u_obj = np.tile(agent_weights, self.dimensions_cfg.num_simulations)
         for i in range(len(u_obj)):
             u[i].Obj = u_obj[i]
         
@@ -662,14 +662,14 @@ class RowGenerationManager(BaseEstimationManager):
         """
         # Store and broadcast weights
         self._agent_weights = self.comm_manager.broadcast_array(
-            np.asarray(agent_weights, dtype=np.float64) if self.is_root() else np.empty(self.num_agents),
+            np.asarray(agent_weights, dtype=np.float64) if self.comm_manager.is_root() else np.empty(self.dimensions_cfg.num_agents),
             root=0
         )
         
         tic = time.perf_counter()
         self.subproblem_manager.initialize_local()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             if self.master_model is None:
                 raise RuntimeError("No existing model to reuse. Call solve() first.")
             
@@ -689,9 +689,9 @@ class RowGenerationManager(BaseEstimationManager):
             if self.master_model.Status == GRB.OPTIMAL:
                 self.theta_val = theta.X
             else:
-                self.theta_val = np.zeros(self.num_features, dtype=np.float64)
+                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
         else:
-            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
         
@@ -709,7 +709,7 @@ class RowGenerationManager(BaseEstimationManager):
         # Check bounds
         bounds_info = self._check_bounds_hit()
         warnings_list = []
-        if self.is_root() and bounds_info['any_hit']:
+        if self.comm_manager.is_root() and bounds_info['any_hit']:
             if bounds_info['hit_lower']:
                 msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
                 logger.warning(msg)
@@ -720,7 +720,7 @@ class RowGenerationManager(BaseEstimationManager):
                 warnings_list.append(msg)
         
         # Build result
-        if self.is_root():
+        if self.comm_manager.is_root():
             result = EstimationResult(
                 theta_hat=self.theta_val.copy(),
                 converged=iteration < self.row_generation_cfg.max_iters,
