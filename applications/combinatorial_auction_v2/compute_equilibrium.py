@@ -141,7 +141,7 @@ bc.load_config({
 })
 
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
+bc.oracles.build_from_data()
 bc.subproblems.load()
 
 if rank == 0:

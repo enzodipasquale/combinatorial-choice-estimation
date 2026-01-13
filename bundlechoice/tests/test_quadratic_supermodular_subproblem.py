@@ -3,7 +3,7 @@ import pytest
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.core import BundleChoice
 from typing import Optional, Callable, cast
-from bundlechoice.feature_manager import FeatureManager
+from bundlechoice.oracles_manager import OraclesManager
 
 
 
@@ -64,7 +64,7 @@ def test_quad_vs_bruteforce():
     bc = BundleChoice()
     bc.load_config(cfg)
     bc.data.load_and_scatter(input_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
 
     # Test with different theta_0 values (all non-negative for quadratic terms)
     # Use balanced theta values to avoid trivial solutions

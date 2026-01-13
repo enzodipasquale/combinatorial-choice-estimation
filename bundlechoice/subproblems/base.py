@@ -11,17 +11,13 @@ from numpy.typing import NDArray
 from bundlechoice.base import HasDimensions, HasData
 
 
-# ============================================================================
-# Base Subproblem Classes
-# ============================================================================
-
 class BaseSubproblem(HasDimensions, HasData, ABC):
     """Base class for all subproblem solvers."""
     
-    def __init__(self, data_manager: Any, feature_manager: Any, 
+    def __init__(self, data_manager: Any, oracles_manager: Any, 
                  subproblem_cfg: Any, dimensions_cfg: Optional[Any] = None) -> None:
         self.data_manager = data_manager
-        self.feature_manager = feature_manager
+        self.oracles_manager = oracles_manager
         self.subproblem_cfg = subproblem_cfg
         self.config = subproblem_cfg
         self.dimensions_cfg = dimensions_cfg
@@ -29,12 +25,12 @@ class BaseSubproblem(HasDimensions, HasData, ABC):
     def features_oracle(self, agent_id: int, bundle: NDArray[np.float64], 
                        data_override: Optional[Any] = None) -> NDArray[np.float64]:
         """Compute features for agent/bundle."""
-        return self.feature_manager.features_oracle(agent_id, bundle, data_override)
+        return self.oracles_manager.features_oracle(agent_id, bundle, data_override)
     
     def error_oracle(self, agent_id: int, bundle: NDArray[np.float64],
                     data_override: Optional[Any] = None) -> float:
         """Compute error for agent/bundle."""
-        return self.feature_manager.error_oracle(agent_id, bundle, data_override)
+        return self.oracles_manager.error_oracle(agent_id, bundle, data_override)
     
     @abstractmethod
     def initialize_all(self) -> Any:
@@ -94,8 +90,3 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         if subproblems is None:
             raise RuntimeError("subproblems is required for serial subproblems")
         return self.solve_serial(theta, subproblems)
-
-
-# Backward compatibility aliases
-BaseBatchSubproblem = BatchSubproblemBase
-BaseSerialSubproblem = SerialSubproblemBase

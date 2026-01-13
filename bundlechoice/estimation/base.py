@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from bundlechoice.comm_manager import CommManager
     from bundlechoice.config import DimensionsConfig, RowGenerationConfig
     from bundlechoice.data_manager import DataManager
-    from bundlechoice.feature_manager import FeatureManager
+    from bundlechoice.oracles_manager import OraclesManager
     from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 
 logger = get_logger(__name__)
@@ -35,44 +35,36 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         comm_manager: 'CommManager',
         dimensions_cfg: 'DimensionsConfig',
         data_manager: 'DataManager',
-        feature_manager: 'FeatureManager',
+        oracles_manager: 'OraclesManager',
         subproblem_manager: 'SubproblemManager',
     ) -> None:
         """Initialize base estimation solver."""
         self.comm_manager = comm_manager
         self.dimensions_cfg = dimensions_cfg
         self.data_manager = data_manager
-        self.feature_manager = feature_manager
+        self.oracles_manager = oracles_manager
         self.subproblem_manager = subproblem_manager
 
         self.agents_obs_features = self.get_agents_obs_features()
         self.obs_features = self.agents_obs_features.sum(0) if self.agents_obs_features is not None else None
 
-    # ========================================================================
-    # Observed Features
-    # ========================================================================
-
     def get_obs_features(self) -> Optional[NDArray[np.float64]]:
         """Compute aggregate observed features (rank 0 only)."""
         local_bundles = self.local_data.get("obs_bundles")
-        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
+        agents_obs_features = self.oracles_manager.compute_gathered_features(local_bundles)
         return agents_obs_features.sum(0) if self.is_root() else None
 
     def get_agents_obs_features(self) -> Optional[NDArray[np.float64]]:
         """Compute per-agent observed features (rank 0 only)."""
         local_bundles = self.local_data.get("obs_bundles")
-        agents_obs_features = self.feature_manager.compute_gathered_features(local_bundles)
+        agents_obs_features = self.oracles_manager.compute_gathered_features(local_bundles)
         return agents_obs_features if self.is_root() else None
-
-    # ========================================================================
-    # Objective & Gradient
-    # ========================================================================
 
     def compute_obj_and_gradient(self, theta: NDArray[np.float64]) -> Tuple[Optional[float], Optional[NDArray[np.float64]]]:
         """Compute objective and gradient in one call."""
         B_local = self.subproblem_manager.solve_local(theta)
-        agents_features = self.feature_manager.compute_gathered_features(B_local)
-        utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
+        agents_features = self.oracles_manager.compute_gathered_features(B_local)
+        utilities = self.oracles_manager.compute_gathered_utilities(B_local, theta)
         
         if self.is_root():
             obj_value = utilities.sum() - (self.obs_features @ theta).sum()
@@ -86,7 +78,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         if theta.ndim == 0:
             raise ValueError("theta must be 1D array, got scalar or 0D array")
         B_local = self.subproblem_manager.solve_local(theta)
-        utilities = self.feature_manager.compute_gathered_utilities(B_local, theta)
+        utilities = self.oracles_manager.compute_gathered_utilities(B_local, theta)
         if self.is_root():
             return utilities.sum() - (self.obs_features @ theta).sum()
         return None
@@ -94,22 +86,14 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
     def obj_gradient(self, theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
         """Compute objective gradient."""
         B_local = self.subproblem_manager.solve_local(theta)
-        agents_features = self.feature_manager.compute_gathered_features(B_local)
+        agents_features = self.oracles_manager.compute_gathered_features(B_local)
         if self.is_root():
             return (agents_features.sum(0) - self.obs_features) / self.num_agents
         return None
 
-    # ========================================================================
-    # Abstract Solve Method
-    # ========================================================================
-
     def solve(self) -> EstimationResult:
         """Main solve method (implemented by subclasses)."""
         raise NotImplementedError("Subclasses must implement the solve method")
-
-    # ========================================================================
-    # Result Creation (Shared)
-    # ========================================================================
 
     def _create_result(
         self,
@@ -143,10 +127,6 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
             metadata={},
         )
 
-    # ========================================================================
-    # Slack Counter Management
-    # ========================================================================
-
     def _enforce_slack_counter(self) -> int:
         """Remove constraints that have been slack too long. Returns number removed."""
         if self.row_generation_cfg is None or self.master_model is None:
@@ -172,10 +152,6 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         if to_remove:
             logger.info("Removed %d slack constraints", len(to_remove))
         return len(to_remove)
-
-    # ========================================================================
-    # Logging Utilities
-    # ========================================================================
 
     def _log_timing_summary(
         self,
@@ -241,7 +217,3 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
             logger.info("Parameters: %s", np.round(self.theta_val[feature_ids], precision))
         else:
             logger.info("Parameters: %s", np.round(self.theta_val, precision))
-
-
-# Backward compatibility alias
-BaseEstimationSolver = BaseEstimationManager

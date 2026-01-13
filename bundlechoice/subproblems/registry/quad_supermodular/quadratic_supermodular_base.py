@@ -6,9 +6,9 @@ Handles common initialization and matrix building logic shared by different solv
 """
 import numpy as np
 from typing import Any, Optional, Tuple
-from ...base import BaseBatchSubproblem
+from ...base import BatchSubproblemBase
 
-class QuadraticSupermodular(BaseBatchSubproblem):
+class QuadraticSupermodular(BatchSubproblemBase):
     """
     Base class for quadratic supermodular minimization subproblems.
     Handles common initialization and matrix building logic.

@@ -27,7 +27,7 @@ class RowGenerationManager(BaseEstimationManager):
                 dimensions_cfg: Any,
                 row_generation_cfg: Any,
                 data_manager: Any,
-                feature_manager: Any,
+                oracles_manager: Any,
                 subproblem_manager: Any
     ) -> None:
         """
@@ -38,14 +38,14 @@ class RowGenerationManager(BaseEstimationManager):
             dimensions_cfg: DimensionsConfig instance
             row_generation_cfg: RowGenerationConfig instance
             data_manager: DataManager instance
-            feature_manager: FeatureManager instance
+            oracles_manager: OraclesManager instance
             subproblem_manager: SubproblemManager instance
         """
         super().__init__(
             comm_manager=comm_manager,
             dimensions_cfg=dimensions_cfg,
             data_manager=data_manager,
-            feature_manager=feature_manager,
+            oracles_manager=oracles_manager,
             subproblem_manager=subproblem_manager
         )
         
@@ -157,7 +157,7 @@ class RowGenerationManager(BaseEstimationManager):
                     sim_id = idx // self.num_agents
                     bundle = bundles[i]
                     
-                    features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
+                    features = self.oracles_manager.features_oracle(agent_id, bundle, self.input_data)
                     if has_sim_dim:
                         error = (errors[sim_id, agent_id] * bundle).sum()
                     else:
@@ -185,52 +185,97 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _master_iteration(self, local_pricing_results: NDArray[np.float64]) -> bool:
-        """Perform one iteration of master problem. Returns True if stopping criterion met."""
-        # Gather bundles
-        bundles_sim = self.comm_manager.concatenate_array_at_root_fast(local_pricing_results, root=0)
+        """
+        Perform one iteration of master problem. Returns True if stopping criterion met.
         
-        # Compute and gather features
-        features_local = self.feature_manager.compute_rank_features(local_pricing_results)
-        x_sim = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
+        Uses distributed violation detection: each rank computes local violations,
+        then only violation data is gathered to root (efficient when V << N).
+        """
+        from mpi4py import MPI
         
-        # Compute and gather errors using error oracle
-        errors_local = self.feature_manager.compute_rank_errors(local_pricing_results)
-        errors_sim = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
+        # Compute local features and errors (no gather yet)
+        features_local = self.oracles_manager.compute_rank_features(local_pricing_results)
+        errors_local = self.oracles_manager.compute_rank_errors(local_pricing_results)
+        
+        # Get global indices and per-rank counts (stored during scatter)
+        global_indices_local = self.local_data["global_indices"]
+        all_counts = self.local_data["agent_counts"]
+        
+        # Scatter u_master from root to all ranks using consistent counts
+        if self.is_root():
+            theta, u = self.master_variables
+            u_master_all = u.X
+            theta_current = theta.X
+        else:
+            u_master_all = np.empty(self.num_simulations * self.num_agents, dtype=np.float64)
+            theta_current = np.empty(self.num_features, dtype=np.float64)
+        
+        u_master_local = self.comm_manager.scatter_array(u_master_all, counts=all_counts, root=0, dtype=np.float64)
+        theta_current = self.comm_manager.broadcast_array(theta_current, root=0)
+        
+        # Compute local utilities
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            u_sim_local = features_local @ theta_current + errors_local
+        
+        # Local violation check (demand oracle consistency)
+        local_violations = np.where(
+            ~np.isclose(u_master_local, u_sim_local, rtol=1e-5, atol=1e-5) & (u_master_local > u_sim_local)
+        )[0]
+        if len(local_violations) > 0:
+            logger.warning(
+                "Rank %d: Possible failure of demand oracle at local ids: %s",
+                self.comm_manager.rank, local_violations[:10]  # Limit output
+            )
+        
+        # Compute max reduced cost via Allreduce
+        reduced_costs_local = u_sim_local - u_master_local
+        local_max_rc = reduced_costs_local.max() if len(reduced_costs_local) > 0 else -np.inf
+        max_reduced_cost = self.comm_manager.comm.allreduce(local_max_rc, op=MPI.MAX)
+        
+        # Find local rows to add (violations that exceed threshold)
+        tol_opt = self.row_generation_cfg.tolerance_optimality
+        tol_rg = self.row_generation_cfg.tol_row_generation
+        local_rows_to_add = np.where(
+            u_sim_local > u_master_local * (1 + tol_rg) + tol_opt
+        )[0]
+        
+        # Gather only violation data (efficient when V << N)
+        viol_global_ids = global_indices_local[local_rows_to_add]
+        viol_bundles = local_pricing_results[local_rows_to_add]
+        viol_features = features_local[local_rows_to_add]
+        viol_errors = errors_local[local_rows_to_add]
+        
+        all_viol_ids = self.comm_manager.concatenate_array_at_root_fast(viol_global_ids, root=0)
+        all_viol_bundles = self.comm_manager.concatenate_array_at_root_fast(viol_bundles, root=0)
+        all_viol_features = self.comm_manager.concatenate_array_at_root_fast(viol_features, root=0)
+        all_viol_errors = self.comm_manager.concatenate_array_at_root_fast(viol_errors, root=0)
         
         stop = False
         if self.is_root():
-            theta, u = self.master_variables
-            with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
-                u_sim = x_sim @ theta.X + errors_sim
-            u_master = u.X
-
-            violations = np.where(~np.isclose(u_master, u_sim, rtol=1e-5, atol=1e-5) * (u_master > u_sim))[0]
-            if len(violations) > 0:
-                logger.warning(
-                    "Possible failure of demand oracle at agents ids: %s, "
-                    "u_sim: %s, u_master: %s",
-                    violations, u_sim[violations], u_master[violations]
-                )
-
             self.log_parameter()
             logger.info(f"ObjVal: {self.master_model.ObjVal}")
-            max_reduced_cost = np.max(u_sim - u_master)
             logger.info("Reduced cost: %s", max_reduced_cost)
+            
             # Check if we're in suboptimal cuts mode (set by callback)
             suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
-            if max_reduced_cost < self.row_generation_cfg.tolerance_optimality:
+            if max_reduced_cost < tol_opt:
                 if not suboptimal_mode:
                     stop = True
                 else:
                     logger.info("Reduced cost below tolerance, but suboptimal cuts mode active - continuing")
-            rows_to_add = np.where(u_sim > u_master * (1 + self.row_generation_cfg.tol_row_generation) + self.row_generation_cfg.tolerance_optimality)[0]
-            logger.info("New constraints: %d", len(rows_to_add))
             
-            # Add constraints
-            if len(rows_to_add) > 0 and bundles_sim is not None:
-                for idx in rows_to_add:
-                    constr = self.master_model.addConstr(u[idx] >= errors_sim[idx] + x_sim[idx] @ theta)
-                    self.constraint_info[constr] = (idx, bundles_sim[idx].copy())
+            num_new = len(all_viol_ids) if all_viol_ids is not None else 0
+            logger.info("New constraints: %d", num_new)
+            
+            # Add constraints using gathered violation data
+            if num_new > 0:
+                for i in range(num_new):
+                    idx = int(all_viol_ids[i])
+                    constr = self.master_model.addConstr(
+                        u[idx] >= all_viol_errors[i] + all_viol_features[i] @ theta
+                    )
+                    self.constraint_info[constr] = (idx, all_viol_bundles[i].copy())
+            
             self._enforce_slack_counter()
             logger.info("Number of constraints: %d", self.master_model.NumConstrs)
             
@@ -242,8 +287,12 @@ class RowGenerationManager(BaseEstimationManager):
             theta_val = None
             stop = False
         
-        # Broadcast theta and stop flag
-        self.theta_val, stop = self.comm_manager.broadcast_from_root((theta_val, stop), root=0)
+        # Broadcast theta and stop flag using buffer-based method
+        if self.is_root():
+            theta_to_broadcast = theta_val
+        else:
+            theta_to_broadcast = np.empty(self.num_features, dtype=np.float64)
+        self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_to_broadcast, stop, root=0)
         
         return stop
 
@@ -465,7 +514,7 @@ class RowGenerationManager(BaseEstimationManager):
             bundle = bundles[i]
             
             # Compute features and errors
-            features = self.feature_manager.features_oracle(agent_id, bundle, self.input_data)
+            features = self.oracles_manager.features_oracle(agent_id, bundle, self.input_data)
             error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
             
             # Add constraint (no name needed, store info in mapping)
@@ -631,7 +680,9 @@ class RowGenerationManager(BaseEstimationManager):
             # Update objective coefficients in-place
             self.update_objective_for_weights(self._agent_weights)
             
-            # Re-optimize (Gurobi uses warm-start from previous basis)
+            # Reset LP basis so Gurobi actually re-solves with new objective
+            # reset(0) discards solution; this forces Gurobi to re-optimize
+            self.master_model.reset(0)
             self.master_model.optimize()
             
             theta, u = self.master_variables

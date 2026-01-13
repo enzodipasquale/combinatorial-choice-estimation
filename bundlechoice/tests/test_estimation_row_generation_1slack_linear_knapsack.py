@@ -51,7 +51,7 @@ def test_row_generation_1slack_linear_knapsack():
         dimensions_cfg=knapsack_demo.config.dimensions,
         row_generation_cfg=knapsack_demo.config.row_generation,
         data_manager=knapsack_demo.data_manager,
-        feature_manager=knapsack_demo.feature_manager,
+        oracles_manager=knapsack_demo.oracles_manager,
         subproblem_manager=knapsack_demo.subproblem_manager
     )
     result = solver.solve()

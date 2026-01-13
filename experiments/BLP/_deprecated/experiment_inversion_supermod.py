@@ -96,7 +96,7 @@ def run_quad_supermod_experiment():
     quad_demo = BundleChoice()
     quad_demo.load_config(cfg)
     quad_demo.data.load_and_scatter(input_data)
-    quad_demo.features.build_from_data()
+    quad_demo.oracles.build_from_data()
 
     # Simulate theta_0 and generate obs_bundles
     if rank == 0:
@@ -129,7 +129,7 @@ def run_quad_supermod_experiment():
         print(f"[Rank {rank}] Setting up for parameter estimation...")
     quad_demo.load_config(cfg)
     quad_demo.data.load_and_scatter(input_data)
-    quad_demo.features.build_from_data()
+    quad_demo.oracles.build_from_data()
     quad_demo.subproblems.load()
     
     # Run row generation method
@@ -178,7 +178,7 @@ def run_quad_supermod_experiment():
     cfg["row_generation"]["parameters_to_log"] = parameters_to_log
     quad_demo.load_config(cfg)
     quad_demo.data.load_and_scatter(input_data)
-    quad_demo.features.build_from_data()
+    quad_demo.oracles.build_from_data()
     quad_demo.subproblems.load()
     start_time = time.time()
     result = quad_demo.row_generation.solve()

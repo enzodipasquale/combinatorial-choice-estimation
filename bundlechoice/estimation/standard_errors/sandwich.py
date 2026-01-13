@@ -188,10 +188,6 @@ class SandwichMixin:
             lines.append(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
         logger.info("\n".join(lines))
     
-    # =========================================================================
-    # B Matrix computation
-    # =========================================================================
-    
     def _compute_B_matrix(
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
     ) -> Optional[NDArray[np.float64]]:
@@ -208,7 +204,7 @@ class SandwichMixin:
             
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
-            features = self.feature_manager.compute_gathered_features(local_bundles)
+            features = self.oracles_manager.compute_gathered_features(local_bundles)
             if self.is_root():
                 all_features.append(features)
         
@@ -240,7 +236,7 @@ class SandwichMixin:
             
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
-            features = self.feature_manager.compute_gathered_features(local_bundles)
+            features = self.oracles_manager.compute_gathered_features(local_bundles)
             if self.is_root():
                 all_features.append(features)
         
@@ -253,10 +249,6 @@ class SandwichMixin:
             logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
             return B
         return None
-    
-    # =========================================================================
-    # A Matrix computation (finite differences)
-    # =========================================================================
     
     def _compute_A_matrix(
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64], step_size: float
@@ -319,10 +311,6 @@ class SandwichMixin:
         self.comm.Barrier()
         return A
     
-    # =========================================================================
-    # Subgradient computation
-    # =========================================================================
-    
     def _compute_avg_subgradient(
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
     ) -> Optional[NDArray[np.float64]]:
@@ -337,7 +325,7 @@ class SandwichMixin:
         for s in range(num_sims):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
-            feat_local = self.feature_manager.compute_rank_features(local_bundles)
+            feat_local = self.oracles_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local.sum(axis=0)
         
@@ -361,7 +349,7 @@ class SandwichMixin:
         
         if cache_key not in self._mean_obs_subset:
             obs_local = self.data_manager.local_data["obs_bundles"]
-            obs_feat = self.feature_manager.compute_rank_features(obs_local)
+            obs_feat = self.oracles_manager.compute_rank_features(obs_local)
             obs_sum = obs_feat[:, beta_indices].sum(axis=0) if obs_feat.size else np.zeros(num_beta)
             
             obs_sum_global = np.zeros(num_beta)
@@ -372,7 +360,7 @@ class SandwichMixin:
         for s in range(num_sims):
             self.data_manager.update_errors(errors_all_sims[s] if self.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
-            feat_local = self.feature_manager.compute_rank_features(local_bundles)
+            feat_local = self.oracles_manager.compute_rank_features(local_bundles)
             if feat_local.size:
                 sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
         
@@ -381,10 +369,6 @@ class SandwichMixin:
         mean_sim = (sim_sum_global / num_sims) / self.num_agents
         
         return mean_sim - self._mean_obs_subset[cache_key] if self.is_root() else None
-    
-    # =========================================================================
-    # Helper methods
-    # =========================================================================
     
     def _solve_local_or_empty(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Solve local subproblems or return empty array."""
@@ -396,13 +380,13 @@ class SandwichMixin:
         """Cache observed features (gathered to root)."""
         if self._obs_features is None:
             obs_bundles = self.local_data["obs_bundles"]
-            self._obs_features = self.feature_manager.compute_gathered_features(obs_bundles)
+            self._obs_features = self.oracles_manager.compute_gathered_features(obs_bundles)
     
     def _cache_mean_obs_full(self):
         """Cache mean observed features (via Allreduce)."""
         K = self.num_features
         obs_local = self.data_manager.local_data["obs_bundles"]
-        obs_feat = self.feature_manager.compute_rank_features(obs_local)
+        obs_feat = self.oracles_manager.compute_rank_features(obs_local)
         obs_sum = obs_feat.sum(axis=0) if obs_feat.size else np.zeros(K)
         
         obs_sum_global = np.zeros(K)

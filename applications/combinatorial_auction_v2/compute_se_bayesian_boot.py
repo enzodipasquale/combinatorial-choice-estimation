@@ -160,7 +160,7 @@ bc.load_config({
     "row_generation": {"max_iters": 200, "tolerance_optimality": 0.01},
 })
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
+bc.oracles.build_from_data()
 bc.subproblems.load()
 
 # Broadcast feature names

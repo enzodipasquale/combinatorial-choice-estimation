@@ -61,7 +61,7 @@ def run_greedy_experiment(num_se_simulations=300, num_bootstrap=500, step_size=1
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.set_oracle(_greedy_oracle)
+    bc_gen.oracles.set_features_oracle(_greedy_oracle)
     bc_gen.subproblems.load()
     _install_greedy_find_best(bc_gen.subproblems.subproblem_instance)
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
@@ -73,7 +73,7 @@ def run_greedy_experiment(num_se_simulations=300, num_bootstrap=500, step_size=1
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.set_oracle(_greedy_oracle)
+    bc.oracles.set_features_oracle(_greedy_oracle)
     bc.subproblems.load()
     _install_greedy_find_best(bc.subproblems.subproblem_instance)
     
@@ -139,7 +139,7 @@ def run_greedy_experiment(num_se_simulations=300, num_bootstrap=500, step_size=1
         cfg_b = dict(config)
         bc_b.load_config(cfg_b)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.set_oracle(_greedy_oracle)
+        bc_b.oracles.set_features_oracle(_greedy_oracle)
         bc_b.subproblems.load()
         _install_greedy_find_best(bc_b.subproblems.subproblem_instance)
         
@@ -175,7 +175,7 @@ def run_greedy_experiment(num_se_simulations=300, num_bootstrap=500, step_size=1
         cfg_s["dimensions"]["num_agents"] = subsamp_size
         bc_s.load_config(cfg_s)
         bc_s.data.load_and_scatter(sub_data if rank == 0 else None)
-        bc_s.features.set_oracle(_greedy_oracle)
+        bc_s.oracles.set_features_oracle(_greedy_oracle)
         bc_s.subproblems.load()
         _install_greedy_find_best(bc_s.subproblems.subproblem_instance)
         
@@ -287,7 +287,7 @@ def run_knapsack_experiment():
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.build_from_data()
+    bc_gen.oracles.build_from_data()
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -302,7 +302,7 @@ def run_knapsack_experiment():
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
     
     if rank == 0:
@@ -346,7 +346,7 @@ def run_knapsack_experiment():
         cfg_b = dict(config)
         bc_b.load_config(cfg_b)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.build_from_data()
+        bc_b.oracles.build_from_data()
         bc_b.subproblems.load()
         
         res_b = bc_b.row_generation.solve()
@@ -381,7 +381,7 @@ def run_knapsack_experiment():
         cfg_s["dimensions"]["num_agents"] = subsamp_size
         bc_s.load_config(cfg_s)
         bc_s.data.load_and_scatter(sub_data if rank == 0 else None)
-        bc_s.features.build_from_data()
+        bc_s.oracles.build_from_data()
         bc_s.subproblems.load()
         
         res_s = bc_s.row_generation.solve()

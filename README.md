@@ -40,7 +40,7 @@ bc.load_config({
 })
 
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
+bc.oracles.build_from_data()
 
 # Generate choices
 theta_true = np.ones(5)
@@ -51,7 +51,7 @@ if rank == 0:
     input_data["obs_bundle"] = obs_bundles
 
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
+bc.oracles.build_from_data()
 bc.subproblems.load()
 
 theta_hat = bc.row_generation.solve()
@@ -67,7 +67,8 @@ Run with: `mpirun -n 10 python script.py`
 ```python
 input_data = {
     "agent_data": {
-        "modular": np.array,      # (num_agents, num_items, num_features)
+        "modular": np.array,         # (num_agents, num_items, num_features)
+        "constraint_mask": np.array, # (num_agents, num_items) - optional, bool
     },
     "item_data": {
         "modular": np.array,      # (num_items, num_features)
@@ -75,7 +76,6 @@ input_data = {
     },
     "errors": np.array,           # (num_simulations, num_agents, num_items)
     "obs_bundle": np.array,       # (num_agents, num_items)
-    "constraint_mask": np.array   # (num_agents, num_items) - optional
 }
 ```
 
@@ -98,7 +98,7 @@ def my_features(agent_id, bundle, data):
     X = data["agent_data"]["modular"][agent_id]
     return X.T @ bundle
 
-bc.features.set_oracle(my_features)
+bc.oracles.set_features_oracle(my_features)
 ```
 
 ## Custom subproblem solver

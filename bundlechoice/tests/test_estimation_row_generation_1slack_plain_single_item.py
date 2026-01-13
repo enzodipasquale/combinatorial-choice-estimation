@@ -72,7 +72,7 @@ def test_row_generation_1slack_plain_single_item():
         dimensions_cfg=demo.config.dimensions,
         row_generation_cfg=demo.config.row_generation,
         data_manager=demo.data_manager,
-        feature_manager=demo.feature_manager,
+        oracles_manager=demo.oracles_manager,
         subproblem_manager=demo.subproblem_manager
     )
     result = solver.solve()

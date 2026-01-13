@@ -115,7 +115,7 @@ def create_real_airline_scenario(
             return np.concatenate((modular_features, -congestion[None, :]), axis=0)
     
     def feature_initializer(bc: BundleChoice) -> None:
-        bc.features.set_oracle(features_oracle)
+        bc.oracles.set_features_oracle(features_oracle)
         # Install find_best_item if needed
         if bc.subproblems.demand_oracle is not None:
             from bundlechoice.subproblems.registry.greedy import GreedySubproblem

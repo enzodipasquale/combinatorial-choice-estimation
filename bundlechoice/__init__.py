@@ -8,7 +8,7 @@ parameter estimation in discrete choice models.
 Main components:
 - BundleChoice: Main orchestrator class
 - DataManager: Handles data distribution across MPI ranks
-- FeatureManager: Manages feature extraction
+- OraclesManager: Manages feature and error oracles
 - SubproblemManager: Manages subproblem solving
 - Various estimation solvers (row generation, ellipsoid)
 """
@@ -18,13 +18,13 @@ __version_info__ = tuple(map(int, __version__.split('.')))
 
 from .core import BundleChoice
 from .data_manager import DataManager
-from .feature_manager import FeatureManager
+from .oracles_manager import OraclesManager
 from .config import BundleChoiceConfig, DimensionsConfig
 
 __all__ = [
     'BundleChoice',
     'DataManager', 
-    'FeatureManager',
+    'OraclesManager',
     'BundleChoiceConfig',
     'DimensionsConfig',
     '__version__',

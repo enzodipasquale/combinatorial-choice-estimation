@@ -17,10 +17,6 @@ from bundlechoice.config import BundleChoiceConfig, DimensionsConfig
 from bundlechoice.comm_manager import CommManager
 
 
-# ============================================================================
-# Pytest Markers
-# ============================================================================
-
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "mpi: test requires MPI (run with mpirun)")
@@ -28,10 +24,6 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: integration test")
     config.addinivalue_line("markers", "unit: unit test")
 
-
-# ============================================================================
-# Fixtures
-# ============================================================================
 
 @pytest.fixture(scope="function")
 def comm():
@@ -68,10 +60,6 @@ def rng():
     """Seeded random number generator for reproducible tests."""
     return np.random.RandomState(42)
 
-
-# ============================================================================
-# Test Data Generation Helpers
-# ============================================================================
 
 def generate_simple_test_data(
     num_agents: int = 20,
@@ -168,14 +156,10 @@ def simple_bundlechoice(comm, rng):
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(input_data)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     
     return bc
 
-
-# ============================================================================
-# Assertion Helpers
-# ============================================================================
 
 def assert_bundles_valid(bundles: np.ndarray, num_agents: int, num_items: int, is_root: bool):
     """Assert that bundles array has correct shape and dtype."""

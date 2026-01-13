@@ -165,7 +165,7 @@ def run_row_generation_greedy_experiment():
     bc_blp.load_config(prepared.config)
     bc_blp.data.load_and_scatter(est_data_blp if rank == 0 else None)
     # For BLP inversion, we use identity matrix for modular, so we need the oracle
-    bc_blp.features.set_oracle(_greedy_features_oracle)
+    bc_blp.oracles.set_features_oracle(_greedy_features_oracle)
     bc_blp.subproblems.load()
     
     # Reinstall find_best_item after subproblems are reloaded

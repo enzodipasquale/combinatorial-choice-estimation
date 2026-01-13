@@ -9,10 +9,10 @@ import numpy as np
 from typing import Any, Optional
 from numpy.typing import NDArray
 from itertools import product
-from ..base import BaseSerialSubproblem
+from ..base import SerialSubproblemBase
 
 
-class BruteForceSubproblem(BaseSerialSubproblem):
+class BruteForceSubproblem(SerialSubproblemBase):
     """Brute force solver: enumerate all bundles."""
     
     def initialize(self, local_id: int) -> None:

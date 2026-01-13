@@ -71,7 +71,7 @@ else:
 firms_export = BundleChoice()
 firms_export.load_config(CONFIG_PATH)
 firms_export.data.load_and_scatter(input_data)
-firms_export.features.build_from_data()
+firms_export.oracles.build_from_data()
 firms_export.subproblems.load()
 result = firms_export.row_generation.solve()
 

@@ -10,17 +10,13 @@ import logging
 from typing import Any, Optional
 from contextlib import nullcontext
 from numpy.typing import NDArray
-from ..base import BaseSerialSubproblem
+from ..base import SerialSubproblemBase
 from bundlechoice.utils import suppress_output, get_logger
 
 logger = get_logger(__name__)
 
 
-# ============================================================================
-# Quadratic Knapsack Subproblem Solver
-# ============================================================================
-
-class QuadraticKnapsackSubproblem(BaseSerialSubproblem):
+class QuadraticKnapsackSubproblem(SerialSubproblemBase):
     """Quadratic knapsack solver: max utility with quadratic terms, weight constraint."""
     
     def __init__(self, *args, **kwargs) -> None:
@@ -111,10 +107,6 @@ class QuadraticKnapsackSubproblem(BaseSerialSubproblem):
                 gurobi_logger.setLevel(old_gurobi_level)
         
         return optimal_bundle
-
-    # ============================================================================
-    # Helper Methods
-    # ============================================================================
 
     def _build_Q_j_j(self, local_id: int, theta: NDArray[np.float64]) -> NDArray[np.float64]:
         """Build quadratic matrix Q_j_j from agent/item quadratic features."""

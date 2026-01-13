@@ -18,19 +18,19 @@ class HasComm:
     comm_manager: 'CommManager'
 
     @property
-    def comm(self) -> Optional['MPI.Comm']:
-        return self.comm_manager.comm if self.comm_manager else None
+    def comm(self) -> 'MPI.Comm':
+        return self.comm_manager.comm
 
     @property
     def rank(self) -> int:
-        return self.comm_manager.rank if self.comm_manager else 0
+        return self.comm_manager.rank
 
     @property
     def comm_size(self) -> int:
-        return self.comm_manager.size if self.comm_manager else 1
+        return self.comm_manager.size
     
     def is_root(self) -> bool:
-        return self.comm_manager.is_root() if self.comm_manager else True
+        return self.comm_manager.is_root()
 
 
 class HasDimensions:

@@ -147,7 +147,7 @@ class GreedyScenarioBuilder:
 
         def _greedy_feature_initializer(bc: BundleChoice) -> None:
             """Initialize features for greedy factory."""
-            bc.features.set_oracle(_greedy_features_oracle)
+            bc.oracles.set_features_oracle(_greedy_features_oracle)
             # Install find_best_item after subproblems are loaded
             # This will be called from PreparedScenario.apply() after subproblems.load()
             # Also called from payload_factory after subproblems.load() for data generation

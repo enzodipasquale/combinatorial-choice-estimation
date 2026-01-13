@@ -65,7 +65,7 @@ def run_row_generation_greedy_experiment():
     greedy_demo = BundleChoice()
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.set_oracle(features_oracle)
+    greedy_demo.oracles.set_features_oracle(features_oracle)
     
     theta_0 = np.ones(num_features) * 2
     theta_0[-1] = .1
@@ -89,7 +89,7 @@ def run_row_generation_greedy_experiment():
         print(f"[Rank {rank}] Setting up for parameter estimation...")
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.set_oracle(features_oracle)
+    greedy_demo.oracles.set_features_oracle(features_oracle)
     greedy_demo.subproblems.load()
     
     
@@ -114,7 +114,7 @@ def run_row_generation_greedy_experiment():
     cfg["row_generation"]["parameters_to_log"] = parameters_to_log
     greedy_demo.load_config(cfg)
     greedy_demo.data.load_and_scatter(input_data)
-    greedy_demo.features.set_oracle(features_oracle)
+    greedy_demo.oracles.set_features_oracle(features_oracle)
     greedy_demo.subproblems.load()
     start_time = time.time()
     result = greedy_demo.row_generation.solve()

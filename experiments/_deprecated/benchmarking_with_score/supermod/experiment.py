@@ -109,16 +109,16 @@ if rank == 0:
 #     count = 0
 #     DataArray = np.zeros((num_agents, num_items, num_features))
 #     for i in range(num_agents):
-#         features_i_obs = quadsupermod_experiment.features.features_oracle(i, obs_bundles[i], data)
+#         features_i_obs = quadsupermod_experiment.oracles.features_oracle(i, obs_bundles[i], data)
 #         for j in range(num_items):
 #             alt_bundle = obs_bundles[i].copy()
 #             if obs_bundles[i,j]:
 #                 alt_bundle[j] = 0
-#                 feat_alt_bundle = quadsupermod_experiment.features.features_oracle(i, alt_bundle, data)
+#                 feat_alt_bundle = quadsupermod_experiment.oracles.features_oracle(i, alt_bundle, data)
 
 #             else:
 #                 alt_bundle[j] = 1
-#                 feat_alt_bundle = quadsupermod_experiment.features.features_oracle(i, alt_bundle, data)
+#                 feat_alt_bundle = quadsupermod_experiment.oracles.features_oracle(i, alt_bundle, data)
   
 #             Delta_features = features_i_obs - feat_alt_bundle  
 #             count += 1

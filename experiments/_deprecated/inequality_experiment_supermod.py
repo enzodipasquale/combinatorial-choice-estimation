@@ -49,7 +49,7 @@ data = {"agent_data": agent_data,
 
 # Load and scatter data
 inequality_experiment.data.load_and_scatter(data)
-inequality_experiment.features.build_from_data()
+inequality_experiment.oracles.build_from_data()
 
 theta_0 = np.ones(num_features)
 obs_bundles, _ = inequality_experiment.subproblems.init_and_solve(theta_0, return_values=True)
@@ -63,7 +63,7 @@ data["errors"] = estimation_errors
 
 inequality_experiment.load_config(cfg)
 inequality_experiment.data.load_and_scatter(data)
-inequality_experiment.features.build_from_data()
+inequality_experiment.oracles.build_from_data()
 inequality_experiment.subproblems.load()
 
 tic = datetime.now()

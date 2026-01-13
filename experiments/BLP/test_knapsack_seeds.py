@@ -107,7 +107,7 @@ def run_with_seed(seed: int):
     bc_blp = BundleChoice()
     bc_blp.load_config(prepared.config)
     bc_blp.data.load_and_scatter(est_data_blp if rank == 0 else None)
-    bc_blp.features.build_from_data()
+    bc_blp.oracles.build_from_data()
     bc_blp.subproblems.load()
     result_blp = bc_blp.row_generation.solve()
     theta_hat_blp = result_blp.theta_hat

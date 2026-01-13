@@ -133,7 +133,7 @@ bc.load_config({
     "standard_errors": {"num_simulations": NUM_SIMULS, "step_size": STEP_SIZE, "seed": 1995}
 })
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()  # Auto-sets feature names
+bc.oracles.build_from_data()  # Auto-sets feature names
 bc.subproblems.load()
 bc.subproblems.initialize_local()
 

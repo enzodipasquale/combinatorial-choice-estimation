@@ -124,7 +124,7 @@ class AirlineScenarioBuilder:
 
         def _airline_feature_initializer(bc: BundleChoice) -> None:
             """Initialize features for airline factory."""
-            bc.features.set_oracle(_airline_features_oracle)
+            bc.oracles.set_features_oracle(_airline_features_oracle)
             if bc.subproblems.subproblem_instance is not None:
                 from bundlechoice.subproblems.registry.greedy import GreedySubproblem
                 if isinstance(bc.subproblems.subproblem_instance, GreedySubproblem):

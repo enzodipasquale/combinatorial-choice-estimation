@@ -62,7 +62,7 @@ def run_experiment(subproblem_name, num_agents, num_bootstrap=50):
     bc_gen = BundleChoice()
     bc_gen.load_config(config)
     bc_gen.data.load_and_scatter(gen_data if rank == 0 else None)
-    bc_gen.features.set_oracle(_oracle)
+    bc_gen.oracles.set_features_oracle(_oracle)
     bc_gen.subproblems.load()
     obs_bundles = bc_gen.subproblems.init_and_solve(theta_0)
     obs_bundles = comm.bcast(obs_bundles, root=0)
@@ -73,7 +73,7 @@ def run_experiment(subproblem_name, num_agents, num_bootstrap=50):
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(est_data if rank == 0 else None)
-    bc.features.set_oracle(_oracle)
+    bc.oracles.set_features_oracle(_oracle)
     bc.subproblems.load()
     
     result = bc.row_generation.solve()
@@ -95,7 +95,7 @@ def run_experiment(subproblem_name, num_agents, num_bootstrap=50):
         bc_b = BundleChoice()
         bc_b.load_config(config)
         bc_b.data.load_and_scatter(boot_data if rank == 0 else None)
-        bc_b.features.set_oracle(_oracle)
+        bc_b.oracles.set_features_oracle(_oracle)
         bc_b.subproblems.load()
         
         try:
@@ -115,7 +115,7 @@ def run_experiment(subproblem_name, num_agents, num_bootstrap=50):
     bc_bayes = BundleChoice()
     bc_bayes.load_config(config)
     bc_bayes.data.load_and_scatter(est_data if rank == 0 else None)
-    bc_bayes.features.set_oracle(_oracle)
+    bc_bayes.oracles.set_features_oracle(_oracle)
     bc_bayes.subproblems.load()
     
     for _ in range(num_bootstrap):

@@ -110,7 +110,7 @@ if rank != 0:
 
 # Load and scatter data, build features (auto-names features from data sources)
 bc.data.load_and_scatter(input_data)
-bc.features.build_from_data()
+bc.oracles.build_from_data()
 bc.subproblems.load()
 
 # Broadcast feature names after build_from_data sets them
@@ -125,16 +125,27 @@ if rank == 0:
         print(f"  Structural: {structural}")
 
 # =============================================================================
-# Custom Bounds for delta=2 (using bounds-by-name API)
+# Custom Bounds for delta=2
 # =============================================================================
-if DELTA == 2:
-    bounds = bc.config.row_generation.bounds(bc.config.dimensions)
-    bounds.set("bidder_elig_pop", lower=75)
-    bounds.set("pop_distance", lower=400, upper=650)
-    bounds.set("travel_survey", lower=-120)
-    bounds.set("air_travel", lower=-75)
-    bounds.set_pattern("FE_*", lower=0, upper=1000)
-    bc.config.row_generation.apply_bounds(num_features)
+if DELTA == 2 and feature_names:
+    # Build bounds arrays by feature name
+    theta_lbs = np.zeros(num_features)
+    theta_ubs = np.full(num_features, 1000.0)
+    
+    for i, name in enumerate(feature_names):
+        if name == "bidder_elig_pop":
+            theta_lbs[i] = 75
+        elif name == "pop_distance":
+            theta_lbs[i], theta_ubs[i] = 400, 650
+        elif name == "travel_survey":
+            theta_lbs[i] = -120
+        elif name == "air_travel":
+            theta_lbs[i] = -75
+        elif name.startswith("FE_"):
+            theta_lbs[i], theta_ubs[i] = 0, 1000
+    
+    bc.config.row_generation.theta_lbs = theta_lbs
+    bc.config.row_generation.theta_ubs = theta_ubs
     
     if rank == 0:
         print(f"Custom bounds for delta=2 applied")

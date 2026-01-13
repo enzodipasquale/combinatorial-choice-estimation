@@ -435,7 +435,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
     bc = BundleChoice()
     bc.load_config(config)
     bc.data.load_and_scatter(generation_data if IS_ROOT else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     
     # Generate observed bundles with timeout protection
     theta_star = np.ones(num_features)
@@ -454,7 +454,7 @@ def setup_quadratic_knapsack(timeout: Optional[int], seed: Optional[int] = None)
 
     bc.load_config(config)
     bc.data.load_and_scatter(estimation_data if IS_ROOT else None)
-    bc.features.build_from_data()
+    bc.oracles.build_from_data()
     bc.subproblems.load()
 
     metadata = {

@@ -7,14 +7,10 @@ Iteratively adds items with highest marginal value until no improvement.
 import numpy as np
 from typing import Any, Optional
 from numpy.typing import NDArray
-from ..base import BaseSerialSubproblem
+from ..base import SerialSubproblemBase
 
 
-# ============================================================================
-# Greedy Subproblem Solver
-# ============================================================================
-
-class GreedySubproblem(BaseSerialSubproblem):
+class GreedySubproblem(SerialSubproblemBase):
     """Greedy subproblem solver: iteratively adds best items."""
     
     def __init__(self, *args, **kwargs) -> None:

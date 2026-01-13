@@ -51,7 +51,7 @@ def features_oracle(i_id, bundle, data):
     else:
         return np.concatenate((modular_agent.T @ bundle, -np.sum(bundle, axis=0, keepdims=True) ** 2), axis=0)
 
-inequality_experiment.features.set_oracle(features_oracle)
+inequality_experiment.oracles.set_features_oracle(features_oracle)
 theta_0 = np.ones(num_features)
 obs_bundles = inequality_experiment.subproblems.init_and_solve(theta_0)
 
@@ -64,7 +64,7 @@ data["errors"] = estimation_errors
 
 inequality_experiment.load_config(cfg)
 inequality_experiment.data.load_and_scatter(data)
-inequality_experiment.features.set_oracle(features_oracle)
+inequality_experiment.oracles.set_features_oracle(features_oracle)
 inequality_experiment.subproblems.load()
 
 tic = datetime.now()

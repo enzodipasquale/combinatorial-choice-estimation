@@ -1,8 +1,4 @@
-"""
-MPI communication manager for distributed operations.
-
-Provides buffer-based and pickle-based communication primitives with optional profiling.
-"""
+"""MPI communication manager for distributed operations."""
 
 from typing import Any, Optional, Callable, List, Dict, Tuple, Iterator
 import numpy as np
@@ -14,10 +10,6 @@ import traceback
 import sys
 from contextlib import contextmanager
 
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
 
 def _get_mpi_type(dtype: np.dtype) -> MPI.Datatype:
     """Map numpy dtype to MPI datatype."""
@@ -48,10 +40,6 @@ def _mpi_error_handler(func: Callable) -> Callable:
     return wrapper
 
 
-# ============================================================================
-# CommManager
-# ============================================================================
-
 class CommManager:
     """MPI communication manager with buffer-based and pickle-based operations."""
     
@@ -66,12 +54,7 @@ class CommManager:
         try:
             self.comm.Set_errhandler(MPI.ERRORS_RETURN)
         except Exception:
-            # Not all MPI implementations allow customizing the error handler.
             pass
-
-    # ============================================================================
-    # Helper Methods
-    # ============================================================================
 
     def is_root(self) -> bool:
         """Check if current rank is root (rank 0)."""
@@ -94,10 +77,6 @@ class CommManager:
                 {k: v.shape for k, v in data_dict.items()},
                 {k: v.dtype for k, v in data_dict.items()})
 
-    # ============================================================================
-    # Pickle-Based Methods (Flexible, Works with Any Python Object)
-    # ============================================================================
-    
     @_mpi_error_handler
     def scatter_from_root(self, data: Any, root: int = 0) -> Any:
         """Scatter data from root to all ranks (pickle-based)."""
@@ -138,10 +117,6 @@ class CommManager:
         """Execute function only on root rank."""
         return func(*args, **kwargs) if self.is_root() else None
 
-    # ============================================================================
-    # Buffer-Based Methods (2-20x Faster for NumPy Arrays)
-    # ============================================================================
-    
     @_mpi_error_handler
     def broadcast_array(self, array: np.ndarray, root: int = 0) -> np.ndarray:
         """Broadcast numpy array using MPI buffers. Array must exist on all ranks with same shape/dtype."""
@@ -150,35 +125,16 @@ class CommManager:
     
     @_mpi_error_handler
     def broadcast_array_with_flag(self, array: Optional[np.ndarray], flag: bool, root: int = 0) -> Tuple[np.ndarray, bool]:
-        """
-        Broadcast numpy array + boolean flag using buffer-based operations (no pickle).
-        
-        This is optimized for frequent broadcasts (e.g., per-iteration theta + stop flag).
-        The array is broadcast using Bcast (buffer-based), and the flag is broadcast as uint8.
-        
-        Args:
-            array: NumPy array to broadcast (on root) or empty array with correct shape/dtype (on non-root)
-            flag: Boolean flag to broadcast
-            root: Root rank
-            
-        Returns:
-            Tuple of (broadcasted_array, broadcasted_flag)
-        """
+        """Broadcast numpy array + boolean flag using buffer-based operations (no pickle)."""
         if self.is_root():
             if array is None:
                 raise ValueError("array required on root")
-            array_shape = array.shape
-            array_dtype = array.dtype
         else:
             if array is None:
                 raise ValueError("array required on non-root (must pre-allocate with correct shape/dtype)")
-            array_shape = array.shape
-            array_dtype = array.dtype
         
-        # Broadcast array using buffer-based Bcast
         self.comm.Bcast(array, root=root)
         
-        # Broadcast flag as uint8 (1 byte, buffer-based)
         flag_uint8 = np.array([1 if flag else 0], dtype=np.uint8) if self.is_root() else np.array([0], dtype=np.uint8)
         self.comm.Bcast(flag_uint8, root=root)
         flag_result = bool(flag_uint8[0])
@@ -243,13 +199,7 @@ class CommManager:
     
     @_mpi_error_handler
     def concatenate_array_at_root_fast(self, local_array: np.ndarray, root: int = 0) -> Optional[np.ndarray]:
-        """
-        Gather and concatenate arrays using MPI buffers (optimized, no pickle).
-        
-        Handles bool arrays by packing as uint8, and uses buffer-based shape gathering
-        instead of pickle for better performance with many ranks.
-        """
-        # Handle bool arrays by packing as uint8 (1 byte per bool, same as bool_)
+        """Gather and concatenate arrays using MPI buffers (optimized, no pickle)."""
         if local_array.dtype == np.bool_:
             local_array = local_array.astype(np.uint8)
             unpack_bool = True
@@ -259,27 +209,21 @@ class CommManager:
         local_flat = local_array.ravel()
         ndim = local_array.ndim
         
-        # Gather sizes using Allgather (fast, buffer-based)
         all_sizes_array = np.empty(self.size, dtype=np.int64)
         self.comm.Allgather(np.array([local_flat.size], dtype=np.int64), all_sizes_array)
         all_sizes = all_sizes_array.tolist()
         
-        # Gather shapes using buffer-based Allgather instead of pickle
-        # Shape is a tuple of length ndim, send as int array
         shape_array = np.array(local_array.shape, dtype=np.int64)
         all_shapes_buffer = np.empty(self.size * ndim, dtype=np.int64)
         self.comm.Allgather(shape_array, all_shapes_buffer)
         
-        # Reshape to (size, ndim) - all ranks need this for shape validation
         all_shapes = all_shapes_buffer.reshape(self.size, ndim)
         
-        # Verify all ranks have same shape (except first dimension) - check on all ranks
         if ndim > 1:
             shape_template = all_shapes[0, 1:]
             if not np.all(all_shapes[:, 1:] == shape_template):
                 raise ValueError("Inconsistent shapes across ranks (non-first dimensions must match)")
         
-        # Gather actual data using Gatherv (fast, buffer-based)
         recvbuf = [np.empty(sum(all_sizes), dtype=local_array.dtype), all_sizes, 
                    self._compute_displacements(all_sizes), _get_mpi_type(local_array.dtype)] if self.is_root() else None
         self.comm.Gatherv(local_flat, recvbuf, root=root)
@@ -289,24 +233,17 @@ class CommManager:
         
         result = recvbuf[0]
         
-        # Reshape result
         if ndim == 1:
             final_result = result
         else:
-            # Reconstruct shape: first dim is sum of all first dims, rest from template
             first_dim = sum(all_shapes[:, 0])
             rest_shape = tuple(all_shapes[0, 1:])
             final_result = result.reshape((first_dim,) + rest_shape)
         
-        # Unpack bool if needed
         if unpack_bool:
             final_result = final_result.astype(np.bool_)
         
         return final_result
-
-    # ============================================================================
-    # Profiling
-    # ============================================================================
 
     def get_comm_profile(self) -> Optional[Dict[str, float]]:
         """Get communication profiling data (operation name → total time)."""
@@ -316,10 +253,6 @@ class CommManager:
         """Reset communication profiling counters."""
         if self.enable_profiling:
             self._comm_times = {}
-
-    # ============================================================================
-    # Failure Handling
-    # ============================================================================
 
     def _handle_failure(self, exc: Exception, operation: Optional[str] = None, errorcode: int = 1) -> None:
         """Log the local failure and abort all ranks."""
@@ -339,18 +272,11 @@ class CommManager:
             try:
                 self.comm.Abort(errorcode)
             except Exception:
-                # As a last resort, ensure the process exits to avoid hanging.
                 sys.exit(errorcode)
 
     @contextmanager
     def fail_fast(self, operation: Optional[str] = None, errorcode: int = 1) -> Iterator[None]:
-        """
-        Context manager that aborts all ranks if an exception escapes the block.
-
-        Usage:
-            with comm_manager.fail_fast("setup phase"):
-                ...
-        """
+        """Context manager that aborts all ranks if an exception escapes the block."""
         try:
             yield
         except Exception as exc:
@@ -358,9 +284,7 @@ class CommManager:
             raise
 
     def abort_all(self, message: Optional[str] = None, errorcode: int = 1) -> None:
-        """
-        Explicitly abort all ranks, propagating a message for diagnostics.
-        """
+        """Explicitly abort all ranks, propagating a message for diagnostics."""
         if message:
             diagnostic = f"Rank {self.rank}/{self.size} aborting all ranks: {message}"
             if self._logger:
