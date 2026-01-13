@@ -4,7 +4,7 @@ This module implements a simplified row generation approach with a single scalar
 """
 import time
 import numpy as np
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from numpy.typing import NDArray
 import gurobipy as gp
 from gurobipy import GRB
@@ -58,6 +58,24 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         self.theta_hat = None
         self.slack_counter = None
         self.timing_stats = None
+
+    def _check_bounds_hit(self, tolerance: float = 1e-6) -> Dict[str, Any]:
+        """Check if any theta variable is at its bounds."""
+        if not self.comm_manager.is_root() or self.master_model is None:
+            return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
+        
+        theta = self.master_variables[0]
+        hit_lower, hit_upper = [], []
+        
+        for k in range(self.dimensions_cfg.num_features):
+            val = theta[k].X
+            lb, ub = theta[k].LB, theta[k].UB
+            if lb > -GRB.INFINITY and abs(val - lb) < tolerance:
+                hit_lower.append(k)
+            if ub < GRB.INFINITY and abs(val - ub) < tolerance:
+                hit_upper.append(k)
+        
+        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
     def _setup_gurobi_model_params(self) -> Any:
         """Create and set up Gurobi model with parameters from configuration."""    
@@ -177,6 +195,19 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         num_iters = iteration + 1
         converged = iteration < self.row_generation_cfg.max_iters
         
+        # Check bounds
+        bounds_info = self._check_bounds_hit()
+        warnings_list = []
+        if self.comm_manager.is_root() and bounds_info['any_hit']:
+            if bounds_info['hit_lower']:
+                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+            if bounds_info['hit_upper']:
+                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+        
         if self.comm_manager.is_root():
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation (1slack) {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
@@ -188,4 +219,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             self.timing_stats = None
         
         self.theta_hat = self.theta_val.copy()
-        return self._create_result(self.theta_hat, converged, num_iters, obj_val)
+        result = self._create_result(self.theta_hat, converged, num_iters, obj_val)
+        result.warnings.extend(warnings_list)
+        result.metadata['bounds_hit'] = bounds_info
+        return result
