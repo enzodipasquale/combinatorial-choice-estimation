@@ -154,7 +154,7 @@ class CommManager:
         
         # Only broadcast if counts wasn't provided (avoids redundant pickle bcast)
         if need_bcast:
-        counts, dtype = self.comm.bcast((counts, dtype), root=root)
+            counts, dtype = self.comm.bcast((counts, dtype), root=root)
         
         sendbuf = [send_array, counts, self._compute_displacements(counts), _get_mpi_type(dtype)] if self.is_root() else None
         recvbuf = np.empty(counts[self.rank], dtype=dtype)
