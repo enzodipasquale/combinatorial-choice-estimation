@@ -1,0 +1,24 @@
+# Sandwich SE Configuration (Local)
+# ==================================
+
+application:
+    delta: 4
+    winners_only: false
+    hq_distance: false
+
+sandwich:
+    num_simulations: 50
+    step_size: 1e-4
+    seed: 1995
+
+dimensions:
+    num_agents: 255
+    num_items: 493
+    num_features: 497
+    num_simulations: 1
+
+subproblem: 
+    name: QuadKnapsack
+    settings:
+        TimeLimit: 5
+        MIPGap_tol: 1e-2

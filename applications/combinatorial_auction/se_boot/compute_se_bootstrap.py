@@ -1,25 +1,25 @@
 #!/bin/env python
-"""Compute SE for structural (non-FE) parameters using Bayesian Bootstrap.
+"""
+Bootstrap SE estimation - fully independent pipeline.
 
-Uses model warm-start for significant speedup (~20x vs baseline).
+Runs estimation first (to get point estimate), then computes bootstrap SE.
+All parameters are read from config.yaml (cluster) or config_local.yaml (local).
 
 Usage:
-    srun ./run-gurobi.bash python compute_se_bayesian_boot.py --delta 4
-    srun ./run-gurobi.bash python compute_se_bayesian_boot.py --delta 2 --num-bootstrap 100
+    srun ./run-gurobi.bash python compute_se_bootstrap.py
 """
 
-import argparse
-import csv
 import sys
 import os
+import csv
 import time
+import yaml
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to Python path
 BASE_DIR = os.path.dirname(__file__)
-APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # combinatorial_auction/
-PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../.."))  # combinatorial-choice-estimation/
+APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
 import numpy as np
@@ -30,30 +30,35 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Parse arguments
-parser = argparse.ArgumentParser(description="Compute SE using Bayesian Bootstrap")
-parser.add_argument("--delta", "-d", type=int, choices=[2, 4], required=True)
-parser.add_argument("--winners-only", "-w", action="store_true")
-parser.add_argument("--hq-distance", action="store_true")
-parser.add_argument("--num-bootstrap", "-n", type=int, default=200,
-                    help="Number of bootstrap samples (default: 200)")
-parser.add_argument("--warmstart", choices=["none", "theta", "model", "model_strip"],
-                    default="model_strip", help="Warm-start strategy (default: model_strip)")
-parser.add_argument("--seed", type=int, default=1995, help="Random seed")
-args = parser.parse_args()
+# Load config
+IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
+CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
 
-DELTA = args.delta
-WINNERS_ONLY = args.winners_only
-HQ_DISTANCE = args.hq_distance
-NUM_BOOTSTRAP = args.num_bootstrap
-WARMSTART = args.warmstart
-SEED = args.seed
+with open(CONFIG_PATH, 'r') as f:
+    config = yaml.safe_load(f)
+
+# Extract parameters
+app_cfg = config.get("application", {})
+DELTA = app_cfg.get("delta", 4)
+WINNERS_ONLY = app_cfg.get("winners_only", False)
+HQ_DISTANCE = app_cfg.get("hq_distance", False)
+
+boot_cfg = config.get("bootstrap", {})
+NUM_BOOTSTRAP = boot_cfg.get("num_samples", 200)
+WARMSTART = boot_cfg.get("warmstart", "model_strip")
+SEED = boot_cfg.get("seed", 1995)
+
+OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
 
 if rank == 0:
     start_time = time.time()
-
-OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
-TIMELIMIT_SEC = 10
+    print("=" * 70)
+    print("BOOTSTRAP SE ESTIMATION (Independent Pipeline)")
+    print("=" * 70)
+    print(f"  Config: {CONFIG_PATH}")
+    print(f"  delta={DELTA}, winners_only={WINNERS_ONLY}, hq_distance={HQ_DISTANCE}")
+    print(f"  Bootstrap: {NUM_BOOTSTRAP} samples, warmstart={WARMSTART}, seed={SEED}")
+    print("=" * 70)
 
 
 def get_input_dir(delta, winners_only, hq_distance=False):
@@ -65,86 +70,25 @@ def get_input_dir(delta, winners_only, hq_distance=False):
     return os.path.join(APP_DIR, "data", "114402-V1", "input_data", suffix)
 
 
-def load_theta_from_csv(delta, winners_only=False, hq_distance=False):
-    """Load theta from theta_hat.csv for given parameters."""
-    csv_path = os.path.join(APP_DIR, "estimation_results", "theta_hat.csv")
-    if not os.path.exists(csv_path):
-        return None
-    
-    with open(csv_path, "r") as f:
-        rows = list(csv.DictReader(f))
-    
-    def str_to_bool(s):
-        """Convert string to bool, treating empty string as False."""
-        if not s or s.lower() in ('', 'false', '0', 'no'):
-            return False
-        return True
-    
-    matching = [r for r in rows 
-                if str(r.get("delta", "")) == str(delta)
-                and str_to_bool(r.get("winners_only", "")) == winners_only
-                and str_to_bool(r.get("hq_distance", "")) == hq_distance]
-    
-    if not matching:
-        return None
-    
-    row = matching[-1]
-    num_features = int(row.get("num_features", 497))
-    theta = np.zeros(num_features)
-    for i in range(num_features):
-        key = f"theta_{i}"
-        if key in row and row[key]:
-            theta[i] = float(row[key])
-    return theta
-
-
-# =============================================================================
-# Load Theta
-# =============================================================================
-if rank == 0:
-    print("=" * 70)
-    print("BAYESIAN BOOTSTRAP STANDARD ERRORS")
-    print("=" * 70)
-    print(f"  δ = {DELTA}, winners_only = {WINNERS_ONLY}, hq_distance = {HQ_DISTANCE}")
-    print(f"  Bootstrap samples: {NUM_BOOTSTRAP}, Warm-start: {WARMSTART}")
-    print(f"  Seed: {SEED}")
-    print("=" * 70)
-    
-    theta_hat = load_theta_from_csv(DELTA, WINNERS_ONLY, HQ_DISTANCE)
-    if theta_hat is None:
-        print(f"Error: No theta estimates found in estimation_results/theta_hat.csv")
-        sys.exit(1)
-    print(f"Loaded theta: shape={theta_hat.shape}")
-else:
-    theta_hat = None
-
-theta_hat = comm.bcast(theta_hat, root=0)
-
-# =============================================================================
-# Initialize BundleChoice and Load Data
-# =============================================================================
-IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
-CONFIG_PATH = os.path.join(APP_DIR, "point_estimate", "config_local.yaml" if IS_LOCAL else "config.yaml")
-
+# Initialize BundleChoice
 bc = BundleChoice()
-bc.load_config(CONFIG_PATH)
+bc_config = {k: v for k, v in config.items() 
+             if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]}
+bc.load_config(bc_config)
 
-# Use 10 simulations for reduced MC variance in bootstrap
-bc.load_config({"dimensions": {"num_simulations": 10}})
-
+# Load data
 if rank == 0:
     INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY, HQ_DISTANCE)
     if not os.path.exists(INPUT_DIR):
         print(f"Error: Input data not found at {INPUT_DIR}")
-        print(f"  Run: ./run-gurobi.bash python prepare_data.py --delta {DELTA}")
+        print(f"  Run: python ../data/prepare_data.py --delta {DELTA}")
         sys.exit(1)
     
-    # Load data (auto-detects CSV, extracts feature names)
     input_data = bc.data.load_from_directory(INPUT_DIR, error_seed=SEED)
-    
-    # Add item modular features
     num_items = bc.config.dimensions.num_items
     input_data["item_data"]["modular"] = -np.eye(num_items)
+    
+    print(f"\nLoaded data from {INPUT_DIR}")
 else:
     input_data = None
 
@@ -160,34 +104,34 @@ if rank != 0:
     bc.config.dimensions.num_agents = num_agents
     bc.config.dimensions.num_simulations = num_simulations
 
-# Update config for this run (must include num_simulations to avoid default=1 overwrite)
-bc.load_config({
-    "dimensions": {"num_simulations": num_simulations},
-    "subproblem": {"name": "QuadKnapsack", "settings": {"TimeLimit": TIMELIMIT_SEC, "MIPGap_tol": 1e-2}},
-    "row_generation": {"max_iters": 200, "tolerance_optimality": 0.01},
-})
+# Apply theta bounds from config
+theta_bounds = config.get("theta_bounds", {})
+if theta_bounds:
+    theta_lbs = np.zeros(num_features)
+    if "air_travel_lb" in theta_bounds:
+        theta_lbs[-1] = theta_bounds["air_travel_lb"]
+    if "travel_survey_lb" in theta_bounds:
+        theta_lbs[-2] = theta_bounds["travel_survey_lb"]
+    bc.config.row_generation.theta_lbs = theta_lbs
 
-# Adaptive timeout: fast cuts early, precise cuts near convergence
-adaptive_callback = adaptive_gurobi_timeout(
-    initial_timeout=1.0,
-    final_timeout=30.0,
-    transition_iterations=15,
-    strategy="linear",
-    log=True
-)
-bc.config.row_generation.subproblem_callback = adaptive_callback
+# Custom constraints from config
+constraints_cfg = config.get("constraints", {})
+if constraints_cfg.get("pop_dominates_travel", False):
+    def add_custom_constraints(model, theta, u):
+        model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
+    bc.config.row_generation.master_init_callback = add_custom_constraints
 
-# Set lower bounds for travel_survey and air_travel parameters
-theta_lbs = np.zeros(num_features)
-theta_lbs[-1] = -150  # air_travel
-theta_lbs[-2] = -150  # travel_survey
-bc.config.row_generation.theta_lbs = theta_lbs
-
-# Custom constraint: pop_distance >= travel_survey + air_travel
-def add_custom_constraints(model, theta, u):
-    model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
-
-bc.config.row_generation.master_init_callback = add_custom_constraints
+# Adaptive timeout
+adaptive_cfg = config.get("adaptive_timeout", {})
+if adaptive_cfg:
+    adaptive_callback = adaptive_gurobi_timeout(
+        initial_timeout=adaptive_cfg.get("initial", 1.0),
+        final_timeout=adaptive_cfg.get("final", 30.0),
+        transition_iterations=adaptive_cfg.get("transition_iterations", 15),
+        strategy=adaptive_cfg.get("strategy", "linear"),
+        log=True
+    )
+    bc.config.row_generation.subproblem_callback = adaptive_callback
 
 bc.data.load_and_scatter(input_data)
 bc.oracles.build_from_data()
@@ -198,7 +142,7 @@ feature_names = comm.bcast(bc.config.dimensions.feature_names if rank == 0 else 
 if rank != 0:
     bc.config.dimensions.feature_names = feature_names
 
-# Get structural indices (non-FE parameters only)
+# Get structural indices (non-FE parameters)
 if feature_names:
     structural_indices = np.array([i for i, name in enumerate(feature_names) 
                                    if not name.startswith("FE_")], dtype=np.int64)
@@ -208,28 +152,32 @@ else:
     structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"\nProblem: {num_agents} agents, {num_items} items, {num_features} features")
+    print(f"Problem: {num_agents} agents, {num_items} items, {num_features} features")
     print(f"Structural parameters ({len(structural_indices)}): {structural_names}")
     print(f"MPI ranks: {comm.Get_size()}")
-    print()
 
 # =============================================================================
-# Initial solve (needed for model warm-start)
-# =============================================================================
-if rank == 0:
-    print("Running initial solve to setup model for warm-start...")
-
-result = bc.row_generation.solve(theta_init=theta_hat)
-
-if rank == 0:
-    print(f"Initial solve complete: {result.num_iterations} iterations")
-    print()
-
-# =============================================================================
-# Compute Standard Errors via Bayesian Bootstrap
+# Step 1: Run estimation to get point estimate
 # =============================================================================
 if rank == 0:
-    print(f"Starting Bayesian bootstrap ({NUM_BOOTSTRAP} samples)...")
+    print("\n" + "-" * 70)
+    print("STEP 1: Point Estimation")
+    print("-" * 70)
+
+result = bc.row_generation.solve()
+theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
+
+if rank == 0:
+    print(f"Estimation complete: {result.num_iterations} iterations")
+    print(f"Theta (structural): {theta_hat[structural_indices]}")
+
+# =============================================================================
+# Step 2: Compute Bootstrap SE
+# =============================================================================
+if rank == 0:
+    print("\n" + "-" * 70)
+    print(f"STEP 2: Bootstrap SE ({NUM_BOOTSTRAP} samples)")
+    print("-" * 70)
     boot_start = time.time()
 
 se_result = bc.standard_errors.compute_bayesian_bootstrap(
@@ -243,7 +191,7 @@ se_result = bc.standard_errors.compute_bayesian_bootstrap(
 
 if rank == 0:
     boot_time = time.time() - boot_start
-    print(f"Bayesian bootstrap complete: {boot_time:.1f}s")
+    print(f"Bootstrap complete: {boot_time:.1f}s")
 
 # =============================================================================
 # Save Results
@@ -252,20 +200,18 @@ if rank == 0 and se_result is not None:
     total_time = time.time() - start_time
     
     print("\n" + "=" * 70)
-    print(f"BAYESIAN BOOTSTRAP RESULTS (δ = {DELTA})")
+    print(f"RESULTS (delta={DELTA})")
     print("=" * 70)
     
     print("\nStructural Parameters:")
     for i, name in enumerate(structural_names):
         idx = structural_indices[i]
-        print(f"  {name}: θ={theta_hat[idx]:.4f}, SE={se_result.se[i]:.4f}, t={se_result.t_stats[i]:.2f}")
+        print(f"  {name}: theta={theta_hat[idx]:.4f}, SE={se_result.se[i]:.4f}, t={se_result.t_stats[i]:.2f}")
     
-    # Save arrays
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    np.save(os.path.join(OUTPUT_DIR, "se_bayesian_boot.npy"), se_result.se)
     
-    # Export to CSV
-    CSV_PATH = os.path.join(OUTPUT_DIR, "se_bayesian_boot.csv")
+    # Export to CSV (primary output)
+    CSV_PATH = os.path.join(OUTPUT_DIR, "se_bootstrap.csv")
     row_data = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "delta": DELTA,
@@ -275,11 +221,14 @@ if rank == 0 and se_result is not None:
         "num_agents": num_agents,
         "num_items": num_items,
         "num_features": num_features,
+        "num_simulations": num_simulations,
         "num_bootstrap": NUM_BOOTSTRAP,
         "warmstart": WARMSTART,
         "seed": SEED,
         "total_time_sec": total_time,
         "boot_time_sec": boot_time,
+        "converged": result.converged,
+        "num_iterations": result.num_iterations,
     }
     for i, name in enumerate(structural_names):
         idx = structural_indices[i]
@@ -294,4 +243,15 @@ if rank == 0 and se_result is not None:
             writer.writeheader()
         writer.writerow(row_data)
     
-    print(f"\nResults saved to {OUTPUT_DIR}/ ({total_time:.1f}s total, {boot_time:.1f}s bootstrap)")
+    print(f"\nResults saved to {OUTPUT_DIR}/")
+    print(f"Total time: {total_time:.1f}s (estimation + {boot_time:.1f}s bootstrap)")
+
+# Handle bootstrap failure
+if rank == 0 and se_result is None:
+    print("\nERROR: Bootstrap failed - no successful samples")
+    print("Check error messages above for details")
+
+# Ensure clean MPI exit
+comm.Barrier()
+if rank == 0:
+    print("\nDone.")

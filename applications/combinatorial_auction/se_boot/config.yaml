@@ -1,12 +1,17 @@
-# Point Estimate Configuration (Cluster)
-# ========================================
+# Bootstrap SE Configuration (Cluster)
+# =====================================
 
 # Application parameters
 application:
     delta: 4                    # Distance decay exponent (2 or 4)
     winners_only: false         # Filter to winning bidders only
     hq_distance: false          # Include HQ-to-item distance features
-    use_previous_theta: true    # Warm start from previous estimate
+
+# Bootstrap settings
+bootstrap:
+    num_samples: 200            # Number of bootstrap samples
+    warmstart: model_strip      # Warm-start strategy: none, theta, model, model_strip
+    seed: 1995
 
 # BundleChoice settings
 dimensions:
@@ -22,10 +27,18 @@ subproblem:
         MIPGap_tol: 1e-2
 
 row_generation:
-    max_iters: 400
+    max_iters: 200
     theta_ubs: 1000
-    parameters_to_log: [0, -3, -2, -1]
-    max_slack_counter: 10000
+    tolerance_optimality: 0.01
+
+# Theta bounds (for structural parameters)
+theta_bounds:
+    air_travel_lb: -150
+    travel_survey_lb: -150
+
+# Custom constraints
+constraints:
+    pop_dominates_travel: true  # theta[-3] + theta[-2] + theta[-1] >= 0
 
 # Adaptive timeout settings
 adaptive_timeout:
