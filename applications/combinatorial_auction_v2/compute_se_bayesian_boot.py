@@ -126,7 +126,7 @@ bc = BundleChoice()
 bc.load_config(CONFIG_PATH)
 
 # For Bayesian bootstrap, we only need 1 simulation (no MC errors)
-bc.load_config({"dimensions": {"num_simulations": 1}})
+bc.load_config({"dimensions": {"num_simulations": 10}})
 
 if rank == 0:
     INPUT_DIR = get_input_dir(DELTA, WINNERS_ONLY, HQ_DISTANCE)

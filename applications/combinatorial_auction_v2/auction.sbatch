@@ -1,11 +1,11 @@
 #!/bin/bash 
 
 #SBATCH --job-name=auction_estimation
-#SBATCH --nodes=35
+#SBATCH --nodes=20
 #SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
-#SBATCH --time=05:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=logs/estimation-%j.out
 
 # Usage: sbatch auction.sbatch <delta> [winners] [hqdist]
