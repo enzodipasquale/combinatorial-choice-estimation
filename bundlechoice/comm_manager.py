@@ -1,6 +1,7 @@
 """MPI communication manager for distributed operations."""
 
 from typing import Any, Optional, Callable, List, Dict, Tuple, Iterator
+from contextlib import contextmanager
 import numpy as np
 from mpi4py import MPI
 from functools import wraps
@@ -245,6 +246,25 @@ class CommManager:
             final_result = final_result.astype(np.bool_)
         
         return final_result
+
+    @contextmanager
+    def safe_distributed_block(self):
+        """
+        Context manager for distributed computation with fail-fast behavior.
+        
+        If this rank raises an exception, immediately abort ALL ranks.
+        Prevents MPI hangs when one worker crashes.
+        
+        Example:
+            with comm.safe_distributed_block():
+                local_result = do_computation()  # if crashes, all abort
+                global_result = comm.gather_at_root(local_result)
+        """
+        try:
+            yield
+        except Exception as e:
+            # Immediately abort - can't coordinate because other ranks may be stuck in collectives
+            self._handle_failure(e, operation="safe_distributed_block")
 
     def _handle_failure(self, exc: Exception, operation: Optional[str] = None, errorcode: int = 1) -> None:
         """Log the local failure and abort all ranks."""

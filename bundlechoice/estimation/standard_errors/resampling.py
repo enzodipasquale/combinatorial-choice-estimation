@@ -157,7 +157,8 @@ class ResamplingMixin:
                 - "none": No warm-start (baseline)
                 - "constraints": Reuse constraints from previous solve
                 - "theta": Use theta from previous solve as initial point
-                - "model": Reuse Gurobi model, update objective only (fastest)
+                - "model": Reuse Gurobi model with LP warm-start (fastest)
+                - "model_reset": Reuse model but reset LP each iteration (no LP warm-start)
                 - "model_strip": Same as model but strip slack constraints each iteration
         """
         if beta_indices is None:
@@ -190,9 +191,11 @@ class ResamplingMixin:
             try:
                 # Choose warm-start strategy (all use theta_hat for first iteration via prev_theta)
                 if warmstart == "model":
-                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False)
+                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=False)
+                elif warmstart == "model_reset":
+                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=True)
                 elif warmstart == "model_strip":
-                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True)
+                    result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True, reset_lp=False)
                 elif warmstart == "constraints":
                     result = row_generation.solve(agent_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
                 elif warmstart == "theta":

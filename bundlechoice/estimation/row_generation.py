@@ -411,38 +411,39 @@ class RowGenerationManager(BaseEstimationManager):
         master_times = []
         
         while iteration < self.row_generation_cfg.max_iters:
-            logger.info(f"ITERATION {iteration + 1}")
-            
-            # Subproblem callback (if configured)
-            if self.row_generation_cfg.subproblem_callback is not None:
-                master_model = self.master_model if self.comm_manager.is_root() else None
-                self.row_generation_cfg.subproblem_callback(
-                    iteration, 
-                    self.subproblem_manager, 
-                    master_model
-                )
-            
-            # Pricing phase
-            t0 = time.perf_counter()
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            pricing_time = time.perf_counter() - t0
-            pricing_times.append(pricing_time)
-            
-            # Master iteration
-            t1 = time.perf_counter()
-            stop = self._master_iteration(local_pricing_results)
-            master_time = time.perf_counter() - t1
-            master_times.append(master_time)
-            
-            # Callback
-            if callback and self.comm_manager.is_root():
-                callback({
-                    'iteration': iteration + 1,
-                    'theta': self.theta_val.copy() if self.theta_val is not None else None,
-                    'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
-                    'pricing_time': pricing_time,
-                    'master_time': master_time,
-                })
+            with self.comm_manager.safe_distributed_block():
+                logger.info(f"ITERATION {iteration + 1}")
+                
+                # Subproblem callback (if configured)
+                if self.row_generation_cfg.subproblem_callback is not None:
+                    master_model = self.master_model if self.comm_manager.is_root() else None
+                    self.row_generation_cfg.subproblem_callback(
+                        iteration, 
+                        self.subproblem_manager, 
+                        master_model
+                    )
+                
+                # Pricing phase
+                t0 = time.perf_counter()
+                local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+                pricing_time = time.perf_counter() - t0
+                pricing_times.append(pricing_time)
+                
+                # Master iteration
+                t1 = time.perf_counter()
+                stop = self._master_iteration(local_pricing_results)
+                master_time = time.perf_counter() - t1
+                master_times.append(master_time)
+                
+                # Callback
+                if callback and self.comm_manager.is_root():
+                    callback({
+                        'iteration': iteration + 1,
+                        'theta': self.theta_val.copy() if self.theta_val is not None else None,
+                        'objective': self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None,
+                        'pricing_time': pricing_time,
+                        'master_time': master_time,
+                    })
             
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 break
@@ -630,7 +631,8 @@ class RowGenerationManager(BaseEstimationManager):
         self.master_model.update()
 
     def solve_reuse_model(self, agent_weights: NDArray[np.float64],
-                          strip_slack: bool = False) -> EstimationResult:
+                          strip_slack: bool = False,
+                          reset_lp: bool = False) -> EstimationResult:
         """
         Solve using existing model with updated weights (Bayesian bootstrap).
         
@@ -640,6 +642,8 @@ class RowGenerationManager(BaseEstimationManager):
         Args:
             agent_weights: Per-agent weights for the new solve
             strip_slack: If True, remove non-binding constraints before solving
+            reset_lp: If True, call reset(0) before optimize (discards LP basis).
+                      Default False preserves LP basis for warm-start.
         
         Returns:
             EstimationResult with theta_hat and diagnostics
@@ -664,10 +668,14 @@ class RowGenerationManager(BaseEstimationManager):
                 if strip_slack:
                     self.strip_slack_constraints()
                 
-                # Update objective coefficients in-place (preserves LP basis for warm-start)
+                # Update objective coefficients in-place
                 self.update_objective_for_weights(self._agent_weights)
                 
-                # Re-optimize with new objective (Gurobi warm-starts from previous basis)
+                # Optionally reset LP (discards basis, forces cold start)
+                if reset_lp:
+                    self.master_model.reset(0)
+                
+                # Re-optimize (warm-starts from previous basis if reset_lp=False)
                 self.master_model.optimize()
                 
                 theta, u = self.master_variables
@@ -691,8 +699,9 @@ class RowGenerationManager(BaseEstimationManager):
         # Run row generation iterations
         iteration = 0
         while iteration < self.row_generation_cfg.max_iters:
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            stop = self._master_iteration(local_pricing_results)
+            with self.comm_manager.safe_distributed_block():
+                local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
+                stop = self._master_iteration(local_pricing_results)
             if stop and iteration >= self.row_generation_cfg.min_iters:
                 break
             iteration += 1
