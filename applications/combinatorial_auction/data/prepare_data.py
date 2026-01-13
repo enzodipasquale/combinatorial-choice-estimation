@@ -20,7 +20,7 @@ from typing import Tuple
 from datetime import datetime
 
 # Data paths
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 def get_output_dir(delta: int, winners_only: bool = False, hq_distance: bool = False) -> Path:
@@ -30,7 +30,7 @@ def get_output_dir(delta: int, winners_only: bool = False, hq_distance: bool = F
         suffix += "_winners"
     if hq_distance:
         suffix += "_hqdist"
-    return BASE_DIR / "input_data" / suffix
+    return BASE_DIR / "114402-V1" / "input_data" / suffix
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000

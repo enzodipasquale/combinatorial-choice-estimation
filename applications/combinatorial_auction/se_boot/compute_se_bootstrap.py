@@ -16,7 +16,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Add project root to Python path
+BASE_DIR = os.path.dirname(__file__)
+APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # combinatorial_auction/
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../.."))  # combinatorial-choice-estimation/
+sys.path.insert(0, PROJECT_ROOT)
 
 import numpy as np
 from bundlechoice import BundleChoice
@@ -48,8 +52,7 @@ SEED = args.seed
 if rank == 0:
     start_time = time.time()
 
-BASE_DIR = os.path.dirname(__file__)
-OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
+OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
 TIMELIMIT_SEC = 10
 
 
@@ -59,12 +62,12 @@ def get_input_dir(delta, winners_only, hq_distance=False):
         suffix += "_winners"
     if hq_distance:
         suffix += "_hqdist"
-    return os.path.join(BASE_DIR, "input_data", suffix)
+    return os.path.join(APP_DIR, "data", "114402-V1", "input_data", suffix)
 
 
 def load_theta_from_csv(delta, winners_only=False, hq_distance=False):
     """Load theta from theta_hat.csv for given parameters."""
-    csv_path = os.path.join(BASE_DIR, "estimation_results", "theta_hat.csv")
+    csv_path = os.path.join(APP_DIR, "estimation_results", "theta_hat.csv")
     if not os.path.exists(csv_path):
         return None
     
@@ -121,7 +124,7 @@ theta_hat = comm.bcast(theta_hat, root=0)
 # Initialize BundleChoice and Load Data
 # =============================================================================
 IS_LOCAL = os.path.exists("/Users/enzo-macbookpro")
-CONFIG_PATH = os.path.join(BASE_DIR, "config_local.yaml" if IS_LOCAL else "config.yaml")
+CONFIG_PATH = os.path.join(APP_DIR, "point_estimate", "config_local.yaml" if IS_LOCAL else "config.yaml")
 
 bc = BundleChoice()
 bc.load_config(CONFIG_PATH)

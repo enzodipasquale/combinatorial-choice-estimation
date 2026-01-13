@@ -17,7 +17,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Add project root to Python path
+BASE_DIR = os.path.dirname(__file__)
+APP_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # combinatorial_auction/
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../.."))  # combinatorial-choice-estimation/
+sys.path.insert(0, PROJECT_ROOT)
 
 import numpy as np
 from bundlechoice import BundleChoice
@@ -37,8 +41,7 @@ DELTA, WINNERS_ONLY, HQ_DISTANCE = args.delta, args.winners_only, args.hq_distan
 if rank == 0:
     start_time = time.time()
 
-BASE_DIR = os.path.dirname(__file__)
-OUTPUT_DIR = os.path.join(BASE_DIR, "estimation_results")
+OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
 NUM_SIMULS = 200
 TIMELIMIT_SEC = 30
 STEP_SIZE = 1e-4
@@ -50,12 +53,12 @@ def get_input_dir(delta, winners_only, hq_distance=False):
         suffix += "_winners"
     if hq_distance:
         suffix += "_hqdist"
-    return os.path.join(BASE_DIR, "input_data", suffix)
+    return os.path.join(APP_DIR, "data", "114402-V1", "input_data", suffix)
 
 
 def load_theta_from_csv(delta, winners_only=False, hq_distance=False):
     """Load theta from theta_hat.csv for given parameters."""
-    csv_path = os.path.join(BASE_DIR, "estimation_results", "theta_hat.csv")
+    csv_path = os.path.join(APP_DIR, "estimation_results", "theta_hat.csv")
     if not os.path.exists(csv_path):
         return None
     
