@@ -59,8 +59,24 @@ class SupermodParams:
         )
 
     @property
+    def num_modular_features(self) -> int:
+        return self.num_modular_agent_features + self.num_modular_item_features
+
+    @property
     def theta_star(self) -> np.ndarray:
         return np.ones(self.num_features)
+
+    def validate_theta(self, theta: np.ndarray) -> None:
+        """Validate theta for supermodularity: quadratic components must be >= 0."""
+        if len(theta) != self.num_features:
+            raise ValueError(f"theta has {len(theta)} elements, expected {self.num_features}")
+        quadratic_theta = theta[self.num_modular_features:]
+        if np.any(quadratic_theta < 0):
+            raise ValueError(
+                f"Quadratic theta components must be >= 0 for supermodularity. "
+                f"Got quadratic theta = {quadratic_theta}. "
+                f"Negative values would make the objective submodular."
+            )
 
 
 class SupermodScenarioBuilder:
@@ -113,6 +129,18 @@ class SupermodScenarioBuilder:
             multiplier=multiplier, mean=mean, std=std, apply_abs=True
         )
         return SupermodScenarioBuilder(replace(self._params, agent_config=agent_config))
+
+    def with_item_modular_config(
+        self,
+        multiplier: float = -2.0,
+        mean: float = 2.0,
+        std: float = 1.0,
+    ) -> "SupermodScenarioBuilder":
+        """Configure modular item feature generation."""
+        item_config = ModularItemConfig(
+            multiplier=multiplier, mean=mean, std=std, apply_abs=True
+        )
+        return SupermodScenarioBuilder(replace(self._params, item_config=item_config))
 
     def with_quadratic_method(
         self,
@@ -199,6 +227,9 @@ class SupermodScenarioBuilder:
             theta: Any,
         ) -> Dict[str, Dict[str, Any]]:
             rank = comm.Get_rank()
+            # Validate theta for supermodularity on rank 0
+            if rank == 0:
+                params.validate_theta(np.asarray(theta))
             generator = DataGenerator(seed=seed)
 
             generation_data = None
