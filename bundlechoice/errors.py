@@ -7,11 +7,6 @@ class BundleChoiceError(Exception):
 
 class SetupError(BundleChoiceError):
     """Raised when setup/initialization is incomplete or invalid."""
-    
-    def __init__(self, message: str, suggestion: str = None, missing: list = None):
-        self.suggestion = suggestion
-        self.missing = missing or []
-        super().__init__(message)
 
 
 class ValidationError(BundleChoiceError):

@@ -23,32 +23,32 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
         # P_i_j_j[i] has linear[i] on diagonal and quadratic[i] on off-diagonal
         P_i_j_j = quadratic.copy()  # Start with quadratic terms (off-diagonal)
         # Add linear terms to diagonal using advanced indexing
-        diag_indices = np.arange(self.num_items)
+        diag_indices = np.arange(self.dimensions_cfg.num_items)
         P_i_j_j[:, diag_indices, diag_indices] += linear
         
-        agent_data = self.local_data.get("agent_data") or {}
+        agent_data = self.data_manager.local_data.get("agent_data") or {}
         constraint_mask = agent_data.get("constraint_mask") if self.has_constraint_mask else None
         
         # Initialize for all agents at once: (num_local_agents, num_items)
-        z_t = np.full((self.num_local_agents, self.num_items), 0.5, dtype=np.float64)
+        z_t = np.full((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), 0.5, dtype=np.float64)
         if constraint_mask is not None:
             z_t[~constraint_mask] = 0.0
         
         z_best = z_t.copy()
-        val_best = np.full(self.num_local_agents, -np.inf, dtype=np.float64)
+        val_best = np.full(self.data_manager.num_local_agents, -np.inf, dtype=np.float64)
         
         # Adaptive parameters - use many iterations to ensure exact convergence
         # Default: use a very large number of iterations to guarantee convergence to optimal solution
-        num_iters = int(self.config.settings.get("num_iters_SGM", max(100000, 1000 * self.num_items)))
-        alpha_base = float(self.config.settings.get("alpha", 0.1 / np.sqrt(self.num_items)))  # Smaller step size for stability
+        num_iters = int(self.config.settings.get("num_iters_SGM", max(100000, 1000 * self.dimensions_cfg.num_items)))
+        alpha_base = float(self.config.settings.get("alpha", 0.1 / np.sqrt(self.dimensions_cfg.num_items)))  # Smaller step size for stability
         # Use constant_step_length for better convergence (doesn't decay)
         method = self.config.settings.get("method", "constant_step_length")
         
         # Pre-allocate gradient array
-        grad_i_j = np.zeros((self.num_local_agents, self.num_items), dtype=np.float64)
+        grad_i_j = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), dtype=np.float64)
         
         # Pre-compute triangular mask
-        tril_mask = np.tril(np.ones((self.num_items, self.num_items), dtype=bool), k=0)
+        tril_mask = np.tril(np.ones((self.dimensions_cfg.num_items, self.dimensions_cfg.num_items), dtype=bool), k=0)
         
         for iter in range(num_iters):
             # Vectorized gradient computation for all agents
@@ -66,7 +66,7 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
             if method == 'constant_step_length':
                 step_i = alpha_base / grad_norm_i
             elif method == 'constant_step_size':
-                step_i = np.full((self.num_local_agents, 1), alpha_base)
+                step_i = np.full((self.data_manager.num_local_agents, 1), alpha_base)
             elif method == 'constant_over_sqrt_k':
                 step_i = alpha_base / (grad_norm_i * np.sqrt(iter + 1))
             elif method == 'mirror_descent':
@@ -81,7 +81,7 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
                 val_best[improved] = val_i[improved]
                 continue
             else:
-                step_i = np.zeros((self.num_local_agents, 1))
+                step_i = np.zeros((self.data_manager.num_local_agents, 1))
             
             # Gradient ascent step for all agents (MAXIMIZE objective)
             z_new = z_t + step_i * grad_i_j

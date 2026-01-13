@@ -328,7 +328,7 @@ def _find_best_item(
     value = modular_features(base + j) @ theta + error_j[j] + quadratic_term
     where quadratic_term = -|base + j|^2 = -(base_size + 1)^2 (same for all j)
     """
-    modular_agent = self.local_data["agent_data"]["modular"][local_id]
+    modular_agent = self.data_manager.local_data["agent_data"]["modular"][local_id]
     base_size = base_bundle.sum()
     new_size = base_size + 1
     theta_quadratic = theta[-1]
@@ -339,13 +339,13 @@ def _find_best_item(
     
     # Check if item features exist (when endogeneity is enabled)
     has_item_features = (
-        "item_data" in self.local_data 
-        and self.local_data["item_data"] is not None
-        and "modular" in self.local_data["item_data"]
+        "item_data" in self.data_manager.local_data 
+        and self.data_manager.local_data["item_data"] is not None
+        and "modular" in self.data_manager.local_data["item_data"]
     )
     
     if has_item_features:
-        modular_item = self.local_data["item_data"]["modular"]
+        modular_item = self.data_manager.local_data["item_data"]["modular"]
         num_agent_features = modular_agent.shape[1]
         num_item_features = modular_item.shape[1]
         

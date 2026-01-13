@@ -77,9 +77,9 @@ class RowGeneration1SlackManager(BaseEstimationManager):
     def _initialize_master_problem(self) -> None:
         """Create and configure master problem (Gurobi model) with 1slack formulation."""
         obs_features = self.get_obs_features()
-        if self.is_root():
+        if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model_params()    
-            theta = self.master_model.addMVar(self.num_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
+            theta = self.master_model.addMVar(self.dimensions_cfg.num_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 theta.lb = self.row_generation_cfg.theta_lbs
             else:
@@ -92,7 +92,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             self.theta_val = theta.X
             self.log_parameter()
         else:
-            self.theta_val = np.empty(self.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
 
         self.theta_val = self.comm_manager.broadcast_array(self.theta_val, root=0)
 
@@ -102,7 +102,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         errors_sim = self.oracles_manager.compute_gathered_errors(optimal_bundles)
         
         stop = False
-        if self.is_root():
+        if self.comm_manager.is_root():
             theta, u_bar = self.master_variables
             u_sim = (x_sim @ theta.X).sum() + errors_sim.sum()
             u_master = u_bar.X
@@ -125,7 +125,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             
             theta_val = theta.X
         else:
-            theta_val = np.empty(self.num_features, dtype=np.float64)
+            theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             
         # Broadcast theta and stop flag
         self.theta_val, stop = self.comm_manager.broadcast_array_with_flag(theta_val, stop, root=0)
@@ -134,9 +134,9 @@ class RowGeneration1SlackManager(BaseEstimationManager):
 
     def solve(self) -> EstimationResult:
         """Run row generation with 1slack formulation."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "ROW GENERATION (1SLACK)", "=" * 70, ""]
-            lines.append(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.num_features} features")
+            lines.append(f"  Problem: {self.dimensions_cfg.num_agents} agents × {self.dimensions_cfg.num_items} items, {self.dimensions_cfg.num_features} features")
             if self.dimensions_cfg.num_simulations > 1:
                 lines.append(f"  Simulations: {self.dimensions_cfg.num_simulations}")
             lines.append(f"  Max iterations: {self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞'}")
@@ -177,7 +177,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         num_iters = iteration + 1
         converged = iteration < self.row_generation_cfg.max_iters
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             msg = "ended" if converged else "reached max iterations"
             logger.info(f"Row generation (1slack) {msg} after {num_iters} iterations in {elapsed:.2f} seconds.")
             obj_val = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None

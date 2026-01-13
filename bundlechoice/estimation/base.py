@@ -7,7 +7,6 @@ Provides common functionality for row generation, ellipsoid, and other solvers.
 import numpy as np
 from typing import Optional, Tuple, Dict, List, Any, TYPE_CHECKING
 from numpy.typing import NDArray
-from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger, extract_theta
 from .result import EstimationResult
 
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class BaseEstimationManager(HasDimensions, HasData, HasComm):
+class BaseEstimationManager:
     """Base class for estimation managers (row generation, ellipsoid, etc.)."""
     
     row_generation_cfg: Optional['RowGenerationConfig'] = None
@@ -50,15 +49,15 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
 
     def get_obs_features(self) -> Optional[NDArray[np.float64]]:
         """Compute aggregate observed features (rank 0 only)."""
-        local_bundles = self.local_data.get("obs_bundles")
+        local_bundles = self.data_manager.local_data.get("obs_bundles")
         agents_obs_features = self.oracles_manager.compute_gathered_features(local_bundles)
-        return agents_obs_features.sum(0) if self.is_root() else None
+        return agents_obs_features.sum(0) if self.comm_manager.is_root() else None
 
     def get_agents_obs_features(self) -> Optional[NDArray[np.float64]]:
         """Compute per-agent observed features (rank 0 only)."""
-        local_bundles = self.local_data.get("obs_bundles")
+        local_bundles = self.data_manager.local_data.get("obs_bundles")
         agents_obs_features = self.oracles_manager.compute_gathered_features(local_bundles)
-        return agents_obs_features if self.is_root() else None
+        return agents_obs_features if self.comm_manager.is_root() else None
 
     def compute_obj_and_gradient(self, theta: NDArray[np.float64]) -> Tuple[Optional[float], Optional[NDArray[np.float64]]]:
         """Compute objective and gradient in one call."""
@@ -66,9 +65,9 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         agents_features = self.oracles_manager.compute_gathered_features(B_local)
         utilities = self.oracles_manager.compute_gathered_utilities(B_local, theta)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             obj_value = utilities.sum() - (self.obs_features @ theta).sum()
-            gradient = (agents_features.sum(0) - self.obs_features) / self.num_agents
+            gradient = (agents_features.sum(0) - self.obs_features) / self.dimensions_cfg.num_agents
             return obj_value, gradient
         return None, None
 
@@ -79,7 +78,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
             raise ValueError("theta must be 1D array, got scalar or 0D array")
         B_local = self.subproblem_manager.solve_local(theta)
         utilities = self.oracles_manager.compute_gathered_utilities(B_local, theta)
-        if self.is_root():
+        if self.comm_manager.is_root():
             return utilities.sum() - (self.obs_features @ theta).sum()
         return None
     
@@ -105,7 +104,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> EstimationResult:
         """Create EstimationResult with consistent handling for root/non-root ranks."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             return EstimationResult(
                 theta_hat=theta.copy(),
                 converged=converged,
@@ -161,7 +160,7 @@ class BaseEstimationManager(HasDimensions, HasData, HasComm):
         header: str = "ESTIMATION SUMMARY",
     ) -> None:
         """Log timing summary (rank 0 only)."""
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return
         
         total_time = timing_stats.get('total_time', 0.0)

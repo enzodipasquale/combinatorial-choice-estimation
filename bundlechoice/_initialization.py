@@ -29,11 +29,9 @@ def _check_requirements(bc: Any, requirements: List[str], manager_name: str) -> 
     }
     missing = [(req, checks[req][1]) for req in requirements if not checks.get(req, (True,))[0]]
     if missing:
-        raise SetupError(
-            f"Cannot initialize {manager_name} - missing: {', '.join(r for r, _ in missing)}",
-            suggestion="\n  ".join(f"- {r}: {h}" for r, h in missing),
-            missing=[r for r, _ in missing],
-        )
+        msg_parts = [f"Cannot initialize {manager_name} - missing: {', '.join(r for r, _ in missing)}"]
+        msg_parts.append("\n  ".join(f"- {r}: {h}" for r, h in missing))
+        raise SetupError("\n  ".join(msg_parts))
 
 
 def try_init_data_manager(bc: Any) -> 'DataManager':
@@ -65,12 +63,10 @@ def try_init_subproblem_manager(bc: Any) -> 'SubproblemManager':
             missing.append("data")
         
         raise SetupError(
-            f"Cannot initialize subproblem manager - missing: {', '.join(missing)}",
-            suggestion=(
-                "Complete these steps:\n"
-                "  1. bc.load_config(config_dict)  # Include 'subproblem' section\n"
-                "  2. bc.data.load_and_scatter(input_data)"
-            )
+            f"Cannot initialize subproblem manager - missing: {', '.join(missing)}\n"
+            "Complete these steps:\n"
+            "  1. bc.load_config(config_dict)  # Include 'subproblem' section\n"
+            "  2. bc.data.load_and_scatter(input_data)"
         )
 
     # Auto-initialize oracles_manager if not set

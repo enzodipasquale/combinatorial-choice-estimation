@@ -143,7 +143,7 @@ def test_automatic_update_in_place():
             theta_ubs=50,
             gurobi_settings={"Method": 0}
         ),
-        ellipsoid=EllipsoidConfig(max_iterations=1000, tolerance=1e-6)
+        ellipsoid=EllipsoidConfig(max_iterations=1000)
     )
     
     # Create update config with some new fields and some existing fields
@@ -156,7 +156,7 @@ def test_automatic_update_in_place():
             parameters_to_log=[0, 1, 2],
             gurobi_settings={"OutputFlag": 1}
         ),
-        ellipsoid=EllipsoidConfig(verbose=False, decay_factor=0.9)
+        ellipsoid=EllipsoidConfig(verbose=False)
     )
     
     # Update the initial config
@@ -182,9 +182,7 @@ def test_automatic_update_in_place():
     
     # Test that ellipsoid was updated correctly
     assert initial_config.ellipsoid.max_iterations == 1000  # Unchanged
-    assert initial_config.ellipsoid.tolerance == 1e-6       # Unchanged
     assert initial_config.ellipsoid.verbose == False        # Updated
-    assert initial_config.ellipsoid.decay_factor == 0.9    # Updated
 
 
 def test_nested_config_updates():

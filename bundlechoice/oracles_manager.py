@@ -1,14 +1,13 @@
 import numpy as np
-from typing import Any, Callable, Optional, Dict, Tuple
+from typing import Any, Callable, Optional, Dict
 from numpy.typing import NDArray
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
 from bundlechoice.data_manager import DataManager
-from bundlechoice.base import HasDimensions, HasData, HasComm
 logger = get_logger(__name__)
 
 
-class OraclesManager(HasDimensions, HasComm, HasData):
+class OraclesManager:
     """
     Manages feature and error oracles for bundle choice model.
     
@@ -49,21 +48,21 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         if self._features_oracle is None:
             return
         
-        test_bundle = np.ones(self.num_items)
-        if self.input_data is not None:
-            test_features = self._features_oracle(0, test_bundle, self.input_data)
-        elif self.local_data is not None:
-            agent_data = self.local_data.get("agent_data", {})
+        test_bundle = np.ones(self.dimensions_cfg.num_items)
+        if self.data_manager.input_data is not None:
+            test_features = self._features_oracle(0, test_bundle, self.data_manager.input_data)
+        elif self.data_manager.local_data is not None:
+            agent_data = self.data_manager.local_data.get("agent_data", {})
             modular = agent_data.get("modular")
             if modular is not None and modular.shape[0] > 0:
-                test_features = self._features_oracle(0, test_bundle, self.local_data)
+                test_features = self._features_oracle(0, test_bundle, self.data_manager.local_data)
             else:
                 return
         else:
             return
         
-        assert test_features.shape == (self.num_features,), \
-            f"features_oracle must return shape ({self.num_features},), got {test_features.shape}"
+        assert test_features.shape == (self.dimensions_cfg.num_features,), \
+            f"features_oracle must return shape ({self.dimensions_cfg.num_features},), got {test_features.shape}"
 
     def set_error_oracle(self, _error_oracle: Callable[[int, NDArray[np.float64], Dict[str, Any]], float]) -> None:
         """Set user-supplied error oracle function (single-agent)."""
@@ -79,7 +78,7 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         """Compute error for single agent/bundle."""
         if self._error_oracle is None:
             raise RuntimeError("_error_oracle function is not set. Call build_error_oracle_from_data() first.")
-        data = data_override if data_override is not None else self.local_data
+        data = data_override if data_override is not None else self.data_manager.local_data
         return self._error_oracle(agent_id, bundle, data)
 
     def build_error_oracle_from_data(self) -> Callable[[int, NDArray[np.float64], Dict[str, Any]], float]:
@@ -116,35 +115,35 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         """
         if correlation_matrix is not None:
             correlation_matrix = self.comm_manager.broadcast_from_root(
-                correlation_matrix if self.is_root() else None, root=0
+                correlation_matrix if self.comm_manager.is_root() else None, root=0
             )
             L = np.linalg.cholesky(correlation_matrix)
         else:
             L = None
         
-        total_agents = self.num_simulations * self.num_agents
-        idx_chunks = np.array_split(np.arange(total_agents), self.comm_size)
+        total_agents = self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents
+        idx_chunks = np.array_split(np.arange(total_agents), self.comm_manager.size)
         local_global_indices = idx_chunks[self.comm_manager.rank]
         num_local = len(local_global_indices)
         
-        local_errors = np.empty((num_local, self.num_items), dtype=np.float64)
+        local_errors = np.empty((num_local, self.dimensions_cfg.num_items), dtype=np.float64)
         for local_idx, global_idx in enumerate(local_global_indices):
             rng = np.random.default_rng(seed + global_idx)
             if L is not None:
-                z = rng.standard_normal(self.num_items)
+                z = rng.standard_normal(self.dimensions_cfg.num_items)
                 local_errors[local_idx] = L @ z
             else:
-                local_errors[local_idx] = rng.standard_normal(self.num_items)
+                local_errors[local_idx] = rng.standard_normal(self.dimensions_cfg.num_items)
         
-        if self.local_data is None:
-            self.local_data = {}
-        self.local_data["errors"] = local_errors
+        if self.data_manager.local_data is None:
+            self.data_manager.local_data = {}
+        self.data_manager.local_data["errors"] = local_errors
         self.data_manager.num_local_agents = num_local
         
         self.build_error_oracle_from_data()
         
-        if self.is_root():
-            corr_info = f" with {self.num_items}x{self.num_items} correlation matrix" if L is not None else ""
+        if self.comm_manager.is_root():
+            corr_info = f" with {self.dimensions_cfg.num_items}x{self.dimensions_cfg.num_items} correlation matrix" if L is not None else ""
             logger.info(f"Built local modular error oracle: {total_agents} agents, seed={seed}{corr_info}")
 
     def features_oracle(self, agent_id: int, bundle: NDArray[np.float64], 
@@ -152,25 +151,25 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         """Compute features for single agent/bundle."""
         if self._features_oracle is None:
             raise RuntimeError("_features_oracle function is not set.")
-        data = data_override if data_override is not None else self.input_data
+        data = data_override if data_override is not None else self.data_manager.input_data
         return self._features_oracle(agent_id, bundle, data)
 
     def compute_rank_features(self, local_bundles: Optional[NDArray[np.float64]]) -> NDArray[np.float64]:
         """Compute features for all local agents on this rank. Uses vectorized if available."""
-        if self.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
-            return np.empty((0, self.num_features), dtype=np.float64)
+        if self.data_manager.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
+            return np.empty((0, self.dimensions_cfg.num_features), dtype=np.float64)
         
-        assert self.num_local_agents == len(local_bundles), \
-            f"num_local_agents ({self.num_local_agents}) != len(local_bundles) ({len(local_bundles)})"
+        assert self.data_manager.num_local_agents == len(local_bundles), \
+            f"num_local_agents ({self.data_manager.num_local_agents}) != len(local_bundles) ({len(local_bundles)})"
         
         if self._vectorized_features is not None:
-            return self._vectorized_features(local_bundles, self.local_data)
+            return self._vectorized_features(local_bundles, self.data_manager.local_data)
         
         if self._features_oracle is None:
             raise RuntimeError("No features oracle set. Call set_features_oracle() or set_vectorized_features_oracle().")
         
-        return np.stack([self._features_oracle(i, local_bundles[i], self.local_data) 
-                        for i in range(self.num_local_agents)])
+        return np.stack([self._features_oracle(i, local_bundles[i], self.data_manager.local_data) 
+                        for i in range(self.data_manager.num_local_agents)])
 
     def compute_gathered_features(self, local_bundles: Optional[NDArray[np.float64]]) -> Optional[NDArray[np.float64]]:
         """Compute features for all agents, gather to rank 0."""
@@ -179,11 +178,11 @@ class OraclesManager(HasDimensions, HasComm, HasData):
 
     def compute_rank_errors(self, local_bundles: Optional[NDArray[np.float64]]) -> NDArray[np.float64]:
         """Compute errors for all local agents on this rank. Uses vectorized if available."""
-        if self.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
+        if self.data_manager.num_local_agents == 0 or local_bundles is None or len(local_bundles) == 0:
             return np.empty(0, dtype=np.float64)
         
         if self._vectorized_errors is not None:
-            return self._vectorized_errors(local_bundles, self.local_data)
+            return self._vectorized_errors(local_bundles, self.data_manager.local_data)
         
         if self._error_oracle is None:
             raise RuntimeError("No error oracle set. Call set_error_oracle(), set_vectorized_error_oracle(), or build_error_oracle_from_data().")
@@ -191,13 +190,7 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         return np.array([self._error_oracle(i, local_bundles[i], self.local_data) 
                         for i in range(self.num_local_agents)])
 
-    def compute_gathered_features_and_errors(self, local_bundles: NDArray[np.float64]) -> Tuple[Optional[NDArray[np.float64]], Optional[NDArray[np.float64]]]:
-        """Compute features and errors for all agents in one pass, gather to rank 0."""
-        features_local = self.compute_rank_features(local_bundles)
-        errors_local = self.compute_rank_errors(local_bundles)
-        features = self.comm_manager.concatenate_array_at_root_fast(features_local, root=0)
-        errors = self.comm_manager.concatenate_array_at_root_fast(errors_local, root=0)
-        return features, errors
+
 
     def compute_gathered_utilities(self, local_bundles: NDArray[np.float64], 
                                    theta: NDArray[np.float64]) -> Optional[NDArray[np.float64]]:
@@ -225,8 +218,8 @@ class OraclesManager(HasDimensions, HasComm, HasData):
         
         self.data_manager.verify_feature_count()
         
-        if self.is_root():
-            data_info = self.data_manager.get_data_info(self.input_data)
+        if self.comm_manager.is_root():
+            data_info = self.data_manager.get_data_info(self.data_manager.input_data)
             flags = (
                 data_info["has_modular_agent"],
                 data_info["has_quadratic_agent"],

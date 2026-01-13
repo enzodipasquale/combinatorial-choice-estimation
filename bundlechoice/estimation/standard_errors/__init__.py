@@ -5,7 +5,6 @@ Provides multiple methods:
 - Sandwich SE: Full A^{-1} B A^{-1} estimator
 - B-inverse SE: Simplified B^{-1} estimator (no finite differences)
 - Bootstrap SE: Resample agents with replacement
-- Subsampling SE: Subsample without replacement
 - Bayesian Bootstrap SE: Reweight agents (avoids rare-item problem with FE)
 """
 
@@ -13,7 +12,6 @@ from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.config import DimensionsConfig, StandardErrorsConfig
 from bundlechoice.comm_manager import CommManager
 from bundlechoice.data_manager import DataManager
@@ -25,7 +23,7 @@ from .sandwich import SandwichMixin
 from .resampling import ResamplingMixin
 
 
-class StandardErrorsManager(SandwichMixin, ResamplingMixin, HasDimensions, HasData, HasComm):
+class StandardErrorsManager(SandwichMixin, ResamplingMixin):
     """
     Computes standard errors for bundle choice estimation.
     

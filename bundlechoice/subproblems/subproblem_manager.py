@@ -12,13 +12,12 @@ from numpy.typing import NDArray
 from bundlechoice.config import DimensionsConfig, SubproblemConfig
 from bundlechoice.data_manager import DataManager
 from bundlechoice.oracles_manager import OraclesManager
-from bundlechoice.base import HasDimensions, HasData, HasComm
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-class SubproblemManager(HasDimensions, HasComm, HasData):
+class SubproblemManager:
     """Manages subproblem initialization and solving (batch or serial)."""
     
     def __init__(self, dimensions_cfg: DimensionsConfig, comm_manager: Any, 
@@ -88,16 +87,16 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
         if self.subproblem_instance is None and self.subproblem_cfg and self.subproblem_cfg.name:
             self.load()
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             theta = np.asarray(theta, dtype=np.float64)
         else:
-            theta = np.empty(self.num_features, dtype=np.float64)
+            theta = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         theta = self.comm_manager.broadcast_array(theta, root=0)
         self.initialize_local()
         local_bundles = self.solve_local(theta)
         bundles = self.comm_manager.concatenate_array_at_root_fast(local_bundles, root=0)
         
-        if self.is_root() and bundles is not None:
+        if self.comm_manager.is_root() and bundles is not None:
             bundle_sizes = bundles.sum(axis=1)
             item_demands = bundles.sum(axis=0)
             num_items = bundles.shape[1]
@@ -142,10 +141,10 @@ class SubproblemManager(HasDimensions, HasComm, HasData):
             dimensions_cfg=self.dimensions_cfg
         )
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             theta = np.asarray(theta, dtype=np.float64)
         else:
-            theta = np.empty(self.num_features, dtype=np.float64)
+            theta = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
         theta = self.comm_manager.broadcast_array(theta, root=0)
         
         local_subproblems = bf_instance.initialize_all()

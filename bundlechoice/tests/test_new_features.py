@@ -26,41 +26,16 @@ class TestFeatureNaming:
         assert dims.get_feature_name(1) == "b"
         assert dims.get_feature_name(99) == "theta_99"  # fallback
     
-    def test_get_feature_index(self):
-        dims = DimensionsConfig()
-        dims.feature_names = ["pop", "distance", "travel"]
-        assert dims.get_feature_index("distance") == 1
-        with pytest.raises(KeyError):
-            dims.get_feature_index("nonexistent")
-    
-    def test_get_indices_by_pattern(self):
-        dims = DimensionsConfig()
-        dims.feature_names = ["modular", "FE_0", "FE_1", "FE_2", "singular"]
-        assert dims.get_indices_by_pattern("FE_*") == [1, 2, 3]
-        assert dims.get_indices_by_pattern("*ular") == [0, 4]
-    
-    def test_set_feature_groups(self):
-        dims = DimensionsConfig()
-        dims.set_feature_groups(
-            modular=["bidder_pop"],
-            fixed_effects=3,  # auto-generates FE_0, FE_1, FE_2
-            quadratic=["pop_dist", "travel", "air"]
-        )
-        assert dims.num_features == 7
-        assert dims.feature_names == ["bidder_pop", "FE_0", "FE_1", "FE_2", "pop_dist", "travel", "air"]
-        assert dims.get_group_indices("modular") == [0]
-        assert dims.get_group_indices("fixed_effects") == [1, 2, 3]
-        assert dims.get_group_indices("quadratic") == [4, 5, 6]
-    
     def test_get_structural_indices(self):
-        dims = DimensionsConfig()
-        dims.set_feature_groups(
-            modular=["m1", "m2"],
-            fixed_effects=5,
-            quadratic=["q1"]
-        )
+        dims = DimensionsConfig(num_features=7)
+        dims.feature_names = ["m1", "m2", "FE_0", "FE_1", "FE_2", "FE_3", "q1"]
         structural = dims.get_structural_indices()
-        assert structural == [0, 1, 7]  # excludes FE indices [2,3,4,5,6]
+        assert structural == [0, 1, 6]  # excludes FE_ prefixed indices
+    
+    def test_get_structural_indices_no_names(self):
+        dims = DimensionsConfig(num_features=5)
+        structural = dims.get_structural_indices()
+        assert structural == [0, 1, 2, 3, 4]  # returns all when no names
 
 
 class TestResultExport:

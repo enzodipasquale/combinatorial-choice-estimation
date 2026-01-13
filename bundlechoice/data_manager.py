@@ -5,11 +5,10 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
-from bundlechoice.base import HasDimensions, HasComm
 logger = get_logger(__name__)
 
 
-class DataManager(HasDimensions, HasComm):
+class DataManager:
     """
     Handles input data distribution across MPI ranks.
     
@@ -43,7 +42,7 @@ class DataManager(HasDimensions, HasComm):
             errors_required: If False, allow errors to be None (for local generation).
         """
         self._validate_input_data(input_data, errors_required=errors_required)
-        if self.is_root():
+        if self.comm_manager.is_root():
             self.input_data = input_data
         else:
             self.input_data = None
@@ -90,7 +89,7 @@ class DataManager(HasDimensions, HasComm):
         """
         path = Path(path)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             if not path.exists():
                 raise FileNotFoundError(f"Directory not found: {path}")
             
@@ -107,7 +106,7 @@ class DataManager(HasDimensions, HasComm):
                     np.random.seed(error_seed)
                 errors = np.random.normal(
                     0, 1, 
-                    (self.num_simulations, self.num_agents, self.num_items)
+                    (self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.dimensions_cfg.num_items)
                 )
                 input_data["errors"] = errors
         else:
@@ -254,8 +253,8 @@ class DataManager(HasDimensions, HasComm):
         modular_names = self.data_sources.get("agent_data", {}).get("modular", [])
         names.extend(modular_names)
         
-        if self.num_items:
-            names.extend([f"FE_{j}" for j in range(self.num_items)])
+        if self.dimensions_cfg.num_items:
+            names.extend([f"FE_{j}" for j in range(self.dimensions_cfg.num_items)])
         
         quadratic_names = self.data_sources.get("item_data", {}).get("quadratic", [])
         names.extend(quadratic_names)
@@ -271,13 +270,13 @@ class DataManager(HasDimensions, HasComm):
         - Local errors array
         - Broadcast item_data (same on all ranks)
         """
-        if self.is_root():
+        if self.comm_manager.is_root():
             errors = self._prepare_errors(self.input_data.get("errors"))
             obs_bundles = self.input_data.get("obs_bundle")
             agent_data = self.input_data.get("agent_data") or {}
             item_data = self.input_data.get("item_data")
             
-            idx_chunks = np.array_split(np.arange(self.num_simulations * self.num_agents), self.comm_size)
+            idx_chunks = np.array_split(np.arange(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents), self.comm_manager.size)
             counts = [len(idx) for idx in idx_chunks]
             
             has_agent_data = len(agent_data) > 0
@@ -285,9 +284,9 @@ class DataManager(HasDimensions, HasComm):
             has_item_data = item_data is not None
             has_errors = errors is not None
             
-            total_agents = self.num_simulations * self.num_agents
-            sim_info = f" ({self.num_simulations} simuls × {self.num_agents} agents)" if self.num_simulations > 1 else ""
-            logger.info("Scattering: %d agents%s → %d ranks", total_agents, sim_info, self.comm_size)
+            total_agents = self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents
+            sim_info = f" ({self.dimensions_cfg.num_simulations} simuls × {self.dimensions_cfg.num_agents} agents)" if self.dimensions_cfg.num_simulations > 1 else ""
+            logger.info("Scattering: %d agents%s → %d ranks", total_agents, sim_info, self.comm_manager.size)
         else:
             errors = None
             obs_bundles = None
@@ -305,35 +304,35 @@ class DataManager(HasDimensions, HasComm):
         )
         
         num_local_agents = counts[self.comm_manager.rank]
-        flat_counts = [c * self.num_items for c in counts]
+        flat_counts = [c * self.dimensions_cfg.num_items for c in counts]
         
         if has_errors:
             local_errors_flat = self.comm_manager.scatter_array(
                 send_array=errors, counts=flat_counts, root=0, 
-                dtype=errors.dtype if self.is_root() else np.float64
+                dtype=errors.dtype if self.comm_manager.is_root() else np.float64
             )
-            local_errors = local_errors_flat.reshape(num_local_agents, self.num_items)
+            local_errors = local_errors_flat.reshape(num_local_agents, self.dimensions_cfg.num_items)
         else:
             local_errors = None
         
         if has_obs_bundles:
-            if self.is_root():
+            if self.comm_manager.is_root():
                 all_indices = np.concatenate(idx_chunks)
-                agent_indices = all_indices % self.num_agents
+                agent_indices = all_indices % self.dimensions_cfg.num_agents
                 indexed_obs_bundles = obs_bundles[agent_indices]
             else:
                 indexed_obs_bundles = None
             
             local_obs_bundles_flat = self.comm_manager.scatter_array(
                 send_array=indexed_obs_bundles, counts=flat_counts, root=0,
-                dtype=indexed_obs_bundles.dtype if self.is_root() else np.bool_
+                dtype=indexed_obs_bundles.dtype if self.comm_manager.is_root() else np.bool_
             )
-            local_obs_bundles = local_obs_bundles_flat.reshape(num_local_agents, self.num_items)
+            local_obs_bundles = local_obs_bundles_flat.reshape(num_local_agents, self.dimensions_cfg.num_items)
         else:
             local_obs_bundles = None
         
-        if self.is_root():
-            global_indices = np.arange(self.num_simulations * self.num_agents, dtype=np.int64)
+        if self.comm_manager.is_root():
+            global_indices = np.arange(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, dtype=np.int64)
         else:
             global_indices = None
         local_global_indices = self.comm_manager.scatter_array(
@@ -341,14 +340,14 @@ class DataManager(HasDimensions, HasComm):
         )
         
         if has_agent_data:
-            if self.is_root():
+            if self.comm_manager.is_root():
                 agent_data_expanded = {}
                 for k, array in agent_data.items():
-                    if self.num_simulations > 1:
+                    if self.dimensions_cfg.num_simulations > 1:
                         if array.ndim == 1:
-                            agent_data_expanded[k] = np.tile(array, self.num_simulations)
+                            agent_data_expanded[k] = np.tile(array, self.dimensions_cfg.num_simulations)
                         else:
-                            agent_data_expanded[k] = np.tile(array, (self.num_simulations, 1) + (1,) * (array.ndim - 2))
+                            agent_data_expanded[k] = np.tile(array, (self.dimensions_cfg.num_simulations, 1) + (1,) * (array.ndim - 2))
                     else:
                         agent_data_expanded[k] = array
             else:
@@ -376,24 +375,24 @@ class DataManager(HasDimensions, HasComm):
     def _prepare_errors(self, errors: Optional[np.ndarray]) -> Optional[np.ndarray]:
         if errors is None:
             return None
-        if (self.num_simulations == 1 and errors.ndim == 2):
+        if (self.dimensions_cfg.num_simulations == 1 and errors.ndim == 2):
             return errors
         elif errors.ndim == 3:
-            return errors.reshape(-1, self.num_items)
+            return errors.reshape(-1, self.dimensions_cfg.num_items)
         else:
-            raise ValueError(f"errors has shape {errors.shape}, while num_simulations is {self.num_simulations} and num_agents is {self.num_agents}")
+            raise ValueError(f"errors has shape {errors.shape}, while num_simulations is {self.dimensions_cfg.num_simulations} and num_agents is {self.dimensions_cfg.num_agents}")
 
     def _validate_input_data(self, input_data: Dict[str, Any], errors_required: bool = True) -> None:
         """Validate input_data structure and dimensions (rank 0 only)."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             from bundlechoice.validation import validate_input_data_comprehensive
             validate_input_data_comprehensive(input_data, self.dimensions_cfg, errors_required=errors_required)
 
     def verify_feature_count(self) -> None:
         """Verify num_features in config matches data structure."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             from bundlechoice.validation import validate_feature_count
-            validate_feature_count(self.input_data, self.num_features)
+            validate_feature_count(self.input_data, self.dimensions_cfg.num_features)
 
     def update_errors(self, errors: np.ndarray) -> None:
         """
@@ -402,12 +401,12 @@ class DataManager(HasDimensions, HasComm):
         Args:
             errors: Array of shape (num_agents, num_items) on rank 0, None on other ranks.
         """
-        if self.is_root():
+        if self.comm_manager.is_root():
             errors_flat = errors.reshape(-1)
             dtype = errors_flat.dtype
             size = self.comm_manager.comm.Get_size()
-            idx_chunks = np.array_split(np.arange(self.num_agents), size)
-            counts = [len(chunk) * self.num_items for chunk in idx_chunks]
+            idx_chunks = np.array_split(np.arange(self.dimensions_cfg.num_agents), size)
+            counts = [len(chunk) * self.dimensions_cfg.num_items for chunk in idx_chunks]
         else:
             errors_flat = None
             dtype = np.float64
@@ -418,9 +417,9 @@ class DataManager(HasDimensions, HasComm):
         )
         
         if self.num_local_agents == 0:
-            self.local_data["errors"] = np.empty((0, self.num_items), dtype=dtype)
+            self.local_data["errors"] = np.empty((0, self.dimensions_cfg.num_items), dtype=dtype)
         else:
-            self.local_data["errors"] = local_errors_flat.reshape(self.num_local_agents, self.num_items)
+            self.local_data["errors"] = local_errors_flat.reshape(self.num_local_agents, self.dimensions_cfg.num_items)
 
     def get_data_info(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

@@ -30,9 +30,9 @@ class ResamplingMixin:
         NOTE: solve_fn must handle MPI - all ranks must call it together.
         """
         if beta_indices is None:
-            beta_indices = np.arange(self.num_features, dtype=np.int64)
+            beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (BOOTSTRAP)", "=" * 70]
             lines.append(f"  Samples: {num_bootstrap}, Parameters: {len(beta_indices)}")
             logger.info("\n".join(lines))
@@ -43,21 +43,21 @@ class ResamplingMixin:
             obs_bundles = self.data_manager.input_data["obs_bundle"]
             agent_data = self.data_manager.input_data["agent_data"]
             item_data = self.data_manager.input_data.get("item_data")
-            N = self.num_agents
+            N = self.dimensions_cfg.num_agents
         
         theta_boots = []
         
         for b in range(num_bootstrap):
-            if self.is_root() and (b + 1) % 20 == 0:
+            if self.comm_manager.is_root() and (b + 1) % 20 == 0:
                 logger.info("  Bootstrap %d/%d...", b + 1, num_bootstrap)
             
             # Root generates bootstrap data, broadcasts to all ranks
-            if self.is_root():
+            if self.comm_manager.is_root():
                 idx = np.random.choice(N, size=N, replace=True)
                 boot_data = {
                     "obs_bundle": obs_bundles[idx],
                     "agent_data": {k: v[idx] for k, v in agent_data.items()},
-                    "errors": np.random.randn(N, self.num_items),
+                    "errors": np.random.randn(N, self.dimensions_cfg.num_items),
                 }
                 if item_data is not None:
                     boot_data["item_data"] = item_data
@@ -67,10 +67,10 @@ class ResamplingMixin:
             # All ranks call solve_fn (it handles MPI internally)
             theta_b = solve_fn(boot_data)
             
-            if self.is_root() and theta_b is not None:
+            if self.comm_manager.is_root() and theta_b is not None:
                 theta_boots.append(theta_b)
         
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return None
         
         return self._finalize_resampling_result(theta_hat, theta_boots, beta_indices, "Bootstrap")
@@ -161,15 +161,15 @@ class ResamplingMixin:
                 - "model_strip": Same as model but strip slack constraints each iteration
         """
         if beta_indices is None:
-            beta_indices = np.arange(self.num_features, dtype=np.int64)
+            beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (BAYESIAN BOOTSTRAP)", "=" * 70]
             lines.append(f"  Samples: {num_bootstrap}, Parameters: {len(beta_indices)}")
             lines.append(f"  Warm-start: {warmstart}")
             logger.info("\n".join(lines))
         
-        N = self.num_agents
+        N = self.dimensions_cfg.num_agents
         theta_boots = []
         constraints = None
         prev_theta = theta_hat.copy()  # Initialize with estimated theta for first iteration
@@ -178,15 +178,15 @@ class ResamplingMixin:
             np.random.seed(seed)
         
         for b in range(num_bootstrap):
-            if self.is_root() and (b + 1) % 20 == 0:
+            if self.comm_manager.is_root() and (b + 1) % 20 == 0:
                 logger.info("  Bayesian bootstrap %d/%d...", b + 1, num_bootstrap)
             
-            if self.is_root():
+            if self.comm_manager.is_root():
                 weights = np.random.exponential(1.0, N)
                 weights = weights / weights.mean()
             else:
                 weights = None
-            weights = self.comm.bcast(weights, root=0)
+            weights = self.comm_manager.comm.bcast(weights, root=0)
             
             try:
                 # Choose warm-start strategy (all use theta_hat for first iteration via prev_theta)
@@ -201,18 +201,18 @@ class ResamplingMixin:
                 else:  # "none"
                     result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
                 
-                if self.is_root():
+                if self.comm_manager.is_root():
                     theta_boots.append(result.theta_hat)
                     if warmstart == "constraints":
                         constraints = row_generation.get_constraints()
                 
                 # For theta warmstart, broadcast prev_theta to all ranks
                 if warmstart == "theta":
-                    prev_theta = self.comm.bcast(result.theta_hat.copy() if self.is_root() else None, root=0)
+                    prev_theta = self.comm_manager.comm.bcast(result.theta_hat.copy() if self.comm_manager.is_root() else None, root=0)
             except Exception:
                 pass
         
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return None
         
         return self._finalize_resampling_result(theta_hat, theta_boots, beta_indices, "Bayesian Bootstrap")

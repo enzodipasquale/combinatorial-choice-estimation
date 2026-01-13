@@ -219,9 +219,9 @@ def create_real_airline_scenario(
         theta: np.ndarray, error_j: np.ndarray
     ) -> tuple:
         """find_best_item for real airline data."""
-        modular_item = self.local_data["item_data"]["modular"]
-        origin_city_arr = self.local_data["item_data"]["origin_city"]
-        agent_hubs = self.local_data["agent_data"]["hubs"][local_id]
+        modular_item = self.data_manager.local_data["item_data"]["modular"]
+        origin_city_arr = self.data_manager.local_data["item_data"]["origin_city"]
+        agent_hubs = self.data_manager.local_data["agent_data"]["hubs"][local_id]
         
         theta_gs = theta[-1]
         theta_modular = theta[:-1]

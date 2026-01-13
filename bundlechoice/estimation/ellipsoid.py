@@ -62,7 +62,7 @@ class EllipsoidManager(BaseEstimationManager):
         self.timing_stats = None
         
         # Ellipsoid update coefficients
-        n = self.num_features
+        n = self.dimensions_cfg.num_features
         self.n = n
         self.alpha = (n**2 / (n**2 - 1))**(1/4)
         self.gamma = self.alpha * ((n-1)/(n+1))**(1/2)
@@ -85,11 +85,12 @@ class EllipsoidManager(BaseEstimationManager):
         self.subproblem_manager.initialize_local()
         self._initialize_ellipsoid()
         
-        # Determine number of iterations
+        # Determine number of iterations (capped by max_iterations)
         if self.ellipsoid_cfg.num_iters is not None:
-            num_iters = self.ellipsoid_cfg.num_iters
+            num_iters = min(self.ellipsoid_cfg.num_iters, self.ellipsoid_cfg.max_iterations)
         else:
-            num_iters = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
+            computed = int(self.n * (self.n - 1) * math.log(1.0 / self.ellipsoid_cfg.solver_precision))
+            num_iters = min(computed, self.ellipsoid_cfg.max_iterations)
         keep_last_n = min(1000, num_iters)
 
         vals = []
@@ -122,12 +123,12 @@ class EllipsoidManager(BaseEstimationManager):
 
             self._update_ellipsoid(direction)
             
-            if not self.is_root():
-                self.theta_iter = np.empty(self.num_features, dtype=np.float64)
+            if not self.comm_manager.is_root():
+                self.theta_iter = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             
             self.theta_iter = self.comm_manager.broadcast_array(self.theta_iter, root=0)
             
-            if callback and self.is_root() and obj_value != np.inf:
+            if callback and self.comm_manager.is_root() and obj_value != np.inf:
                 callback({
                     'iteration': iteration,
                     'theta': self.theta_iter.copy(),
@@ -139,7 +140,7 @@ class EllipsoidManager(BaseEstimationManager):
         logger.info("Ellipsoid method completed %d iterations in %.2f seconds.", num_iters, elapsed)
         
         # Find best theta
-        if self.is_root():
+        if self.comm_manager.is_root():
             if len(vals) > 0:
                 best_idx = np.argmin(vals)
                 best_theta = np.array(centers)[best_idx]
@@ -151,14 +152,14 @@ class EllipsoidManager(BaseEstimationManager):
                 best_obj = None
                 best_iter = None
         else:
-            best_theta = np.empty(self.num_features, dtype=np.float64)
+            best_theta = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             best_obj = None
             best_iter = None
         
         best_theta = self.comm_manager.broadcast_array(best_theta, root=0)
         
         # Create timing stats and result
-        if self.is_root():
+        if self.comm_manager.is_root():
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient)
             self._log_timing_summary(self.timing_stats, best_obj, best_theta, header="ELLIPSOID METHOD SUMMARY")
             warnings = [] if best_obj is not None else ['All iterations were constraint violations']
@@ -180,7 +181,7 @@ class EllipsoidManager(BaseEstimationManager):
 
     def _update_ellipsoid(self, d: NDArray[np.float64]) -> None:
         """Update the ellipsoid using the gradient."""
-        if self.is_root():
+        if self.comm_manager.is_root():
             dTBd = d.T @ self.B_iter @ d
             if dTBd <= 0 or not np.isfinite(dTBd):
                 logger.warning("Ellipsoid update: dTBd <= 0 or non-finite, skipping update")

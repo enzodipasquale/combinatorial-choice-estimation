@@ -25,10 +25,10 @@ def test_data_manager_basic():
     assert dm.dimensions_cfg == dimensions_cfg
     assert dm.comm_manager == comm_manager
     assert dm.comm_manager.rank == rank
-    assert dm.num_agents == 40
-    assert dm.num_items == 3
-    assert dm.num_features == 1
-    assert dm.num_simulations == 1
+    assert dm.dimensions_cfg.num_agents == 40
+    assert dm.dimensions_cfg.num_items == 3
+    assert dm.dimensions_cfg.num_features == 1
+    assert dm.dimensions_cfg.num_simulations == 1
 
 
 def test_data_manager_load_only():
@@ -55,6 +55,6 @@ def test_data_manager_load_only():
     if rank == 0:
         dm.load(input_data)
     
-    # All ranks should have the same basic attributes
-    assert dm.num_agents == 40
-    assert dm.num_items == 3 
+    # All ranks should have the same dimensions through dimensions_cfg
+    assert dm.dimensions_cfg.num_agents == 40
+    assert dm.dimensions_cfg.num_items == 3
