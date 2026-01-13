@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=17
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=80G
-#SBATCH --time=02:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=../logs/se_bootstrap-%j.out
 
 # All parameters are read from config.yaml

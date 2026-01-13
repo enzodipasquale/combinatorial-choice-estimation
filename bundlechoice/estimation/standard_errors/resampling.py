@@ -8,7 +8,7 @@ from .result import StandardErrorsResult
 from bundlechoice.utils import get_logger
 
 if TYPE_CHECKING:
-    from bundlechoice.estimation.row_generation import RowGenerationSolver
+    from bundlechoice.estimation.row_generation import RowGenerationManager
 
 logger = get_logger(__name__)
 
@@ -143,7 +143,7 @@ class ResamplingMixin:
     def compute_bayesian_bootstrap(
         self,
         theta_hat: NDArray[np.float64],
-        row_generation: "RowGenerationSolver",
+        row_generation: "RowGenerationManager",
         num_bootstrap: int = 100,
         beta_indices: Optional[NDArray[np.int64]] = None,
         seed: Optional[int] = None,
@@ -185,8 +185,7 @@ class ResamplingMixin:
                 weights = np.random.exponential(1.0, N)
                 weights = weights / weights.mean()
             else:
-                weights = None
-            weights = self.comm_manager.comm.bcast(weights, root=0)
+                weights = None  # Non-root ranks don't need weights (master problem is root-only)
             
             try:
                 # Choose warm-start strategy (all use theta_hat for first iteration via prev_theta)
