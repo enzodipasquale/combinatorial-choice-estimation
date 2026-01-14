@@ -90,12 +90,12 @@ class ResamplingMixin:
         NOTE: solve_fn must handle MPI - all ranks must call it together.
         """
         if beta_indices is None:
-            beta_indices = np.arange(self.num_features, dtype=np.int64)
+            beta_indices = np.arange(self.dimensions_cfg.num_features, dtype=np.int64)
         
-        N = self.num_agents
+        N = self.dimensions_cfg.num_agents
         b = min(subsample_size or int(N ** 0.7), N - 1)
         
-        if self.is_root():
+        if self.comm_manager.is_root():
             lines = ["=" * 70, "STANDARD ERRORS (SUBSAMPLING)", "=" * 70]
             lines.append(f"  Subsamples: {num_subsamples}, size: {b} (N={N})")
             logger.info("\n".join(lines))
@@ -110,16 +110,16 @@ class ResamplingMixin:
         theta_subs = []
         
         for s in range(num_subsamples):
-            if self.is_root() and (s + 1) % 20 == 0:
+            if self.comm_manager.is_root() and (s + 1) % 20 == 0:
                 logger.info("  Subsample %d/%d...", s + 1, num_subsamples)
             
             # Root generates subsample data
-            if self.is_root():
+            if self.comm_manager.is_root():
                 idx = np.random.choice(N, size=b, replace=False)
                 sub_data = {
                     "obs_bundle": obs_bundles[idx],
                     "agent_data": {k: v[idx] for k, v in agent_data.items()},
-                    "errors": np.random.randn(b, self.num_items),
+                    "errors": np.random.randn(b, self.dimensions_cfg.num_items),
                 }
                 if item_data is not None:
                     sub_data["item_data"] = item_data
@@ -129,10 +129,10 @@ class ResamplingMixin:
             # All ranks call solve_fn
             theta_s = solve_fn(sub_data)
             
-            if self.is_root() and theta_s is not None:
+            if self.comm_manager.is_root() and theta_s is not None:
                 theta_subs.append(theta_s)
         
-        if not self.is_root():
+        if not self.comm_manager.is_root():
             return None
         
         return self._finalize_resampling_result(
@@ -260,10 +260,7 @@ class ResamplingMixin:
         theta_beta = theta_hat[beta_indices]
         t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
         
-        lines = ["-" * 70, f"Standard Errors ({method_name}):", "-" * 70]
-        for i, idx in enumerate(beta_indices):
-            lines.append(f"  θ[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}")
-        logger.info("\n".join(lines))
+        self._log_se_table(theta_hat, se, beta_indices, t_stats, method_name)
         
         n_params = len(beta_indices)
         return StandardErrorsResult(

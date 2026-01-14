@@ -58,63 +58,9 @@ class RowGenerationManager(BaseEstimationManager):
         self.slack_counter = None
         self.constraint_info = {}  # Map constraint objects to (idx, bundle) tuples
 
-    def _check_bounds_hit(self, tolerance: float = 1e-6) -> Dict[str, Any]:
-        """
-        Check if any theta variable is at its bounds.
-        
-        Returns:
-            Dict with 'hit_lower', 'hit_upper' (lists of indices), and 'any_hit' (bool)
-        """
-        if not self.comm_manager.is_root() or self.master_model is None:
-            return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
-        
-        theta = self.master_variables[0]
-        hit_lower, hit_upper = [], []
-        
-        for k in range(self.dimensions_cfg.num_features):
-            val = theta[k].X
-            lb, ub = theta[k].LB, theta[k].UB
-            if lb > -GRB.INFINITY and abs(val - lb) < tolerance:
-                hit_lower.append(k)
-            if ub < GRB.INFINITY and abs(val - ub) < tolerance:
-                hit_upper.append(k)
-        
-        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
-
-    def _log_bounds_warnings(self, bounds_info: Dict[str, Any]) -> List[str]:
-        """Log warnings for parameters hitting bounds. Returns list of warning messages."""
-        warnings_list = []
-        if self.comm_manager.is_root() and bounds_info['any_hit']:
-            if bounds_info['hit_lower']:
-                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
-            if bounds_info['hit_upper']:
-                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
-        return warnings_list
-
     def _setup_gurobi_model_params(self) -> Any:
-        """Create and set up Gurobi model with parameters from configuration."""    
-        # Default values for parameters not specified in config
-        defaults = {
-            'Method': 0,
-            'LPWarmStart': 2,
-            'OutputFlag': 0
-        }
-        
-        with suppress_output():
-            model = gp.Model()
-            
-            # Merge defaults with user settings (user settings take precedence)
-            params = {**defaults, **self.row_generation_cfg.gurobi_settings}
-            
-            # Set all parameters
-            for param_name, value in params.items():
-                if value is not None:
-                    model.setParam(param_name, value)
-        return model
+        """Create and set up Gurobi model with parameters from configuration."""
+        return self._setup_gurobi_model(self.row_generation_cfg.gurobi_settings)
 
     def _initialize_master_problem(self, initial_constraints: Optional[Dict[str, NDArray]] = None) -> None:
         """
@@ -156,28 +102,12 @@ class RowGenerationManager(BaseEstimationManager):
             else:
                 u = self.master_model.addMVar(self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents, obj=1, name='utility')
             
+            # Set master_variables before add_constraints (which uses it)
+            self.master_variables = (theta, u)
+            
             # Add initial constraints if provided (warm-starting)
             if initial_constraints is not None and len(initial_constraints.get('indices', [])) > 0:
-                indices = initial_constraints['indices']
-                bundles = initial_constraints['bundles']
-                errors = self.data_manager.input_data["errors"]
-                has_sim_dim = errors.ndim == 3
-                
-                for i, idx in enumerate(indices):
-                    agent_id = idx % self.dimensions_cfg.num_agents
-                    sim_id = idx // self.dimensions_cfg.num_agents
-                    bundle = bundles[i]
-                    
-                    features = self.oracles_manager.features_oracle(agent_id, bundle, self.data_manager.input_data)
-                    if has_sim_dim:
-                        error = (errors[sim_id, agent_id] * bundle).sum()
-                    else:
-                        error = (errors[agent_id] * bundle).sum()
-                    
-                    constr = self.master_model.addConstr(u[idx] >= error + features @ theta)
-                    self.constraint_info[constr] = (idx, bundle.copy())
-                
-                logger.info("Added %d initial constraints for warm-start", len(indices))
+                self.add_constraints(initial_constraints['indices'], initial_constraints['bundles'])
 
             # Call master init callback if configured (for custom constraints)
             if self.row_generation_cfg.master_init_callback is not None:
@@ -185,7 +115,6 @@ class RowGenerationManager(BaseEstimationManager):
 
             self.master_model.optimize()
             logger.info("Master Initialized")
-            self.master_variables = (theta, u)
             if self.master_model.Status == GRB.OPTIMAL:
                 self.theta_val = theta.X
             else:
@@ -480,27 +409,26 @@ class RowGenerationManager(BaseEstimationManager):
             indices: Array of u variable indices (agent-simulation pairs)
             bundles: Array of bundles, shape (len(indices), num_items)
         """
-        if not self.is_root() or self.master_model is None:
-            return
-        
-        if len(indices) == 0:
+        if not self.comm_manager.is_root() or self.master_model is None or len(indices) == 0:
             return
         
         theta, u = self.master_variables
+        input_data = self.data_manager.input_data
+        n_agents = self.dimensions_cfg.num_agents
+        agent_ids, sim_ids = indices % n_agents, indices // n_agents
         
-        # Compute features and errors for each constraint
+        # Slice errors by sim_id for error_oracle (handles 3D errors tensor)
+        errors_tensor = input_data.get("errors")
+        has_sim = errors_tensor is not None and errors_tensor.ndim == 3
+        def sim_data(s): return {**input_data, "errors": errors_tensor[s]} if has_sim else input_data
+        
+        # Compute via oracles
+        features = np.stack([self.oracles_manager.features_oracle(int(agent_ids[i]), bundles[i], input_data) for i in range(len(indices))])
+        errors = np.array([self.oracles_manager.error_oracle(int(agent_ids[i]), bundles[i], sim_data(int(sim_ids[i]))) for i in range(len(indices))])
+        
         for i, idx in enumerate(indices):
-            agent_id = idx % self.num_agents
-            sim_id = idx // self.num_agents
-            bundle = bundles[i]
-            
-            # Compute features and errors
-            features = self.oracles_manager.features_oracle(agent_id, bundle, self.input_data)
-            error = (self.input_data["errors"][sim_id, agent_id] * bundle).sum()
-            
-            # Add constraint (no name needed, store info in mapping)
-            constr = self.master_model.addConstr(u[idx] >= error + features @ theta)
-            self.constraint_info[constr] = (idx, bundle.copy())
+            constr = self.master_model.addConstr(u[idx] >= errors[i] + features[i] @ theta)
+            self.constraint_info[constr] = (idx, bundles[i].copy())
         
         logger.info("Added %d constraints to master problem", len(indices))
 
@@ -526,8 +454,7 @@ class RowGenerationManager(BaseEstimationManager):
         logger.debug("get_constraints: extracted %d constraints from constraint_info", len(indices))
         
         if len(indices) == 0:
-            return {'indices': np.array([], dtype=np.int64),
-                    'bundles': np.array([], dtype=np.float64).reshape(0, self.dimensions_cfg.num_items)}
+            return self._empty_constraints_dict()
         
         return {
             'indices': np.array(indices, dtype=np.int64),
@@ -561,8 +488,7 @@ class RowGenerationManager(BaseEstimationManager):
                     bundles.append(bundle)
         
         if len(indices) == 0:
-            return {'indices': np.array([], dtype=np.int64),
-                    'bundles': np.array([], dtype=np.float64).reshape(0, self.dimensions_cfg.num_items)}
+            return self._empty_constraints_dict()
         
         return {
             'indices': np.array(indices, dtype=np.int64),
