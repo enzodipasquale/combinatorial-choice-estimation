@@ -4,7 +4,7 @@
 # Application parameters
 application:
     delta: 4
-    winners_only: false
+    winners_only: true
     hq_distance: false
     use_previous_theta: true
 
@@ -13,7 +13,7 @@ dimensions:
     num_agents: 255
     num_items: 493
     num_features: 497
-    num_simulations: 2
+    num_simulations: 1
 
 subproblem: 
     name: QuadKnapsack
@@ -29,5 +29,5 @@ row_generation:
 adaptive_timeout:
     initial: 1.0
     final: 10.0
-    transition_iterations: 10
+    transition_iterations: 150
     strategy: linear
