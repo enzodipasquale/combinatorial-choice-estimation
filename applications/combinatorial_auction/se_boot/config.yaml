@@ -12,6 +12,7 @@ bootstrap:
     num_samples: 50            # Number of bootstrap samples
     warmstart: model_strip      # Warm-start strategy: none, theta, model, model_strip
     seed: 1995
+    initial_estimation: false  # false = skip point estimation, start bootstrap directly
 
 # BundleChoice settings
 dimensions:
@@ -30,6 +31,7 @@ row_generation:
     max_iters: 200
     theta_ubs: 1000
     tolerance_optimality: 0.01
+    parameters_to_log: [0, -3, -2, -1]
 
 # Theta bounds (for structural parameters)
 theta_bounds:
