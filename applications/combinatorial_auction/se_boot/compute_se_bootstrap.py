@@ -47,6 +47,7 @@ boot_cfg = config.get("bootstrap", {})
 NUM_BOOTSTRAP = boot_cfg.get("num_samples", 200)
 WARMSTART = boot_cfg.get("warmstart", "model_strip")
 SEED = boot_cfg.get("seed", 1995)
+INITIAL_ESTIMATION = boot_cfg.get("initial_estimation", True)
 
 OUTPUT_DIR = os.path.join(APP_DIR, "estimation_results")
 
@@ -58,6 +59,7 @@ if rank == 0:
     print(f"  Config: {CONFIG_PATH}")
     print(f"  delta={DELTA}, winners_only={WINNERS_ONLY}, hq_distance={HQ_DISTANCE}")
     print(f"  Bootstrap: {NUM_BOOTSTRAP} samples, warmstart={WARMSTART}, seed={SEED}")
+    print(f"  Initial estimation: {INITIAL_ESTIMATION}")
     print("=" * 70)
 
 
@@ -134,19 +136,25 @@ if rank == 0:
     print(f"MPI ranks: {comm.Get_size()}")
 
 # =============================================================================
-# Step 1: Run estimation to get point estimate
+# Step 1: Run estimation to get point estimate (optional)
 # =============================================================================
-if rank == 0:
-    print("\n" + "-" * 70)
-    print("STEP 1: Point Estimation")
-    print("-" * 70)
+if INITIAL_ESTIMATION:
+    if rank == 0:
+        print("\n" + "-" * 70)
+        print("STEP 1: Point Estimation")
+        print("-" * 70)
 
-result = bc.row_generation.solve()
-theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
+    result = bc.row_generation.solve()
+    theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
 
-if rank == 0:
-    print(f"Estimation complete: {result.num_iterations} iterations")
-    print(f"Theta (structural): {theta_hat[structural_indices]}")
+    if rank == 0:
+        print(f"Estimation complete: {result.num_iterations} iterations")
+        print(f"Theta (structural): {theta_hat[structural_indices]}")
+else:
+    result = None
+    theta_hat = None
+    if rank == 0:
+        print("\n[Skipping initial estimation - bootstrap will use mean as point estimate]")
 
 # =============================================================================
 # Step 2: Compute Bootstrap SE
@@ -164,7 +172,7 @@ se_result = bc.standard_errors.compute_bayesian_bootstrap(
     seed=SEED,
     warmstart=WARMSTART,
     theta_hat=theta_hat,
-    initial_estimation=True,  # Use theta_hat from estimation as point estimate
+    initial_estimation=INITIAL_ESTIMATION,
 )
 
 if rank == 0:
@@ -177,6 +185,9 @@ if rank == 0:
 if rank == 0 and se_result is not None:
     total_time = time.time() - start_time
     
+    # Use se_result.theta_hat for point estimate (works for both initial_estimation modes)
+    theta_point = se_result.theta_hat
+    
     print("\n" + "=" * 70)
     print(f"RESULTS (delta={DELTA})")
     print("=" * 70)
@@ -184,7 +195,7 @@ if rank == 0 and se_result is not None:
     print("\nStructural Parameters:")
     for i, name in enumerate(structural_names):
         idx = structural_indices[i]
-        print(f"  {name}: theta={theta_hat[idx]:.4f}, SE={se_result.se[i]:.4f}, t={se_result.t_stats[i]:.2f}")
+        print(f"  {name}: theta={theta_point[idx]:.4f}, SE={se_result.se[i]:.4f}, t={se_result.t_stats[i]:.2f}")
     
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     
@@ -203,14 +214,15 @@ if rank == 0 and se_result is not None:
         "num_bootstrap": NUM_BOOTSTRAP,
         "warmstart": WARMSTART,
         "seed": SEED,
+        "initial_estimation": INITIAL_ESTIMATION,
         "total_time_sec": total_time,
         "boot_time_sec": boot_time,
-        "converged": result.converged,
-        "num_iterations": result.num_iterations,
+        "converged": result.converged if result else None,
+        "num_iterations": result.num_iterations if result else None,
     }
     for i, name in enumerate(structural_names):
         idx = structural_indices[i]
-        row_data[f"theta_{name}"] = theta_hat[idx]
+        row_data[f"theta_{name}"] = theta_point[idx]
         row_data[f"se_{name}"] = se_result.se[i]
         row_data[f"t_{name}"] = se_result.t_stats[i]
     
