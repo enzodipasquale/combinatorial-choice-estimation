@@ -114,6 +114,23 @@ class DataManager:
         
         return input_data
     
+    def _find_npy_file(self, npy_files: Dict[str, Path], *patterns: str) -> Optional[Path]:
+        """Find first NPY file matching any of the given patterns."""
+        for name, path in npy_files.items():
+            if all(p in name for p in patterns):
+                return path
+        return None
+
+    def _load_simple_array(self, csv_files: Dict[str, Path], npy_files: Dict[str, Path],
+                           csv_key: str, npy_pattern: str, dtype=None) -> Optional[np.ndarray]:
+        """Load array from CSV (first column) or NPY file."""
+        if csv_key in csv_files:
+            df = pd.read_csv(csv_files[csv_key])
+            arr = df.iloc[:, 0].values if df.shape[1] == 1 else df.values
+            return arr.astype(dtype) if dtype else arr
+        npy_path = self._find_npy_file(npy_files, npy_pattern)
+        return np.load(npy_path) if npy_path else None
+
     def _load_arrays_from_directory(self, path: Path) -> Dict[str, Any]:
         """
         Auto-detect and load arrays from directory. Supports both CSV and NPY.
@@ -132,48 +149,40 @@ class DataManager:
         csv_files = {f.stem.lower(): f for f in path.glob("*.csv")}
         npy_files = {f.stem.lower(): f for f in path.glob("*.npy")}
         
+        # Observed bundles
         if "obs_bundle" in csv_files:
-            df = pd.read_csv(csv_files["obs_bundle"])
-            input_data["obs_bundle"] = df.values.astype(bool)
-        elif any(n.startswith("matching") or n.startswith("obs_bundle") for n in npy_files):
-            for name, npy_path in npy_files.items():
-                if name.startswith("matching") or name.startswith("obs_bundle"):
-                    input_data["obs_bundle"] = np.load(npy_path)
-                    break
+            input_data["obs_bundle"] = pd.read_csv(csv_files["obs_bundle"]).values.astype(bool)
+        else:
+            npy_path = self._find_npy_file(npy_files, "matching") or self._find_npy_file(npy_files, "obs_bundle")
+            if npy_path:
+                input_data["obs_bundle"] = np.load(npy_path)
         
-        if "capacity" in csv_files:
-            df = pd.read_csv(csv_files["capacity"])
-            agent_data["capacity"] = df.iloc[:, 0].values
-        elif any("capacity" in n for n in npy_files):
-            for name, npy_path in npy_files.items():
-                if "capacity" in name:
-                    agent_data["capacity"] = np.load(npy_path)
-                    break
+        # Capacity and weights
+        capacity = self._load_simple_array(csv_files, npy_files, "capacity", "capacity")
+        if capacity is not None:
+            agent_data["capacity"] = capacity
         
-        if "weight" in csv_files:
-            df = pd.read_csv(csv_files["weight"])
-            item_data["weights"] = df.iloc[:, 0].values
-        elif any("weight" in n for n in npy_files):
-            for name, npy_path in npy_files.items():
-                if "weight" in name:
-                    item_data["weights"] = np.load(npy_path)
-                    break
+        weights = self._load_simple_array(csv_files, npy_files, "weight", "weight")
+        if weights is not None:
+            item_data["weights"] = weights
         
+        # Modular agent features
         if "modular_agent" in csv_files:
             arr, feature_names = self._load_agent_features_csv(csv_files["modular_agent"])
             agent_data["modular"] = arr
             self.data_sources["agent_data"]["modular"] = feature_names
-        elif any("modular" in n and "_i_j_k" in n for n in npy_files):
-            for name, npy_path in npy_files.items():
-                if "modular" in name and "_i_j_k" in name:
-                    agent_data["modular"] = np.load(npy_path)
-                    break
+        else:
+            npy_path = self._find_npy_file(npy_files, "modular", "_i_j_k")
+            if npy_path:
+                agent_data["modular"] = np.load(npy_path)
         
+        # Quadratic item features
         if "quadratic_item" in csv_files:
             arr, feature_names = self._load_item_quadratic_csv(csv_files["quadratic_item"])
             item_data["quadratic"] = arr
             self.data_sources["item_data"]["quadratic"] = feature_names
-        elif any("quadratic" in n and "_j_j_k" in n and "_i_j_j" not in n for n in npy_files):
+        else:
+            # Match _j_j_k but exclude _i_j_j
             for name, npy_path in npy_files.items():
                 if "quadratic" in name and "_j_j_k" in name and "_i_j_j" not in name:
                     item_data["quadratic"] = np.load(npy_path)
@@ -270,6 +279,10 @@ class DataManager:
         - Local errors array
         - Broadcast item_data (same on all ranks)
         """
+        # Root prepares data; non-root will receive via broadcast
+        errors = obs_bundles = agent_data = item_data = idx_chunks = counts = None
+        has_agent_data = has_obs_bundles = has_item_data = has_errors = False
+        
         if self.comm_manager.is_root():
             errors = self._prepare_errors(self.input_data.get("errors"))
             obs_bundles = self.input_data.get("obs_bundle")
@@ -287,17 +300,6 @@ class DataManager:
             total_agents = self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_agents
             sim_info = f" ({self.dimensions_cfg.num_simulations} simuls × {self.dimensions_cfg.num_agents} agents)" if self.dimensions_cfg.num_simulations > 1 else ""
             logger.info("Scattering: %d agents%s → %d ranks", total_agents, sim_info, self.comm_manager.size)
-        else:
-            errors = None
-            obs_bundles = None
-            agent_data = None
-            item_data = None
-            idx_chunks = None
-            counts = None
-            has_agent_data = False
-            has_obs_bundles = False
-            has_item_data = False
-            has_errors = False
         
         counts, has_agent_data, has_obs_bundles, has_item_data, has_errors = self.comm_manager.broadcast_from_root(
             (counts, has_agent_data, has_obs_bundles, has_item_data, has_errors), root=0

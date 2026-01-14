@@ -59,38 +59,9 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         self.slack_counter = None
         self.timing_stats = None
 
-    def _check_bounds_hit(self, tolerance: float = 1e-6) -> Dict[str, Any]:
-        """Check if any theta variable is at its bounds."""
-        if not self.comm_manager.is_root() or self.master_model is None:
-            return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
-        
-        theta = self.master_variables[0]
-        hit_lower, hit_upper = [], []
-        
-        for k in range(self.dimensions_cfg.num_features):
-            val = theta[k].X
-            lb, ub = theta[k].LB, theta[k].UB
-            if lb > -GRB.INFINITY and abs(val - lb) < tolerance:
-                hit_lower.append(k)
-            if ub < GRB.INFINITY and abs(val - ub) < tolerance:
-                hit_upper.append(k)
-        
-        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
-
     def _setup_gurobi_model_params(self) -> Any:
-        """Create and set up Gurobi model with parameters from configuration."""    
-        with suppress_output():
-            model = gp.Model()
-            Method = self.row_generation_cfg.gurobi_settings.get("Method", 0)
-            model.setParam('Method', Method)
-            Threads = self.row_generation_cfg.gurobi_settings.get("Threads")
-            if Threads is not None:
-                model.setParam('Threads', Threads)
-            LPWarmStart = self.row_generation_cfg.gurobi_settings.get("LPWarmStart", 2)
-            model.setParam('LPWarmStart', LPWarmStart)
-            OutputFlag = self.row_generation_cfg.gurobi_settings.get("OutputFlag", 0)
-            model.setParam('OutputFlag', OutputFlag)
-        return model
+        """Create and set up Gurobi model with parameters from configuration."""
+        return self._setup_gurobi_model(self.row_generation_cfg.gurobi_settings)
 
     def _initialize_master_problem(self) -> None:
         """Create and configure master problem (Gurobi model) with 1slack formulation."""
@@ -197,16 +168,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         
         # Check bounds
         bounds_info = self._check_bounds_hit()
-        warnings_list = []
-        if self.comm_manager.is_root() and bounds_info['any_hit']:
-            if bounds_info['hit_lower']:
-                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
-            if bounds_info['hit_upper']:
-                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
-                logger.warning(msg)
-                warnings_list.append(msg)
+        warnings_list = self._log_bounds_warnings(bounds_info)
         
         if self.comm_manager.is_root():
             msg = "ended" if converged else "reached max iterations"

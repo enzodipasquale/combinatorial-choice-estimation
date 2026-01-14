@@ -189,13 +189,15 @@ class SandwichMixin:
         logger.info("\n".join(lines))
     
     def _compute_B_matrix(
-        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
+        beta_indices: Optional[NDArray[np.int64]] = None
     ) -> Optional[NDArray[np.float64]]:
-        """Compute B = (1/N) sum_i g_i g_i^T."""
+        """Compute B = (1/N) sum_i g_i g_i^T. If beta_indices given, compute for subset only."""
         num_sims = len(errors_all_sims)
+        dim = len(beta_indices) if beta_indices is not None else self.dimensions_cfg.num_features
         
         if self.comm_manager.is_root():
-            logger.info("Computing B matrix (%d×%d)...", self.dimensions_cfg.num_features, self.dimensions_cfg.num_features)
+            logger.info("Computing B matrix (%d×%d)...", dim, dim)
         
         all_features = []
         for s in range(num_sims):
@@ -212,163 +214,107 @@ class SandwichMixin:
         
         if self.comm_manager.is_root():
             features_all = np.stack(all_features, axis=0)
-            g_i = features_all.mean(axis=0) - self._obs_features
+            if beta_indices is not None:
+                g_i = features_all.mean(axis=0)[:, beta_indices] - self._obs_features[:, beta_indices]
+            else:
+                g_i = features_all.mean(axis=0) - self._obs_features
             B = (g_i.T @ g_i) / self.dimensions_cfg.num_agents
             logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
             return B
         return None
     
-    def _compute_B_matrix_subset(
-        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
-        beta_indices: NDArray[np.int64]
-    ) -> Optional[NDArray[np.float64]]:
-        """Compute B for parameter subset only."""
-        num_sims = len(errors_all_sims)
-        num_beta = len(beta_indices)
-        
-        if self.comm_manager.is_root():
-            logger.info("Computing B matrix (%d×%d)...", num_beta, num_beta)
-        
-        all_features = []
-        for s in range(num_sims):
-            if self.comm_manager.is_root():
-                logger.info("  Simulation %d/%d...", s + 1, num_sims)
-            
-            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
-            local_bundles = self._solve_local_or_empty(theta)
-            features = self.oracles_manager.compute_gathered_features(local_bundles)
-            if self.comm_manager.is_root():
-                all_features.append(features)
-        
-        self.comm_manager.comm.Barrier()
-        
-        if self.comm_manager.is_root():
-            features_all = np.stack(all_features, axis=0)
-            g_i = features_all.mean(axis=0)[:, beta_indices] - self._obs_features[:, beta_indices]
-            B = (g_i.T @ g_i) / self.dimensions_cfg.num_agents
-            logger.info("  B matrix: cond=%.2e", np.linalg.cond(B))
-            return B
-        return None
+    # Alias for backward compatibility
+    def _compute_B_matrix_subset(self, theta, errors_all_sims, beta_indices):
+        return self._compute_B_matrix(theta, errors_all_sims, beta_indices)
     
     def _compute_A_matrix(
-        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64], step_size: float
+        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64], 
+        step_size: float, beta_indices: Optional[NDArray[np.int64]] = None
     ) -> Optional[NDArray[np.float64]]:
-        """Compute A via finite differences: A[:,k] = (g(θ+h_k) - g(θ-h_k)) / (2h_k)."""
-        K = self.dimensions_cfg.num_features
+        """Compute A via finite differences. If beta_indices given, compute for subset only."""
+        is_subset = beta_indices is not None
+        indices = beta_indices if is_subset else np.arange(self.dimensions_cfg.num_features)
+        dim = len(indices)
         
         if self.comm_manager.is_root():
-            logger.info("Computing A matrix (%d×%d)...", K, K)
-            A = np.zeros((K, K))
+            logger.info("Computing A matrix (%d×%d)...", dim, dim)
+            A = np.zeros((dim, dim))
         else:
             A = None
         
-        for k in range(K):
+        for col_idx, k in enumerate(indices):
             if self.comm_manager.is_root():
-                logger.info("  Column %d/%d...", k + 1, K)
+                if is_subset:
+                    logger.info("  Column %d/%d (param %d)...", col_idx + 1, dim, k)
+                else:
+                    logger.info("  Column %d/%d...", col_idx + 1, dim)
             
             h_k = compute_adaptive_step_size(theta[k], step_size)
             theta_plus, theta_minus = theta.copy(), theta.copy()
             theta_plus[k] += h_k
             theta_minus[k] -= h_k
             
-            g_plus = self._compute_avg_subgradient(theta_plus, errors_all_sims)
-            g_minus = self._compute_avg_subgradient(theta_minus, errors_all_sims)
+            g_plus = self._compute_avg_subgradient(theta_plus, errors_all_sims, beta_indices)
+            g_minus = self._compute_avg_subgradient(theta_minus, errors_all_sims, beta_indices)
             
             if self.comm_manager.is_root():
-                A[:, k] = (g_plus - g_minus) / (2 * h_k)
+                A[:, col_idx] = (g_plus - g_minus) / (2 * h_k)
         
         self.comm_manager.comm.Barrier()
         return A
     
-    def _compute_A_matrix_subset(
-        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
-        step_size: float, beta_indices: NDArray[np.int64]
-    ) -> Optional[NDArray[np.float64]]:
-        """Compute A for parameter subset only."""
-        num_beta = len(beta_indices)
-        
-        if self.comm_manager.is_root():
-            logger.info("Computing A matrix (%d×%d)...", num_beta, num_beta)
-            A = np.zeros((num_beta, num_beta))
-        else:
-            A = None
-        
-        for k_idx, k in enumerate(beta_indices):
-            if self.comm_manager.is_root():
-                logger.info("  Column %d/%d (param %d)...", k_idx + 1, num_beta, k)
-            
-            h_k = compute_adaptive_step_size(theta[k], step_size)
-            theta_plus, theta_minus = theta.copy(), theta.copy()
-            theta_plus[k] += h_k
-            theta_minus[k] -= h_k
-            
-            g_plus = self._compute_avg_subgradient_subset(theta_plus, errors_all_sims, beta_indices)
-            g_minus = self._compute_avg_subgradient_subset(theta_minus, errors_all_sims, beta_indices)
-            
-            if self.comm_manager.is_root():
-                A[:, k_idx] = (g_plus - g_minus) / (2 * h_k)
-        
-        self.comm_manager.comm.Barrier()
-        return A
+    # Alias for backward compatibility
+    def _compute_A_matrix_subset(self, theta, errors_all_sims, step_size, beta_indices):
+        return self._compute_A_matrix(theta, errors_all_sims, step_size, beta_indices)
     
     def _compute_avg_subgradient(
-        self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64]
-    ) -> Optional[NDArray[np.float64]]:
-        """Compute g_bar(θ) = mean(simulated) - mean(observed)."""
-        num_sims = len(errors_all_sims)
-        K = self.dimensions_cfg.num_features
-        
-        if self._mean_obs_full is None:
-            self._cache_mean_obs_full()
-        
-        sim_sum_local = np.zeros(K)
-        for s in range(num_sims):
-            self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
-            local_bundles = self._solve_local_or_empty(theta)
-            feat_local = self.oracles_manager.compute_rank_features(local_bundles)
-            if feat_local.size:
-                sim_sum_local += feat_local.sum(axis=0)
-        
-        sim_sum_global = np.zeros(K)
-        self.comm_manager.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
-        mean_sim = (sim_sum_global / num_sims) / self.dimensions_cfg.num_agents
-        
-        return mean_sim - self._mean_obs_full if self.comm_manager.is_root() else None
-    
-    def _compute_avg_subgradient_subset(
         self, theta: NDArray[np.float64], errors_all_sims: NDArray[np.float64],
-        beta_indices: NDArray[np.int64]
+        beta_indices: Optional[NDArray[np.int64]] = None
     ) -> Optional[NDArray[np.float64]]:
-        """Compute g_bar(θ) for parameter subset."""
+        """Compute g_bar(θ) = mean(simulated) - mean(observed). If beta_indices given, compute for subset."""
         num_sims = len(errors_all_sims)
-        num_beta = len(beta_indices)
-        cache_key = tuple(beta_indices)
+        is_subset = beta_indices is not None
+        dim = len(beta_indices) if is_subset else self.dimensions_cfg.num_features
         
-        if self._mean_obs_subset is None:
-            self._mean_obs_subset = {}
+        # Get/cache mean observed features
+        if is_subset:
+            cache_key = tuple(beta_indices)
+            if self._mean_obs_subset is None:
+                self._mean_obs_subset = {}
+            if cache_key not in self._mean_obs_subset:
+                obs_local = self.data_manager.local_data["obs_bundles"]
+                obs_feat = self.oracles_manager.compute_rank_features(obs_local)
+                obs_sum = obs_feat[:, beta_indices].sum(axis=0) if obs_feat.size else np.zeros(dim)
+                obs_sum_global = np.zeros(dim)
+                self.comm_manager.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
+                self._mean_obs_subset[cache_key] = obs_sum_global / self.dimensions_cfg.num_agents
+            mean_obs = self._mean_obs_subset[cache_key]
+        else:
+            if self._mean_obs_full is None:
+                self._cache_mean_obs_full()
+            mean_obs = self._mean_obs_full
         
-        if cache_key not in self._mean_obs_subset:
-            obs_local = self.data_manager.local_data["obs_bundles"]
-            obs_feat = self.oracles_manager.compute_rank_features(obs_local)
-            obs_sum = obs_feat[:, beta_indices].sum(axis=0) if obs_feat.size else np.zeros(num_beta)
-            
-            obs_sum_global = np.zeros(num_beta)
-            self.comm_manager.comm.Allreduce(obs_sum, obs_sum_global, op=MPI.SUM)
-            self._mean_obs_subset[cache_key] = obs_sum_global / self.dimensions_cfg.num_agents
-        
-        sim_sum_local = np.zeros(num_beta)
+        # Compute simulated features
+        sim_sum_local = np.zeros(dim)
         for s in range(num_sims):
             self.data_manager.update_errors(errors_all_sims[s] if self.comm_manager.is_root() else None)
             local_bundles = self._solve_local_or_empty(theta)
             feat_local = self.oracles_manager.compute_rank_features(local_bundles)
             if feat_local.size:
-                sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
+                if is_subset:
+                    sim_sum_local += feat_local[:, beta_indices].sum(axis=0)
+                else:
+                    sim_sum_local += feat_local.sum(axis=0)
         
-        sim_sum_global = np.zeros(num_beta)
+        sim_sum_global = np.zeros(dim)
         self.comm_manager.comm.Allreduce(sim_sum_local, sim_sum_global, op=MPI.SUM)
         mean_sim = (sim_sum_global / num_sims) / self.dimensions_cfg.num_agents
         
-        return mean_sim - self._mean_obs_subset[cache_key] if self.comm_manager.is_root() else None
+        return mean_sim - mean_obs if self.comm_manager.is_root() else None
+    
+    # Alias for backward compatibility
+    def _compute_avg_subgradient_subset(self, theta, errors_all_sims, beta_indices):
+        return self._compute_avg_subgradient(theta, errors_all_sims, beta_indices)
     
     def _solve_local_or_empty(self, theta: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Solve local subproblems or return empty array."""

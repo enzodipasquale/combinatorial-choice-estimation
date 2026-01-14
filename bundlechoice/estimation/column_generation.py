@@ -83,15 +83,9 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     # Master initialisation
     # ------------------------------------------------------------------ #
-    def _setup_gurobi_model(self) -> gp.Model:
-        defaults = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0}
-        params = {**defaults, **self.row_generation_cfg.gurobi_settings}
-
-        with suppress_output():
-            model = gp.Model()
-            for param, value in params.items():
-                if value is not None:
-                    model.setParam(param, value)
+    def _setup_colgen_model(self) -> gp.Model:
+        """Create Gurobi model for column generation (maximization)."""
+        model = self._setup_gurobi_model(self.row_generation_cfg.gurobi_settings)
         model.ModelSense = GRB.MAXIMIZE
         return model
 
@@ -99,7 +93,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         obs_features = self.get_obs_features()
 
         if self.comm_manager.is_root():
-            self.master_model = self._setup_gurobi_model()
+            self.master_model = self._setup_colgen_model()
             self.feature_constrs = []
             self.agent_constrs = {}
             self.column_vars = []
@@ -156,20 +150,19 @@ class ColumnGenerationManager(BaseEstimationManager):
     # ------------------------------------------------------------------ #
     # Pricing problem
     # ------------------------------------------------------------------ #
+    def _compute_theta_from_duals(self, dual_prices: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Compute theta from dual prices, respecting bounds (vectorized)."""
+        has_nonneg_lower = np.isfinite(self.theta_lower) & (self.theta_lower >= 0)
+        theta = np.where(has_nonneg_lower, np.maximum(self.theta_lower, -dual_prices), -dual_prices)
+        return np.clip(theta, self.theta_lower, self.theta_upper)
+
     def _solve_pricing_problem(
         self,
         dual_prices: NDArray[np.float64],
         agent_penalties: NDArray[np.float64],
     ) -> Tuple[Optional[NDArray[np.bool_]], Optional[NDArray[np.float64]], Optional[NDArray[np.float64]], float]:
         """Solve pricing problems on local ranks and gather results."""
-        modified_theta = np.zeros(len(dual_prices), dtype=np.float64)
-        for k in range(len(dual_prices)):
-            if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
-                modified_theta[k] = max(self.theta_lower[k], -dual_prices[k])
-            else:
-                modified_theta[k] = -dual_prices[k]
-        
-        modified_theta = np.clip(modified_theta, self.theta_lower, self.theta_upper)
+        modified_theta = self._compute_theta_from_duals(dual_prices)
         
         try:
             local_bundles = self.subproblem_manager.solve_local(modified_theta)
@@ -276,7 +269,7 @@ class ColumnGenerationManager(BaseEstimationManager):
 
         errors_tensor = input_data.get("errors") if input_data else None
         if errors_tensor is None:
-            errors_tensor = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.num_items), dtype=np.float64)
+            errors_tensor = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.dimensions_cfg.num_items), dtype=np.float64)
         else:
             errors_tensor = np.asarray(errors_tensor, dtype=np.float64)
             if errors_tensor.ndim == 2:
@@ -284,20 +277,25 @@ class ColumnGenerationManager(BaseEstimationManager):
             if errors_tensor.ndim != 3:
                 raise ValueError(f"Unexpected errors dimensionality: {errors_tensor.shape}")
 
-        bundles_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.num_items), dtype=bool)
-        features_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents, self.dimensions_cfg.num_features), dtype=np.float64)
-        errors_arr = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_agents), dtype=np.float64)
+        num_sims = self.dimensions_cfg.num_simulations
+        num_agents = self.dimensions_cfg.num_agents
+        
+        # Broadcast obs_bundles to (num_sims, num_agents, num_items)
+        # Handle case where obs_bundles has fewer simulations than needed
+        sim_indices = np.minimum(np.arange(num_sims), obs_bundles.shape[0] - 1)
+        bundles_arr = obs_bundles[sim_indices]  # (num_sims, num_agents, num_items)
+        
+        # Broadcast features to all simulations
+        features_arr = np.broadcast_to(
+            self.agents_obs_features[None, :, :], 
+            (num_sims, num_agents, self.dimensions_cfg.num_features)
+        ).copy()
+        
+        # Compute errors: einsum for bundle @ error per agent
+        err_indices = np.minimum(np.arange(num_sims), errors_tensor.shape[0] - 1)
+        errors_arr = np.einsum('sij,sij->si', errors_tensor[err_indices], bundles_arr.astype(np.float64))
 
-        for s in range(self.dimensions_cfg.num_simulations):
-            bundle_slice = obs_bundles[min(s, obs_bundles.shape[0] - 1)]
-            error_slice = errors_tensor[min(s, errors_tensor.shape[0] - 1)]
-            for i in range(self.dimensions_cfg.num_agents):
-                bundle = bundle_slice[i]
-                bundles_arr[s, i] = bundle
-                features_arr[s, i] = self.agents_obs_features[i]
-                errors_arr[s, i] = error_slice[i] @ bundle
-
-        flat_bundles = bundles_arr.reshape(-1, self.num_items)
+        flat_bundles = bundles_arr.reshape(-1, self.dimensions_cfg.num_items)
         flat_features = features_arr.reshape(-1, self.dimensions_cfg.num_features)
         flat_errors = errors_arr.reshape(-1)
 
@@ -340,13 +338,7 @@ class ColumnGenerationManager(BaseEstimationManager):
                         if idx < num_si:
                             agent_penalties[idx] = pi_val
                 
-                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
-                for k in range(self.dimensions_cfg.num_features):
-                    if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
-                        self.theta_val[k] = max(self.theta_lower[k], -dual_prices[k])
-                    else:
-                        self.theta_val[k] = -dual_prices[k]
-                self.theta_val = np.clip(self.theta_val, self.theta_lower, self.theta_upper)
+                self.theta_val = self._compute_theta_from_duals(dual_prices)
             else:
                 dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
                 agent_penalties = np.zeros(num_si, dtype=np.float64)
@@ -424,21 +416,3 @@ class ColumnGenerationManager(BaseEstimationManager):
 
         self.theta_hat = self.theta_val.copy()
         return self._create_result(self.theta_hat, converged, num_iters, obj_val)
-
-    def _expand_bounds(self, bound, fill_value: float) -> NDArray[np.float64]:
-        arr = np.full(self.dimensions_cfg.num_features, fill_value, dtype=np.float64)
-        if bound is None:
-            return arr
-        if np.isscalar(bound):
-            arr[:] = float(bound)
-            return arr
-        bound_list = list(bound)
-        if len(bound_list) != self.dimensions_cfg.num_features:
-            raise ValueError("Length of theta bounds does not match number of features.")
-        for idx, val in enumerate(bound_list):
-            if val is None:
-                arr[idx] = fill_value
-            else:
-                arr[idx] = float(val)
-        return arr
-
