@@ -42,7 +42,7 @@ class OraclesManager:
 
     def validate_oracle(self) -> None:
         """Validate that features_oracle returns shape (num_features,)."""
-        if self.comm_manager is not None and self.comm_manager.rank != 0:
+        if self.comm_manager is not None and not self.comm_manager.is_root():
             return
             
         if self._features_oracle is None:
@@ -187,8 +187,8 @@ class OraclesManager:
         if self._error_oracle is None:
             raise RuntimeError("No error oracle set. Call set_error_oracle(), set_vectorized_error_oracle(), or build_error_oracle_from_data().")
         
-        return np.array([self._error_oracle(i, local_bundles[i], self.local_data) 
-                        for i in range(self.num_local_agents)])
+        return np.array([self._error_oracle(i, local_bundles[i], self.data_manager.local_data) 
+                        for i in range(self.data_manager.num_local_agents)])
 
 
 

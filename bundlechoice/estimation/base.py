@@ -7,7 +7,7 @@ Provides common functionality for row generation, ellipsoid, and other solvers.
 import numpy as np
 from typing import Optional, Tuple, Dict, List, Any, TYPE_CHECKING
 from numpy.typing import NDArray
-from bundlechoice.utils import get_logger, extract_theta
+from bundlechoice.utils import get_logger, extract_theta, suppress_output
 from .result import EstimationResult
 
 if TYPE_CHECKING:
@@ -18,6 +18,10 @@ if TYPE_CHECKING:
     from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 
 logger = get_logger(__name__)
+
+# Display constants
+THETA_DISPLAY_THRESHOLD = 10  # Show full theta if dim <= this
+THETA_DISPLAY_ENDS = 5        # Show first/last N values for large theta
 
 
 class BaseEstimationManager:
@@ -94,6 +98,57 @@ class BaseEstimationManager:
         """Main solve method (implemented by subclasses)."""
         raise NotImplementedError("Subclasses must implement the solve method")
 
+    def _check_bounds_hit(self, tolerance: float = 1e-6) -> Dict[str, Any]:
+        """Check if any theta variable is at its bounds."""
+        try:
+            from gurobipy import GRB
+        except ImportError:
+            return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
+        
+        if not self.comm_manager.is_root() or self.master_model is None:
+            return {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
+        
+        theta = self.master_variables[0]
+        hit_lower, hit_upper = [], []
+        
+        for k in range(self.dimensions_cfg.num_features):
+            val = theta[k].X
+            lb, ub = theta[k].LB, theta[k].UB
+            if lb > -GRB.INFINITY and abs(val - lb) < tolerance:
+                hit_lower.append(k)
+            if ub < GRB.INFINITY and abs(val - ub) < tolerance:
+                hit_upper.append(k)
+        
+        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
+
+    def _log_bounds_warnings(self, bounds_info: Dict[str, Any]) -> List[str]:
+        """Log warnings for parameters hitting bounds. Returns list of warning messages."""
+        warnings_list = []
+        if self.comm_manager.is_root() and bounds_info['any_hit']:
+            if bounds_info['hit_lower']:
+                msg = f"Theta hit LOWER bound at indices: {bounds_info['hit_lower']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+            if bounds_info['hit_upper']:
+                msg = f"Theta hit UPPER bound at indices: {bounds_info['hit_upper']}"
+                logger.warning(msg)
+                warnings_list.append(msg)
+        return warnings_list
+
+    def _setup_gurobi_model(self, gurobi_settings: Optional[Dict[str, Any]] = None) -> Any:
+        """Create Gurobi model with default settings. Override settings via gurobi_settings."""
+        import gurobipy as gp
+        
+        defaults = {'Method': 0, 'LPWarmStart': 2, 'OutputFlag': 0}
+        params = {**defaults, **(gurobi_settings or {})}
+        
+        with suppress_output():
+            model = gp.Model()
+            for param, value in params.items():
+                if value is not None:
+                    model.setParam(param, value)
+        return model
+
     def _create_result(
         self,
         theta: NDArray[np.float64],
@@ -157,6 +212,38 @@ class BaseEstimationManager:
         """Hook called when a constraint is removed. Override in subclasses for cleanup."""
         pass
 
+    def _empty_constraints_dict(self, num_items: Optional[int] = None) -> Dict[str, NDArray[np.float64]]:
+        """Return empty constraints dict with correct shape."""
+        n = num_items or self.dimensions_cfg.num_items
+        return {
+            'indices': np.array([], dtype=np.int64),
+            'bundles': np.array([], dtype=np.float64).reshape(0, n)
+        }
+
+    def _log_solve_header(self, method_name: str, max_iters: int, tol: float) -> None:
+        """Log solver initialization header (root only)."""
+        if not self.comm_manager.is_root():
+            return
+        lines = ["=" * 70, f"{method_name} SOLVER", "=" * 70]
+        lines.append(f"  Agents: {self.dimensions_cfg.num_agents}, Features: {self.dimensions_cfg.num_features}")
+        lines.append(f"  Max iters: {max_iters}, Tolerance: {tol:.1e}")
+        logger.info("\n".join(lines))
+
+    def _expand_bounds(self, bound: Any, fill_value: float) -> NDArray[np.float64]:
+        """Expand bounds to array of num_features length."""
+        arr = np.full(self.dimensions_cfg.num_features, fill_value, dtype=np.float64)
+        if bound is None:
+            return arr
+        if np.isscalar(bound):
+            arr[:] = float(bound)
+            return arr
+        bound_arr = np.asarray(bound, dtype=object)  # object to handle None
+        if len(bound_arr) != self.dimensions_cfg.num_features:
+            raise ValueError("Length of theta bounds does not match number of features.")
+        mask = bound_arr != None  # noqa: E711
+        arr[mask] = np.array([float(v) for v in bound_arr[mask]])
+        return arr
+
     def _log_timing_summary(
         self,
         timing_stats: Dict[str, Any],
@@ -183,12 +270,12 @@ class BaseEstimationManager:
         if obj_val is not None:
             lines.append(f"Objective value: {obj_val:.6f}")
         if theta is not None:
-            if len(theta) <= 10:
+            if len(theta) <= THETA_DISPLAY_THRESHOLD:
                 lines.append(f"Theta: {np.array2string(theta, precision=6, suppress_small=True)}")
             else:
                 lines.append(f"Theta (dim={len(theta)}):")
-                lines.append(f"  First 5: {np.array2string(theta[:5], precision=6, suppress_small=True)}")
-                lines.append(f"  Last 5:  {np.array2string(theta[-5:], precision=6, suppress_small=True)}")
+                lines.append(f"  First {THETA_DISPLAY_ENDS}: {np.array2string(theta[:THETA_DISPLAY_ENDS], precision=6, suppress_small=True)}")
+                lines.append(f"  Last {THETA_DISPLAY_ENDS}:  {np.array2string(theta[-THETA_DISPLAY_ENDS:], precision=6, suppress_small=True)}")
                 lines.append(f"  Min: {theta.min():.6f}, Max: {theta.max():.6f}, Mean: {theta.mean():.6f}")
         
         lines.append(f"Iterations: {num_iters}")
