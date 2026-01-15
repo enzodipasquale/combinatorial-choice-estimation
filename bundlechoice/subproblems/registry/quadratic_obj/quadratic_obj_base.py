@@ -1,10 +1,18 @@
 import numpy as np
+from functools import lru_cache
 
 class QuadraticObjectiveMixin:
-
-    def _init_quadratic_info(self):
-        self._qinfo = self.data_manager.quadratic_data_info
-        self._slices = self._qinfo.slices
+    @property
+    def _qinfo(self):
+        return self._get_qinfo(self.data_manager._local_data_version)
+    
+    @lru_cache(maxsize=1)
+    def _get_qinfo(self, _version):
+        return self.data_manager.quadratic_data_info
+    
+    @property
+    def _slices(self):
+        return self._qinfo.slices
 
     def _build_linear_coeff_single(self, local_id, theta):
         L = self.oracles_manager._modular_local_errors[local_id].copy()

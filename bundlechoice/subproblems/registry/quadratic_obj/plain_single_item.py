@@ -4,9 +4,6 @@ from .quadratic_obj_base import QuadraticObjectiveMixin
 
 class PlainSingleItemSubproblem(QuadraticObjectiveMixin, BatchSubproblemBase):
 
-    def initialize(self):
-        self._init_quadratic_info()
-
     def solve(self, theta):
         U = self._build_linear_coeff_batch(theta)
         if self._qinfo.constraint_mask is not None:
