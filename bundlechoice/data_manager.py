@@ -8,7 +8,7 @@ from bundlechoice.utils import get_logger
 logger = get_logger(__name__)
 
 @dataclass
-class QuadFeatInfo:
+class QuadraticDataInfo:
     modular_agent: int = 0
     modular_item: int = 0
     quadratic_agent: int = 0
@@ -70,7 +70,7 @@ class DataManager:
     def _quadratic_data_info(self, _version):
         ad, id = self.local_data['agent_data'], self.local_data['item_data']
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadFeatInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'), ad.get('constraint_mask'))
+        return QuadraticDataInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'), ad.get('constraint_mask'))
 
     def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():
