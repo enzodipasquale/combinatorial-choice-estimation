@@ -17,13 +17,13 @@ class PlainSingleItemSubproblem(BatchSubproblemBase):
         if self.has_constraint_mask:
             U_i_j = np.where(self.data_manager.local_data['agent_data']['constraint_mask'], U_i_j, -np.inf)
         j_star = np.argmax(U_i_j, axis=1)
-        max_vals = U_i_j[np.arange(self.data_manager.num_local_agents), j_star]
+        max_vals = U_i_j[np.arange(self.data_manager.num_local_agent), j_star]
         optimal_bundles = (max_vals > 0)[:, None] & (np.arange(self.dimensions_cfg.num_items) == j_star[:, None])
         return optimal_bundles
 
     def build_utilities(self, theta):
         info = self.data_manager.get_data_info()
-        U_i_j = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items))
+        U_i_j = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
         offset = 0
         if self.has_modular_agent:
             modular_agent = self.data_manager.local_data['agent_data']['modular']

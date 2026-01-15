@@ -72,7 +72,7 @@ class QuadraticKnapsackSubproblem(SerialSubproblemBase):
                     optimal_bundle = np.zeros(self.dimensions_cfg.num_items, dtype=bool)
             self._check_mip_gap(pb, local_id)
             if self._last_bundles is None:
-                self._last_bundles = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), dtype=bool)
+                self._last_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
             self._last_bundles[local_id] = optimal_bundle
         finally:
             if output_flag == 1 and old_gurobi_level is not None:
