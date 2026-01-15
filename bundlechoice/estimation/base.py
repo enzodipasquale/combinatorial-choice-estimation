@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Tuple, Dict, List, Any, TYPE_CHECKING
 from numpy.typing import NDArray
-from bundlechoice.utils import get_logger, extract_theta, suppress_output
+from bundlechoice.utils import get_logger, suppress_output
 from .result import EstimationResult
 if TYPE_CHECKING:
     from bundlechoice.comm_manager import CommManager
@@ -50,7 +50,7 @@ class BaseEstimationManager:
         return (None, None)
 
     def objective(self, theta):
-        theta = extract_theta(theta)
+        theta = np.asarray(theta.theta_hat if hasattr(theta, 'theta_hat') else theta, dtype=np.float64)
         if theta.ndim == 0:
             raise ValueError('theta must be 1D array, got scalar or 0D array')
         B_local = self.subproblem_manager.solve_local(theta)

@@ -53,7 +53,7 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _agent_counts(self, num_agents):
-        return [len(v) for v in np.array_split(np.arange(num_agents), self.comm_manager.comm_size)]
+        return np.array([len(v) for v in np.array_split(np.arange(num_agents), self.comm_manager.comm_size)])
 
 
     def load_input_data(self, input_data):
