@@ -1,38 +1,41 @@
-from bundlechoice.subproblems.base import BatchSubproblemBase
 import numpy as np
-from typing import Optional, Any
-from numpy.typing import NDArray
+from ..subproblem_base import BatchSubproblemBase
 
 class PlainSingleItemSubproblem(BatchSubproblemBase):
 
     def initialize(self):
-        info = self.data_manager.get_data_info()
-        self.has_modular_agent = info['has_modular_agent']
-        self.has_modular_item = info['has_modular_item']
-        self.has_errors = info['has_errors']
-        self.has_constraint_mask = info['has_constraint_mask']
+        ma, qa, mi, qi = self.data_manager.quadratic_features_flags()
+        self.has_modular_agent = ma
+        self.has_modular_item = mi
+        ad = self.data_manager.local_data['agent_data']
+        self.has_constraint_mask = 'constraint_mask' in ad
 
-    def solve(self, theta, pb=None):
-        U_i_j = self.build_utilities(theta)
+    def solve(self, theta):
+        U = self._build_utilities(theta)
         if self.has_constraint_mask:
-            U_i_j = np.where(self.data_manager.local_data['agent_data']['constraint_mask'], U_i_j, -np.inf)
-        j_star = np.argmax(U_i_j, axis=1)
-        max_vals = U_i_j[np.arange(self.data_manager.num_local_agent), j_star]
-        optimal_bundles = (max_vals > 0)[:, None] & (np.arange(self.dimensions_cfg.num_items) == j_star[:, None])
-        return optimal_bundles
+            mask = self.data_manager.local_data['agent_data']['constraint_mask']
+            U = np.where(mask, U, -np.inf)
+        j_star = np.argmax(U, axis=1)
+        max_vals = U[np.arange(self.data_manager.num_local_agent), j_star]
+        n = self.dimensions_cfg.num_items
+        return (max_vals > 0)[:, None] & (np.arange(n) == j_star[:, None])
 
-    def build_utilities(self, theta):
-        info = self.data_manager.get_data_info()
-        U_i_j = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
+    def _build_utilities(self, theta):
+        n_agents = self.data_manager.num_local_agent
+        n_items = self.dimensions_cfg.num_items
+        U = np.zeros((n_agents, n_items))
+        ad = self.data_manager.local_data['agent_data']
+        id = self.data_manager.local_data['item_data']
         offset = 0
         if self.has_modular_agent:
-            modular_agent = self.data_manager.local_data['agent_data']['modular']
-            U_i_j += modular_agent @ theta[offset:offset + info['num_modular_agent']]
-            offset += info['num_modular_agent']
+            dim = ad['modular'].shape[-1]
+            U += ad['modular'] @ theta[offset:offset + dim]
+            offset += dim
         if self.has_modular_item:
-            modular_item = self.data_manager.local_data['item_data']['modular']
-            U_i_j += modular_item @ theta[offset:offset + info['num_modular_item']]
-            offset += info['num_modular_item']
-        if self.has_errors:
-            U_i_j += self.data_manager.local_data['errors']
-        return U_i_j
+            dim = id['modular'].shape[-1]
+            U += id['modular'] @ theta[offset:offset + dim]
+        I = np.eye(n_items, dtype=bool)
+        for i in range(n_agents):
+            for j in range(n_items):
+                U[i, j] += self.oracles_manager.error_oracle(I[j:j+1], np.array([i]))[0]
+        return U

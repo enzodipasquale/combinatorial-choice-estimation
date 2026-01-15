@@ -47,8 +47,8 @@ class DataManager:
 
     def quadratic_features_flags(self):
         has_modular_agent = 'modular' in self.local_data['agent_data']
-        has_quadratic_agent = 'quadratic' in self.local_data['agent_data']
         has_modular_item = 'modular' in self.local_data['item_data']
+        has_quadratic_agent = 'quadratic' in self.local_data['agent_data']
         has_quadratic_item = 'quadratic' in self.local_data['item_data']
         return has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item
 

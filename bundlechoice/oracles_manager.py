@@ -17,6 +17,7 @@ class OraclesManager:
         self._error_oracle_vectorized = None
         self._features_oracle_takes_data = None
         self._error_oracle_takes_data = None
+        self._modular_local_errors = None
 
 
 
@@ -68,11 +69,11 @@ class OraclesManager:
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
         np.random.seed(seed + self.comm_manager.rank)
-        local_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
+        self._modular_local_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
-            local_errors = local_errors @ L
-        self._error_oracle = lambda bundles, local_id: local_errors[local_id] @ bundles
+            self._modular_local_errors = self._modular_local_errors @ L
+        self._error_oracle = lambda bundles, local_id: self._modular_local_errors[local_id] @ bundles
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle
@@ -88,12 +89,12 @@ class OraclesManager:
             if ma:
                 modular = data['agent_data']['modular'][local_id]
                 feats.append(np.einsum('jk,j->k', modular, bundles))
-            if qa:
-                quadratic = data['agent_data']['quadratic'][local_id]
-                feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
             if mi:
                 modular = data['item_data']['modular']
                 feats.append(np.einsum('jk,j->k', modular, bundles))
+            if qa:
+                quadratic = data['agent_data']['quadratic'][local_id]
+                feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
             if qi:
                 quadratic = data['item_data']['quadratic']
                 feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))

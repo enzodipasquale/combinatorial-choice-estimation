@@ -17,8 +17,12 @@ class SubproblemManager:
         subproblem = subproblem or self.config.subproblem.name
         cls = SUBPROBLEM_REGISTRY.get(subproblem)
         if cls is None:
-            raise ValueError(f"Unknown subproblem: '{subproblem}'. Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
-        self.subproblem = cls(self.data_manager, self.oracles_manager, self.config.subproblem, self.config.dimensions)
+            raise ValueError(f"Unknown subproblem: '{subproblem}'. "
+                             f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
+        self.subproblem = cls(self.data_manager, 
+                                self.oracles_manager, 
+                                self.config.subproblem, 
+                                self.config.dimensions)
         return self.subproblem
 
     def initialize_subproblems(self):
