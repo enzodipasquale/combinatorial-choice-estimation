@@ -15,7 +15,6 @@ class OraclesManager:
         self._error_oracle = None
         self._features_oracle_vectorized = None
         self._error_oracle_vectorized = None
-        self.local_id = np.arange(self.data_manager.num_local_agent)
         self._features_oracle_takes_data = None
         self._error_oracle_takes_data = None
 
@@ -52,7 +51,7 @@ class OraclesManager:
     
     def features_oracle(self, bundles, local_id=None):
         if local_id is None:
-            local_id = self.local_id
+            local_id = self.data_manager.local_id
         if self._features_oracle_vectorized:
             return self._features_oracle(bundles, local_id, self.data_manager.local_data)
         else:
@@ -60,7 +59,7 @@ class OraclesManager:
 
     def error_oracle(self, bundles, local_id=None):
         if local_id is None:
-            local_id = self.local_id
+            local_id = self.data_manager.local_id
         if self._error_oracle_vectorized:
             return self._error_oracle(bundles, local_id)
         else:

@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Any, Optional, Tuple
-from ...base import BatchSubproblemBase
+from ...subproblem_base import BatchSubproblemBase
 
 class QuadraticSupermodular(BatchSubproblemBase):
 

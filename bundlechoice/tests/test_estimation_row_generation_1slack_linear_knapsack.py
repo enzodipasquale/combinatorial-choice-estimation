@@ -20,7 +20,7 @@ def test_row_generation_1slack_linear_knapsack():
     theta_0 = prepared.theta_star
     knapsack_demo = BundleChoice()
     prepared.apply(knapsack_demo, comm=comm, stage='generation')
-    observed_bundles = knapsack_demo.subproblems.init_and_solve(theta_0)
+    observed_bundles = knapsack_demo.subproblems.initialize_and_solve_subproblems(theta_0)
     if rank == 0 and observed_bundles is not None:
         print('Total demand:', observed_bundles.sum(1).min(), observed_bundles.sum(1).max())
     prepared.apply(knapsack_demo, comm=comm, stage='estimation')

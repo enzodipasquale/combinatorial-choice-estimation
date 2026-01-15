@@ -41,7 +41,7 @@ def try_init_subproblem_manager(bc):
         bc.oracles_manager.build_quadratic_features_from_data()
     elif bc.oracles_manager._error_oracle is None:
         bc.oracles_manager.build_error_oracle_from_data()
-    bc.subproblem_manager = SubproblemManager(bc.config.dimensions, bc.comm_manager, bc.data_manager, bc.oracles_manager, bc.config.subproblem)
+    bc.subproblem_manager = SubproblemManager(bc.config, bc.comm_manager, bc.data_manager, bc.oracles_manager)
     return bc.subproblem_manager
 
 def try_init_row_generation_manager(bc):

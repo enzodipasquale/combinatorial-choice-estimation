@@ -32,9 +32,9 @@ def test_greedy():
     bc.subproblems.load()
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
     from bundlechoice.scenarios.greedy import _install_find_best_item
-    if isinstance(bc.subproblems.subproblem_instance, GreedySubproblem):
-        _install_find_best_item(bc.subproblems.subproblem_instance)
-    bc.subproblems.initialize_local()
+    if isinstance(bc.subproblems.subproblem, GreedySubproblem):
+        _install_find_best_item(bc.subproblems.subproblem)
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     if rank == 0:
         print(f'\nEstimation done: theta = {result.theta_hat}')
@@ -62,7 +62,7 @@ def test_knapsack():
     bc.data.load_input_data(prepared.estimation_data if rank == 0 else None)
     bc.oracles.build_quadratic_features_from_data()
     bc.subproblems.load()
-    bc.subproblems.initialize_local()
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     if rank == 0:
         print(f'\nEstimation done: theta = {result.theta_hat}')

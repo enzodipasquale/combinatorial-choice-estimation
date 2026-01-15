@@ -46,7 +46,7 @@ def test_greedy_vs_bruteforce():
         if bc.rank == 0:
             print(f'\nTesting theta_0 {idx + 1}: {theta_0}')
         t0 = time.time()
-        greedy_bundles = bc.subproblems.init_and_solve(theta_0)
+        greedy_bundles = bc.subproblems.initialize_and_solve_subproblems(theta_0)
         t1 = time.time()
         assert bc.subproblem_manager is not None, 'Subproblem manager should be initialized'
         result = bc.subproblem_manager.brute_force(theta_0)

@@ -18,7 +18,7 @@ def test_row_generation_1slack_greedy():
     theta_0 = prepared.theta_star
     greedy_demo = BundleChoice()
     prepared.apply(greedy_demo, comm=comm, stage='generation')
-    observed_bundles = greedy_demo.subproblems.init_and_solve(theta_0)
+    observed_bundles = greedy_demo.subproblems.initialize_and_solve_subproblems(theta_0)
     if rank == 0:
         print(f'aggregate demands: {observed_bundles.sum(1).min()}, {observed_bundles.sum(1).max()}')
         print(f'aggregate: {observed_bundles.sum()}')

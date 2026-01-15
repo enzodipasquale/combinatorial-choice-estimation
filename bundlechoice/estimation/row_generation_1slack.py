@@ -86,7 +86,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             lines.append('')
             logger.info('\n'.join(lines))
         tic = time.perf_counter()
-        self.subproblem_manager.initialize_local()
+        self.subproblem_manager.initialize_subproblems()
         self._initialize_master_problem()
         self.slack_counter = {}
         iteration = 0

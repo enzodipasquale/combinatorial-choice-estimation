@@ -32,7 +32,7 @@ def test_quad_vs_bruteforce():
     for i, theta_0 in enumerate(test_lambdas):
         if bc.rank == 0:
             print(f'\nTesting theta_0 {i + 1}: {theta_0}')
-        quad_results = bc.subproblems.init_and_solve(theta_0)
+        quad_results = bc.subproblems.initialize_and_solve_subproblems(theta_0)
         assert bc.subproblem_manager is not None, 'Subproblem manager should be initialized'
         bruteforce_results = bc.subproblem_manager.brute_force(theta_0)
         if bc.rank == 0:

@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from bundlechoice.utils import get_logger
+from functools import lru_cache
+
 
 logger = get_logger(__name__)
 
@@ -12,10 +14,31 @@ class DataManager:
         self.comm_manager = comm_manager
         self.input_data = {'agent_data': {}, 'item_data': {}}
         self.local_data = None
-        self.local_id = np.arange(self.comm_manager.rank, self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_obs, self.comm_manager.comm_size)
-        self.num_local_agent = len(self.local_id)
-        self.local_obs_id = self.local_id % self.dimensions_cfg.num_obs
-        self.agent_counts = [len(v) for v in np.array_split(np.arange(self.dimensions_cfg.num_agents), self.comm_manager.comm_size)]
+
+    @property
+    def local_id(self):
+        return self._local_id(self.dimensions_cfg.num_obs, self.dimensions_cfg.num_simulations)
+
+    @lru_cache(maxsize=1)
+    def _local_id(self, num_obs, num_simulations):
+        return np.arange(self.comm_manager.rank, num_simulations * num_obs, self.comm_manager.comm_size)
+
+    @property
+    def num_local_agent(self):
+        return len(self.local_id)
+
+    @property
+    def local_obs_id(self):
+        return self.local_id % self.dimensions_cfg.num_obs
+
+    @property
+    def agent_counts(self):
+        return self._agent_counts(self.dimensions_cfg.num_agents)
+
+    @lru_cache(maxsize=1)
+    def _agent_counts(self, num_agents):
+        return [len(v) for v in np.array_split(np.arange(num_agents), self.comm_manager.comm_size)]
+
 
     def load_input_data(self, input_data):
         local_agent_data = self.comm_manager._scatter_dict(input_data['agent_data'], agent_counts=self.agent_counts)
@@ -29,11 +52,11 @@ class DataManager:
         has_quadratic_item = 'quadratic' in self.local_data['item_data']
         return has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item
 
-    def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect=False):
+    def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():
             return
         path = Path(path)
-        if auto_detect:
+        if auto_detect_quadratic_features:
             available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in ('.csv', '.npy')}
             agent_files = {k: available[v] for k, v in [('modular', 'modular_agent'), ('quadratic', 'quadratic_agent')] if v in available}
             item_files = {k: available[v] for k, v in [('modular', 'modular_item'), ('quadratic', 'quadratic_item')] if v in available}

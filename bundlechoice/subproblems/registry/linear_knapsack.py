@@ -1,6 +1,6 @@
 import numpy as np
 import gurobipy as gp
-from ..base import SerialSubproblemBase
+from ..subproblem_base import SerialSubproblemBase
 import logging
 from typing import Any
 from bundlechoice.utils import suppress_output

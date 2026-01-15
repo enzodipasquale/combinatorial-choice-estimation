@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Any, Optional
 from numpy.typing import NDArray
-from ..base import SerialSubproblemBase
+from ..subproblem_base import SerialSubproblemBase
 
 class GreedySubproblem(SerialSubproblemBase):
 

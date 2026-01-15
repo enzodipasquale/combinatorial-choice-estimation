@@ -4,7 +4,7 @@ import logging
 from typing import Any, Optional
 from contextlib import nullcontext
 from numpy.typing import NDArray
-from ..base import SerialSubproblemBase
+from ..subproblem_base import SerialSubproblemBase
 from bundlechoice.utils import suppress_output, get_logger
 logger = get_logger(__name__)
 
