@@ -212,7 +212,7 @@ class SandwichMixin:
         return self._compute_avg_subgradient(theta, errors_all_sims, beta_indices)
 
     def _solve_local_or_empty(self, theta):
-        if self.data_manager.num_local_agents > 0:
+        if self.data_manager.num_local_agent > 0:
             return self.subproblem_manager.solve_local(theta)
         return np.empty((0, self.dimensions_cfg.num_items), dtype=bool)
 

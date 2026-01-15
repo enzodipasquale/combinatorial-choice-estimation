@@ -12,8 +12,9 @@ class DataManager:
         self.comm_manager = comm_manager
         self.input_data = {'agent_data': {}, 'item_data': {}}
         self.local_data = None
-        self.local_ids = np.arange(self.comm_manager.rank, self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_obs, self.comm_manager.comm_size)
-        self.local_obs_ids = self.local_ids % self.dimensions_cfg.num_obs
+        self.local_id = np.arange(self.comm_manager.rank, self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_obs, self.comm_manager.comm_size)
+        self.num_local_agent = len(self.local_id)
+        self.local_obs_id = self.local_id % self.dimensions_cfg.num_obs
         self.agent_counts = [len(v) for v in np.array_split(np.arange(self.dimensions_cfg.num_agents), self.comm_manager.comm_size)]
 
     def load_input_data(self, input_data):

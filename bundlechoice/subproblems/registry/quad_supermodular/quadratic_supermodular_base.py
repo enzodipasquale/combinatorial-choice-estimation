@@ -40,8 +40,8 @@ class QuadraticSupermodular(BatchSubproblemBase):
             assert np.all(self.quadratic_item >= 0), f'Matrix has off-diagonal negative values'
 
     def build_quadratic_matrix(self, theta):
-        linear = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items))
-        quadratic = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items, self.dimensions_cfg.num_items))
+        linear = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
+        quadratic = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items, self.dimensions_cfg.num_items))
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             if self.has_modular_agent:
                 linear += self.modular_agent @ theta[self.modular_agent_slice]

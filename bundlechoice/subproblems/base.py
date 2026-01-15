@@ -57,7 +57,7 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         return np.array([self.solve(id, theta, pb) for id, pb in enumerate(problems)])
 
     def initialize_all(self):
-        return [self.initialize(id) for id in range(self.data_manager.num_local_agents)]
+        return [self.initialize(id) for id in range(self.data_manager.num_local_agent)]
 
     def solve_all(self, theta, subproblems=None):
         if subproblems is None:

@@ -48,8 +48,8 @@ class SubproblemManager:
     def solve_local(self, theta):
         if self.subproblem_instance is None:
             raise RuntimeError('Subproblem is not initialized.')
-        if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agents'):
-            raise RuntimeError('DataManager or num_local_agents is not initialized.')
+        if self.data_manager is None or not hasattr(self.data_manager, 'num_local_agent'):
+            raise RuntimeError('DataManager or num_local_agent is not initialized.')
         return self.subproblem_instance.solve_all(theta, self.local_subproblems)
 
     def init_and_solve(self, theta, return_values=False):

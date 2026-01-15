@@ -31,23 +31,7 @@ class DimensionsConfig(ConfigMixin):
         if self.num_obs is None or self.num_simulations is None:
             return None
         return self.num_simulations * self.num_obs
-
-    def set_feature_names(self, names):
-        if self.num_features is not None and len(names) != self.num_features:
-            raise ValueError(f'Expected {self.num_features} names, got {len(names)}')
-        self.feature_names = names
-        return self
-
-    def get_feature_name(self, index):
-        if self.feature_names and 0 <= index < len(self.feature_names):
-            return self.feature_names[index]
-        return f'theta_{index}'
-
-    def get_index_by_name(self, name='FE_'):
-        if not self.feature_names:
-            return list(range(self.num_features or 0))
-        return [i for i, name in enumerate(self.feature_names) if not name.startswith(name)]
-
+        
 @dataclass
 class SubproblemConfig(ConfigMixin):
     name: Optional[str] = None

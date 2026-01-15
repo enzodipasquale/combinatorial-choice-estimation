@@ -9,8 +9,8 @@ class QuadraticSOptNetwork(QuadraticSupermodular):
         agent_data = self.data_manager.local_data.get('agent_data') or {}
         constraint_mask = agent_data.get('constraint_mask') if self.has_constraint_mask else None
         linear, quadratic = self.build_quadratic_matrix(theta)
-        optimal_bundles = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), dtype=bool)
-        for i in range(self.data_manager.num_local_agents):
+        optimal_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
+        for i in range(self.data_manager.num_local_agent):
             agent_mask = constraint_mask[i] if constraint_mask is not None else None
             solver = MinCutSubmodularSolver(-linear[i], -quadratic[i], agent_mask)
             optimal_bundle = solver.solve_QSM()

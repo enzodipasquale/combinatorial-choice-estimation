@@ -11,15 +11,15 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
         P_i_j_j[:, diag_indices, diag_indices] += linear
         agent_data = self.data_manager.local_data.get('agent_data') or {}
         constraint_mask = agent_data.get('constraint_mask') if self.has_constraint_mask else None
-        z_t = np.full((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), 0.5, dtype=np.float64)
+        z_t = np.full((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), 0.5, dtype=np.float64)
         if constraint_mask is not None:
             z_t[~constraint_mask] = 0.0
         z_best = z_t.copy()
-        val_best = np.full(self.data_manager.num_local_agents, -np.inf, dtype=np.float64)
+        val_best = np.full(self.data_manager.num_local_agent, -np.inf, dtype=np.float64)
         num_iters = int(self.config.settings.get('num_iters_SGM', max(100000, 1000 * self.dimensions_cfg.num_items)))
         alpha_base = float(self.config.settings.get('alpha', 0.1 / np.sqrt(self.dimensions_cfg.num_items)))
         method = self.config.settings.get('method', 'constant_step_length')
-        grad_i_j = np.zeros((self.data_manager.num_local_agents, self.dimensions_cfg.num_items), dtype=np.float64)
+        grad_i_j = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=np.float64)
         tril_mask = np.tril(np.ones((self.dimensions_cfg.num_items, self.dimensions_cfg.num_items), dtype=bool), k=0)
         for iter in range(num_iters):
             grad_i_j, val_i = self._grad_lovasz_extension_batch(z_t, P_i_j_j, tril_mask)
@@ -30,7 +30,7 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
             if method == 'constant_step_length':
                 step_i = alpha_base / grad_norm_i
             elif method == 'constant_step_size':
-                step_i = np.full((self.data_manager.num_local_agents, 1), alpha_base)
+                step_i = np.full((self.data_manager.num_local_agent, 1), alpha_base)
             elif method == 'constant_over_sqrt_k':
                 step_i = alpha_base / (grad_norm_i * np.sqrt(iter + 1))
             elif method == 'mirror_descent':
@@ -43,7 +43,7 @@ class QuadraticSOptLovasz(QuadraticSupermodular):
                 val_best[improved] = val_i[improved]
                 continue
             else:
-                step_i = np.zeros((self.data_manager.num_local_agents, 1))
+                step_i = np.zeros((self.data_manager.num_local_agent, 1))
             z_new = z_t + step_i * grad_i_j
             if constraint_mask is not None:
                 z_new[~constraint_mask] = 0.0
