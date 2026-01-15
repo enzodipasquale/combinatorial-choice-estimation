@@ -10,12 +10,10 @@ def test_data_manager_scatter_mpi():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     comm_manager = CommManager(comm)
-    if rank == 0:
-        input_data = {'item_data': {'a': np.array([1, 2, 3])}, 'agent_data': {'b': np.random.normal(0, 1, (40, 3))}, 'errors': np.zeros((40, 3)), 'observed_bundles': np.ones((40, 3))}
-    else:
-        input_data = None
+    input_data = {'item_data': {'a': np.array([1, 2, 3])}, 'agent_data': {'b': np.random.normal(0, 1, (40, 3))}} if rank == 0 else {'item_data': {}, 'agent_data': {}}
     dm = DataManager(dimensions_cfg=dimensions_cfg, comm_manager=comm_manager)
     dm.load_input_data(input_data)
     assert dm.local_data is not None
     assert dm.local_data['agent_data'] is not None
-    assert dm.local_data['errors'] is not None
+    assert 'b' in dm.local_data['agent_data']
+    assert dm.local_data['item_data']['a'] is not None

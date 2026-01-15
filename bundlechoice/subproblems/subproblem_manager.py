@@ -6,7 +6,7 @@ logger = get_logger(__name__)
 
 class SubproblemManager:
 
-    def __init__(self, config, comm_manager, data_manager, oracles_manager):
+    def __init__(self, comm_manager, config, data_manager, oracles_manager):
         self.config = config
         self.comm_manager = comm_manager
         self.data_manager = data_manager
