@@ -6,11 +6,8 @@ from bundlechoice.utils import suppress_output
 
 class LinearKnapsackSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase):
 
-    weights = None
-    capacity = None
-
     def initialize_single_pb(self, local_id):
-        self.weights = self.data_manager.local_data['item_data']['weights']
+        weights = self.data_manager.local_data['item_data']['weights']
         capacity = self.data_manager.local_data['agent_data']['capacity'][local_id]
         with suppress_output():
             model = gp.Model()
@@ -20,8 +17,8 @@ class LinearKnapsackSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase):
             if time_limit:
                 model.setParam('TimeLimit', time_limit)
             model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-            B = model.addVars(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
-            model.addConstr(self.weights @ B <= capacity)
+            B = model.addMVar(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
+            model.addConstr(weights @ B <= capacity)
             model.update()
         return model
 

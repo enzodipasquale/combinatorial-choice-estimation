@@ -1,13 +1,11 @@
 import numpy as np
 import networkx as nx
 from ....subproblem_base import SerialSubproblemBase
-from .quadratic_supermodular_base import SupermodularQuadraticObjectiveMixin
+from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 
 class QuadraticSupermodularMinCut(SupermodularQuadraticObjectiveMixin, SerialSubproblemBase):
 
     def initialize_single_pb(self, local_id):
-        if local_id == 0:
-            self._init_quadratic_info()
         return self._qinfo.constraint_mask[local_id] if self._qinfo.constraint_mask is not None else None
 
     def solve_single_pb(self, local_id, theta, constraint_mask):
