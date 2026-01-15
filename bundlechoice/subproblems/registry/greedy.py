@@ -2,7 +2,7 @@ import numpy as np
 from ..subproblem_base import SerialSubproblemBase
 
 class GreedySubproblem(SerialSubproblemBase):
-
+    find_best_item = None
     modular_errors = None
 
     def initialize_single_pb(self, local_id):
@@ -38,7 +38,7 @@ class GreedySubproblem(SerialSubproblemBase):
         items_left = np.ones(self.dimensions_cfg.num_items, dtype=bool)
         best_val = 0
         while np.any(items_left):
-            best_item, val =self.find_best_item(local_id, bundle, items_left, theta, self.modular_errors)
+            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, self.modular_errors)
             if val <= best_val:
                 break
             bundle[best_item] = True
