@@ -13,6 +13,7 @@ class QuadFeatInfo:
     modular_item: int = 0
     quadratic_agent: int = 0
     quadratic_item: int = 0
+    constraint_mask: np.ndarray = None
     
     def __post_init__(self):
         offset, self.slices = 0, {}
@@ -62,14 +63,14 @@ class DataManager:
         self._local_data_version = getattr(self, '_local_data_version', 0) + 1
 
     @property
-    def quadratic_features_info(self):
-        return self._quadratic_features_info(self._local_data_version)
+    def quadratic_data_info(self):
+        return self._quadratic_data_info(self._local_data_version)
 
     @lru_cache(maxsize=1)
-    def _quadratic_features_info(self, _version):
+    def _quadratic_data_info(self, _version):
         ad, id = self.local_data['agent_data'], self.local_data['item_data']
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadFeatInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'))
+        return QuadFeatInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'), ad.get('constraint_mask'))
 
     def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():

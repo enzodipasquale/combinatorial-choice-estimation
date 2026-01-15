@@ -12,7 +12,7 @@ class BruteForceSubproblem(SerialSubproblemBase):
     def solve_single_pb(self, local_id, theta, pb=None):
         best_value, best_bundle = float('-inf'), None
         for bundle in self._all_bundles:
-            value = self.oracles_manager.utilities_oracle(bundle[None, :], theta, np.array([local_id]))[0]
+            value = self.oracles_manager.utilities_oracle(bundle[None, :], theta, np.array([local_id]))
             if value > best_value:
                 best_value, best_bundle = value, bundle.copy()
         return best_bundle
