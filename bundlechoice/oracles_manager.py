@@ -40,6 +40,8 @@ class OraclesManager:
         else:
             return False
 
+    # Features and error oracles
+
     def set_features_oracle(self, _features_oracle):
         self._features_oracle = _features_oracle
         self._features_oracle_vectorized = self._check_vectorized_oracle_support(_features_oracle)
@@ -57,6 +59,20 @@ class OraclesManager:
             return self._features_oracle(bundles, local_id, self.data_manager.local_data)
         else:
             return np.stack([self._features_oracle(bundles[id], id, self.data_manager.local_data) for id in local_id])
+    
+    def features_oracle_individual(self, bundle, local_id):
+        if self._features_oracle_vectorized:
+            return self._features_oracle(bundle[:, None], local_id, self.data_manager.local_data)
+        else:
+            return self._features_oracle(bundle, local_id, self.data_manager.local_data)
+    def error_oracle_individual(self, bundle, local_id):
+        if self._error_oracle_vectorized:
+            return self._error_oracle(bundle[:, None], local_id)
+        else:
+            return self._error_oracle(bundle, local_id)
+
+    def utilities_oracle_individual(self, bundle, theta, local_id):
+        return self.features_oracle_individual(bundle, local_id) @ theta + self.error_oracle_individual(bundle, local_id)
 
     def error_oracle(self, bundles, local_id=None):
         if local_id is None:
@@ -66,6 +82,8 @@ class OraclesManager:
         else:
             return np.stack([self._error_oracle(bundles[id], 
                     self.data_manager.local_id[id]) for id in local_id], )
+
+    # Quadratic features and modular errors
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
         np.random.seed(seed + self.comm_manager.rank)
@@ -79,23 +97,25 @@ class OraclesManager:
         return self._error_oracle
 
     def utilities_oracle(self, bundles, theta, local_id = None):
+        if type(local_id) == int:
+            local_id = np.array([local_id])
         return self.features_oracle(bundles, local_id) @ theta + self.error_oracle(bundles, local_id)
  
 
     def build_quadratic_features_from_data(self):
-        ma, qa, mi, qi = self.data_manager.quadratic_features_flags()
+        qinfo = self.data_manager.quadratic_data_info
         def features_oracle(bundles, local_id, data):
             feats = []
-            if ma:
+            if qinfo.modular_agent:
                 modular = data['agent_data']['modular'][local_id]
                 feats.append(np.einsum('jk,j->k', modular, bundles))
-            if mi:
+            if qinfo.modular_item:
                 modular = data['item_data']['modular']
                 feats.append(np.einsum('jk,j->k', modular, bundles))
-            if qa:
+            if qinfo.quadratic_agent:
                 quadratic = data['agent_data']['quadratic'][local_id]
                 feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
-            if qi:
+            if qinfo.quadratic_item:
                 quadratic = data['item_data']['quadratic']
                 feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
             return np.concatenate(feats)
