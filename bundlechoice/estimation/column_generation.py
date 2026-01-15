@@ -225,7 +225,7 @@ class ColumnGenerationManager(BaseEstimationManager):
     def solve(self, callback=None):
         logger.info('=== COLUMN GENERATION (DUAL) ===')
         tic = time.perf_counter()
-        self.subproblem_manager.initialize_local()
+        self.subproblem_manager.initialize_subproblems()
         self._initialize_master_problem()
         total_pricing = 0.0
         for iteration in range(int(self.row_generation_cfg.max_iters)):

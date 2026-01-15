@@ -36,7 +36,7 @@ def test_row_generation_vs_1slack_identical_objval():
     bc_gen.load_config(cfg_base)
     bc_gen.data.load_input_data(input_data)
     bc_gen.oracles.set_features_oracle(features_oracle)
-    observed_bundles = bc_gen.subproblems.init_and_solve(np.ones(num_features))
+    observed_bundles = bc_gen.subproblems.initialize_and_solve_subproblems(np.ones(num_features))
     if rank == 0:
         input_data['obs_bundle'] = observed_bundles
     cfg_rg = cfg_base.copy()

@@ -22,7 +22,7 @@ def test_row_generation_1slack_plain_single_item():
     theta_0 = prepared.theta_star
     demo = BundleChoice()
     prepared.apply(demo, comm=comm, stage='generation')
-    observed_bundles = demo.subproblems.init_and_solve(theta_0)
+    observed_bundles = demo.subproblems.initialize_and_solve_subproblems(theta_0)
     if rank == 0:
         assert observed_bundles is not None, 'observed_bundles is None!'
         assert observed_bundles.shape == (num_obs, num_items)

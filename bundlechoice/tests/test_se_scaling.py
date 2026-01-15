@@ -27,9 +27,9 @@ def run_with_sample_size(comm, num_obs, seed):
     bc.subproblems.load()
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
     from bundlechoice.scenarios.greedy import _install_find_best_item
-    if isinstance(bc.subproblems.subproblem_instance, GreedySubproblem):
-        _install_find_best_item(bc.subproblems.subproblem_instance)
-    bc.subproblems.initialize_local()
+    if isinstance(bc.subproblems.subproblem, GreedySubproblem):
+        _install_find_best_item(bc.subproblems.subproblem)
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     se_result = bc.standard_errors.compute(theta_hat=result.theta_hat if rank == 0 else None, num_simulations=15, step_size=0.01, seed=1995)
     if rank == 0 and se_result is not None:

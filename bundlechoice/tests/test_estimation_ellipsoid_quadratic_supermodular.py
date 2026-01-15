@@ -24,7 +24,7 @@ def test_ellipsoid_quadsupermodular():
     theta_0 = prepared.theta_star
     quad_demo = BundleChoice()
     prepared.apply(quad_demo, comm=comm, stage='generation')
-    observed_bundles = quad_demo.subproblems.init_and_solve(theta_0)
+    observed_bundles = quad_demo.subproblems.initialize_and_solve_subproblems(theta_0)
     if rank == 0 and observed_bundles is not None:
         total_demand = observed_bundles.sum(1)
         print('Demand range:', total_demand.min(), total_demand.max())

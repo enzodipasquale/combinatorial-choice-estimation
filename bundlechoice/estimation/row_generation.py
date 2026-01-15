@@ -157,7 +157,7 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             self._agent_weights = None
         tic = time.perf_counter()
-        self.subproblem_manager.initialize_local()
+        self.subproblem_manager.initialize_subproblems()
         if initial_constraints is not None:
             if self.comm_manager._is_root():
                 n_init = len(initial_constraints.get('indices', []))

@@ -45,9 +45,9 @@ def run_greedy_lowdim(comm):
     bc.subproblems.load()
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
     from bundlechoice.scenarios.greedy import _install_find_best_item
-    if isinstance(bc.subproblems.subproblem_instance, GreedySubproblem):
-        _install_find_best_item(bc.subproblems.subproblem_instance)
-    bc.subproblems.initialize_local()
+    if isinstance(bc.subproblems.subproblem, GreedySubproblem):
+        _install_find_best_item(bc.subproblems.subproblem)
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     se_result = bc.standard_errors.compute(theta_hat=result.theta_hat if rank == 0 else None, num_simulations=10, step_size=0.01, seed=1995)
     if rank == 0:
@@ -84,9 +84,9 @@ def run_greedy_fe(comm):
     bc.subproblems.load()
     from bundlechoice.subproblems.registry.greedy import GreedySubproblem
     from bundlechoice.scenarios.greedy import _install_find_best_item
-    if isinstance(bc.subproblems.subproblem_instance, GreedySubproblem):
-        _install_find_best_item(bc.subproblems.subproblem_instance)
-    bc.subproblems.initialize_local()
+    if isinstance(bc.subproblems.subproblem, GreedySubproblem):
+        _install_find_best_item(bc.subproblems.subproblem)
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     beta_indices = np.array([0, 1, NUM_FEATURES - 1], dtype=np.int64)
     se_result = bc.standard_errors.compute(theta_hat=result.theta_hat if rank == 0 else None, num_simulations=10, step_size=0.01, beta_indices=beta_indices, seed=1995)
@@ -114,7 +114,7 @@ def run_knapsack_lowdim(comm):
     bc.data.load_input_data(prepared.estimation_data if rank == 0 else None)
     bc.oracles.build_quadratic_features_from_data()
     bc.subproblems.load()
-    bc.subproblems.initialize_local()
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     se_result = bc.standard_errors.compute(theta_hat=result.theta_hat if rank == 0 else None, num_simulations=10, step_size=0.01, seed=1995)
     if rank == 0:
@@ -151,7 +151,7 @@ def run_knapsack_fe(comm):
     bc.data.load_input_data(est_data)
     bc.oracles.build_quadratic_features_from_data()
     bc.subproblems.load()
-    bc.subproblems.initialize_local()
+    bc.subproblems.initialize_subproblems()
     result = bc.row_generation.solve()
     beta_indices = np.concatenate([np.arange(NUM_AGENT_FEATURES), np.arange(NUM_AGENT_FEATURES + NUM_ITEMS, NUM_FEATURES)]).astype(np.int64)
     se_result = bc.standard_errors.compute(theta_hat=result.theta_hat if rank == 0 else None, num_simulations=10, step_size=0.01, beta_indices=beta_indices, seed=1995)

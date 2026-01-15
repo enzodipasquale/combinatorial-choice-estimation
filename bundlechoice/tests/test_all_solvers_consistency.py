@@ -25,7 +25,7 @@ def test_row_generation_mpi_optimizations():
     bc_obs.load_config({'dimensions': {'num_obs': num_obs, 'num_items': num_items, 'num_features': num_features, 'num_simulations': num_simulations}, 'subproblem': {'name': 'Greedy'}})
     bc_obs.data.load_input_data(input_data)
     bc_obs.oracles.build_quadratic_features_from_data()
-    obs_bundles = bc_obs.subproblems.init_and_solve(theta_true)
+    obs_bundles = bc_obs.subproblems.initialize_and_solve_subproblems(theta_true)
     if rank == 0:
         input_data['obs_bundle'] = obs_bundles
     if rank == 0:

@@ -138,7 +138,7 @@ if rank != 0:
 bc.data.load_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
-bc.subproblems.initialize_local()
+bc.subproblems.initialize_subproblems()
 
 # Broadcast feature names
 feature_names = comm.bcast(bc.config.dimensions.feature_names if rank == 0 else None, root=0)

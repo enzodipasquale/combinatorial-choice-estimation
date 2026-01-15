@@ -10,13 +10,8 @@ try:
 except ImportError:
     MPI = None
 
-def extract_theta(theta):
-    if hasattr(theta, 'theta_hat'):
-        return np.asarray(theta.theta_hat, dtype=np.float64)
-    return np.asarray(theta, dtype=np.float64)
 
 class MPIRankFilter(logging.Filter):
-
     def filter(self, record):
         if MPI is None:
             return True

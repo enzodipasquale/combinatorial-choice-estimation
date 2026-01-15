@@ -28,7 +28,7 @@ class EllipsoidManager(BaseEstimationManager):
     def solve(self, callback=None):
         logger.info('=== ELLIPSOID METHOD ===')
         tic = time.perf_counter()
-        self.subproblem_manager.initialize_local()
+        self.subproblem_manager.initialize_subproblems()
         self._initialize_ellipsoid()
         if self.ellipsoid_cfg.num_iters is not None:
             num_iters = min(self.ellipsoid_cfg.num_iters, self.ellipsoid_cfg.max_iterations)

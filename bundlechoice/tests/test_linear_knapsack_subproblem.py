@@ -22,7 +22,7 @@ def test_generate_data_linear():
     bc.data.load_input_data(input_data)
     bc.oracles.build_quadratic_features_from_data()
     theta_0 = np.ones(num_features)
-    results = bc.subproblems.init_and_solve(theta_0)
+    results = bc.subproblems.initialize_and_solve_subproblems(theta_0)
     if bc._is_root():
         assert isinstance(results, np.ndarray)
         assert results.dtype == bool
