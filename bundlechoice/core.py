@@ -18,12 +18,13 @@ class BundleChoice:
         self.data_manager = data = DataManager(cfg.dimensions, comm)
         self.oracles_manager = oracles = OraclesManager(cfg.dimensions, comm, data)
         
-        base = (cfg, comm, data, oracles)
-        self.subproblem_manager = SubproblemManager(*base)
-        self.row_generation_manager = RowGenerationManager(*base)
-        self.column_generation_manager = ColumnGenerationManager(*base)
-        self.ellipsoid_manager = EllipsoidManager(*base)
-        self.standard_errors_manager = StandardErrorsManager(*base)
+        base = (comm, cfg, data, oracles)
+        self.subproblem_manager = subpb = SubproblemManager(*base)
+        base_est = (*base, subpb)
+        self.row_generation_manager = RowGenerationManager(*base_est)
+        self.column_generation_manager = ColumnGenerationManager(*base_est)
+        self.ellipsoid_manager = EllipsoidManager(*base_est)
+        self.standard_errors_manager = StandardErrorsManager(*base_est)
 
     @property
     def data(self) -> 'DataManager':

@@ -20,9 +20,9 @@ class BaseEstimationManager:
     theta_val: Optional[NDArray[np.float64]] = None
     timing_stats: Optional[Dict[str, Any]] = None
 
-    def __init__(self, comm_manager, dimensions_cfg, data_manager, oracles_manager, subproblem_manager):
+    def __init__(self, comm_manager, config, data_manager, oracles_manager, subproblem_manager):
         self.comm_manager = comm_manager
-        self.dimensions_cfg = dimensions_cfg
+        self.config = config
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
         self.subproblem_manager = subproblem_manager
