@@ -1,11 +1,26 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from bundlechoice.utils import get_logger
+from dataclasses import dataclass
 from functools import lru_cache
-
+from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
+
+@dataclass
+class QuadFeatInfo:
+    modular_agent: int = 0
+    modular_item: int = 0
+    quadratic_agent: int = 0
+    quadratic_item: int = 0
+    
+    def __post_init__(self):
+        offset, self.slices = 0, {}
+        for key in ['modular_agent', 'modular_item', 'quadratic_agent', 'quadratic_item']:
+            dim = getattr(self, key)
+            if dim:
+                self.slices[key] = slice(offset, offset + dim)
+                offset += dim
 
 class DataManager:
 
@@ -44,13 +59,17 @@ class DataManager:
         local_agent_data = self.comm_manager._scatter_dict(input_data['agent_data'], agent_counts=self.agent_counts)
         item_data = self.comm_manager._broadcast_dict(input_data['item_data'])
         self.local_data = {'agent_data': local_agent_data, 'item_data': item_data}
+        self._local_data_version = getattr(self, '_local_data_version', 0) + 1
 
-    def quadratic_features_flags(self):
-        has_modular_agent = 'modular' in self.local_data['agent_data']
-        has_modular_item = 'modular' in self.local_data['item_data']
-        has_quadratic_agent = 'quadratic' in self.local_data['agent_data']
-        has_quadratic_item = 'quadratic' in self.local_data['item_data']
-        return has_modular_agent, has_quadratic_agent, has_modular_item, has_quadratic_item
+    @property
+    def quadratic_features_info(self):
+        return self._quadratic_features_info(self._local_data_version)
+
+    @lru_cache(maxsize=1)
+    def _quadratic_features_info(self, _version):
+        ad, id = self.local_data['agent_data'], self.local_data['item_data']
+        dim = lambda d, k: d[k].shape[-1] if k in d else 0
+        return QuadFeatInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'))
 
     def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():
@@ -58,8 +77,12 @@ class DataManager:
         path = Path(path)
         if auto_detect_quadratic_features:
             available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in ('.csv', '.npy')}
-            agent_files = {k: available[v] for k, v in [('modular', 'modular_agent'), ('quadratic', 'quadratic_agent')] if v in available}
-            item_files = {k: available[v] for k, v in [('modular', 'modular_item'), ('quadratic', 'quadratic_item')] if v in available}
+            agent_files, item_files = {}, {}
+            for feat in ['modular', 'quadratic']:
+                if f'{feat}_agent' in available:
+                    agent_files[feat] = available[f'{feat}_agent']
+                if f'{feat}_item' in available:
+                    item_files[feat] = available[f'{feat}_item']
         for k, f in (agent_files or {}).items():
             self.input_data['agent_data'][k] = self._load(f)
         for k, f in (item_files or {}).items():

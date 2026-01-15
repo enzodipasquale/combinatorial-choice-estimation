@@ -1,10 +1,15 @@
 import numpy as np
-from .quadratic_supermodular_base import QuadraticSupermodular
+from ....subproblem_base import BatchSubproblemBase
+from .quadratic_supermodular_base import SupermodularQuadraticObjectiveMixin
 
-class QuadraticSOptLovasz(QuadraticSupermodular):
+class QuadraticSOptLovasz(SupermodularQuadraticObjectiveMixin, BatchSubproblemBase):
+
+    def initialize(self):
+        self._init_quadratic_info()
+        self.has_constraint_mask = 'constraint_mask' in self.data_manager.local_data['agent_data']
 
     def solve(self, theta):
-        linear, quadratic = self.build_quadratic_matrix(theta)
+        linear, quadratic = self.build_linear_and_quadratic_coef(theta)
         P = quadratic.copy()
         diag = np.arange(self.dimensions_cfg.num_items)
         P[:, diag, diag] += linear
