@@ -1,7 +1,7 @@
 import importlib
 
 REGISTRY = {
-    'LinearKnapsack': ('.registry.linear_knapsack', 'LinearKnapsackSubproblem'),
+    'LinearKnapsack': ('.registry.quadratic_obj.linear_knapsack', 'LinearKnapsackSubproblem'),
     'Greedy': ('.registry.greedy', 'GreedySubproblem'),
     'QuadKnapsack': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackSubproblem'),
     'QuadSupermodularNetwork': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCut'),

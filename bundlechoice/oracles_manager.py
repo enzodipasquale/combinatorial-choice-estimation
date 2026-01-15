@@ -11,25 +11,26 @@ class OraclesManager:
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
         self.data_manager = data_manager
+
         self._features_oracle = None
         self._error_oracle = None
+
         self._features_oracle_vectorized = None
         self._error_oracle_vectorized = None
         self._features_oracle_takes_data = None
         self._error_oracle_takes_data = None
         self._modular_local_errors = None
 
-
-
-
     def _check_vectorized_oracle_support(self, oracle):
         try:
             test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
+            local_id = np.arange(self.data_manager.num_local_agent)
             if oracle.__code__.co_argcount == 2:
-                test_features = oracle(np.arange(self.data_manager.num_local_agent), test_bundles)
+                test_features = oracle(local_id, test_bundles)
             else: 
-                test_features = oracle(np.arange(self.data_manager.num_local_agent), test_bundles, self.data_manager.local_data)
-            assert test_features.shape == (self.data_manager.num_local_agent, self.dimensions_cfg.num_features)
+                test_features = oracle(local_id, test_bundles, self.data_manager.local_data)
+            assert test_features.shape == (self.data_manager.num_local_agent, 
+                                            self.dimensions_cfg.num_features)
             return True
         except:
             return False
