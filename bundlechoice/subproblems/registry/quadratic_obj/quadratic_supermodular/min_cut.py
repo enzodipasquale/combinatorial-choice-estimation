@@ -3,14 +3,12 @@ import networkx as nx
 from ....subproblem_base import SerialSubproblemBase
 from .quadratic_supermodular_base import SupermodularQuadraticObjectiveMixin
 
-class QuadraticSOptNetwork(SupermodularQuadraticObjectiveMixin, SerialSubproblemBase):
+class QuadraticSupermodularMinCut(SupermodularQuadraticObjectiveMixin, SerialSubproblemBase):
 
     def initialize_single_pb(self, local_id):
         if local_id == 0:
             self._init_quadratic_info()
-        ad = self.data_manager.local_data['agent_data']
-        mask = ad.get('constraint_mask', None)
-        return mask[local_id] if mask is not None else None
+        return self._qinfo.constraint_mask[local_id] if self._qinfo.constraint_mask is not None else None
 
     def solve_single_pb(self, local_id, theta, constraint_mask):
         linear, quadratic = self._build_linear_coeff_single(local_id, theta), self._build_quadratic_coeff_single(local_id, theta)
@@ -18,30 +16,30 @@ class QuadraticSOptNetwork(SupermodularQuadraticObjectiveMixin, SerialSubproblem
 
 class MinCutSolver:
 
-    def __init__(self, b_j, b_jj, constraint_mask=None):
-        self.b_j, self.b_jj = b_j, b_jj
-        self.n = b_jj.shape[0]
+    def __init__(self, linear_coeff, quadratic_coeff, constraint_mask=None):
+        self.linear_coeff, self.quadratic_coeff = linear_coeff, quadratic_coeff
+        self.n = quadratic_coeff.shape[0]
         self.nodes = np.where(constraint_mask)[0].tolist() if constraint_mask is not None and constraint_mask.dtype == bool else list(range(self.n)) if constraint_mask is None else list(constraint_mask)
 
     def solve(self):
-        a_jj = -self.b_jj
-        a_j = self.b_j - a_jj.sum(axis=1)
-        G = self._build_graph(a_jj, a_j)
+        posiform_quadratic_coeff = -self.quadratic_coeff
+        posiform_linear_coeff = self.linear_coeff - posiform_quadratic_coeff.sum(axis=1)
+        G = self._build_graph(posiform_quadratic_coeff, posiform_linear_coeff)
         _, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.preflow_push)
         bundle = np.zeros(self.n, dtype=bool)
         bundle[list(partition[0] - {'s'})] = True
         return bundle
 
-    def _build_graph(self, a_jj, a_j):
-        scale = self._get_scale(np.concatenate([a_j.flatten(), a_jj.flatten()]))
-        a_j, a_jj = np.round(a_j * scale).astype(np.int64), np.round(a_jj * scale).astype(np.int64)
+    def _build_graph(self, posiform_quadratic_coeff, posiform_linear_coeff):
+        scale = self._get_scale(np.concatenate([posiform_linear_coeff.flatten(), posiform_quadratic_coeff.flatten()]))
+        posiform_linear_coeff, posiform_quadratic_coeff = np.round(posiform_linear_coeff * scale).astype(np.int64), np.round(posiform_quadratic_coeff * scale).astype(np.int64)
         G = nx.DiGraph()
         G.add_nodes_from(['s', 't'] + self.nodes)
         for i in self.nodes:
-            G.add_edge(i, 't', capacity=a_j[i]) if a_j[i] >= 0 else G.add_edge('s', i, capacity=-a_j[i])
+            G.add_edge(i, 't', capacity=posiform_linear_coeff[i]) if posiform_linear_coeff[i] >= 0 else G.add_edge('s', i, capacity=-posiform_linear_coeff[i])
             for j in self.nodes:
                 if j > i:
-                    G.add_edge(i, j, capacity=a_jj[i, j])
+                    G.add_edge(i, j, capacity=posiform_quadratic_coeff[i, j])
         G.add_edge('s', 't', capacity=0)
         return G
 

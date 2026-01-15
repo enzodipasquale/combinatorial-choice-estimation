@@ -18,9 +18,10 @@ class QuadraticKnapsackSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase)
                 model.setParam('TimeLimit', time_limit)
             model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
             B = model.addVars(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
-            weights = self.data_manager.local_data['item_data']['weights']
-            capacity = self.data_manager.local_data['agent_data']['capacity'][local_id]
-            model.addConstr(gp.quicksum(weights[j] * B[j] for j in range(self.dimensions_cfg.num_items)) <= capacity)
+            model.addConstr(gp.quicksum(
+                self.data_manager.local_data['item_data']['weights'][j] * B[j] 
+                for j in range(self.dimensions_cfg.num_items)
+            ) <= self.data_manager.local_data['agent_data']['capacity'][local_id])
             model.update()
         return model
 

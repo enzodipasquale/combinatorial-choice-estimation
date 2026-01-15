@@ -1,3 +1,3 @@
 from .quadratic_supermodular_base import SupermodularQuadraticObjectiveMixin
-from .min_cut import QuadraticSOptNetwork
-from .lovatz import QuadraticSOptLovasz
+from .min_cut import QuadraticSupermodularMinCut
+from .lovatz import QuadraticSupermodularLovasz
