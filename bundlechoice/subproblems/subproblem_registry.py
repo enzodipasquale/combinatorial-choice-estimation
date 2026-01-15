@@ -4,8 +4,8 @@ REGISTRY = {
     'LinearKnapsack': ('.registry.linear_knapsack', 'LinearKnapsackSubproblem'),
     'Greedy': ('.registry.greedy', 'GreedySubproblem'),
     'QuadKnapsack': ('.registry.quadratic_knapsack', 'QuadraticKnapsackSubproblem'),
-    'QuadSupermodularNetwork': ('.registry.quad_supermodular', 'QuadraticSOptNetwork'),
-    'QuadSupermodularLovasz': ('.registry.quad_supermodular', 'QuadraticSOptLovasz'),
+    'QuadSupermodularNetwork': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSOptNetwork'),
+    'QuadSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSOptLovasz'),
     'PlainSingleItem': ('.registry.plain_single_item', 'PlainSingleItemSubproblem'),
     'BruteForce': ('.registry.brute_force', 'BruteForceSubproblem'),
 }

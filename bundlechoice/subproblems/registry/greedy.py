@@ -10,12 +10,12 @@ class GreedySubproblem(SerialSubproblemBase):
         n = self.dimensions_cfg.num_items
         bundle = np.zeros(n, dtype=bool)
         items_left = list(range(n))
-        base_utility = self.oracles_manager.utilities_oracle(bundle[None, :], theta, np.array([local_id]))[0]
+        base_utility = self.oracles_manager.utilities_oracle(bundle[None, :], theta, local_id)[0]
         while items_left:
             best_item, best_utility = None, base_utility
             for j in items_left:
                 bundle[j] = True
-                utility = self.oracles_manager.utilities_oracle(bundle[None, :], theta, np.array([local_id]))[0]
+                utility = self.oracles_manager.utilities_oracle(bundle[None, :], theta, local_id)[0]
                 if utility > best_utility:
                     best_item, best_utility = j, utility
                 bundle[j] = False
