@@ -122,16 +122,16 @@ if adaptive_cfg:
     )
     bc.config.row_generation.subproblem_callback = adaptive_callback
 
-bc.data.load_and_scatter(input_data)
-bc.oracles.build_from_data()
+bc.data.load_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
 
 # Get structural indices (non-FE parameters) - uses DimensionsConfig method
-structural_indices = np.array(bc.config.dimensions.get_structural_indices(), dtype=np.int64)
+structural_indices = np.array(bc.config.dimensions.get_index_by_name(), dtype=np.int64)
 structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"Problem: {bc.num_agents} agents, {bc.num_items} items, {bc.num_features} features")
+    print(f"Problem: {bc.num_obs} agents, {bc.num_items} items, {bc.num_features} features")
     print(f"Structural parameters ({len(structural_indices)}): {structural_names}")
     print(f"MPI ranks: {comm.Get_size()}")
 
@@ -207,7 +207,7 @@ if rank == 0 and se_result is not None:
         "winners_only": WINNERS_ONLY,
         "hq_distance": HQ_DISTANCE,
         "num_mpi": comm.Get_size(),
-        "num_agents": bc.num_agents,
+        "num_obs": bc.num_obs,
         "num_items": bc.num_items,
         "num_features": bc.num_features,
         "num_simulations": bc.num_simulations,

@@ -76,22 +76,22 @@ if rank == 0:
     
     print(f"Config: delta={DELTA}, winners_only={WINNERS_ONLY}, hq_distance={HQ_DISTANCE}")
     print(f"Loaded data from {INPUT_DIR}")
-    print(f"  Agents: {bc.config.dimensions.num_agents}, Items: {num_items}")
+    print(f"  Agents: {bc.config.dimensions.num_obs}, Items: {num_items}")
 else:
     input_data = None
 
 # Broadcast dimensions
 num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
 num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
-num_agents = comm.bcast(bc.config.dimensions.num_agents if rank == 0 else None, root=0)
+num_obs = comm.bcast(bc.config.dimensions.num_obs if rank == 0 else None, root=0)
 
 if rank != 0:
     bc.config.dimensions.num_features = num_features
     bc.config.dimensions.num_items = num_items
-    bc.config.dimensions.num_agents = num_agents
+    bc.config.dimensions.num_obs = num_obs
 
-bc.data.load_and_scatter(input_data)
-bc.oracles.build_from_data()
+bc.data.load_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
 
 feature_names = comm.bcast(bc.config.dimensions.feature_names if rank == 0 else None, root=0)
@@ -167,7 +167,7 @@ if rank == 0:
             "winners_only": WINNERS_ONLY,
             "hq_distance": HQ_DISTANCE,
             "num_mpi": comm.Get_size(),
-            "num_agents": num_agents,
+            "num_obs": num_obs,
             "num_items": num_items,
             "num_features": num_features,
             "num_simulations": bc.config.dimensions.num_simulations,

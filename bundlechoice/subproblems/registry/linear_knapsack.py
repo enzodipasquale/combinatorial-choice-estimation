@@ -4,27 +4,26 @@ from ..base import SerialSubproblemBase
 import logging
 from typing import Any
 from bundlechoice.utils import suppress_output
-
 logger = logging.getLogger(__name__)
 
-
 class LinearKnapsackSubproblem(SerialSubproblemBase):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    
+
     def initialize(self, local_id):
         with suppress_output():
             subproblem = gp.Model()
             subproblem.setParam('OutputFlag', 0)
             subproblem.setParam('Threads', 1)
-            time_limit = self.config.settings.get("TimeLimit")
+            time_limit = self.config.settings.get('TimeLimit')
             if time_limit is not None:
-                subproblem.setParam("TimeLimit", time_limit)
+                subproblem.setParam('TimeLimit', time_limit)
             subproblem.setAttr('ModelSense', gp.GRB.MAXIMIZE)
             B_j = subproblem.addVars(self.dimensions_cfg.num_items, vtype=gp.GRB.BINARY)
-            weights = self.data_manager.local_data["item_data"]["weights"]
-            capacity = self.data_manager.local_data["agent_data"]["capacity"][local_id]
-            subproblem.addConstr(gp.quicksum(weights[j] * B_j[j] for j in range(self.dimensions_cfg.num_items)) <= capacity)
+            weights = self.data_manager.local_data['item_data']['weights']
+            capacity = self.data_manager.local_data['agent_data']['capacity'][local_id]
+            subproblem.addConstr(gp.quicksum((weights[j] * B_j[j] for j in range(self.dimensions_cfg.num_items))) <= capacity)
             subproblem.update()
         return subproblem
 
@@ -39,17 +38,13 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         return optimal_bundle
 
     def _build_L_j(self, local_id, theta):
-        error_j = self.data_manager.local_data["errors"][local_id]
-        # Agent modular
-        agent_modular = self.data_manager.local_data["agent_data"].get("modular", None)
+        error_j = self.data_manager.local_data['errors'][local_id]
+        agent_modular = self.data_manager.local_data['agent_data'].get('modular', None)
         agent_modular_dim = agent_modular.shape[-1] if agent_modular is not None else 0
-        # Item modular
-        item_modular_k = self.data_manager.local_data["item_data"].get("modular", None)
+        item_modular_k = self.data_manager.local_data['item_data'].get('modular', None)
         item_modular_dim = item_modular_k.shape[-1] if item_modular_k is not None else 0
-        # Slicing theta
         lambda_agent = theta[:agent_modular_dim] if agent_modular_dim > 0 else None
-        lambda_item = theta[agent_modular_dim:agent_modular_dim+item_modular_dim] if item_modular_dim > 0 else None
-        # Build L_j
+        lambda_item = theta[agent_modular_dim:agent_modular_dim + item_modular_dim] if item_modular_dim > 0 else None
         L_j = error_j.copy()
         if agent_modular_dim > 0:
             L_j += agent_modular[local_id] @ lambda_agent
@@ -58,10 +53,7 @@ class LinearKnapsackSubproblem(SerialSubproblemBase):
         return L_j
 
     def _check_mip_gap(self, subproblem, local_id):
-        MIPGap_tol = self.config.settings.get("MIPGap_tol")
+        MIPGap_tol = self.config.settings.get('MIPGap_tol')
         if MIPGap_tol is not None:
             if subproblem.MIPGap > float(MIPGap_tol):
-                logger.warning(
-                    f"Subproblem {local_id} (rank {getattr(self.data_manager, 'rank', '?')}): "
-                    f"MIPGap {subproblem.MIPGap:.4g} > tol {MIPGap_tol}, value: {subproblem.objVal}"
-                )
+                logger.warning(f"Subproblem {local_id} (rank {getattr(self.data_manager, 'rank', '?')}): MIPGap {subproblem.MIPGap:.4g} > tol {MIPGap_tol}, value: {subproblem.objVal}")

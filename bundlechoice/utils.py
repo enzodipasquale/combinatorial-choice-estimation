@@ -1,7 +1,3 @@
-"""
-Utility functions for logging, output suppression, and timing.
-"""
-
 import logging
 import os
 import sys
@@ -14,39 +10,22 @@ try:
 except ImportError:
     MPI = None
 
-
-def extract_theta(theta: Any) -> NDArray[np.float64]:
-    """
-    Extract theta array from EstimationResult or raw array.
-    
-    Args:
-        theta: Either an EstimationResult object (with theta_hat attribute) or a numpy array
-        
-    Returns:
-        Numpy array of theta values
-    """
+def extract_theta(theta):
     if hasattr(theta, 'theta_hat'):
         return np.asarray(theta.theta_hat, dtype=np.float64)
     return np.asarray(theta, dtype=np.float64)
 
-
 class MPIRankFilter(logging.Filter):
-    """Logging filter: only allows messages from MPI rank 0."""
-    
-    def filter(self, record: logging.LogRecord) -> bool:
-        """Filter log records to only allow rank 0."""
+
+    def filter(self, record):
         if MPI is None:
             return True
         return MPI.COMM_WORLD.Get_rank() == 0
 
-
-def get_logger(name: str = __name__) -> logging.Logger:
-    """Get logger with MPI rank filtering (only rank 0 logs)."""
+def get_logger(name=__name__):
     logger = logging.getLogger(name)
-    if not any(isinstance(f, MPIRankFilter) for f in logger.filters):
+    if not any((isinstance(f, MPIRankFilter) for f in logger.filters)):
         logger.addFilter(MPIRankFilter())
-    
-    # Configure handler if not already configured
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)
@@ -54,16 +33,13 @@ def get_logger(name: str = __name__) -> logging.Logger:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
-        # Ensure root logger doesn't block
         root_logger = logging.getLogger()
         if root_logger.level > logging.INFO:
             root_logger.setLevel(logging.INFO)
-    
     return logger
 
 @contextmanager
 def suppress_output():
-    """Context manager: suppress stdout/stderr (useful for Gurobi output)."""
     with open(os.devnull, 'w') as devnull:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
@@ -78,58 +54,19 @@ def suppress_output():
             sys.stderr = old_stderr
             logging.getLogger().setLevel(old_logging_level)
 
-def make_timing_stats(elapsed: float, num_iterations: int,
-                      pricing_times: Any = None, master_times: Any = None) -> Dict[str, Any]:
-    """
-    Create timing statistics dictionary with per-iteration breakdown.
-    
-    Args:
-        elapsed: Total elapsed time (wall-clock)
-        num_iterations: Number of iterations completed
-        pricing_times: List/array of per-iteration pricing times, or total float
-        master_times: List/array of per-iteration master times, or total float
-        
-    Returns:
-        Dict with timing statistics including min/max/avg per iteration
-    """
-    # Handle pricing times (list or scalar)
+def make_timing_stats(elapsed, num_iterations, pricing_times=None, master_times=None):
     if pricing_times is None:
         pricing_times = []
     pricing_arr = np.atleast_1d(np.asarray(pricing_times, dtype=np.float64))
     total_pricing = float(pricing_arr.sum())
-    
-    # Handle master times (list or scalar)  
     if master_times is None:
         master_times = []
     master_arr = np.atleast_1d(np.asarray(master_times, dtype=np.float64))
     total_master = float(master_arr.sum())
-    
     other_time = max(0, elapsed - total_pricing - total_master)
-    
-    stats = {
-        'total_time': elapsed,
-        'num_iterations': num_iterations,
-        'time_per_iter': elapsed / num_iterations if num_iterations > 0 else 0,
-        'pricing_time': total_pricing,
-        'pricing_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0,
-        'master_time': total_master,
-        'master_pct': 100 * total_master / elapsed if elapsed > 0 else 0,
-        'other_time': other_time,
-        'other_pct': 100 * other_time / elapsed if elapsed > 0 else 0,
-    }
-    
-    # Per-iteration stats if we have array data
+    stats = {'total_time': elapsed, 'num_iterations': num_iterations, 'time_per_iter': elapsed / num_iterations if num_iterations > 0 else 0, 'pricing_time': total_pricing, 'pricing_pct': 100 * total_pricing / elapsed if elapsed > 0 else 0, 'master_time': total_master, 'master_pct': 100 * total_master / elapsed if elapsed > 0 else 0, 'other_time': other_time, 'other_pct': 100 * other_time / elapsed if elapsed > 0 else 0}
     if len(pricing_arr) > 1:
-        stats['pricing_per_iter'] = {
-            'avg': float(pricing_arr.mean()),
-            'min': float(pricing_arr.min()),
-            'max': float(pricing_arr.max()),
-        }
+        stats['pricing_per_iter'] = {'avg': float(pricing_arr.mean()), 'min': float(pricing_arr.min()), 'max': float(pricing_arr.max())}
     if len(master_arr) > 1:
-        stats['master_per_iter'] = {
-            'avg': float(master_arr.mean()),
-            'min': float(master_arr.min()),
-            'max': float(master_arr.max()),
-        }
-    
+        stats['master_per_iter'] = {'avg': float(master_arr.mean()), 'min': float(master_arr.min()), 'max': float(master_arr.max())}
     return stats

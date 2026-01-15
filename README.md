@@ -20,7 +20,7 @@ from mpi4py import MPI
 # Build scenario
 scenario = (
     ScenarioLibrary.greedy()
-    .with_dimensions(num_agents=200, num_items=30)
+    .with_dimensions(num_obs=200, num_items=30)
     .with_num_features(5)
     .build()
 )
@@ -51,7 +51,7 @@ ScenarioLibrary.plain_single_item()      # Single item choice
 ```python
 bc = BundleChoice()
 bc.load_config({
-    "dimensions": {"num_agents": 100, "num_items": 20, "num_features": 5},
+    "dimensions": {"num_obs": 100, "num_items": 20, "num_features": 5},
     "subproblem": {"name": "Greedy"},
 })
 
@@ -64,8 +64,8 @@ if rank == 0:
 else:
     input_data = None
 
-bc.data.load_and_scatter(input_data)
-bc.oracles.build_from_data()
+bc.data.load_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
 result = bc.row_generation.solve()
 ```
 

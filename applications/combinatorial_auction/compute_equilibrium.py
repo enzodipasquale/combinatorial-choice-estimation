@@ -47,7 +47,7 @@ if rank == 0:
     INPUT_DIR = os.path.join(BASE_DIR, "data", "114402-V1", "input_data", "delta4")
     obs_bundle_full = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
     
-    num_agents_full = config["dimensions"]["num_agents"]
+    num_obs_full = config["dimensions"]["num_obs"]
     num_items = config["dimensions"]["num_items"]
     num_features = config["dimensions"]["num_features"]
     
@@ -55,10 +55,10 @@ if rank == 0:
     agent_bundle_sizes = obs_bundle_full.sum(axis=1)
     top_agent_ids = np.argsort(agent_bundle_sizes)[-NUM_AGENTS_SUBSET:]
     
-    num_agents = len(top_agent_ids)
+    num_obs = len(top_agent_ids)
     obs_bundle = obs_bundle_full[top_agent_ids]
     
-    print(f"Selected {num_agents} agents (top by bundle size)")
+    print(f"Selected {num_obs} agents (top by bundle size)")
     print(f"Bundle sizes: min={obs_bundle.sum(axis=1).min()}, max={obs_bundle.sum(axis=1).max()}, mean={obs_bundle.sum(axis=1).mean():.1f}")
     
     # Load feature data (subset agents)
@@ -74,8 +74,8 @@ if rank == 0:
     
     # Generate errors (1 simulation only)
     np.random.seed(1995)
-    errors_full = np.random.normal(0, 1, size=(NUM_SIMULATIONS, num_agents_full, num_items))
-    errors = errors_full[:, top_agent_ids, :]  # Shape: (1, num_agents, num_items)
+    errors_full = np.random.normal(0, 1, size=(NUM_SIMULATIONS, num_obs_full, num_items))
+    errors = errors_full[:, top_agent_ids, :]  # Shape: (1, num_obs, num_items)
     
     # Load estimated theta
     THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
@@ -97,13 +97,13 @@ if rank == 0:
     }
 else:
     input_data = None
-    num_agents = None
+    num_obs = None
     num_items = None
     num_features = None
     theta_hat = None
 
 # Broadcast dimensions to all ranks
-num_agents = comm.bcast(num_agents, root=0)
+num_obs = comm.bcast(num_obs, root=0)
 num_items = comm.bcast(num_items, root=0)
 num_features = comm.bcast(num_features, root=0)
 theta_hat = comm.bcast(theta_hat, root=0)
@@ -119,7 +119,7 @@ theta_ubs = [MAX_PRICE] * num_items + list(theta_hat[-4:])
 
 if rank == 0:
     print(f"\nEquilibrium setup:")
-    print(f"  Agents: {num_agents}, Items: {num_items}, Features: {num_features}")
+    print(f"  Agents: {num_obs}, Items: {num_items}, Features: {num_features}")
     print(f"  Price variables: {num_items} (bounds [0, {MAX_PRICE}])")
     print(f"  Fixed theta components: {theta_hat[-4:]}")
 
@@ -127,7 +127,7 @@ if rank == 0:
 bc = BundleChoice()
 bc.load_config({
     'dimensions': {
-        'num_agents': num_agents,
+        'num_obs': num_obs,
         'num_items': num_items,
         'num_features': num_features,
         'num_simulations': NUM_SIMULATIONS,
@@ -140,8 +140,8 @@ bc.load_config({
     },
 })
 
-bc.data.load_and_scatter(input_data)
-bc.oracles.build_from_data()
+bc.data.load_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
 
 if rank == 0:
