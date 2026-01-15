@@ -4,7 +4,7 @@
   "hq_distance": false,
   "weight_rounding_tick": 1000,
   "pop_centroid_percentile": 0,
-  "num_agents": 256,
+  "num_obs": 256,
   "num_items": 493,
   "num_modular_features": 1,
   "num_quadratic_features": 3,

@@ -10,7 +10,7 @@ application:
 
 # BundleChoice settings
 dimensions:
-    num_agents: 255
+    num_obs: 255
     num_items: 493
     num_features: 497
     num_simulations: 10

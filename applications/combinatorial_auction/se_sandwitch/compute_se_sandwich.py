@@ -128,15 +128,15 @@ else:
 # Broadcast
 num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
 num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
-num_agents = comm.bcast(bc.config.dimensions.num_agents if rank == 0 else None, root=0)
+num_obs = comm.bcast(bc.config.dimensions.num_obs if rank == 0 else None, root=0)
 
 if rank != 0:
     bc.config.dimensions.num_features = num_features
     bc.config.dimensions.num_items = num_items
-    bc.config.dimensions.num_agents = num_agents
+    bc.config.dimensions.num_obs = num_obs
 
-bc.data.load_and_scatter(input_data)
-bc.oracles.build_from_data()
+bc.data.load_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
 bc.subproblems.initialize_local()
 
@@ -146,11 +146,11 @@ if rank != 0:
     bc.config.dimensions.feature_names = feature_names
 
 # Get structural indices
-structural_indices = np.array(bc.config.dimensions.get_structural_indices(), dtype=np.int64)
+structural_indices = np.array(bc.config.dimensions.get_index_by_name(), dtype=np.int64)
 structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"\nProblem: {num_agents} agents, {num_items} items")
+    print(f"\nProblem: {num_obs} agents, {num_items} items")
     print(f"Structural parameters: {structural_names}")
     print(f"MPI: {comm.Get_size()} ranks")
 
@@ -186,7 +186,7 @@ if rank == 0 and se_result is not None:
     row_data = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-        "num_mpi": comm.Get_size(), "num_agents": num_agents,
+        "num_mpi": comm.Get_size(), "num_obs": num_obs,
         "num_items": num_items, "num_features": num_features,
         "num_simulations_se": NUM_SIMULS, "step_size": STEP_SIZE,
         "total_time_sec": total_time,

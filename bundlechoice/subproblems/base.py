@@ -1,91 +1,65 @@
-"""
-Base classes for subproblem solvers.
-
-Supports both batch (vectorized) and serial (per-agent) implementations.
-"""
-
 from abc import ABC, abstractmethod
 from typing import Any, Optional, List
 import numpy as np
 from numpy.typing import NDArray
 
-
 class BaseSubproblem(ABC):
-    """Base class for all subproblem solvers."""
-    
-    def __init__(self, data_manager: Any, oracles_manager: Any, 
-                 subproblem_cfg: Any, dimensions_cfg: Any) -> None:
+
+    def __init__(self, data_manager, oracles_manager, subproblem_cfg, dimensions_cfg):
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
         self.subproblem_cfg = subproblem_cfg
         self.config = subproblem_cfg
         self.dimensions_cfg = dimensions_cfg
 
-    def features_oracle(self, agent_id: int, bundle: NDArray[np.float64], 
-                       data_override: Optional[Any] = None) -> NDArray[np.float64]:
-        """Compute features for agent/bundle."""
+    def features_oracle(self, agent_id, bundle, data_override=None):
         return self.oracles_manager.features_oracle(agent_id, bundle, data_override)
-    
-    def error_oracle(self, agent_id: int, bundle: NDArray[np.float64],
-                    data_override: Optional[Any] = None) -> float:
-        """Compute error for agent/bundle."""
+
+    def error_oracle(self, agent_id, bundle, data_override=None):
         return self.oracles_manager.error_oracle(agent_id, bundle, data_override)
-    
+
     @abstractmethod
-    def initialize_all(self) -> Any:
-        """Initialize all subproblems for this rank. Returns None (batch) or list (serial)."""
+    def initialize_all(self):
         pass
-    
+
     @abstractmethod
-    def solve_all(self, theta: NDArray[np.float64], subproblems: Optional[Any] = None) -> NDArray[np.float64]:
-        """Solve all subproblems for this rank."""
+    def solve_all(self, theta, subproblems=None):
         pass
 
 class BatchSubproblemBase(BaseSubproblem, ABC):
-    """Base class for batch (vectorized) subproblems."""
-    
+
     @abstractmethod
-    def initialize(self) -> None:
-        """Initialize batch subproblem (no agent-specific state needed)."""
+    def initialize(self):
         pass
 
     @abstractmethod
-    def solve(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Solve batch subproblem for all agents on this rank."""
+    def solve(self, theta):
         pass
-    
-    def initialize_all(self) -> None:
-        """Initialize batch subproblem."""
+
+    def initialize_all(self):
         self.initialize()
         return None
-    
-    def solve_all(self, theta: NDArray[np.float64], subproblems: Optional[Any] = None) -> NDArray[np.float64]:
-        """Solve batch subproblem."""
+
+    def solve_all(self, theta, subproblems=None):
         return self.solve(theta)
 
 class SerialSubproblemBase(BaseSubproblem, ABC):
-    """Base class for serial (per-agent) subproblems."""
-    
+
     @abstractmethod
-    def initialize(self, agent_id: int) -> Any:
-        """Initialize subproblem for one agent. Returns problem state."""
+    def initialize(self, agent_id):
         pass
 
     @abstractmethod
-    def solve(self, agent_id: int, theta: NDArray[np.float64], problem_state: Optional[Any] = None) -> NDArray[np.float64]:
-        """Solve subproblem for one agent. Returns bundle."""
+    def solve(self, agent_id, theta, problem_state=None):
         pass
-    
-    def solve_serial(self, theta: NDArray[np.float64], problems: List[Any]) -> NDArray[np.float64]:
-        """Solve all serial subproblems sequentially."""
+
+    def solve_serial(self, theta, problems):
         return np.array([self.solve(id, theta, pb) for id, pb in enumerate(problems)])
-    
-    def initialize_all(self) -> List[Any]:
-        """Initialize serial subproblems for all agents on this rank."""
+
+    def initialize_all(self):
         return [self.initialize(id) for id in range(self.data_manager.num_local_agents)]
-    
-    def solve_all(self, theta: NDArray[np.float64], subproblems: Optional[List[Any]] = None) -> NDArray[np.float64]:
-        """Solve serial subproblems using problem states."""
+
+    def solve_all(self, theta, subproblems=None):
         if subproblems is None:
-            raise RuntimeError("subproblems is required for serial subproblems")
+            raise RuntimeError('subproblems is required for serial subproblems')
         return self.solve_serial(theta, subproblems)
