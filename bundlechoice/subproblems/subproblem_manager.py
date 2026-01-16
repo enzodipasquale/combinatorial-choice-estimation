@@ -37,5 +37,7 @@ class SubproblemManager:
         return local_bundles
 
     def solve_subproblems(self, theta):
+        if self.subproblem is None:
+            raise ValueError("Subproblem not initialized")
         return self.subproblem.solve(theta)
    
