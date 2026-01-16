@@ -35,11 +35,11 @@ class OraclesManager:
     def _check_vectorized_oracle_support(self, oracle):
         try:
             test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
-            local_id = np.arange(self.data_manager.num_local_agent)
+            ids = np.arange(self.data_manager.num_local_agent)
             if oracle.__code__.co_argcount == 2:
-                test_features = oracle(local_id, test_bundles)
+                test_features = oracle(ids, test_bundles)
             else: 
-                test_features = oracle(local_id, test_bundles, self.data_manager.local_data)
+                test_features = oracle(ids, test_bundles, self.data_manager.local_data)
             assert test_features.shape == (self.data_manager.num_local_agent, 
                                             self.dimensions_cfg.num_features)
             return True
@@ -62,39 +62,39 @@ class OraclesManager:
         self._error_oracle_vectorized = self._check_vectorized_oracle_support(_error_oracle)
         self._error_oracle_takes_data = self._check_oracle_takes_data(_error_oracle)
     
-    def features_oracle(self, bundles, local_id=None):
-        if local_id is None:
-            local_id = self.data_manager.local_id
+    def features_oracle(self, bundles, ids=None):
+        if ids is None:
+            ids = np.arange(self.data_manager.num_local_agent)
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         if self._features_oracle_vectorized:
-            return self._features_oracle(bundles, local_id, *data_arg)
+            return self._features_oracle(bundles, ids, *data_arg)
         else:
-            return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in local_id])
+            return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in ids])
 
-    def error_oracle(self, bundles, local_id=None):
-        if local_id is None:
-            local_id = self.data_manager.local_id
+    def error_oracle(self, bundles, ids=None):
+        if ids is None:
+            ids = np.arange(self.data_manager.num_local_agent)
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         if self._error_oracle_vectorized:
-            return self._error_oracle(bundles, local_id, *data_arg)
+            return self._error_oracle(bundles, ids, *data_arg)
         else:
-            return np.stack([self._error_oracle(bundles[id], id, *data_arg) for id in local_id])
+            return np.stack([self._error_oracle(bundles[id], id, *data_arg) for id in ids])
 
-    def utility_oracle(self, bundles, theta, local_id = None):
-        return self.features_oracle(bundles, local_id) @ theta + self.error_oracle(bundles, local_id)
+    def utility_oracle(self, bundles, theta, ids = None):
+        return self.features_oracle(bundles, ids) @ theta + self.error_oracle(bundles, ids)
  
-    def features_oracle_individual(self, bundle, local_id):
+    def features_oracle_individual(self, bundle, ids):
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         bundle_arg = bundle[:, None] if self._features_oracle_vectorized else bundle
-        return self._features_oracle(bundle_arg, local_id, *data_arg)
+        return self._features_oracle(bundle_arg, ids, *data_arg)
 
-    def error_oracle_individual(self, bundle, local_id):
+    def error_oracle_individual(self, bundle, ids):
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         bundle_arg = bundle[:, None] if self._error_oracle_vectorized else bundle
-        return self._error_oracle(bundle_arg, local_id, *data_arg)
+        return self._error_oracle(bundle_arg, ids, *data_arg)
 
-    def utility_oracle_individual(self, bundle, theta, local_id):
-        return self.features_oracle_individual(bundle, local_id) @ theta + self.error_oracle_individual(bundle, local_id)
+    def utility_oracle_individual(self, bundle, theta, ids):
+        return self.features_oracle_individual(bundle, ids) @ theta + self.error_oracle_individual(bundle, ids)
 
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
@@ -104,27 +104,27 @@ class OraclesManager:
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
             self._modular_local_errors = self._modular_local_errors @ L
-        self._error_oracle = lambda bundles, local_id: self._modular_local_errors[local_id] @ bundles
+        self._error_oracle = lambda bundles, ids: self._modular_local_errors[ids] @ bundles
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle
 
     def build_quadratic_features_from_data(self):
         qinfo = self.data_manager.quadratic_data_info
-        def features_oracle(bundles, local_id, data):
+        def features_oracle(bundles, ids, data):
             feats = []
             if qinfo.modular_agent:
-                modular = data['agent_data']['modular'][local_id]
-                feats.append(np.einsum('jk,j->k', modular, bundles))
+                modular = data['agent_data']['modular'][ids]
+                feats.append(np.einsum('ijk,ij->ik', modular, bundles))
             if qinfo.modular_item:
                 modular = data['item_data']['modular']
-                feats.append(np.einsum('jk,j->k', modular, bundles))
+                feats.append(np.einsum('jk,ij->ik', modular, bundles))
             if qinfo.quadratic_agent:
-                quadratic = data['agent_data']['quadratic'][local_id]
-                feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
+                quadratic = data['agent_data']['quadratic'][ids]
+                feats.append(np.einsum('ijlk,ij,il->ik', quadratic, bundles, bundles))
             if qinfo.quadratic_item:
                 quadratic = data['item_data']['quadratic']
-                feats.append(np.einsum('jlk,j,l->k', quadratic, bundles, bundles))
+                feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
             return np.concatenate(feats)
         self._features_oracle = features_oracle
         self._features_oracle_vectorized = True

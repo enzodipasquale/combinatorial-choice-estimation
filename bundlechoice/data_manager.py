@@ -32,20 +32,20 @@ class DataManager:
         self.local_data = None
 
     @property
-    def local_id(self):
-        return self._local_id(self.dimensions_cfg.num_obs, self.dimensions_cfg.num_simulations)
+    def global_ids(self):
+        return self._global_ids(self.dimensions_cfg.num_obs, self.dimensions_cfg.num_simulations)
 
     @lru_cache(maxsize=1)
-    def _local_id(self, num_obs, num_simulations):
+    def _global_ids(self, num_obs, num_simulations):
         return np.arange(self.comm_manager.rank, num_simulations * num_obs, self.comm_manager.comm_size)
 
     @property
     def num_local_agent(self):
-        return len(self.local_id)
+        return len(self.global_id)
 
     @property
     def local_obs_id(self):
-        return self.local_id % self.dimensions_cfg.num_obs
+        return self.global_id % self.dimensions_cfg.num_obs
 
     @property
     def agent_counts(self):

@@ -104,16 +104,16 @@ class RowGenerationManager(BaseEstimationManager):
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
         self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
         
-        iteration, pricing_times, master_times = 0, [], []
+        iteration, pricing_times, master_times, t0 = 0, [], [], time.perf_counter()
         while iteration < self.cfg.max_iters:
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
-            t0 = time.perf_counter()
-            pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-            pricing_times.append(time.perf_counter() - t0)
             t1 = time.perf_counter()
+            pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
+            pricing_times.append(time.perf_counter() - t1)
+            t2 = time.perf_counter()
             stop = self._master_iteration(pricing_results)
-            master_times.append(time.perf_counter() - t1)
+            master_times.append(time.perf_counter() - t2)
             if stop and iteration >= self.cfg.min_iters:
                 break
             iteration += 1
@@ -121,11 +121,12 @@ class RowGenerationManager(BaseEstimationManager):
         result = self._create_result(iteration +1, self.master_model, self.theta_iter, self.cfg)
         return result
 
+
     #########
 
 
     def add_constraints(self, indices, bundles):
-        if self.master_model is None:
+        if not self.comm_manager._is_root() and self.master_model is None:
             return
         theta, u = self.master_variables
         constr = self.master_model.addMConstr(u[indices] >= bundles @ theta)
@@ -133,6 +134,73 @@ class RowGenerationManager(BaseEstimationManager):
         logger.info('Added %d constraints', len(indices))
         return constr
     
+    def _setup_gurobi_model(self, gurobi_settings=None):
+        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(gurobi_settings or {})}
+        with suppress_output():
+            model = gp.Model()
+            for k, v in params.items():
+                if v is not None:
+                    model.setParam(k, v)
+        return model
+
+    def update_objective_for_weights(self, agent_weights):
+        if not self.comm_manager._is_root() or self.master_model is None:
+            return
+        theta, u = self.master_variables
+        weights_tiled = np.tile(agent_weights, self.config.dimensions.num_simulations)
+        theta.Obj = weights_tiled * self.theta_obj_coef
+        u.Obj = weights_tiled
+        self.master_model.update()
+
+
+    def _enforce_slack_counter(self):
+        if self.cfg.max_slack_counter == float('inf'):
+            return 0
+        to_remove = []
+        for constr in self.master_model.getConstrs():
+            if constr.CBasis == 0:
+                self.slack_counter.pop(constr, None)
+                
+            else:
+                self.slack_counter[constr] = self.slack_counter.get(constr, 0) + 1
+                if self.slack_counter[constr] >= self.cfg.max_slack_counter:
+                        to_remove.append(constr)
+        for constr in to_remove:
+            self.master_model.remove(constr)
+            self.slack_counter.pop(constr, None)
+        if to_remove:
+            logger.info('Removed %d slack constraints', len(to_remove))
+        return len(to_remove)
+
+
+
+    # def strip_slack_constraints(self, tolerance=1e-06):
+    #     if not self.comm_manager._is_root() or self.master_model is None:
+    #         return 0
+    #     to_remove = [c for c in self.master_model.getConstrs() 
+    #                 if c in self.constraint_info and abs(c.Slack) > tolerance]
+    #     for constr in to_remove:
+    #         self.master_model.remove(constr)
+    #         self.constraint_info.pop(constr, None)
+    #         self.slack_counter.pop(constr, None)
+    #     if to_remove:
+    #         self.master_model.update()
+    #         logger.info('Stripped %d slack constraints', len(to_remove))
+    #     return len(to_remove)
+
+
+    # def get_binding_constraints(self, tolerance=1e-06):
+    #     if not self.comm_manager._is_root() or self.master_model is None:
+    #         return None
+    #     indices, bundles = [], []
+    #     for constr in self.master_model.getConstrs():
+    #         if constr in self.constraint_info and abs(constr.Slack) <= tolerance:
+    #             idx, bundle = self.constraint_info[constr]
+    #             indices.append(idx)
+    #             bundles.append(bundle)
+    #     return {'indices': np.array(indices, dtype=np.int64), 'bundles': np.array(bundles, dtype=np.bool_)}
+
+
     # def _check_bounds_hit(self, tol=1e-06):
     #     empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
     #     if not self.comm_manager._is_root() or self.master_model is None:
@@ -154,73 +222,3 @@ class RowGenerationManager(BaseEstimationManager):
     #                 logger.warning(msg)
     #                 warnings_list.append(msg)
     #     return warnings_list
-
-    def _setup_gurobi_model(self, gurobi_settings=None):
-        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(gurobi_settings or {})}
-        with suppress_output():
-            model = gp.Model()
-            for k, v in params.items():
-                if v is not None:
-                    model.setParam(k, v)
-        return model
-
-
-    def get_binding_constraints(self, tolerance=1e-06):
-        if not self.comm_manager._is_root() or self.master_model is None:
-            return None
-        indices, bundles = [], []
-        for constr in self.master_model.getConstrs():
-            if constr in self.constraint_info and abs(constr.Slack) <= tolerance:
-                idx, bundle = self.constraint_info[constr]
-                indices.append(idx)
-                bundles.append(bundle)
-        return {'indices': np.array(indices, dtype=np.int64), 'bundles': np.array(bundles, dtype=np.bool_)}
-
-    def strip_slack_constraints(self, tolerance=1e-06):
-        if not self.comm_manager._is_root() or self.master_model is None:
-            return 0
-        to_remove = [c for c in self.master_model.getConstrs() 
-                    if c in self.constraint_info and abs(c.Slack) > tolerance]
-        for constr in to_remove:
-            self.master_model.remove(constr)
-            self.constraint_info.pop(constr, None)
-            self.slack_counter.pop(constr, None)
-        if to_remove:
-            self.master_model.update()
-            logger.info('Stripped %d slack constraints', len(to_remove))
-        return len(to_remove)
-
-    def update_objective_for_weights(self, agent_weights):
-        if not self.comm_manager._is_root() or self.master_model is None:
-            return
-        theta, u = self.master_variables
-        weights_tiled = np.tile(agent_weights, self.config.dimensions.num_simulations)
-        theta.Obj = weights_tiled * self.theta_obj_coef
-        u.Obj = weights_tiled
-        self.master_model.update()
-
-
-    def _enforce_slack_counter(self):
-        cfg = self.config.row_generation
-        if cfg.max_slack_counter >= float('inf'):
-            return 0
-        if self.slack_counter is None:
-            self.slack_counter = {}
-        to_remove = []
-        for constr in self.master_model.getConstrs():
-            if constr.Slack < -1e-06:
-                self.slack_counter[constr] = self.slack_counter.get(constr, 0) + 1
-                if self.slack_counter[constr] >= cfg.max_slack_counter:
-                    to_remove.append(constr)
-            if constr.Pi > 1e-06:
-                self.slack_counter.pop(constr, None)
-        for constr in to_remove:
-            self.master_model.remove(constr)
-            self.slack_counter.pop(constr, None)
-            # self._on_constraint_removed(constr)
-        if to_remove:
-            logger.info('Removed %d slack constraints', len(to_remove))
-        return len(to_remove)
-
-
-
