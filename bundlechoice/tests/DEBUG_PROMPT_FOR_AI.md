@@ -199,7 +199,7 @@ if __name__ == '__main__':
 
 1. `result.py` - Missing `Any` import (should be fixed by removing typing)
 2. `subproblem_manager.py` - `solve_subproblems()` doesn't check if `subproblem` is None
-3. `row_generation.py` - Calls `subproblem_manager.solve()` but should be `solve_subproblems()`
+3. `row_generation.py` - Calls `subproblem_manager.solve_subproblems()` but should be `solve_subproblems()`
 
 Verify these are fixed and find any additional bugs.
 

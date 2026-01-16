@@ -25,10 +25,10 @@ class OraclesManager:
     @property
     def _features_at_obs_bundles_at_root(self):
         version = getattr(self.data_manager, '_local_data_version', 0)
-        return self._compute_features_at_obs_bundles_at_root_at_root(version)
+        return self._compute_features_at_obs_bundles_at_root(version)
 
     @lru_cache(maxsize=1)
-    def _compute_features_at_obs_bundles_at_root_at_root(self, _version):
+    def _compute_features_at_obs_bundles_at_root(self, _version):
         local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
         return self.comm_manager.sum_row_andReduce(local_obs_features)
 
@@ -81,8 +81,6 @@ class OraclesManager:
             return np.stack([self._error_oracle(bundles[id], id, *data_arg) for id in local_id])
 
     def utility_oracle(self, bundles, theta, local_id = None):
-        if type(local_id) == None:
-            local_id = self.data_manager.local_id
         return self.features_oracle(bundles, local_id) @ theta + self.error_oracle(bundles, local_id)
  
     def features_oracle_individual(self, bundle, local_id):

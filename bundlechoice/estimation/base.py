@@ -21,7 +21,7 @@ class BaseEstimationManager:
 
     def compute_obj_and_grad_at_root(self, theta):
     
-        bundles = self.subproblem_manager.solve(theta)
+        bundles = self.subproblem_manager.solve_subproblems(theta)
         features = self.oracles_manager.features_oracle(bundles)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         
@@ -35,7 +35,7 @@ class BaseEstimationManager:
             return None, None
 
     def compute_obj(self, theta):
-        bundles = self.subproblem_manager.solve(theta)
+        bundles = self.subproblem_manager.solve_subproblems(theta)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         utility_sum = self.comm_manager.sum_row_andReduce(utility)
         if self.comm_manager._is_root():
@@ -44,7 +44,7 @@ class BaseEstimationManager:
             return None
     
     def compute_grad(self, theta):
-        bundles = self.subproblem_manager.solve(theta)
+        bundles = self.subproblem_manager.solve_subproblems(theta)
         features = self.oracles_manager.features_oracle(bundles)
         features_sum = self.comm_manager.sum_row_andReduce(features)
         if self.comm_manager._is_root():
@@ -61,7 +61,7 @@ class BaseEstimationManager:
             timing_stats = self.timing_stats
             warnings = [] if final_objective is not None else ['All iterations were constraint violations']
             return EstimationResult(
-                theta_sol=theta_sol, converged=converged, num_iterations=num_iterations,
+                theta_hat=theta_sol, converged=converged, num_iterations=num_iterations,
                 final_objective=final_objective,
                 timing=timing_stats,
                 warnings=warnings)

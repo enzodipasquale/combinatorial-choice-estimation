@@ -102,7 +102,7 @@ class RowGenerationManager(BaseEstimationManager):
                     init_master = True,
                     init_subproblems = True):
 
-        
+        self.agent_weights = agent_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
         self._initialize_master_problem(initial_constraints, theta_warmstart, agent_weights) if init_master else None
         
@@ -111,7 +111,7 @@ class RowGenerationManager(BaseEstimationManager):
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
             t0 = time.perf_counter()
-            pricing_results = self.subproblem_manager.solve(self.theta_iter)
+            pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
             pricing_times.append(time.perf_counter() - t0)
             t1 = time.perf_counter()
             stop = self._master_iteration(pricing_results)
@@ -217,7 +217,7 @@ class RowGenerationManager(BaseEstimationManager):
         for constr in to_remove:
             self.master_model.remove(constr)
             self.slack_counter.pop(constr, None)
-            self._on_constraint_removed(constr)
+            # self._on_constraint_removed(constr)
         if to_remove:
             logger.info('Removed %d slack constraints', len(to_remove))
         return len(to_remove)

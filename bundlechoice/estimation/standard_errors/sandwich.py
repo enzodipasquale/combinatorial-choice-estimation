@@ -213,7 +213,7 @@ class SandwichMixin:
 
     def _solve_local_or_empty(self, theta):
         if self.data_manager.num_local_agent > 0:
-            return self.subproblem_manager.solve_local(theta)
+            return self.subproblem_manager.solve_subproblems_local(theta)
         return np.empty((0, self.dimensions_cfg.num_items), dtype=bool)
 
     def _cache_obs_features(self):

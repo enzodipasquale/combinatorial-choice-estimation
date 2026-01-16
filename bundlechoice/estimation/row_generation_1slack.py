@@ -94,7 +94,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         while iteration < self.row_generation_cfg.max_iters:
             logger.info(f'ITERATION {iteration + 1}')
             t0 = time.perf_counter()
-            optimal_bundles = self.subproblem_manager.solve_local(self.theta_val)
+            optimal_bundles = self.subproblem_manager.solve_subproblems_local(self.theta_val)
             total_pricing += time.perf_counter() - t0
             stop = self._master_iteration(optimal_bundles)
             if stop and iteration >= self.row_generation_cfg.min_iters:
