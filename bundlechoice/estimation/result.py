@@ -4,11 +4,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 import numpy as np
-from numpy.typing import NDArray
 
 @dataclass
 class EstimationResult:
-    theta_hat: NDArray[np.float64]
+    theta_hat: np.ndarray
     converged: bool
     num_iterations: int
     final_objective: None

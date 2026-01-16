@@ -86,7 +86,7 @@ class ColumnGenerationManager(BaseEstimationManager):
     def _solve_pricing_problem(self, dual_prices, agent_penalties):
         modified_theta = self._compute_theta_from_duals(dual_prices)
         try:
-            local_bundles = self.subproblem_manager.solve_local(modified_theta)
+            local_bundles = self.subproblem_manager.solve_subproblems_local(modified_theta)
         except Exception as e:
             logger.error('Pricing problem failed with theta=%s, lower=%s, upper=%s: %s', modified_theta, self.theta_lower, self.theta_upper, e, exc_info=True)
             raise

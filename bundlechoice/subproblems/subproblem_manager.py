@@ -36,4 +36,6 @@ class SubproblemManager:
         local_bundles = self.subproblem.solve(theta)
         return local_bundles
 
+    def solve_subproblems(self, theta):
+        return self.subproblem.solve(theta)
    
