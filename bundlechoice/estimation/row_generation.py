@@ -99,7 +99,7 @@ class RowGenerationManager(BaseEstimationManager):
                     agent_weights=None,
                     theta_warmstart=None,  
                     initial_constraints=None, 
-                    init_master = True
+                    init_master = True,
                     init_subproblems = True):
 
         
