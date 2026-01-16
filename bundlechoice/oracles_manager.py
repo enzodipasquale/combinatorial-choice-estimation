@@ -131,4 +131,3 @@ class OraclesManager:
         self._features_oracle_takes_data = True
         return self._features_oracle
 
-      
