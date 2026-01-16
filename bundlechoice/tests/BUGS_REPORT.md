@@ -1,149 +1,97 @@
-# Bugs Found in Refactored Modules
-
-## Modules Tested
-- `bundlechoice/comm_manager.py` ✓ (fixed)
-- `bundlechoice/config.py` ✓
-- `bundlechoice/data_manager.py` ✓
-- `bundlechoice/oracles_manager.py` ⚠️
-- `bundlechoice/core.py` ✓
-- `bundlechoice/subproblems/` ✓
-
-## BUGS FOUND
-
-### 1. **Bug in `oracles_manager.features_oracle()` - Ignores `_features_oracle_takes_data` Flag** ⚠️ CRITICAL
-
-**Location:** `bundlechoice/oracles_manager.py:65-71`
-
-**Code:**
-```python
-def features_oracle(self, bundles, local_id=None):
-    if local_id is None:
-        local_id = self.data_manager.local_id
-    if self._features_oracle_vectorized:
-        return self._features_oracle(bundles, local_id, self.data_manager.local_data)  # Always 3 args
-    else:
-        return np.stack([self._features_oracle(bundles[id], id, self.data_manager.local_data) for id in local_id])  # Always 3 args
-```
-
-**Issue:** 
-- Always passes 3 arguments `(bundles, local_id, self.data_manager.local_data)` 
-- But `_features_oracle_takes_data` flag (set in `set_features_oracle()` line 58) indicates whether oracle expects `data` parameter
-- If `_features_oracle_takes_data == False`, oracle only takes 2 args, but code passes 3 → `TypeError`
-
-**Impact:** Will crash when using oracles that don't take `data` parameter (e.g., from `build_local_modular_error_oracle` if used as features oracle).
-
-**Fix:**
-```python
-def features_oracle(self, bundles, local_id=None):
-    if local_id is None:
-        local_id = self.data_manager.local_id
-    if self._features_oracle_vectorized:
-        if self._features_oracle_takes_data:
-            return self._features_oracle(bundles, local_id, self.data_manager.local_data)
-        else:
-            return self._features_oracle(bundles, local_id)
-    else:
-        if self._features_oracle_takes_data:
-            return np.stack([self._features_oracle(bundles[id], id, self.data_manager.local_data) for id in local_id])
-        else:
-            return np.stack([self._features_oracle(bundles[id], id) for id in local_id])
-```
-
----
-
-### 2. **Bug in `oracles_manager.features_oracle_individual()` - Ignores `_features_oracle_takes_data` Flag** ⚠️ CRITICAL
-
-**Location:** `bundlechoice/oracles_manager.py:73-77`
-
-**Code:**
-```python
-def features_oracle_individual(self, bundle, local_id):
-    if self._features_oracle_vectorized:
-        return self._features_oracle(bundle[:, None], local_id, self.data_manager.local_data)  # Always 3 args
-    else:
-        return self._features_oracle(bundle, local_id, self.data_manager.local_data)  # Always 3 args
-```
-
-**Issue:** Always passes 3 arguments, ignores `_features_oracle_takes_data` flag.
-
-**Fix:**
-```python
-def features_oracle_individual(self, bundle, local_id):
-    if self._features_oracle_vectorized:
-        bundle_arg = bundle[:, None]
-    else:
-        bundle_arg = bundle
-    if self._features_oracle_takes_data:
-        return self._features_oracle(bundle_arg, local_id, self.data_manager.local_data)
-    else:
-        return self._features_oracle(bundle_arg, local_id)
-```
-
----
-
-### 3. **Bug in `oracles_manager.error_oracle()` - Inconsistent Index Usage** ⚠️
-
-**Location:** `bundlechoice/oracles_manager.py:93-94`
-
-**Code:**
-```python
-return np.stack([self._error_oracle(bundles[id], 
-        self.data_manager.local_id[id]) for id in local_id], )
-```
-
-**Issue:** Uses `self.data_manager.local_id[id]` instead of just `id`. Since `id` is already from `local_id` (which is `self.data_manager.local_id` if None), this is redundant and potentially incorrect.
-
-**Fix:**
-```python
-return np.stack([self._error_oracle(bundles[id], id) for id in local_id])
-```
-
----
-
-### 4. **Potential Issue: `oracles_manager._compute_features_at_obs_bundles()` Returns None on Non-Root**
-
-**Location:** `bundlechoice/oracles_manager.py:31-33`
-
-**Code:**
-```python
-@lru_cache(maxsize=1)
-def _compute_features_at_obs_bundles(self, _version):
-    local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
-    return self.comm_manager.sum_row_andReduce(local_obs_features)
-```
-
-**Issue:** After `_Reduce` fix, `sum_row_andReduce()` returns `None` on non-root ranks. The property `_features_at_obs_bundles` will return `None` on non-root.
-
-**Note:** This may be acceptable if property is only accessed on root. Verify usage.
-
----
-
-### 5. **Potential Issue: `subproblem_manager.initialize_and_solve_subproblems()` - Theta Allocation**
-
-**Location:** `bundlechoice/subproblems/subproblem_manager.py:36-40`
-
-**Code:**
-```python
-def initialize_and_solve_subproblems(self, theta):
-    theta = self.comm_manager.Bcast(theta)
-    self.initialize_subproblems()
-    local_bundles = self.solve_subproblems(theta)
-    return local_bundles
-```
-
-**Issue:** `_Bcast` requires `theta` to be allocated numpy array on all ranks. If `theta` is `None` or not allocated on non-root, will crash.
-
-**Note:** Verify calling code ensures `theta` is allocated on all ranks.
-
----
+# Bug Report - All Refactored Modules
 
 ## Summary
+**Total: 13 Critical Bugs Found**
 
-**3 Critical Bugs:**
-1. `oracles_manager.features_oracle()` - Ignores `_features_oracle_takes_data` flag (lines 69, 71)
-2. `oracles_manager.features_oracle_individual()` - Ignores `_features_oracle_takes_data` flag (lines 75, 77)
-3. `oracles_manager.error_oracle()` - Uses `self.data_manager.local_id[id]` instead of `id` (line 94)
+---
 
-**2 Potential Issues:**
-- `oracles_manager._compute_features_at_obs_bundles()` returns None on non-root
-- `subproblem_manager.initialize_and_solve_subproblems()` may fail if theta not allocated
+## base.py (2 bugs)
+
+### Bug #1: Undefined `self.obs_features`
+**Lines:** 35, 36, 46, 55
+**Issue:** `self.obs_features` is never defined in `__init__` but used in multiple methods.
+**Impact:** `AttributeError` when calling `compute_obj_and_grad_at_root()`, `compute_obj()`, or `compute_grad()`.
+
+### Bug #2: Wrong Config Path
+**Lines:** 36, 55
+**Issue:** Uses `self.config.num_obs` but should be `self.config.dimensions.num_obs`.
+**Impact:** `AttributeError` when accessing `self.config.num_obs`.
+
+---
+
+## row_generation.py (9 bugs)
+
+### Bug #1: Uses `u` Before Definition
+**Line:** 38
+**Issue:** `master_variables = (theta, u)` uses `u` before it's defined on line 41.
+**Impact:** `NameError` when initializing master problem.
+
+### Bug #2: Wrong Variable Name
+**Line:** 39
+**Issue:** Uses `self._theta_warmstart` but parameter is `theta_warmstart`.
+**Impact:** Warmstart won't work.
+
+### Bug #3: Wrong Variable Used in Callback
+**Line:** 46
+**Issue:** Uses `master_variables` which was incorrectly defined on line 38 (before `u` exists).
+**Impact:** Callback receives incorrect tuple.
+
+### Bug #4: `u_iter` Not Defined on Non-Root
+**Line:** 57
+**Issue:** `self.u_iter` is only defined on root (line 52), but `Scatterv_by_row` called on all ranks.
+**Impact:** Will fail on non-root when trying to scatter `None`.
+
+### Bug #5: Double `self.cfg.self.cfg`
+**Line:** 65
+**Issue:** `self.cfg.self.cfg.tol_row_generation` should be `self.cfg.tol_row_generation`.
+**Impact:** `AttributeError`.
+
+### Bug #6: Wrong Array Indexing
+**Line:** 78
+**Issue:** `bundles = self.comm_manager.Gatherv_by_row(features_local[local_violations], ...)` should use `local_pricing_results[local_violations]`.
+**Impact:** Gathers wrong data (features instead of bundles).
+
+### Bug #7: Wrong Method Name
+**Line:** 114
+**Issue:** `solve_local` doesn't exist, should be `solve_subproblems`.
+**Impact:** `AttributeError`.
+
+### Bug #8: Wrong Argument Order
+**Line:** 107
+**Issue:** `_initialize_master_problem(initial_constraints, theta_warmstart, agent_weights)` but method signature doesn't have `agent_weights` parameter.
+**Impact:** `TypeError` - too many arguments.
+
+### Bug #9: Undefined `obj_val`
+**Line:** 129
+**Issue:** `obj_val` is never defined in `solve()` method.
+**Impact:** `NameError`.
+
+---
+
+## oracles_manager.py (2 bugs)
+
+### Bug #1: Ignores `_features_oracle_takes_data` Flag
+**Lines:** 69, 71, 75, 77
+**Issue:** Always passes 3 arguments to features_oracle, ignoring `_features_oracle_takes_data` flag.
+**Impact:** `TypeError` when using oracles that don't take `data` parameter.
+
+### Bug #2: Inconsistent Index Usage
+**Line:** 94
+**Issue:** Uses `self.data_manager.local_id[id]` instead of `id`.
+**Impact:** Redundant and potentially incorrect.
+
+---
+
+## Test Results
+
+All tests run with 2-3 MPI processes and 2-3 second timeout wrapper.
+
+**Modules Tested:**
+- ✓ comm_manager.py
+- ✓ config.py  
+- ✓ data_manager.py
+- ⚠️ oracles_manager.py (2 bugs)
+- ✓ core.py
+- ✓ subproblems/
+- ⚠️ estimation/base.py (2 bugs)
+- ⚠️ estimation/row_generation.py (9 bugs)

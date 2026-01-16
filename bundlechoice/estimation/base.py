@@ -15,13 +15,9 @@ class BaseEstimationManager:
 
         self.theta_val = None
         self.timing_stats = None
-        self.theta_obj_coef = - self.oracles_manager._features_at_obs_bundles
+        self.theta_obj_coef = - self.oracles_manager._features_at_obs_bundles_at_root
 
         self.agent_weights = None
-
-    # @property
-    # def theta_obj_coef(self):
-    #     return self.oracles_manager._features_at_obs_bundles
 
     def compute_obj_and_grad_at_root(self, theta):
     
@@ -32,8 +28,8 @@ class BaseEstimationManager:
         features_sum = self.comm_manager.sum_row_andReduce(features)
         utility_sum = self.comm_manager.sum_row_andReduce(utility)
         if self.comm_manager._is_root():
-            obj = utility_sum - (self.obs_features @ theta)
-            grad = (features_sum - self.obs_features) / self.config.num_obs
+            obj = utility_sum + (self.theta_obj_coef @ theta)
+            grad = (features_sum + self.theta_obj_coef)
             return obj, grad
         else:
             return None, None
@@ -43,7 +39,7 @@ class BaseEstimationManager:
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         utility_sum = self.comm_manager.sum_row_andReduce(utility)
         if self.comm_manager._is_root():
-            return utility_sum - (self.obs_features @ theta)
+            return utility_sum + (self.theta_obj_coef @ theta)
         else:
             return None
     
@@ -52,7 +48,7 @@ class BaseEstimationManager:
         features = self.oracles_manager.features_oracle(bundles)
         features_sum = self.comm_manager.sum_row_andReduce(features)
         if self.comm_manager._is_root():
-            return (features_sum - self.obs_features) / self.config.num_obs
+            return (features_sum + self.theta_obj_coef)
         else:
             return None
 
