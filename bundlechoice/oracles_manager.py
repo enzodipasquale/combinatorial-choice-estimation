@@ -63,8 +63,7 @@ class OraclesManager:
         self._error_oracle_takes_data = self._check_oracle_takes_data(_error_oracle)
     
     def features_oracle(self, bundles, ids=None):
-        if ids is None:
-            ids = np.arange(self.data_manager.num_local_agent)
+        ids = np.arange(self.data_manager.num_local_agent) if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         if self._features_oracle_vectorized:
             return self._features_oracle(bundles, ids, *data_arg)
@@ -72,8 +71,7 @@ class OraclesManager:
             return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in ids])
 
     def error_oracle(self, bundles, ids=None):
-        if ids is None:
-            ids = np.arange(self.data_manager.num_local_agent)
+        ids = np.arange(self.data_manager.num_local_agent) if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         if self._error_oracle_vectorized:
             return self._error_oracle(bundles, ids, *data_arg)
@@ -83,18 +81,22 @@ class OraclesManager:
     def utility_oracle(self, bundles, theta, ids = None):
         return self.features_oracle(bundles, ids) @ theta + self.error_oracle(bundles, ids)
  
-    def features_oracle_individual(self, bundle, ids):
+    def features_oracle_individual(self, bundle, id):
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
-        bundle_arg = bundle[:, None] if self._features_oracle_vectorized else bundle
-        return self._features_oracle(bundle_arg, ids, *data_arg)
+        if self._features_oracle_vectorized:
+            bundle, id = bundle[None, :], np.atleast_1d(id)
+        ids_arg = np.atleast_1d(id) if self._features_oracle_vectorized else id
+        return self._features_oracle(bundle, ids_arg, *data_arg)
 
-    def error_oracle_individual(self, bundle, ids):
+    def error_oracle_individual(self, bundle, id):
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
-        bundle_arg = bundle[:, None] if self._error_oracle_vectorized else bundle
-        return self._error_oracle(bundle_arg, ids, *data_arg)
+        if self._error_oracle_vectorized:
+            bundle, ids_arg = bundle[None, :], np.atleast_1d(id)            
+        return self._error_oracle(bundle, ids_arg, *data_arg)
 
-    def utility_oracle_individual(self, bundle, theta, ids):
-        return self.features_oracle_individual(bundle, ids) @ theta + self.error_oracle_individual(bundle, ids)
+    def utility_oracle_individual(self, bundle, theta, id):
+        vals = self.features_oracle_individual(bundle, id) @ theta + self.error_oracle_individual(bundle, id)
+        return vals.ravel()[0] if np.ndim(id) == 0 else vals
 
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):

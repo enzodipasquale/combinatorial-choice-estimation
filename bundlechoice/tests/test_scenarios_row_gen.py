@@ -66,6 +66,6 @@ if __name__ == '__main__':
     rgm = RowGenerationManager(cm, cfg, dm, om, sm)
     
     log("rgm.solve")
-    result = rgm.solve(init_master=True, init_subproblems=True)
+    result = rgm.solve(init_master=True, init_subproblems=True, agent_weights=np.ones(n))
     
     log(f"DONE iters={result.num_iterations}")
