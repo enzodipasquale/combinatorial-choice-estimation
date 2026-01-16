@@ -34,8 +34,8 @@ def test_ellipsoid_greedy():
         assert np.all(np.isfinite(theta_hat))
         assert np.any(theta_hat != 0)
         assert np.all(np.abs(theta_hat) < 100)
-    obj_at_theta_0 = greedy_demo.ellipsoid.objective(theta_0)
-    obj_at_theta_hat = greedy_demo.ellipsoid.objective(theta_hat)
+    obj_at_theta_0 = greedy_demo.ellipsoid.compute_obj(theta_0)
+    obj_at_theta_hat = greedy_demo.ellipsoid.compute_obj(theta_hat)
     if rank == 0:
         print('obj_at_theta_0', obj_at_theta_0)
         print('obj_at_theta_hat', obj_at_theta_hat)

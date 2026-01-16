@@ -49,7 +49,7 @@ class EllipsoidManager(BaseEstimationManager):
                 obj_value = np.inf
             else:
                 t0 = time.perf_counter()
-                obj_value, gradient = self.compute_obj_and_gradient(self.theta_iter)
+                obj_value, gradient = self.compute_obj_and_grad(self.theta_iter)
                 total_gradient += time.perf_counter() - t0
                 direction = gradient
                 vals.append(obj_value)

@@ -23,7 +23,7 @@ class GreedySubproblem(SerialSubproblemBase):
             best_item, best_utility = None, base_utility
             for j in np.where(items_left)[0]:
                 bundle[j] = True
-                utility = self.oracles_manager.utilities_oracle_individual(bundle, theta, local_id)
+                utility = self.oracles_manager.utility_oracle_individual(bundle, theta, local_id)
                 if utility > best_utility:
                     best_item, best_utility = j, utility
                 bundle[j] = False

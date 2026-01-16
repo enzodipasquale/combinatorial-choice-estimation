@@ -145,7 +145,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             return
         input_data = getattr(self.data_manager, 'input_data', None)
         obs_bundles = None if input_data is None else input_data.get('obs_bundle')
-        if obs_bundles is None or self.agents_obs_features is None:
+        if obs_bundles is None or self._features_at_obs_bundles is None:
             return
         obs_bundles = np.asarray(obs_bundles, dtype=bool)
         if obs_bundles.ndim == 2:
@@ -165,7 +165,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         num_obs = self.dimensions_cfg.num_obs
         sim_indices = np.minimum(np.arange(num_sims), obs_bundles.shape[0] - 1)
         bundles_arr = obs_bundles[sim_indices]
-        features_arr = np.broadcast_to(self.agents_obs_features[None, :, :], (num_sims, num_obs, self.dimensions_cfg.num_features)).copy()
+        features_arr = np.broadcast_to(self._features_at_obs_bundles[None, :, :], (num_sims, num_obs, self.dimensions_cfg.num_features)).copy()
         err_indices = np.minimum(np.arange(num_sims), errors_tensor.shape[0] - 1)
         errors_arr = np.einsum('sij,sij->si', errors_tensor[err_indices], bundles_arr.astype(np.float64))
         flat_bundles = bundles_arr.reshape(-1, self.dimensions_cfg.num_items)
