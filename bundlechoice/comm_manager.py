@@ -1,4 +1,5 @@
 import numpy as np
+from mpi4py import MPI
 
 class CommManager:
 
@@ -23,7 +24,7 @@ class CommManager:
     def _gather(self, data):
         return self.comm.gather(data, root=self.root)
 
-    def _scatter_array_by_row(self, send_array, row_counts):
+    def _Scatterv_by_row(self, send_array, row_counts):
         dtype, shape = self._broadcast((send_array.dtype, send_array.shape) if self._is_root() else (None, None))
         tail_shape = shape[1:]
         tail_stride = int(np.prod(tail_shape)) if tail_shape else 1
@@ -39,7 +40,7 @@ class CommManager:
             recvbuf = recvbuf.reshape((int(row_counts[self.rank]),) + tail_shape)
         return recvbuf
 
-    def _gather_array_by_row(self, local_array):
+    def _Gatherv_by_row(self, local_array):
         local_flat = np.ascontiguousarray(local_array).ravel()
         local_size = np.array([local_flat.size], dtype=np.int64)
         all_sizes = np.empty(self.comm_size, dtype=np.int64) if self._is_root() else None
@@ -54,7 +55,18 @@ class CommManager:
             self.comm.Gatherv(local_flat, None, root=self.root)
             return None
 
-    def _broadcast_array(self, array):
+    def _Reduce(self, array, op = MPI.SUM):
+        sendbuf = np.ascontiguousarray(array)
+        recvbuf = np.empty_like(sendbuf)
+        self.comm.Reduce(sendbuf, recvbuf, op=op, root=self.root)
+        return recvbuf
+
+    def sum_row_and_Reduce(self, array):
+        sendbuf = array.sum(0)
+        return self._Reduce(sendbuf)
+
+    def _Bcast(self, array):
+        dtype = array.dtype
         self.comm.Bcast(array, root=self.root)
         return array
 
@@ -72,7 +84,7 @@ class CommManager:
         for k, (kind, shape, dtype) in meta.items():
             if kind == 'arr':
                 send_arr = data_dict[k] if self._is_root() else None
-                out[k] = self._scatter_array_by_row(send_arr, row_counts=agent_counts)
+                out[k] = self._Scatterv_by_row(send_arr, row_counts=agent_counts)
             else:
                 out[k] = self.comm.bcast(data_dict[k] if self._is_root() else None, root=self.root)
         return out

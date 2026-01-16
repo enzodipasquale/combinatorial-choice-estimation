@@ -26,8 +26,8 @@ class BaseEstimationManager:
         features = self.oracles_manager.features_oracle(bundles)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         
-        features_sum = self.comm_manager.allreduce(features, op="SUM", dim = 0)
-        utility_sum = self.comm_manager.allreduce(utility, op="SUM", dim = 0)
+        features_sum = self.comm_manager.sum_row_and_Reduce(features)
+        utility_sum = self.comm_manager.sum_row_and_Reduce(utility)
         if self.comm_manager._is_root():
             obj = utility_sum - (self.obs_features @ theta)
             grad = (features_sum - self.obs_features) / self.config.num_obs
@@ -38,7 +38,7 @@ class BaseEstimationManager:
     def compute_obj(self, theta):
         bundles = self.subproblem_manager.solve(theta)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
-        utility_sum = self.comm_manager.allreduce(utility, op="SUM", dim = 0)
+        utility_sum = self.comm_manager.sum_row_and_Reduce(utility)
         if self.comm_manager._is_root():
             return utility_sum - (self.obs_features @ theta)
         else:
@@ -47,7 +47,7 @@ class BaseEstimationManager:
     def compute_grad(self, theta):
         bundles = self.subproblem_manager.solve(theta)
         features = self.oracles_manager.features_oracle(bundles)
-        features_sum = self.comm_manager.allreduce(features, op="SUM", dim = 0)
+        features_sum = self.comm_manager.sum_row_and_Reduce(features)
         if self.comm_manager._is_root():
             return (features_sum - self.obs_features) / self.config.num_obs
         else:

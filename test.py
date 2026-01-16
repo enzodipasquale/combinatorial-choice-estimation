@@ -3,17 +3,53 @@ import numpy as np
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
-S = 2
-counts = np.array([2, 2, 3])
-if rank == 0:
-    data = np.arange(3)
-else:
-    data = None
 
-recvbuf = np.empty(counts[rank], dtype = np.int64)
-comm.Scatterv([data, counts, MPI.INT64_T], recvbuf, root=0)
 
-print(f"Rank {rank}: {recvbuf.reshape((counts[rank], 5))}")
+def _Reduce(array, op=MPI.SUM):
+    sendbuf = np.ascontiguousarray(array)
+    recvbuf = np.empty_like(sendbuf)
+    comm.Reduce(sendbuf, recvbuf, op=op, root=0)
+    return recvbuf
+
+def _sum_by_row_and_Reduce(array):
+    sendbuf = array.sum(0)
+    return _Reduce(sendbuf)
+
+
+# Reducev example: each rank has different-sized arrays, sum them all
+local_array = np.arange((rank + 1) * 3)
+print(local_array.shape)
+# repeat the array 3 times
+local_array = np.tile(local_array[:, np.newaxis], (1, 4))  
+print(f"Rank {rank} local: {local_array}")
+
+# # Reduce sum
+# local_size = np.array([len(local_array)], dtype=local_array.dtype)
+# sendbuf = local_size.sum(0)
+# recvbuf = np.empty_like(sendbuf)
+# comm.Reduce(sendbuf, recvbuf, op=MPI.SUM, root=0)
+
+# print(f"Rank {rank} all sizes: {recvbuf}")
+
+result = _sum_by_row_and_Reduce(local_array)
+print(f"Rank {rank} result: {result}")
+
+
+
+
+
+# Reducev: sum all arrays element-wise (variable sizes)
+# S = 2
+# counts = np.array([2, 2, 3])
+# if rank == 0:
+#     data = np.arange(3)
+# else:
+#     data = None
+
+# recvbuf = np.empty(counts[rank], dtype = np.int64)
+# comm.Scatterv([data, counts, MPI.INT64_T], recvbuf, root=0)
+
+# print(f"Rank {rank}: {recvbuf.reshape((counts[rank], 5))}")
 
 # Gatherv example
 # local = np.arange(rank * 10, rank * 10 + (rank + 1) * 2)  # rank 0: 2 elems, rank 1: 4 elems, rank 2: 6 elems
