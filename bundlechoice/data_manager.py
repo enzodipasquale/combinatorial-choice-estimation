@@ -41,11 +41,11 @@ class DataManager:
 
     @property
     def num_local_agent(self):
-        return len(self.global_id)
+        return len(self.global_ids)
 
     @property
-    def local_obs_id(self):
-        return self.global_id % self.dimensions_cfg.num_obs
+    def obs_ids(self):
+        return self.global_ids % self.dimensions_cfg.num_obs
 
     @property
     def agent_counts(self):

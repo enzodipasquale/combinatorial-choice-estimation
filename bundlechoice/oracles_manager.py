@@ -104,7 +104,7 @@ class OraclesManager:
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
             self._modular_local_errors = self._modular_local_errors @ L
-        self._error_oracle = lambda bundles, ids: self._modular_local_errors[ids] @ bundles
+        self._error_oracle = lambda bundles, ids: (self._modular_local_errors * bundles).sum(-1)
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle
@@ -125,7 +125,7 @@ class OraclesManager:
             if qinfo.quadratic_item:
                 quadratic = data['item_data']['quadratic']
                 feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
-            return np.concatenate(feats)
+            return np.concatenate(feats, axis=-1)
         self._features_oracle = features_oracle
         self._features_oracle_vectorized = True
         self._features_oracle_takes_data = True
