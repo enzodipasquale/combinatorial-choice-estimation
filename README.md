@@ -57,7 +57,7 @@ bc.load_config({
 
 if rank == 0:
     input_data = {
-        "agent_data": {"modular": features},  # (agents, items, features)
+        "obs_data": {"modular": features},  # (agents, items, features)
         "errors": errors,                      # (sims, agents, items)
         "obs_bundle": bundles,                 # (agents, items)
     }

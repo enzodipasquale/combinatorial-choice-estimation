@@ -17,7 +17,7 @@ class BaseEstimationManager:
         self.timing_stats = None
         self.theta_obj_coef = self.oracles_manager._features_at_obs_bundles_at_root
 
-        self.agent_weights = None
+        self.obs_weights = None
 
     def compute_obj_and_grad_at_root(self, theta):
     
