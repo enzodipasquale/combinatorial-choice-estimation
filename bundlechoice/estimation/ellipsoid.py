@@ -60,7 +60,7 @@ class EllipsoidManager(BaseEstimationManager):
             self._update_ellipsoid(direction)
             if not self.comm_manager._is_root():
                 self.theta_iter = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
-            self.theta_iter = self.comm_manager._broadcast_array(self.theta_iter, root=0)
+            self.theta_iter = self.comm_manager._Bcast(self.theta_iter, root=0)
             if callback and self.comm_manager._is_root() and (obj_value != np.inf):
                 callback({'iteration': iteration, 'theta': self.theta_iter.copy(), 'objective': obj_value, 'best_objective': min(vals) if vals else None})
         elapsed = time.perf_counter() - tic
@@ -80,7 +80,7 @@ class EllipsoidManager(BaseEstimationManager):
             best_theta = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             best_obj = None
             best_iter = None
-        best_theta = self.comm_manager._broadcast_array(best_theta, root=0)
+        best_theta = self.comm_manager._Bcast(best_theta, root=0)
         if self.comm_manager._is_root():
             self.timing_stats = make_timing_stats(elapsed, num_iters, total_gradient)
             self._log_timing_summary(self.timing_stats, best_obj, best_theta, header='ELLIPSOID METHOD SUMMARY')

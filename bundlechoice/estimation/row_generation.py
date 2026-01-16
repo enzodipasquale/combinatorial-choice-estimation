@@ -52,7 +52,7 @@ class RowGenerationManager(BaseEstimationManager):
             self.log_parameter()
         else:
             self.theta_val = np.empty(dim.num_features, dtype=np.float64)
-        self.theta_val = self.comm_manager._broadcast_array(self.theta_val, root=0)
+        self.theta_val = self.comm_manager._Bcast(self.theta_val, root=0)
 
     def _master_iteration(self, local_pricing_results):
         from mpi4py import MPI
@@ -68,8 +68,8 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             u_master_all = np.empty(n_agents, dtype=np.float64)
             theta_current = np.empty(dim.num_features, dtype=np.float64)
-        u_master_local = self.comm_manager._scatter_array_by_row(u_master_all, counts=all_counts, dtype=np.float64)
-        theta_current = self.comm_manager._broadcast_array(theta_current, root=0)
+        u_master_local = self.comm_manager._Scatterv_by_row(u_master_all, counts=all_counts, dtype=np.float64)
+        theta_current = self.comm_manager._Bcast(theta_current, root=0)
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             u_sim_local = features_local @ theta_current + errors_local
         local_violations = np.where(~np.isclose(u_master_local, u_sim_local, rtol=1e-05, atol=1e-05) & (u_master_local > u_sim_local))[0]
@@ -77,16 +77,16 @@ class RowGenerationManager(BaseEstimationManager):
             logger.warning('Rank %d: Possible failure of demand oracle at local ids: %s', self.comm_manager.rank, local_violations[:10])
         reduced_costs_local = u_sim_local - u_master_local
         local_max_rc = reduced_costs_local.max() if len(reduced_costs_local) > 0 else -np.inf
-        max_reduced_cost = self.comm_manager.comm.allreduce(local_max_rc, op=MPI.MAX)
+        max_reduced_cost = self.comm_manager.comm.sum_row_and_Reduce(local_max_rc, op=MPI.MAX)
         local_rows_to_add = np.where(u_sim_local > u_master_local * (1 + cfg.tol_row_generation) + cfg.tolerance_optimality)[0]
         viol_global_ids = global_indices_local[local_rows_to_add]
         viol_bundles = local_pricing_results[local_rows_to_add]
         viol_features = features_local[local_rows_to_add]
         viol_errors = errors_local[local_rows_to_add]
-        all_viol_ids = self.comm_manager._gather_array_by_row(viol_global_ids, root=0)
-        all_viol_bundles = self.comm_manager._gather_array_by_row(viol_bundles, root=0)
-        all_viol_features = self.comm_manager._gather_array_by_row(viol_features, root=0)
-        all_viol_errors = self.comm_manager._gather_array_by_row(viol_errors, root=0)
+        all_viol_ids = self.comm_manager._Gatherv_by_row(viol_global_ids, root=0)
+        all_viol_bundles = self.comm_manager._Gatherv_by_row(viol_bundles, root=0)
+        all_viol_features = self.comm_manager._Gatherv_by_row(viol_features, root=0)
+        all_viol_errors = self.comm_manager._Gatherv_by_row(viol_errors, root=0)
         stop = False
         if self.comm_manager._is_root():
             self.log_parameter()
@@ -128,9 +128,9 @@ class RowGenerationManager(BaseEstimationManager):
                 self.theta_val = np.asarray(theta_arr, dtype=np.float64).copy()
             else:
                 self.theta_val = np.empty(dim.num_features, dtype=np.float64)
-            self.theta_val = self.comm_manager._broadcast_array(self.theta_val, root=0)
+            self.theta_val = self.comm_manager._Bcast(self.theta_val, root=0)
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)
-            bundles_sim = self.comm_manager._gather_array_by_row(local_pricing_results, root=0)
+            bundles_sim = self.comm_manager._Gatherv_by_row(local_pricing_results, root=0)
             if self.comm_manager._is_root() and bundles_sim is not None and len(bundles_sim) > 0:
                 initial_constraints = {'indices': np.arange(dim.num_simulations * dim.num_obs, dtype=np.int64), 
                                        'bundles': bundles_sim.astype(np.float64)}
@@ -256,7 +256,7 @@ class RowGenerationManager(BaseEstimationManager):
         error_msg = self.comm_manager.comm.bcast(error_msg, root=0)
         if error_msg is not None:
             raise RuntimeError(f'Root process failed: {error_msg}')
-        self.theta_val = self.comm_manager._broadcast_array(self.theta_val, root=0)
+        self.theta_val = self.comm_manager._Bcast(self.theta_val, root=0)
         iteration = 0
         while iteration < cfg.max_iters:
             local_pricing_results = self.subproblem_manager.solve_local(self.theta_val)

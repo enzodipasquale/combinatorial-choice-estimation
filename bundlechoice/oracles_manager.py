@@ -30,7 +30,7 @@ class OraclesManager:
     @lru_cache(maxsize=1)
     def _compute_features_at_obs_bundles(self, _version):
         local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
-        return self.comm_manager.allreduce(local_obs_features, op="SUM")
+        return self.comm_manager.sum_row_and_Reduce(local_obs_features)
 
     def _check_vectorized_oracle_support(self, oracle):
         try:
