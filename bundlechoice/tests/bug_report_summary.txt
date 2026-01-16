@@ -1,5 +1,0 @@
-BUG REPORT SUMMARY
-==================
-
-This file contains a summary of bugs found during debugging.
-See the chat for detailed bug reports in the required format.
