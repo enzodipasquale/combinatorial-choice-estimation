@@ -53,14 +53,18 @@ class BaseEstimationManager:
             return None
 
 
-    def _create_result(self, theta, converged, num_iterations, final_objective=None, warnings=None, metadata=None):
-        is_root = self.comm_manager._is_root()
-        return EstimationResult(
-            theta_sol=theta.copy(), converged=converged, num_iterations=num_iterations,
-            final_objective=final_objective if is_root else None,
-            timing=self.timing_stats if is_root else None,
-            warnings=warnings or [] if is_root else [],
-            metadata=metadata or {} if is_root else {})
+    def _create_result(self, num_iterations):
+        if self.comm_manager._is_root():
+            converged = num_iterations < self.cfg.max_iters
+            theta_sol = self.theta_iter.copy()
+            final_objective = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            timing_stats = self.timing_stats
+            warnings = [] if final_objective is not None else ['All iterations were constraint violations']
+            return EstimationResult(
+                theta_sol=theta_sol, converged=converged, num_iterations=num_iterations,
+                final_objective=final_objective,
+                timing=timing_stats,
+                warnings=warnings)
 
 
     def _log_timing_summary(self, stats, obj_val=None, theta=None, header='SUMMARY'):
