@@ -11,9 +11,9 @@ class EstimationResult:
     converged: bool
     num_iterations: int
     final_objective: None
-    timing: dict[str, float] = field(default_factory=dict)
-    iteration_history: dict[str, list] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
+    timing: dict = field(default_factory=dict)
+    iteration_history: dict = field(default_factory=dict)
+    warnings: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict) 
 
     def summary(self):

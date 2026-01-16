@@ -4,8 +4,7 @@ from bundlechoice.comm_manager import CommManager
 from bundlechoice.data_manager import DataManager
 from bundlechoice.oracles_manager import OraclesManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
-from bundlechoice.estimation import RowGenerationManager, StandardErrorsManager, ColumnGenerationManager
-from bundlechoice.estimation.ellipsoid import EllipsoidManager
+from bundlechoice.estimation import RowGenerationManager
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
@@ -22,9 +21,9 @@ class BundleChoice:
         self.subproblem_manager = subpb = SubproblemManager(*base)
         base_est = (*base, subpb)
         self.row_generation_manager = RowGenerationManager(*base_est)
-        self.column_generation_manager = ColumnGenerationManager(*base_est)
-        self.ellipsoid_manager = EllipsoidManager(*base_est)
-        self.standard_errors_manager = StandardErrorsManager(*base_est)
+        # self.column_generation_manager = ColumnGenerationManager(*base_est)
+        # self.ellipsoid_manager = EllipsoidManager(*base_est)
+        # self.standard_errors_manager = StandardErrorsManager(*base_est)
 
     @property
     def data(self) -> 'DataManager':
@@ -42,17 +41,17 @@ class BundleChoice:
     def row_generation(self) -> 'RowGenerationManager':
         return self.row_generation_manager
 
-    @property
-    def ellipsoid(self) -> 'EllipsoidManager':
-        return self.ellipsoid_manager
+    # @property
+    # def ellipsoid(self) -> 'EllipsoidManager':
+    #     return self.ellipsoid_manager
 
-    @property
-    def column_generation(self) -> 'ColumnGenerationManager':
-        return self.column_generation_manager
+    # @property
+    # def column_generation(self) -> 'ColumnGenerationManager':
+    #     return self.column_generation_manager
 
-    @property
-    def standard_errors(self) -> 'StandardErrorsManager':
-        return self.standard_errors_manager
+    # @property
+    # def standard_errors(self) -> 'StandardErrorsManager':
+    #     return self.standard_errors_manager
 
     @property
     def num_obs(self) -> int:

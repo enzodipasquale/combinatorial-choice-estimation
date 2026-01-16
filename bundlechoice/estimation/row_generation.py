@@ -81,9 +81,7 @@ class RowGenerationManager(BaseEstimationManager):
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=row_counts)
 
         if self.comm_manager._is_root():
-            theta, u = self.master_variables
-            constr = self.master_model.addConstr(u[violations_id] >= features @ theta + errors)
-            self.constraint_info[constr] = (violations_id, bundles.copy())
+            self.add_constraints(violations_id, bundles)
             self._enforce_slack_counter()
             self.master_model.optimize()
             theta_iter = self.master_variables[0].X
@@ -104,7 +102,7 @@ class RowGenerationManager(BaseEstimationManager):
 
         self.agent_weights = agent_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
-        self._initialize_master_problem(initial_constraints, theta_warmstart, agent_weights) if init_master else None
+        self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
         
         iteration, pricing_times, master_times = 0, [], []
         while iteration < self.cfg.max_iters:
@@ -120,10 +118,20 @@ class RowGenerationManager(BaseEstimationManager):
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        result = self._create_result(iteration +1, self.master_model, self.theta_iter)
+        result = self._create_result(iteration +1, self.master_model, self.theta_iter, self.cfg)
         return result
 
     #########
+
+
+    def add_constraints(self, indices, bundles):
+        if self.master_model is None:
+            return
+        theta, u = self.master_variables
+        constr = self.master_model.addMConstr(u[indices] >= bundles @ theta)
+        self.constraint_info[constr] = (indices, bundles.copy())
+        logger.info('Added %d constraints', len(indices))
+        return constr
     
     # def _check_bounds_hit(self, tol=1e-06):
     #     empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
@@ -156,14 +164,6 @@ class RowGenerationManager(BaseEstimationManager):
                     model.setParam(k, v)
         return model
 
-    def add_constraints(self, indices, bundles):
-        if not self.comm_manager._is_root() or self.master_model is None or len(indices) == 0:
-            return
-        theta, u = self.master_variables
-
-        constr = self.master_model.addMConstr(u[indices] >= bundles @ theta)
-        self.constraint_info[constr] = (indices, bundles.copy())
-        logger.info('Added %d constraints', len(indices))
 
     def get_binding_constraints(self, tolerance=1e-06):
         if not self.comm_manager._is_root() or self.master_model is None:
@@ -202,7 +202,7 @@ class RowGenerationManager(BaseEstimationManager):
 
     def _enforce_slack_counter(self):
         cfg = self.config.row_generation
-        if cfg.max_slack_counter >= float('inf') or self.master_model is None:
+        if cfg.max_slack_counter >= float('inf'):
             return 0
         if self.slack_counter is None:
             self.slack_counter = {}

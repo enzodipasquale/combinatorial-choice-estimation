@@ -1,8 +1,7 @@
 import time
 import math
 import numpy as np
-from numpy.typing import NDArray
-from typing import Optional, Callable, Dict, Any
+
 from .base import BaseEstimationManager
 from .result import EstimationResult
 from bundlechoice.utils import get_logger, make_timing_stats
