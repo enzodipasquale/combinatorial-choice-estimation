@@ -65,7 +65,7 @@ class RowGenerationManager(BaseEstimationManager):
         u_local = features_local @ self.theta_iter + errors_local
         
         reduced_costs = self.comm_manager.Reduce(u_local - self.u_iter_local, op=MPI.MAX)
-        stop = reduced_costs < self.cfg.tol_row_generation if self.comm_manager._is_root() else None
+        stop = (reduced_costs < self.cfg.tol_row_generation).all() if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
         if stop:
             suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
@@ -75,7 +75,7 @@ class RowGenerationManager(BaseEstimationManager):
             return True
 
         local_violations = np.where(u_local > self.u_iter_local + self.cfg.tol_row_generation)[0]
-        local_violations_id = self.data_manager.local_obs_id[local_violations]
+        local_violations_id = self.data_manager.obs_ids[local_violations]
         
         row_counts = self.data_manager.agent_counts
         bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=row_counts)
@@ -129,7 +129,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def add_constraints(self, indices, bundles):
-        if not self.comm_manager._is_root() and self.master_model is None:
+        if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
         constr = self.master_model.addMConstr(u[indices] >= bundles @ theta)
