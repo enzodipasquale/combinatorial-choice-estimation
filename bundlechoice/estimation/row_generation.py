@@ -26,8 +26,8 @@ class RowGenerationManager(BaseEstimationManager):
 
     def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None):
 
-        if self.comm_manager._is_root() and self.agent_weights is not None:
-            weights_tiled = np.tile(self.agent_weights, self.dim.num_simulations)
+        if self.comm_manager._is_root() and self.obs_weights is not None:
+            weights_tiled = np.tile(self.obs_weights, self.dim.num_simulations)
             self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
             theta = self.master_model.addMVar(self.dim.num_features, 
@@ -97,13 +97,13 @@ class RowGenerationManager(BaseEstimationManager):
         return stop
 
     def solve(self, callback=None, 
-                    agent_weights=None,
+                    obs_weights=None,
                     theta_warmstart=None,  
                     initial_constraints=None, 
                     init_master = True,
                     init_subproblems = True):
 
-        self.agent_weights = agent_weights
+        self.obs_weights = obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
         self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
         
@@ -146,11 +146,11 @@ class RowGenerationManager(BaseEstimationManager):
                     model.setParam(k, v)
         return model
 
-    def update_objective_for_weights(self, agent_weights):
+    def update_objective_for_weights(self, obs_weights):
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        weights_tiled = np.tile(agent_weights, self.config.dimensions.num_simulations)
+        weights_tiled = np.tile(obs_weights, self.config.dimensions.num_simulations)
         theta.Obj = - weights_tiled * self.theta_obj_coef
         u.Obj = weights_tiled
         self.master_model.update()

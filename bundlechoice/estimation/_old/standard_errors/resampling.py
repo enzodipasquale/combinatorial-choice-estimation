@@ -99,19 +99,19 @@ class ResamplingMixin:
                 weights = None
             is_first = b == 0
             if is_first:
-                result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
+                result = row_generation.solve(obs_weights=weights, theta_init=prev_theta)
             elif warmstart == 'model':
-                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=False)
+                result = row_generation.solve_reuse_model(obs_weights=weights, strip_slack=False, reset_lp=False)
             elif warmstart == 'model_reset':
-                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=False, reset_lp=True)
+                result = row_generation.solve_reuse_model(obs_weights=weights, strip_slack=False, reset_lp=True)
             elif warmstart == 'model_strip':
-                result = row_generation.solve_reuse_model(agent_weights=weights, strip_slack=True, reset_lp=False)
+                result = row_generation.solve_reuse_model(obs_weights=weights, strip_slack=True, reset_lp=False)
             elif warmstart == 'constraints':
-                result = row_generation.solve(agent_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
+                result = row_generation.solve(obs_weights=weights, initial_constraints=constraints, theta_init=prev_theta)
             elif warmstart == 'theta':
-                result = row_generation.solve(agent_weights=weights, theta_init=prev_theta)
+                result = row_generation.solve(obs_weights=weights, theta_init=prev_theta)
             else:
-                result = row_generation.solve(agent_weights=weights)
+                result = row_generation.solve(obs_weights=weights)
             if self.comm_manager._is_root():
                 theta_boots.append(result.theta_hat)
                 if warmstart == 'constraints':

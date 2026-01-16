@@ -23,14 +23,17 @@ class OraclesManager:
         self._modular_local_errors = None
 
     @property
-    def _features_at_obs_bundles_at_root(self):
+    def _features_at_obs_bundles_at_root(self, obs_weights = None):
         version = getattr(self.data_manager, '_local_data_version', 0)
-        return self._compute_features_at_obs_bundles_at_root(version)
+        return self._compute_features_at_obs_bundles_at_root(version, obs_weights)
 
     @lru_cache(maxsize=1)
-    def _compute_features_at_obs_bundles_at_root(self, _version):
+    def _compute_features_at_obs_bundles_at_root(self, _version, obs_weights = None):
+        if obs_weights is None:
+            self.data_manager.local_data["obs_data"]["obs_weigths"]
+
         local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
-        return self.comm_manager.sum_row_andReduce(local_obs_features)
+        return self.comm_manager.sum_row_andReduce(obs_weights * local_obs_features)
 
     def _check_vectorized_oracle_support(self, oracle):
         try:

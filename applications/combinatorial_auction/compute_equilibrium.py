@@ -91,7 +91,7 @@ if rank == 0:
     
     input_data = {
         "item_data": item_data,
-        "agent_data": agent_data,
+        "obs_data": agent_data,
         "errors": errors,
         "obs_bundle": obs_bundle
     }

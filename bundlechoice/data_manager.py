@@ -29,11 +29,10 @@ class DataManager:
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
 
-        INPUT_DATA_STRUCTURE = {'agent_data': {}, 'item_data': {}}
 
-        self.input_data = INPUT_DATA_STRUCTURE.copy()
-        self.local_data = INPUT_DATA_STRUCTURE.copy()
-        self.input_data_dictionary_metadata = INPUT_DATA_STRUCTURE.copy()
+        self.input_data = {'agent_data': {}, 'item_data': {}}
+        self.local_data = {'agent_data': {}, 'item_data': {}}
+        self.input_data_dictionary_metadata = {'agent_data': {}, 'item_data': {}}
         
     @property
     def global_ids(self):
@@ -61,19 +60,19 @@ class DataManager:
 
 
     def load_input_data(self, input_data, preserve_global_data=False):
-        if "obs_bundles" not in input_data["agent_data"]:
+        if "obs_bundles" not in input_data["obs_data"]:
             raise ValueError("obs_bundles not found in input_data")
 
-        local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(input_data["agent_data"], agent_counts=self.agent_counts, return_metadata=True)
+        local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(input_data["obs_data"], agent_counts=self.agent_counts, return_metadata=True)
         item_data, item_data_metadata = self.comm_manager.bcast_dict(input_data["item_data"], return_metadata=True)
         
-        self.local_data["agent_data"].update(local_agent_data)
+        self.local_data["obs_data"].update(local_agent_data)
         self.local_data["item_data"].update(item_data)
-        self.input_data_dictionary_metadata["agent_data"].update(agent_data_metadata)
+        self.input_data_dictionary_metadata["obs_data"].update(agent_data_metadata)
         self.input_data_dictionary_metadata["item_data"].update(item_data_metadata)
         
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
-        self.local_obs_bundles = self.local_data["agent_data"]["obs_bundles"]
+        self.local_obs_bundles = self.local_data["obs_data"]["obs_bundles"]
         if preserve_global_data:
             self.input_data.update(input_data)
         else:
@@ -92,7 +91,7 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):
-        ad, id = self.local_data["agent_data"], self.local_data["item_data"]
+        ad, id = self.local_data["obs_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
         return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), dim(ad, "quadratic"), dim(id, "quadratic"), ad.get("constraint_mask"))
 
@@ -109,7 +108,7 @@ class DataManager:
                 if f"{feat}_item" in available:
                     item_files[feat] = available[f"{feat}_item"]
         for k, f in (agent_files or {}).items():
-            self.input_data["agent_data"][k] = self._load(f)
+            self.input_data["obs_data"][k] = self._load(f)
         for k, f in (item_files or {}).items():
             self.input_data["item_data"][k] = self._load(f)
 
