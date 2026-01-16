@@ -31,7 +31,7 @@ class RowGenerationManager(BaseEstimationManager):
             self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
             theta = self.master_model.addMVar(self.dim.num_features, 
-                                                obj= weights_tiled * self.theta_obj_coef, 
+                                                obj= - weights_tiled * self.theta_obj_coef, 
                                                 lb= self.cfg.theta_lbs,
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
@@ -51,10 +51,13 @@ class RowGenerationManager(BaseEstimationManager):
             self.theta_iter = theta.X
             self.u_iter = u.X
         else:
-            self.theta_iter = None
+            self.theta_iter = np.empty(self.dim.num_features, dtype=np.float64)
             self.u_iter = None
-        self.theta_iter = self.comm_manager.Bcast(self.theta_iter)
-        self.u_iter_local = self.comm_manager.Scatterv_by_row(self.u_iter, row_counts=self.data_manager.agent_counts)
+        self.comm_manager.Bcast(self.theta_iter)
+        self.u_iter_local = self.comm_manager.Scatterv_by_row(self.u_iter, 
+                                                              row_counts=self.data_manager.agent_counts,
+                                                              dtype=np.float64,
+                                                              shape=(self.dim.num_agents,))
 
     def _master_iteration(self, pricing_results):
         features_local = self.oracles_manager.features_oracle(pricing_results)
@@ -148,7 +151,7 @@ class RowGenerationManager(BaseEstimationManager):
             return
         theta, u = self.master_variables
         weights_tiled = np.tile(agent_weights, self.config.dimensions.num_simulations)
-        theta.Obj = weights_tiled * self.theta_obj_coef
+        theta.Obj = - weights_tiled * self.theta_obj_coef
         u.Obj = weights_tiled
         self.master_model.update()
 

@@ -24,8 +24,9 @@ class CommManager:
     def gather(self, data):
         return self.comm.gather(data, root=self.root)
 
-    def Scatterv_by_row(self, send_array, row_counts):
-        dtype, shape = self.bcast((send_array.dtype, send_array.shape) if self._is_root() else (None, None))
+    def Scatterv_by_row(self, send_array, row_counts, dtype=None, shape=None):
+        if dtype is None or shape is None:
+            dtype, shape = self.bcast((send_array.dtype, send_array.shape) if self._is_root() else (None, None))
         tail_shape = shape[1:]
         tail_stride = int(np.prod(tail_shape)) if tail_shape else 1
         counts = row_counts * tail_stride
