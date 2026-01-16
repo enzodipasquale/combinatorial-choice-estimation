@@ -15,7 +15,7 @@ class EstimationResult:
     timing: dict[str, float] = field(default_factory=dict)
     iteration_history: dict[str, list] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict) 
+    metadata: dict = field(default_factory=dict) 
 
     def summary(self):
         lines = ['=== Estimation Results ===']
