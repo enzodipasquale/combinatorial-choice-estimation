@@ -60,8 +60,8 @@ class DataManager:
         if "obs_bundles" not in input_data["agent_data"]:
             raise ValueError("obs_bundles not found in input_data")
 
-        local_agent_data = self.comm_manager._scatter_dict(input_data["agent_data"], agent_counts=self.agent_counts)
-        item_data = self.comm_manager._broadcast_dict(input_data["item_data"])
+        local_agent_data = self.comm_manager.scatter_dict(input_data["agent_data"], agent_counts=self.agent_counts)
+        item_data = self.comm_manager.bcast_dict(input_data["item_data"])
         self.local_data = {"agent_data": local_agent_data, "item_data": item_data}
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
         self.local_obs_bundles = self.local_data["agent_data"]["obs_bundles"]

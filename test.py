@@ -5,34 +5,34 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 
-def _Reduce(array, op=MPI.SUM):
-    sendbuf = np.ascontiguousarray(array)
-    recvbuf = np.empty_like(sendbuf)
-    comm.Reduce(sendbuf, recvbuf, op=op, root=0)
-    return recvbuf
+# def Reduce(array, op=MPI.SUM):
+#     sendbuf = np.ascontiguousarray(array)
+#     recvbuf = np.empty_like(sendbuf)
+#     comm.Reduce(sendbuf, recvbuf, op=op, root=0)
+#     return recvbuf
 
-def _sum_by_row_and_Reduce(array):
-    sendbuf = array.sum(0)
-    return _Reduce(sendbuf)
+# def _sum_by_row_andReduce(array):
+#     sendbuf = array.sum(0)
+#     return Reduce(sendbuf)
 
 
-# Reducev example: each rank has different-sized arrays, sum them all
-local_array = np.arange((rank + 1) * 3)
-print(local_array.shape)
-# repeat the array 3 times
-local_array = np.tile(local_array[:, np.newaxis], (1, 4))  
-print(f"Rank {rank} local: {local_array}")
+# # Reducev example: each rank has different-sized arrays, sum them all
+# local_array = np.arange((rank + 1) * 3)
+# print(local_array.shape)
+# # repeat the array 3 times
+# local_array = np.tile(local_array[:, np.newaxis], (1, 4))  
+# print(f"Rank {rank} local: {local_array}")
 
-# # Reduce sum
-# local_size = np.array([len(local_array)], dtype=local_array.dtype)
-# sendbuf = local_size.sum(0)
-# recvbuf = np.empty_like(sendbuf)
-# comm.Reduce(sendbuf, recvbuf, op=MPI.SUM, root=0)
+# # # Reduce sum
+# # local_size = np.array([len(local_array)], dtype=local_array.dtype)
+# # sendbuf = local_size.sum(0)
+# # recvbuf = np.empty_like(sendbuf)
+# # comm.Reduce(sendbuf, recvbuf, op=MPI.SUM, root=0)
 
-# print(f"Rank {rank} all sizes: {recvbuf}")
+# # print(f"Rank {rank} all sizes: {recvbuf}")
 
-result = _sum_by_row_and_Reduce(local_array)
-print(f"Rank {rank} result: {result}")
+# result = _sum_by_row_andReduce(local_array)
+# print(f"Rank {rank} result: {result}")
 
 
 
@@ -57,7 +57,8 @@ print(f"Rank {rank} result: {result}")
 
 # # Gather sizes
 # local_size = np.array([len(local)], dtype=np.int64)
-# all_sizes = np.empty(3, dtype=np.int64) if rank == 0 else None
+# size = comm.Get_size()
+# all_sizes = np.empty(size, dtype=np.int64) if rank == 0 else None
 # comm.Gather(local_size, all_sizes, root=0)
 
 # # Gatherv
@@ -67,3 +68,11 @@ print(f"Rank {rank} result: {result}")
 #     print(f"Root gathered: {recvbuf}")
 # else:
 #     comm.Gatherv(local, None, root=0)
+
+
+# a = np.empty(4, dtype=np.int64)
+# a = a.reshape((2, 2))
+# print(a)
+
+
+print(np.tile(np.array([1, 2, 3]), 2))

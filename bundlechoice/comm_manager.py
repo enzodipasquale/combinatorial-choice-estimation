@@ -15,17 +15,17 @@ class CommManager:
     def _barrier(self):
         self.comm.Barrier()
 
-    def _scatter(self, data):
+    def scatter(self, data):
         return self.comm.scatter(data, root=self.root)
 
-    def _broadcast(self, data):
+    def bcast(self, data):
         return self.comm.bcast(data, root=self.root)
 
-    def _gather(self, data):
+    def gather(self, data):
         return self.comm.gather(data, root=self.root)
 
-    def _Scatterv_by_row(self, send_array, row_counts):
-        dtype, shape = self._broadcast((send_array.dtype, send_array.shape) if self._is_root() else (None, None))
+    def Scatterv_by_row(self, send_array, row_counts):
+        dtype, shape = self.bcast((send_array.dtype, send_array.shape) if self._is_root() else (None, None))
         tail_shape = shape[1:]
         tail_stride = int(np.prod(tail_shape)) if tail_shape else 1
         counts = row_counts * tail_stride
@@ -40,33 +40,35 @@ class CommManager:
             recvbuf = recvbuf.reshape((int(row_counts[self.rank]),) + tail_shape)
         return recvbuf
 
-    def _Gatherv_by_row(self, local_array):
+    def Gatherv_by_row(self, local_array, row_counts = None):
         local_flat = np.ascontiguousarray(local_array).ravel()
-        local_size = np.array([local_flat.size], dtype=np.int64)
-        all_sizes = np.empty(self.comm_size, dtype=np.int64) if self._is_root() else None
-        self.comm.Gather(local_size, all_sizes, root=self.root)
+        if row_counts is None:
+            local_size = np.array([local_flat.size], dtype=np.int64)
+            counts = np.empty(self.comm_size, dtype=np.int64) if self._is_root() else None
+        else:
+            counts = row_counts * np.prod(local_array.shape[1:])
+        self.comm.Gather(local_size, counts, root=self.root)
         if self._is_root():
-            recvbuf = np.empty(all_sizes.sum(), dtype=local_array.dtype)
-            self.comm.Gatherv(local_flat, (recvbuf, all_sizes), root=self.root)
-            if local_array.ndim > 1:
-                return recvbuf.reshape((-1,) + local_array.shape[1:])
-            return recvbuf
+            recvbuf = np.empty(counts.sum(), dtype=local_array.dtype)
+            self.comm.Gatherv(local_flat, (recvbuf, counts), root=self.root)
         else:
             self.comm.Gatherv(local_flat, None, root=self.root)
-            return None
+        if local_array.ndim > 1:
+            return recvbuf.reshape((-1,) + local_array.shape[1:])
+        return recvbuf
 
-    def _Reduce(self, array, op = MPI.SUM):
+    def Reduce(self, array, op = MPI.SUM):
         sendbuf = np.ascontiguousarray(array)
         recvbuf = np.empty_like(sendbuf)
         self.comm.Reduce(sendbuf, recvbuf, op=op, root=self.root)
+        recvbuf = None if not self._is_root() else recvbuf
         return recvbuf
 
-    def sum_row_and_Reduce(self, array):
+    def sum_row_andReduce(self, array):
         sendbuf = array.sum(0)
-        return self._Reduce(sendbuf)
+        return self.Reduce(sendbuf)
 
-    def _Bcast(self, array):
-        dtype = array.dtype
+    def Bcast(self, array):
         self.comm.Bcast(array, root=self.root)
         return array
 
@@ -78,18 +80,18 @@ class CommManager:
             meta = None
         return self.comm.bcast(meta, root=self.root)
 
-    def _scatter_dict(self, data_dict, agent_counts=None):
+    def scatter_dict(self, data_dict, agent_counts=None):
         meta = self.get_dict_metadata(data_dict)
         out = {}
         for k, (kind, shape, dtype) in meta.items():
             if kind == 'arr':
                 send_arr = data_dict[k] if self._is_root() else None
-                out[k] = self._Scatterv_by_row(send_arr, row_counts=agent_counts)
+                out[k] = self.Scatterv_by_row(send_arr, row_counts=agent_counts)
             else:
                 out[k] = self.comm.bcast(data_dict[k] if self._is_root() else None, root=self.root)
         return out
 
-    def _broadcast_dict(self, data_dict):
+    def bcast_dict(self, data_dict):
         meta = self.get_dict_metadata(data_dict)
         out = {}
         for k, (kind, shape, dtype) in meta.items():

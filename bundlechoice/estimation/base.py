@@ -15,10 +15,13 @@ class BaseEstimationManager:
 
         self.theta_val = None
         self.timing_stats = None
+        self.theta_obj_coef = - self.oracles_manager._features_at_obs_bundles
 
-    @property
-    def theta_obj_coef(self):
-        return self.oracles_manager._features_at_obs_bundles
+        self.agent_weights = None
+
+    # @property
+    # def theta_obj_coef(self):
+    #     return self.oracles_manager._features_at_obs_bundles
 
     def compute_obj_and_grad_at_root(self, theta):
     
@@ -26,8 +29,8 @@ class BaseEstimationManager:
         features = self.oracles_manager.features_oracle(bundles)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         
-        features_sum = self.comm_manager.sum_row_and_Reduce(features)
-        utility_sum = self.comm_manager.sum_row_and_Reduce(utility)
+        features_sum = self.comm_manager.sum_row_andReduce(features)
+        utility_sum = self.comm_manager.sum_row_andReduce(utility)
         if self.comm_manager._is_root():
             obj = utility_sum - (self.obs_features @ theta)
             grad = (features_sum - self.obs_features) / self.config.num_obs
@@ -38,7 +41,7 @@ class BaseEstimationManager:
     def compute_obj(self, theta):
         bundles = self.subproblem_manager.solve(theta)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
-        utility_sum = self.comm_manager.sum_row_and_Reduce(utility)
+        utility_sum = self.comm_manager.sum_row_andReduce(utility)
         if self.comm_manager._is_root():
             return utility_sum - (self.obs_features @ theta)
         else:
@@ -47,7 +50,7 @@ class BaseEstimationManager:
     def compute_grad(self, theta):
         bundles = self.subproblem_manager.solve(theta)
         features = self.oracles_manager.features_oracle(bundles)
-        features_sum = self.comm_manager.sum_row_and_Reduce(features)
+        features_sum = self.comm_manager.sum_row_andReduce(features)
         if self.comm_manager._is_root():
             return (features_sum - self.obs_features) / self.config.num_obs
         else:
@@ -57,7 +60,7 @@ class BaseEstimationManager:
     def _create_result(self, theta, converged, num_iterations, final_objective=None, warnings=None, metadata=None):
         is_root = self.comm_manager._is_root()
         return EstimationResult(
-            theta_hat=theta.copy(), converged=converged, num_iterations=num_iterations,
+            theta_sol=theta.copy(), converged=converged, num_iterations=num_iterations,
             final_objective=final_objective if is_root else None,
             timing=self.timing_stats if is_root else None,
             warnings=warnings or [] if is_root else [],
