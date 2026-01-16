@@ -12,7 +12,6 @@ class BaseSubproblem(ABC):
 
 class BatchSubproblemBase(BaseSubproblem, ABC):
 
-    @abstractmethod
     def initialize(self):
         pass
 

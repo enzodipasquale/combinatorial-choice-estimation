@@ -27,8 +27,8 @@ def test_ellipsoid_linear_knapsack():
     knapsack_demo.subproblems.load()
     result = knapsack_demo.ellipsoid.solve()
     theta_hat = result.theta_hat
-    obj_at_theta_0 = knapsack_demo.ellipsoid.objective(theta_0)
-    obj_at_theta_hat = knapsack_demo.ellipsoid.objective(theta_hat)
+    obj_at_theta_0 = knapsack_demo.ellipsoid.compute_obj(theta_0)
+    obj_at_theta_hat = knapsack_demo.ellipsoid.compute_obj(theta_hat)
     if rank == 0:
         print('theta_hat:', theta_hat)
         print('theta_0:', theta_0)

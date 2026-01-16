@@ -32,8 +32,8 @@ def test_ellipsoid_quadsupermodular():
     quad_demo.subproblems.load()
     result = quad_demo.ellipsoid.solve()
     theta_hat = result.theta_hat
-    obj_at_theta_0 = quad_demo.ellipsoid.objective(theta_0)
-    obj_at_theta_hat = quad_demo.ellipsoid.objective(theta_hat)
+    obj_at_theta_0 = quad_demo.ellipsoid.compute_obj(theta_0)
+    obj_at_theta_hat = quad_demo.ellipsoid.compute_obj(theta_hat)
     if rank == 0:
         print('theta_hat:', theta_hat)
         print('theta_0:', theta_0)

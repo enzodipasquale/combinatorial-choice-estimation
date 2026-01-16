@@ -57,10 +57,14 @@ class DataManager:
 
 
     def load_input_data(self, input_data):
-        local_agent_data = self.comm_manager._scatter_dict(input_data['agent_data'], agent_counts=self.agent_counts)
-        item_data = self.comm_manager._broadcast_dict(input_data['item_data'])
-        self.local_data = {'agent_data': local_agent_data, 'item_data': item_data}
-        self._local_data_version = getattr(self, '_local_data_version', 0) + 1
+        if "obs_bundles" not in input_data["agent_data"]:
+            raise ValueError("obs_bundles not found in input_data")
+
+        local_agent_data = self.comm_manager._scatter_dict(input_data["agent_data"], agent_counts=self.agent_counts)
+        item_data = self.comm_manager._broadcast_dict(input_data["item_data"])
+        self.local_data = {"agent_data": local_agent_data, "item_data": item_data}
+        self._local_data_version = getattr(self, "_local_data_version", 0) + 1
+        self.local_obs_bundles = self.local_data["agent_data"]["obs_bundles"]
 
     @property
     def quadratic_data_info(self):
@@ -68,29 +72,29 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):
-        ad, id = self.local_data['agent_data'], self.local_data['item_data']
+        ad, id = self.local_data["agent_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadraticDataInfo(dim(ad, 'modular'), dim(id, 'modular'), dim(ad, 'quadratic'), dim(id, 'quadratic'), ad.get('constraint_mask'))
+        return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), dim(ad, "quadratic"), dim(id, "quadratic"), ad.get("constraint_mask"))
 
     def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():
             return
         path = Path(path)
         if auto_detect_quadratic_features:
-            available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in ('.csv', '.npy')}
+            available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in (".csv", ".npy")}
             agent_files, item_files = {}, {}
-            for feat in ['modular', 'quadratic']:
-                if f'{feat}_agent' in available:
-                    agent_files[feat] = available[f'{feat}_agent']
-                if f'{feat}_item' in available:
-                    item_files[feat] = available[f'{feat}_item']
+            for feat in ["modular", "quadratic"]:
+                if f"{feat}_agent" in available:
+                    agent_files[feat] = available[f"{feat}_agent"]
+                if f"{feat}_item" in available:
+                    item_files[feat] = available[f"{feat}_item"]
         for k, f in (agent_files or {}).items():
-            self.input_data['agent_data'][k] = self._load(f)
+            self.input_data["agent_data"][k] = self._load(f)
         for k, f in (item_files or {}).items():
-            self.input_data['item_data'][k] = self._load(f)
+            self.input_data["item_data"][k] = self._load(f)
 
     def _load(self, f):
         f = Path(f)
-        return pd.read_csv(f).values if f.suffix == '.csv' else np.load(f)
+        return pd.read_csv(f).values if f.suffix == ".csv" else np.load(f)
 
 

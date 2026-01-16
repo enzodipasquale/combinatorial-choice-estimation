@@ -1,4 +1,5 @@
 import numpy as np
+from functools import lru_cache
 from numpy.typing import NDArray
 from bundlechoice.utils import get_logger
 from bundlechoice.config import DimensionsConfig
@@ -21,6 +22,16 @@ class OraclesManager:
         self._error_oracle_takes_data = None
         self._modular_local_errors = None
 
+    @property
+    def _features_at_obs_bundles(self):
+        version = getattr(self.data_manager, '_local_data_version', 0)
+        return self._compute_features_at_obs_bundles(version)
+
+    @lru_cache(maxsize=1)
+    def _compute_features_at_obs_bundles(self, _version):
+        local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
+        return self.comm_manager.allreduce(local_obs_features, op="SUM")
+
     def _check_vectorized_oracle_support(self, oracle):
         try:
             test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
@@ -40,8 +51,6 @@ class OraclesManager:
             return True
         else:
             return False
-
-    # Features and error oracles
 
     def set_features_oracle(self, _features_oracle):
         self._features_oracle = _features_oracle
@@ -72,7 +81,7 @@ class OraclesManager:
         else:
             return self._error_oracle(bundle, local_id)
 
-    def utilities_oracle_individual(self, bundle, theta, local_id):
+    def utility_oracle_individual(self, bundle, theta, local_id):
         return self.features_oracle_individual(bundle, local_id) @ theta + self.error_oracle_individual(bundle, local_id)
 
     def error_oracle(self, bundles, local_id=None):
@@ -83,9 +92,8 @@ class OraclesManager:
         else:
             return np.stack([self._error_oracle(bundles[id], 
                     self.data_manager.local_id[id]) for id in local_id], )
-
-    # Quadratic features and modular errors
-
+    
+    
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
         np.random.seed(seed + self.comm_manager.rank)
         self._modular_local_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, self.dimensions_cfg.num_items))
@@ -97,7 +105,7 @@ class OraclesManager:
         self._error_oracle_takes_data = False
         return self._error_oracle
 
-    def utilities_oracle(self, bundles, theta, local_id = None):
+    def utility_oracle(self, bundles, theta, local_id = None):
         if type(local_id) == int:
             local_id = np.array([local_id])
         return self.features_oracle(bundles, local_id) @ theta + self.error_oracle(bundles, local_id)

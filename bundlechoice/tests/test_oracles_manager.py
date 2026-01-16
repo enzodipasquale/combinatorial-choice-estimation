@@ -35,7 +35,7 @@ def test_error_oracle():
     assert oracles._modular_local_errors is not None
     assert oracles._modular_local_errors.shape == (data_manager.num_local_agent, 3)
 
-def test_utilities_oracle():
+def test_utility_oracle():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     dimensions_cfg = DimensionsConfig(num_obs=10, num_items=3, num_features=2, num_simulations=1)
