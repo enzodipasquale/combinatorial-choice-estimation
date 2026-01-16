@@ -76,7 +76,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             logger.info('Column generation master initialised (dual).')
         else:
             self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
-        self.theta_val = self.comm_manager._Bcast(self.theta_val, root=0)
+        self.theta_val = self.comm_manager.Bcast(self.theta_val, root=0)
 
     def _compute_theta_from_duals(self, dual_prices):
         has_nonneg_lower = np.isfinite(self.theta_lower) & (self.theta_lower >= 0)
@@ -90,7 +90,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         except Exception as e:
             logger.error('Pricing problem failed with theta=%s, lower=%s, upper=%s: %s', modified_theta, self.theta_lower, self.theta_upper, e, exc_info=True)
             raise
-        bundles_all = self.comm_manager._Gatherv_by_row(local_bundles, root=0)
+        bundles_all = self.comm_manager.Gatherv_by_row(local_bundles, root=0)
         features_all = self.oracles_manager.compute_gathered_features(local_bundles)
         errors_all = self.oracles_manager.compute_gathered_errors(local_bundles)
         max_reduced_cost = 0.0
@@ -102,7 +102,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             self._pricing_cache = (bundles_all, features_all, scaled_errors, reduced_costs)
         else:
             self._pricing_cache = (None, None, None, None)
-        max_reduced_cost = self.comm_manager._broadcast(max_reduced_cost, root=0)
+        max_reduced_cost = self.comm_manager.bcast(max_reduced_cost, root=0)
         return (*self._pricing_cache, max_reduced_cost)
 
     def _ensure_agent_constraint(self, idx):
@@ -202,8 +202,8 @@ class ColumnGenerationManager(BaseEstimationManager):
         else:
             dual_prices = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
             agent_penalties = np.empty(num_si, dtype=np.float64)
-        dual_prices = self.comm_manager._Bcast(dual_prices, root=0)
-        agent_penalties = self.comm_manager._Bcast(agent_penalties, root=0)
+        dual_prices = self.comm_manager.Bcast(dual_prices, root=0)
+        agent_penalties = self.comm_manager.Bcast(agent_penalties, root=0)
         t_pricing = time.perf_counter()
         bundles, features, errors, reduced_costs, max_rc = self._solve_pricing_problem(dual_prices, agent_penalties)
         pricing_time = time.perf_counter() - t_pricing

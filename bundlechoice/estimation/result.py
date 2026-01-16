@@ -3,7 +3,6 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Union
 import numpy as np
 from numpy.typing import NDArray
 
@@ -12,11 +11,11 @@ class EstimationResult:
     theta_hat: NDArray[np.float64]
     converged: bool
     num_iterations: int
-    final_objective: Optional[float] = None
-    timing: Optional[Dict[str, float]] = None
-    iteration_history: Optional[Dict[str, List]] = None
-    warnings: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    final_objective: None
+    timing: dict[str, float] = field(default_factory=dict)
+    iteration_history: dict[str, list] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict) 
 
     def summary(self):
         lines = ['=== Estimation Results ===']

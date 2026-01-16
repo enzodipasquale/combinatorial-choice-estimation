@@ -41,7 +41,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             self.log_parameter()
         else:
             self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
-        self.theta_val = self.comm_manager._Bcast(self.theta_val, root=0)
+        self.theta_val = self.comm_manager.Bcast(self.theta_val, root=0)
 
     def _master_iteration(self, optimal_bundles):
         x_sim = self.oracles_manager.compute_gathered_features(optimal_bundles)
