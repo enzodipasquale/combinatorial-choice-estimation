@@ -3,7 +3,7 @@ import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
 from mpi4py import MPI
-from bundlechoice.utils import get_logger, make_timing_stats, suppress_output
+from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
 logger = get_logger(__name__)
 
@@ -120,21 +120,21 @@ class RowGenerationManager(BaseEstimationManager):
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        result = self._create_result(iteration)
+        result = self._create_result(iteration +1, self.master_model, self.theta_iter)
         return result
 
     #########
     
-    def _check_bounds_hit(self, tol=1e-06):
-        empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
-        if not self.comm_manager._is_root() or self.master_model is None:
-            return empty
-        theta = self.master_variables[0]
-        hit_lower = [k for k in range(self.config.dimensions.num_features) 
-                    if abs(theta[k].X - theta[k].LB) < tol]
-        hit_upper = [k for k in range(self.config.dimensions.num_features) 
-                    if abs(theta[k].X - theta[k].UB) < tol]
-        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
+    # def _check_bounds_hit(self, tol=1e-06):
+    #     empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
+    #     if not self.comm_manager._is_root() or self.master_model is None:
+    #         return empty
+    #     theta = self.master_variables[0]
+    #     hit_lower = [k for k in range(self.config.dimensions.num_features) 
+    #                 if abs(theta[k].X - theta[k].LB) < tol]
+    #     hit_upper = [k for k in range(self.config.dimensions.num_features) 
+    #                 if abs(theta[k].X - theta[k].UB) < tol]
+    #     return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
     # def _log_bounds_warnings(self, bounds_info):

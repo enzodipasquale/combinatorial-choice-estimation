@@ -1,5 +1,5 @@
 import numpy as np
-from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.utils import get_logger
 from .result import EstimationResult
 
 logger = get_logger(__name__)
@@ -53,11 +53,11 @@ class BaseEstimationManager:
             return None
 
 
-    def _create_result(self, num_iterations):
+    def _create_result(self, num_iterations, master_model, theta_sol):
         if self.comm_manager._is_root():
+
             converged = num_iterations < self.cfg.max_iters
-            theta_sol = self.theta_iter.copy()
-            final_objective = self.master_model.ObjVal if hasattr(self.master_model, 'ObjVal') else None
+            final_objective = master_model.ObjVal if hasattr(master_model, 'ObjVal') else None
             timing_stats = self.timing_stats
             warnings = [] if final_objective is not None else ['All iterations were constraint violations']
             return EstimationResult(
