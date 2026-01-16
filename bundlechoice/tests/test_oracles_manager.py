@@ -264,7 +264,7 @@ def test_oracles_manager_utility_oracle_individual():
     utility = om.utility_oracle_individual(bundle, theta, local_id)
     assert isinstance(utility, (float, np.floating))
 
-def test_oracles_manager_compute_features_at_obs_bundles():
+def test_oracles_manager_compute_features_at_obs_bundles_at_root_at_root():
     comm = MPI.COMM_WORLD
     cm = CommManager(comm)
     dc = DimensionsConfig(num_obs=10, num_items=5, num_features=3, num_simulations=1)
@@ -284,6 +284,6 @@ def test_oracles_manager_compute_features_at_obs_bundles():
     dm.load_input_data(input_data)
     om = OraclesManager(dc, cm, dm)
     om.build_quadratic_features_from_data()
-    features = om._features_at_obs_bundles
+    features = om._features_at_obs_bundles_at_root
     if cm._is_root():
         assert features.shape == (dc.num_obs, dc.num_features)

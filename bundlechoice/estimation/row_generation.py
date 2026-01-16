@@ -35,10 +35,10 @@ class RowGenerationManager(BaseEstimationManager):
                                                 lb= self.cfg.theta_lbs,
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
-            master_variables = (theta, u)
-            if self._theta_warmstart is not None:
-                theta.Start = theta_warmstart
             u = self.master_model.addMVar(self.dim.num_agents, obj=weights_tiled, name='utility')
+            master_variables = (theta, u)
+            if theta_warmstart is not None:
+                theta.Start = theta_warmstart
             self.master_variables = (theta, u)
             if initial_constraints is not None:
                 self.add_constraints(initial_constraints['indices'], initial_constraints['bundles'])
@@ -56,13 +56,13 @@ class RowGenerationManager(BaseEstimationManager):
         self.theta_iter = self.comm_manager.Bcast(self.theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(self.u_iter, row_counts=self.data_manager.agent_counts)
 
-    def _master_iteration(self, local_pricing_results):
-        features_local = self.oracles_manager.features_oracle(local_pricing_results)
-        errors_local = self.oracles_manager.error_oracle(local_pricing_results)
+    def _master_iteration(self, pricing_results):
+        features_local = self.oracles_manager.features_oracle(pricing_results)
+        errors_local = self.oracles_manager.error_oracle(pricing_results)
         u_local = features_local @ self.theta_iter + errors_local
         
         reduced_costs = self.comm_manager.Reduce(u_local - self.u_iter_local, op=MPI.MAX)
-        stop = reduced_costs < self.cfg.self.cfg.tol_row_generation if self.comm_manager._is_root() else None
+        stop = reduced_costs < self.cfg.tol_row_generation if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
         if stop:
             suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
@@ -75,7 +75,7 @@ class RowGenerationManager(BaseEstimationManager):
         local_violations_id = self.data_manager.local_obs_id[local_violations]
         
         row_counts = self.data_manager.agent_counts
-        bundles = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=row_counts)
+        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=row_counts)
         features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=row_counts)
         errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=row_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=row_counts)
@@ -111,23 +111,16 @@ class RowGenerationManager(BaseEstimationManager):
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
             t0 = time.perf_counter()
-            local_pricing_results = self.subproblem_manager.solve_local(self.theta_iter)
+            pricing_results = self.subproblem_manager.solve(self.theta_iter)
             pricing_times.append(time.perf_counter() - t0)
             t1 = time.perf_counter()
-            stop = self._master_iteration(local_pricing_results)
+            stop = self._master_iteration(pricing_results)
             master_times.append(time.perf_counter() - t1)
             if stop and iteration >= self.cfg.min_iters:
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        num_iters, converged = iteration + 1, iteration < self.cfg.max_iters
-
-        bounds_info = self._check_bounds_hit()
-        warnings_list = self._log_bounds_warnings(bounds_info)
-
-        self.theta_sol = self.theta_iter.copy()
-        result = self._create_result(self.theta_sol, converged, num_iters, obj_val)
-        result.warnings.extend(warnings_list)
+        result = self._create_result(iteration)
         return result
 
     #########
@@ -144,15 +137,15 @@ class RowGenerationManager(BaseEstimationManager):
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
-    def _log_bounds_warnings(self, bounds_info):
-        warnings_list = []
-        if self.comm_manager._is_root() and bounds_info["any_hit"]:
-            for bound_type in ["lower", "upper"]:
-                if bounds_info[f"hit_{bound_type}"]:
-                    msg = f"Theta hit {bound_type.upper()} bound at indices: {bounds_info[f"hit_{bound_type}"]}"
-                    logger.warning(msg)
-                    warnings_list.append(msg)
-        return warnings_list
+    # def _log_bounds_warnings(self, bounds_info):
+    #     warnings_list = []
+    #     if self.comm_manager._is_root() and bounds_info["any_hit"]:
+    #         for bound_type in ["lower", "upper"]:
+    #             if bounds_info[f"hit_{bound_type}"]:
+    #                 msg = f"Theta hit {bound_type.upper()} bound at indices: {bounds_info[f"hit_{bound_type}"]}"
+    #                 logger.warning(msg)
+    #                 warnings_list.append(msg)
+    #     return warnings_list
 
     def _setup_gurobi_model(self, gurobi_settings=None):
         params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(gurobi_settings or {})}

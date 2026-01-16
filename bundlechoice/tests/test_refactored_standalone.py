@@ -162,7 +162,7 @@ def test_oracles_manager():
     # Test sum_row_and_Reduce usage
     om3 = OraclesManager(dc, cm, dm)
     om3.build_quadratic_features_from_data()
-    features = om3._features_at_obs_bundles
+    features = om3._features_at_obs_bundles_at_root
     if cm._is_root():
         assert features.shape == (dc.num_obs, dc.num_features)
     
