@@ -68,7 +68,7 @@ class RowGenerationManager(BaseEstimationManager):
         if self.comm_manager._is_root():
             print("obj val:", self.master_model.ObjVal)
             print("num constraints:", self.master_model.NumConstrs)
-            print("reduced cost:", reduced_cost)
+            print("reduced cost:", reduced_cost[0])
         stop = (reduced_cost < self.cfg.tol_row_generation).all() if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
         if stop:
@@ -116,7 +116,7 @@ class RowGenerationManager(BaseEstimationManager):
         self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
         
         iteration, pricing_times, master_times, t0 = 0, [], [], time.perf_counter()
-        while iteration < 10:#self.cfg.max_iters:
+        while iteration < self.cfg.max_iters:
             
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)

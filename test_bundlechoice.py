@@ -11,15 +11,30 @@ n_features = k_mod + k_quad
 
 
 if rank == 0:
-    cfg = {'dimensions': {'n_obs': n_agents, 'n_items': n_items, 'n_features': n_features}}
-    obs_bundles = np.ones((n_agents, n_items))
-    modular_agent = np.arange(n_agents * n_items * k_mod).reshape(n_agents, n_items, k_mod)
-    quadratic_item = np.arange(n_items * n_items * k_quad).reshape(n_items, n_items, k_quad)
+    cfg = {'dimensions': {'n_obs': n_agents, 'n_items': n_items, 'n_features': n_features},
+           'row_generation': {'max_iters': 100}}
+    
+    # Feasible test data: capacities large enough for observed bundles
+    weights = np.array([1.0, 1.0, 1.0])  # unit weights
+    capacity = np.array([2.0, 2.0, 3.0, 3.0, 3.0])  # each agent can pick 2-3 items
+    
+    # Generate feasible observed bundles
+    np.random.seed(42)
+    obs_bundles = np.zeros((n_agents, n_items))
+    for i in range(n_agents):
+        # Pick items until capacity is reached
+        perm = np.random.permutation(n_items)
+        total = 0
+        for j in perm:
+            if total + weights[j] <= capacity[i]:
+                obs_bundles[i, j] = 1
+                total += weights[j]
+    
+    modular_agent = np.random.randn(n_agents, n_items, k_mod)
+    quadratic_item = np.random.randn(n_items, n_items, k_quad) * 0.1
     for k in range(k_quad):
         np.fill_diagonal(quadratic_item[:, :, k], 0)
         quadratic_item[:, :, k] = (quadratic_item[:, :, k] + quadratic_item[:, :, k].T) / 2
-    weights = np.arange(n_items)+1
-    capacity = np.arange(n_agents)
     
     input_data = {
         "id_data": {"obs_bundles": obs_bundles, "modular": modular_agent, "capacity": capacity},
@@ -61,4 +76,8 @@ result = bc.row_generation.solve(
     init_master=True,
     init_subproblems=False  # already initialized above
 )
-# print("theta_obj_coef", bc.row_generation.theta_obj_coef)
+
+if rank == 0:
+    print("Converged:", result.converged)
+    print("Iterations:", result.num_iterations)
+    print("Theta:", result.theta_hat)
