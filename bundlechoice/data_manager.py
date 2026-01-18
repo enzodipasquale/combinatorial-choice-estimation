@@ -22,6 +22,10 @@ class QuadraticDataInfo:
             if dim:
                 self.slices[key] = slice(offset, offset + dim)
                 offset += dim
+    modular_agent_names: str = None
+    modular_item_names: str = None
+    quadratic_agent_names: str = None
+    quadratic_item_names: str = None
 
 class DataManager:
 
@@ -30,17 +34,17 @@ class DataManager:
         self.comm_manager = comm_manager
 
 
-        self.input_data = {'agent_data': {}, 'item_data': {}}
-        self.local_data = {'agent_data': {}, 'item_data': {}}
-        self.input_data_dictionary_metadata = {'agent_data': {}, 'item_data': {}}
+        self.input_data = {"id_data": {}, "item_data": {}}
+        self.local_data = {"id_data": {}, "item_data": {}}
+        self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
         
     @property
     def global_ids(self):
-        return self._global_ids(self.dimensions_cfg.num_obs, self.dimensions_cfg.num_simulations)
+        return self._global_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
 
     @lru_cache(maxsize=1)
-    def _global_ids(self, num_obs, num_simulations):
-        return np.arange(self.comm_manager.rank, num_simulations * num_obs, self.comm_manager.comm_size)
+    def _global_ids(self, n_obs, n_simulations):
+        return np.arange(self.comm_manager.rank, n_simulations * n_obs, self.comm_manager.comm_size)
 
     @property
     def num_local_agent(self):
@@ -48,35 +52,38 @@ class DataManager:
 
     @property
     def obs_ids(self):
-        return self.global_ids % self.dimensions_cfg.num_obs
+        return self.global_ids % self.dimensions_cfg.n_obs
+
+    @lru_cache(maxsize=1)
+    def _agent_counts(self, num_agents, comm_size):
+        return np.array([len(v) for v in np.array_split(np.arange(num_agents), comm_size)], dtype=np.int64)
 
     @property
     def agent_counts(self):
-        return self._agent_counts(self.dimensions_cfg.num_agents)
-
-    @lru_cache(maxsize=1)
-    def _agent_counts(self, num_agents):
-        return np.array([len(v) for v in np.array_split(np.arange(num_agents), self.comm_manager.comm_size)], dtype=np.int64)
-
+        return self._agent_counts(self.dimensions_cfg.num_agents, self.comm_manager.comm_size)
 
     def load_input_data(self, input_data, preserve_global_data=False):
-        if "obs_bundles" not in input_data["obs_data"]:
+        self.input_data = input_data if self.comm_manager._is_root() else self.input_data
+        if self.comm_manager._is_root() and "obs_bundles" not in self.input_data["id_data"]:
             raise ValueError("obs_bundles not found in input_data")
-
-        local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(input_data["obs_data"], agent_counts=self.agent_counts, return_metadata=True)
-        item_data, item_data_metadata = self.comm_manager.bcast_dict(input_data["item_data"], return_metadata=True)
+            
+        local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(self.input_data["id_data"], 
+                                                                                agent_counts=self.agent_counts, 
+                                                                                return_metadata=True)
+        item_data, item_data_metadata = self.comm_manager.bcast_dict(self.input_data["item_data"], 
+                                                                        return_metadata=True)
         
-        self.local_data["obs_data"].update(local_agent_data)
+        self.local_data["id_data"].update(local_agent_data)
         self.local_data["item_data"].update(item_data)
-        self.input_data_dictionary_metadata["obs_data"].update(agent_data_metadata)
+        self.input_data_dictionary_metadata["id_data"].update(agent_data_metadata)
         self.input_data_dictionary_metadata["item_data"].update(item_data_metadata)
         
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
-        self.local_obs_bundles = self.local_data["obs_data"]["obs_bundles"]
+        self.local_obs_bundles = np.array(self.local_data["id_data"]["obs_bundles"], dtype=bool)
         if preserve_global_data:
             self.input_data.update(input_data)
         else:
-            self.input_data = {}
+            self.input_data = {"id_data": {}, "item_data": {}} if self.comm_manager._is_root() else self.input_data
 
     def erase_input_data(self):
         self.input_data = {}
@@ -91,26 +98,33 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):
-        ad, id = self.local_data["obs_data"], self.local_data["item_data"]
+        ad, id = self.local_data["id_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
         return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), dim(ad, "quadratic"), dim(id, "quadratic"), ad.get("constraint_mask"))
+
+    def _detect_quadratic_features(self, path):
+        path = Path(path)
+        available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in (".csv", ".npy")}
+        agent_files, item_files = {}, {}
+        for feat in ["modular", "quadratic"]:
+            if f"{feat}_agent" in available:
+                agent_files[feat] = available[f"{feat}_agent"]
+                self.quadratic_data_info.modular_agent_names = pd.read_csv(agent_files[feat]).columns.tolist()
+            if f"{feat}_item" in available:
+                item_files[feat] = available[f"{feat}_item"]
+                self.quadratic_data_info.modular_item_names = pd.read_csv(item_files[feat]).columns.tolist()
 
     def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
         if not self.comm_manager._is_root():
             return
         path = Path(path)
         if auto_detect_quadratic_features:
-            available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in (".csv", ".npy")}
-            agent_files, item_files = {}, {}
-            for feat in ["modular", "quadratic"]:
-                if f"{feat}_agent" in available:
-                    agent_files[feat] = available[f"{feat}_agent"]
-                if f"{feat}_item" in available:
-                    item_files[feat] = available[f"{feat}_item"]
+            agent_files, item_files = self._detect_quadratic_features(path)
         for k, f in (agent_files or {}).items():
-            self.input_data["obs_data"][k] = self._load(f)
+            # load csv as pandas dataframe and turn into numpy array    
+            self.input_data["id_data"][k] = pd.read_csv(f).values
         for k, f in (item_files or {}).items():
-            self.input_data["item_data"][k] = self._load(f)
+            self.input_data["item_data"][k] = pd.read_csv(f).values
 
     def _load(self, f):
         f = Path(f)

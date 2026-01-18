@@ -28,7 +28,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
         obs_features = self.get_obs_features()
         if self.comm_manager._is_root():
             self.master_model = self._setup_gurobi_model_params()
-            theta = self.master_model.addMVar(self.dimensions_cfg.num_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
+            theta = self.master_model.addMVar(self.dimensions_cfg.n_features, obj=-obs_features, ub=self.row_generation_cfg.theta_ubs, name='parameter')
             if self.row_generation_cfg.theta_lbs is not None:
                 theta.lb = self.row_generation_cfg.theta_lbs
             else:
@@ -40,7 +40,7 @@ class RowGeneration1SlackManager(BaseEstimationManager):
             self.theta_val = theta.X
             self.log_parameter()
         else:
-            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
         self.theta_val = self.comm_manager.Bcast(self.theta_val, root=0)
 
     def _master_iteration(self, optimal_bundles):
@@ -66,16 +66,16 @@ class RowGeneration1SlackManager(BaseEstimationManager):
                 self.row_generation_cfg.tol_row_generation *= self.row_generation_cfg.row_generation_decay
             theta_val = theta.X
         else:
-            theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            theta_val = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
         self.theta_val, stop = self.comm_manager.Bcast(theta_val, root=0)
         return stop
 
     def solve(self):
         if self.comm_manager._is_root():
             lines = ['=' * 70, 'ROW GENERATION (1SLACK)', '=' * 70, '']
-            lines.append(f'  Problem: {self.dimensions_cfg.num_obs} agents × {self.dimensions_cfg.num_items} items, {self.dimensions_cfg.num_features} features')
-            if self.dimensions_cfg.num_simulations > 1:
-                lines.append(f'  Simulations: {self.dimensions_cfg.num_simulations}')
+            lines.append(f'  Problem: {self.dimensions_cfg.n_obs} agents × {self.dimensions_cfg.n_items} items, {self.dimensions_cfg.n_features} features')
+            if self.dimensions_cfg.n_simulations > 1:
+                lines.append(f'  Simulations: {self.dimensions_cfg.n_simulations}')
             lines.append(f"  Max iterations: {(self.row_generation_cfg.max_iters if self.row_generation_cfg.max_iters != float('inf') else '∞')}")
             lines.append(f'  Min iterations: {self.row_generation_cfg.min_iters}')
             lines.append(f'  Optimality tolerance: {self.row_generation_cfg.tolerance_optimality}')

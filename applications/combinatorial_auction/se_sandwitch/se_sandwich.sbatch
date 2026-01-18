@@ -9,7 +9,7 @@
 #SBATCH --output=../logs/se_sandwich-%j.out
 
 # All parameters are read from config.yaml
-# Edit config.yaml to change delta, num_simulations, etc.
+# Edit config.yaml to change delta, n_simulations, etc.
 
 module purge
 export GRB_LICENSE_FILE="/home/ed2189/gurobi.lic"

@@ -4,8 +4,8 @@
   "hq_distance": true,
   "weight_rounding_tick": 1000,
   "pop_centroid_percentile": 0,
-  "num_obs": 256,
-  "num_items": 493,
+  "n_obs": 256,
+  "n_items": 493,
   "num_modular_features": 3,
   "num_quadratic_features": 3,
   "modular_names": [

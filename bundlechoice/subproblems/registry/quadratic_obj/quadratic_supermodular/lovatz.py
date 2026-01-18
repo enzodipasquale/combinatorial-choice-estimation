@@ -7,19 +7,19 @@ class QuadraticSupermodularLovasz(SupermodularQuadraticObjectiveMixin, BatchSubp
     def solve(self, theta):
         linear, quadratic = self.build_linear_and_quadratic_coef(theta)
         P = quadratic.copy()
-        diag = np.arange(self.dimensions_cfg.num_items)
+        diag = np.arange(self.dimensions_cfg.n_items)
         P[:, diag, diag] += linear
         mask = self._qinfo.constraint_mask
         num_iters = int(self.subproblem_cfg.settings.get(
-            'num_iters_SGM', max(100000, 1000 * self.dimensions_cfg.num_items)))
+            'num_iters_SGM', max(100000, 1000 * self.dimensions_cfg.n_items)))
         alpha = float(self.subproblem_cfg.settings.get(
-            'alpha', 0.1 / np.sqrt(self.dimensions_cfg.num_items)))
-        z = np.full((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), 0.5)
+            'alpha', 0.1 / np.sqrt(self.dimensions_cfg.n_items)))
+        z = np.full((self.data_manager.num_local_agent, self.dimensions_cfg.n_items), 0.5)
         if mask is not None:
             z[~mask] = 0.0
         z_best = z.copy()
         val_best = np.full(self.data_manager.num_local_agent, -np.inf)
-        tril = np.tril(np.ones((self.dimensions_cfg.num_items, self.dimensions_cfg.num_items), dtype=bool))
+        tril = np.tril(np.ones((self.dimensions_cfg.n_items, self.dimensions_cfg.n_items), dtype=bool))
         for _ in range(num_iters):
             grad, val = self.batched_grad_lovasz_extension(z, P, tril)
             if mask is not None:

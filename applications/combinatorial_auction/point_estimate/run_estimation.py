@@ -71,24 +71,24 @@ if rank == 0:
     
     input_data = bc.data.load_from_directory(INPUT_DIR, error_seed=1995)
     
-    num_items = bc.config.dimensions.num_items
-    input_data["item_data"]["modular"] = -np.eye(num_items)
+    n_items = bc.config.dimensions.n_items
+    input_data["item_data"]["modular"] = -np.eye(n_items)
     
     print(f"Config: delta={DELTA}, winners_only={WINNERS_ONLY}, hq_distance={HQ_DISTANCE}")
     print(f"Loaded data from {INPUT_DIR}")
-    print(f"  Agents: {bc.config.dimensions.num_obs}, Items: {num_items}")
+    print(f"  Agents: {bc.config.dimensions.n_obs}, Items: {n_items}")
 else:
     input_data = None
 
 # Broadcast dimensions
-num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
-num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
-num_obs = comm.bcast(bc.config.dimensions.num_obs if rank == 0 else None, root=0)
+n_features = comm.bcast(bc.config.dimensions.n_features if rank == 0 else None, root=0)
+n_items = comm.bcast(bc.config.dimensions.n_items if rank == 0 else None, root=0)
+n_obs = comm.bcast(bc.config.dimensions.n_obs if rank == 0 else None, root=0)
 
 if rank != 0:
-    bc.config.dimensions.num_features = num_features
-    bc.config.dimensions.num_items = num_items
-    bc.config.dimensions.num_obs = num_obs
+    bc.config.dimensions.n_features = n_features
+    bc.config.dimensions.n_items = n_items
+    bc.config.dimensions.n_obs = n_obs
 
 bc.data.load_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
@@ -99,15 +99,15 @@ if rank != 0:
     bc.config.dimensions.feature_names = feature_names
 
 if rank == 0:
-    print(f"Features: {num_features} total")
+    print(f"Features: {n_features} total")
     if feature_names:
         structural = [n for n in feature_names if not n.startswith("FE_")]
         print(f"  Structural: {structural}")
 
 # Custom bounds for delta=2
 if DELTA == 2 and feature_names:
-    theta_lbs = np.zeros(num_features)
-    theta_ubs = np.full(num_features, 1000.0)
+    theta_lbs = np.zeros(n_features)
+    theta_ubs = np.full(n_features, 1000.0)
     
     for i, name in enumerate(feature_names):
         if name == "bidder_elig_pop":
@@ -143,7 +143,7 @@ theta_init = None
 if USE_PREVIOUS_THETA and os.path.exists(THETA_PATH):
     if rank == 0:
         prev_theta = np.load(THETA_PATH)
-        if prev_theta.shape[0] == num_features:
+        if prev_theta.shape[0] == n_features:
             theta_init = prev_theta
             print(f"Loading previous theta from {THETA_PATH}")
         else:
@@ -167,10 +167,10 @@ if rank == 0:
             "winners_only": WINNERS_ONLY,
             "hq_distance": HQ_DISTANCE,
             "num_mpi": comm.Get_size(),
-            "num_obs": num_obs,
-            "num_items": num_items,
-            "num_features": num_features,
-            "num_simulations": bc.config.dimensions.num_simulations,
+            "n_obs": n_obs,
+            "n_items": n_items,
+            "n_features": n_features,
+            "n_simulations": bc.config.dimensions.n_simulations,
         },
         feature_names=feature_names,
         append=True,
@@ -181,7 +181,7 @@ if rank == 0:
         "delta": DELTA,
         "winners_only": WINNERS_ONLY,
         "hq_distance": HQ_DISTANCE,
-        "num_features": num_features,
+        "n_features": n_features,
         "feature_names": feature_names,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "converged": result.converged,

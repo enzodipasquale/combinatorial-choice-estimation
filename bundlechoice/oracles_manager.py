@@ -23,28 +23,24 @@ class OraclesManager:
         self._modular_local_errors = None
 
     @property
-    def _features_at_obs_bundles_at_root(self, obs_weights = None):
-        version = getattr(self.data_manager, '_local_data_version', 0)
-        return self._compute_features_at_obs_bundles_at_root(version, obs_weights)
+    def local_obs_features(self):
+        version = self.data_manager._local_data_version
+        return self._cached_local_obs_features(version)
 
     @lru_cache(maxsize=1)
-    def _compute_features_at_obs_bundles_at_root(self, _version, obs_weights = None):
-        if obs_weights is None:
-            self.data_manager.local_data["obs_data"]["obs_weigths"]
-
-        local_obs_features = self.features_oracle(self.data_manager.local_obs_bundles)
-        return self.comm_manager.sum_row_andReduce(obs_weights * local_obs_features)
+    def _cached_local_obs_features(self, _version):
+        return self.features_oracle(self.data_manager.local_obs_bundles)
 
     def _check_vectorized_oracle_support(self, oracle):
         try:
-            test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.num_items), dtype=bool)
+            test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.n_items), dtype=bool)
             ids = np.arange(self.data_manager.num_local_agent)
             if oracle.__code__.co_argcount == 2:
                 test_features = oracle(ids, test_bundles)
             else: 
                 test_features = oracle(ids, test_bundles, self.data_manager.local_data)
             assert test_features.shape == (self.data_manager.num_local_agent, 
-                                            self.dimensions_cfg.num_features)
+                                            self.dimensions_cfg.n_features)
             return True
         except:
             return False
@@ -105,7 +101,7 @@ class OraclesManager:
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
         np.random.seed(seed + self.comm_manager.rank)
         self._modular_local_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, 
-                                                                self.dimensions_cfg.num_items))
+                                                                self.dimensions_cfg.n_items))
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
             self._modular_local_errors = self._modular_local_errors @ L
@@ -119,16 +115,16 @@ class OraclesManager:
         def features_oracle(bundles, ids, data):
             feats = []
             if qinfo.modular_agent:
-                modular = data['agent_data']['modular'][ids]
+                modular = data["id_data"]['modular'][ids]
                 feats.append(np.einsum('ijk,ij->ik', modular, bundles))
             if qinfo.modular_item:
-                modular = data['item_data']['modular']
+                modular = data["item_data"]['modular']
                 feats.append(np.einsum('jk,ij->ik', modular, bundles))
             if qinfo.quadratic_agent:
-                quadratic = data['agent_data']['quadratic'][ids]
+                quadratic = data["id_data"]['quadratic'][ids]
                 feats.append(np.einsum('ijlk,ij,il->ik', quadratic, bundles, bundles))
             if qinfo.quadratic_item:
-                quadratic = data['item_data']['quadratic']
+                quadratic = data["item_data"]['quadratic']
                 feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
             return np.concatenate(feats, axis=-1)
         self._features_oracle = features_oracle

@@ -40,4 +40,14 @@ class SubproblemManager:
         if self.subproblem is None:
             raise ValueError("Subproblem not initialized")
         return self.subproblem.solve(theta)
-   
+    
+    def initialize_and_solve_subproblems(self, theta):
+        theta = self.comm_manager.Bcast(theta)
+        self.initialize_subproblems()
+        local_bundles = self.subproblem.solve(theta)
+        return local_bundles
+
+    def generate_obs_bundles_at_root(self, theta):
+        local_bundles = self.initialize_and_solve_subproblems(theta)
+        obs_bundles = self.comm_manager.Gatherv(local_bundles, root=0)
+        return obs_bundles

@@ -20,8 +20,8 @@ from mpi4py import MPI
 # Build scenario
 scenario = (
     ScenarioLibrary.greedy()
-    .with_dimensions(num_obs=200, num_items=30)
-    .with_num_features(5)
+    .with_dimensions(n_obs=200, n_items=30)
+    .with_n_features(5)
     .build()
 )
 
@@ -51,13 +51,13 @@ ScenarioLibrary.plain_single_item()      # Single item choice
 ```python
 bc = BundleChoice()
 bc.load_config({
-    "dimensions": {"num_obs": 100, "num_items": 20, "num_features": 5},
+    "dimensions": {"n_obs": 100, "n_items": 20, "n_features": 5},
     "subproblem": {"name": "Greedy"},
 })
 
 if rank == 0:
     input_data = {
-        "obs_data": {"modular": features},  # (agents, items, features)
+        "id_data": {"modular": features},  # (agents, items, features)
         "errors": errors,                      # (sims, agents, items)
         "obs_bundle": bundles,                 # (agents, items)
     }

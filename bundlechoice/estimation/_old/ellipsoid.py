@@ -17,7 +17,7 @@ class EllipsoidManager(BaseEstimationManager):
         self.B_iter = None
         self.iteration_count = 0
         self.timing_stats = None
-        n = self.dimensions_cfg.num_features
+        n = self.dimensions_cfg.n_features
         self.n = n
         self.alpha = (n ** 2 / (n ** 2 - 1)) ** (1 / 4)
         self.gamma = self.alpha * ((n - 1) / (n + 1)) ** (1 / 2)
@@ -58,7 +58,7 @@ class EllipsoidManager(BaseEstimationManager):
                     centers = centers[-keep_last_n:]
             self._update_ellipsoid(direction)
             if not self.comm_manager._is_root():
-                self.theta_iter = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+                self.theta_iter = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
             self.theta_iter = self.comm_manager.Bcast(self.theta_iter, root=0)
             if callback and self.comm_manager._is_root() and (obj_value != np.inf):
                 callback({'iteration': iteration, 'theta': self.theta_iter.copy(), 'objective': obj_value, 'best_objective': min(vals) if vals else None})
@@ -76,7 +76,7 @@ class EllipsoidManager(BaseEstimationManager):
                 best_obj = None
                 best_iter = None
         else:
-            best_theta = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            best_theta = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
             best_obj = None
             best_iter = None
         best_theta = self.comm_manager.Bcast(best_theta, root=0)
