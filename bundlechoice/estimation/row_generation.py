@@ -65,11 +65,7 @@ class RowGenerationManager(BaseEstimationManager):
         u_local = features_local @ self.theta_iter + errors_local
         local_reduced_costs = u_local - self.u_iter_local
         reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
-        if self.comm_manager._is_root():
-            print("obj val:", self.master_model.ObjVal)
-            print("num constraints:", self.master_model.NumConstrs)
-            print("reduced cost:", reduced_cost[0])
-        stop = (reduced_cost < self.cfg.tol_row_generation).all() if self.comm_manager._is_root() else None
+        stop = (reduced_cost[0] <= self.cfg.tol_row_generation) if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
         if stop:
             suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
