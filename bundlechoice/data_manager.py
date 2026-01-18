@@ -44,7 +44,8 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _global_ids(self, n_obs, n_simulations):
-        return np.arange(self.comm_manager.rank, n_simulations * n_obs, self.comm_manager.comm_size)
+        splits = np.array_split(np.arange(n_simulations * n_obs), self.comm_manager.comm_size)
+        return splits[self.comm_manager.rank]
 
     @property
     def num_local_agent(self):
