@@ -5,10 +5,10 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 30, 5
+n_agents, n_items = 20, 10
 k_mod, k_quad = 2, 1
 n_features = k_mod + k_quad
-theta_star = np.array([1.0, 0.5, 1])
+theta_star = np.array([1.0, 0.5, 10])
 
 if rank == 0:
     cfg = {'dimensions': {'n_obs': n_agents, 'n_items': n_items, 'n_features': n_features},
@@ -16,7 +16,7 @@ if rank == 0:
     
     np.random.seed(42)
     weights = np.ones(n_items)
-    capacity = np.full(n_agents, 3.0)
+    capacity = np.random.randint(1, weights.sum(), n_agents)
     
     modular_agent = np.random.randn(n_agents, n_items, k_mod)
     quadratic_item = np.random.randn(n_items, n_items, k_quad) * 0.1
@@ -37,23 +37,23 @@ bc = bc.BundleChoice()
 bc.load_config(cfg)
 bc.data.load_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
-bc.oracles.build_local_modular_error_oracle()
+bc.oracles.build_local_modular_error_oracle(seed=42)
 
 # Generate obs_bundles by solving subproblems with theta_star
-subproblem = bc.subproblems.load('QuadraticKnapsackGRB')
-subproblem.initialize()
-obs_bundles_local = subproblem.solve(theta_star)
-
-# Update local obs_bundles directly (subproblem already produces local bundles)
-bc.data.local_data["id_data"]["obs_bundles"] = obs_bundles_local
+bc.subproblems.load('QuadraticKnapsackGRB')
+obs_bundles_local = bc.subproblems.initialize_and_solve_subproblems(theta_star)
+bc.data.local_data["id_data"]["obs_bundles"]  = obs_bundles_local
 bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
 
-if rank == 0:
-    print("Generated local bundles shape:", obs_bundles_local.shape)
-    print("Local bundle sizes:", obs_bundles_local.sum(axis=1))
+# subproblem = bc.subproblems.load('QuadraticKnapsackGRB')
+# subproblem.initialize()
+# obs_bundles_local = subproblem.solve(theta_star)
+# bc.data.local_data["id_data"]["obs_bundles"]  = obs_bundles_local
+# bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
 
 
 # Estimation via row generation
+bc.oracles.build_local_modular_error_oracle(seed=43)
 result = bc.row_generation.solve(
     obs_weights=np.ones(bc.data_manager.num_local_agent),
     init_master=True,
