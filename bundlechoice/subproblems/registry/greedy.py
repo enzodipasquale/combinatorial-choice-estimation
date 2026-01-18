@@ -15,8 +15,8 @@ class GreedySubproblem(SerialSubproblemBase):
         return self._naive_greedy_solve(local_id, theta)
 
     def _naive_greedy_solve(self, local_id, theta):
-        bundle = np.zeros(self.dimensions_cfg.num_items, dtype=bool)
-        items_left = np.ones(self.dimensions_cfg.num_items, dtype=bool)
+        bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
+        items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         base_utility = 0
 
         while np.any(items_left):
@@ -34,8 +34,8 @@ class GreedySubproblem(SerialSubproblemBase):
         return bundle
 
     def _greedy_with_find_best_item(self, local_id, theta):
-        bundle = np.zeros(self.dimensions_cfg.num_items, dtype=bool)
-        items_left = np.ones(self.dimensions_cfg.num_items, dtype=bool)
+        bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
+        items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0
         while np.any(items_left):
             best_item, val = self.find_best_item(local_id, bundle, items_left, theta, self.modular_errors)

@@ -25,17 +25,17 @@ class RowGenerationManager(BaseEstimationManager):
         self.dim = self.config.dimensions
 
     def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None):
-
-        if self.comm_manager._is_root() and self.obs_weights is not None:
-            weights_tiled = np.tile(self.obs_weights, self.dim.num_simulations)
+        theta_obj_coef = self._compute_theta_obj_coef(self.obs_weights)
+        u_obj_coef = self._compute_u_obj_weights(self.obs_weights)
+        if self.comm_manager._is_root():
             self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
-            theta = self.master_model.addMVar(self.dim.num_features, 
-                                                obj= - weights_tiled * self.theta_obj_coef, 
+            theta = self.master_model.addMVar(self.dim.n_features, 
+                                                obj= theta_obj_coef, 
                                                 lb= self.cfg.theta_lbs,
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
-            u = self.master_model.addMVar(self.dim.num_agents, obj=weights_tiled, name='utility')
+            u = self.master_model.addMVar(self.dim.num_agents, obj=u_obj_coef, name='utility')
             master_variables = (theta, u)
             if theta_warmstart is not None:
                 theta.Start = theta_warmstart
@@ -49,12 +49,12 @@ class RowGenerationManager(BaseEstimationManager):
                 raise RuntimeError('Master problem not optimal at initialization, status=%s', 
                                     self.master_model.Status)
             self.theta_iter = theta.X
-            self.u_iter = u.X
+            u_iter = u.X
         else:
-            self.theta_iter = np.empty(self.dim.num_features, dtype=np.float64)
-            self.u_iter = None
+            self.theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
+            u_iter = None
         self.comm_manager.Bcast(self.theta_iter)
-        self.u_iter_local = self.comm_manager.Scatterv_by_row(self.u_iter, 
+        self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
                                                               row_counts=self.data_manager.agent_counts,
                                                               dtype=np.float64,
                                                               shape=(self.dim.num_agents,))
@@ -63,9 +63,11 @@ class RowGenerationManager(BaseEstimationManager):
         features_local = self.oracles_manager.features_oracle(pricing_results)
         errors_local = self.oracles_manager.error_oracle(pricing_results)
         u_local = features_local @ self.theta_iter + errors_local
-        
-        reduced_costs = self.comm_manager.Reduce(u_local - self.u_iter_local, op=MPI.MAX)
-        stop = (reduced_costs < self.cfg.tol_row_generation).all() if self.comm_manager._is_root() else None
+        local_reduced_costs = u_local - self.u_iter_local
+        reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
+        if self.comm_manager._is_root():
+            print("reduced cost:", reduced_cost)
+        stop = (reduced_cost < self.cfg.tol_row_generation).all() if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
         if stop:
             suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
@@ -74,26 +76,30 @@ class RowGenerationManager(BaseEstimationManager):
                 return False
             return True
 
-        local_violations = np.where(u_local > self.u_iter_local + self.cfg.tol_row_generation)[0]
+        local_violations = np.where(local_reduced_costs > self.cfg.tol_row_generation)[0]
         local_violations_id = self.data_manager.obs_ids[local_violations]
+        violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
         
-        row_counts = self.data_manager.agent_counts
-        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=row_counts)
-        features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=row_counts)
-        errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=row_counts)
-        violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=row_counts)
-
+        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
+        features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
+        errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
+        violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
+        
         if self.comm_manager._is_root():
-            self.add_constraints(violations_id, bundles)
+            self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
             self.master_model.optimize()
             theta_iter = self.master_variables[0].X
             u_iter = self.master_variables[1].X
             self.cfg.tol_row_generation *= self.cfg.row_generation_decay
         else:
-            theta_iter = np.empty(self.dim.num_features, dtype=np.float64)
+            theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
             u_iter = np.empty(self.dim.num_agents, dtype=np.float64)
-        self.theta_iter, self.u_iter = self.comm_manager.Bcast(theta_iter), self.comm_manager.Bcast(u_iter)
+        self.theta_iter = self.comm_manager.Bcast(theta_iter)
+        self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
+                                                              row_counts=self.data_manager.agent_counts,
+                                                              dtype=np.float64,
+                                                              shape=(self.dim.num_agents,))
         return stop
 
     def solve(self, callback=None, 
@@ -109,9 +115,13 @@ class RowGenerationManager(BaseEstimationManager):
         
         iteration, pricing_times, master_times, t0 = 0, [], [], time.perf_counter()
         while iteration < self.cfg.max_iters:
+            
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
             t1 = time.perf_counter()
+            if self.comm_manager._is_root():
+                print("iteration", iteration)
+            
             pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
             pricing_times.append(time.perf_counter() - t1)
             t2 = time.perf_counter()
@@ -128,11 +138,11 @@ class RowGenerationManager(BaseEstimationManager):
     #########
 
 
-    def add_constraints(self, indices, bundles):
+    def add_constraints(self, indices, bundles, features, errors):
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        constr = self.master_model.addMConstr(u[indices] >= bundles @ theta)
+        constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
         self.constraint_info[constr] = (indices, bundles.copy())
         logger.info('Added %d constraints', len(indices))
         return constr
@@ -150,7 +160,7 @@ class RowGenerationManager(BaseEstimationManager):
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        weights_tiled = np.tile(obs_weights, self.config.dimensions.num_simulations)
+        weights_tiled = np.tile(obs_weights, self.config.dimensions.n_simulations)
         theta.Obj = - weights_tiled * self.theta_obj_coef
         u.Obj = weights_tiled
         self.master_model.update()
@@ -209,9 +219,9 @@ class RowGenerationManager(BaseEstimationManager):
     #     if not self.comm_manager._is_root() or self.master_model is None:
     #         return empty
     #     theta = self.master_variables[0]
-    #     hit_lower = [k for k in range(self.config.dimensions.num_features) 
+    #     hit_lower = [k for k in range(self.config.dimensions.n_features) 
     #                 if abs(theta[k].X - theta[k].LB) < tol]
-    #     hit_upper = [k for k in range(self.config.dimensions.num_features) 
+    #     hit_upper = [k for k in range(self.config.dimensions.n_features) 
     #                 if abs(theta[k].X - theta[k].UB) < tol]
     #     return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 

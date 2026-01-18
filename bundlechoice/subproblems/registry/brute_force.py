@@ -6,7 +6,7 @@ class BruteForceSubproblem(SerialSubproblemBase):
 
     def initialize_single_pb(self, local_id):
         if not hasattr(self, '_all_bundles'):
-            self._all_bundles = np.array(list(product([0, 1], repeat=self.dimensions_cfg.num_items)), dtype=bool)
+            self._all_bundles = np.array(list(product([0, 1], repeat=self.dimensions_cfg.n_items)), dtype=bool)
         return None
 
     def solve_single_pb(self, local_id, theta, pb=None):

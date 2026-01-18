@@ -1,11 +1,11 @@
 import importlib
 
 REGISTRY = {
-    'LinearKnapsack': ('.registry.quadratic_obj.linear_knapsack', 'LinearKnapsackSubproblem'),
+    'LinearKnapsackGRB': ('.registry.quadratic_obj.linear_knapsack', 'LinearKnapsackGRBSubproblem'),
     'Greedy': ('.registry.greedy', 'GreedySubproblem'),
-    'QuadKnapsack': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackSubproblem'),
-    'QuadSupermodularNetwork': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCut'),
-    'QuadSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularLovasz'),
+    'QuadraticKnapsackGRB': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackGRBSubproblem'),
+    'QuadraticSupermodularMinCut': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCut'),
+    'QuadraticSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularLovasz'),
     'PlainSingleItem': ('.registry.quadratic_obj.plain_single_item', 'PlainSingleItemSubproblem'),
     'BruteForce': ('.registry.brute_force', 'BruteForceSubproblem'),
 }

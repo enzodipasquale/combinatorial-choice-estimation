@@ -58,7 +58,11 @@ class CommManager:
         else:
             self.comm.Gatherv(local_flat, None, root=self.root)
             return None
-        
+    def Allgather(self, array):
+        sendbuf = np.ascontiguousarray(array)
+        recvbuf = np.empty(self.comm_size * sendbuf.size, dtype=sendbuf.dtype)
+        self.comm.Allgather(sendbuf, recvbuf)
+        return recvbuf    
 
     def Reduce(self, array, op = MPI.SUM):
         sendbuf = np.ascontiguousarray(array)

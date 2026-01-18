@@ -2,7 +2,7 @@
   "delta": 4,
   "winners_only": true,
   "hq_distance": false,
-  "num_features": 497,
+  "n_features": 497,
   "feature_names": [
     "bidder_elig_pop",
     "FE_0",

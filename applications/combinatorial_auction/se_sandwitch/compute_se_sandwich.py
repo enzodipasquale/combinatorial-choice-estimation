@@ -43,7 +43,7 @@ WINNERS_ONLY = app_cfg.get("winners_only", False)
 HQ_DISTANCE = app_cfg.get("hq_distance", False)
 
 sandwich_cfg = config.get("sandwich", {})
-NUM_SIMULS = sandwich_cfg.get("num_simulations", 200)
+NUM_SIMULS = sandwich_cfg.get("n_simulations", 200)
 STEP_SIZE = sandwich_cfg.get("step_size", 1e-4)
 SEED = sandwich_cfg.get("seed", 1995)
 
@@ -85,9 +85,9 @@ def load_theta_from_csv(delta, winners_only=False, hq_distance=False):
         return None
     
     row = matching[-1]
-    num_features = int(row.get("num_features", 497))
-    theta = np.zeros(num_features)
-    for i in range(num_features):
+    n_features = int(row.get("n_features", 497))
+    theta = np.zeros(n_features)
+    for i in range(n_features):
         key = f"theta_{i}"
         if key in row and row[key]:
             theta[i] = float(row[key])
@@ -120,20 +120,20 @@ if rank == 0:
         sys.exit(1)
     
     input_data = bc.data.load_from_directory(INPUT_DIR, error_seed=SEED)
-    num_items = bc.config.dimensions.num_items
-    input_data["item_data"]["modular"] = -np.eye(num_items)
+    n_items = bc.config.dimensions.n_items
+    input_data["item_data"]["modular"] = -np.eye(n_items)
 else:
     input_data = None
 
 # Broadcast
-num_features = comm.bcast(bc.config.dimensions.num_features if rank == 0 else None, root=0)
-num_items = comm.bcast(bc.config.dimensions.num_items if rank == 0 else None, root=0)
-num_obs = comm.bcast(bc.config.dimensions.num_obs if rank == 0 else None, root=0)
+n_features = comm.bcast(bc.config.dimensions.n_features if rank == 0 else None, root=0)
+n_items = comm.bcast(bc.config.dimensions.n_items if rank == 0 else None, root=0)
+n_obs = comm.bcast(bc.config.dimensions.n_obs if rank == 0 else None, root=0)
 
 if rank != 0:
-    bc.config.dimensions.num_features = num_features
-    bc.config.dimensions.num_items = num_items
-    bc.config.dimensions.num_obs = num_obs
+    bc.config.dimensions.n_features = n_features
+    bc.config.dimensions.n_items = n_items
+    bc.config.dimensions.n_obs = n_obs
 
 bc.data.load_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
@@ -150,14 +150,14 @@ structural_indices = np.array(bc.config.dimensions.get_index_by_name(), dtype=np
 structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"\nProblem: {num_obs} agents, {num_items} items")
+    print(f"\nProblem: {n_obs} agents, {n_items} items")
     print(f"Structural parameters: {structural_names}")
     print(f"MPI: {comm.Get_size()} ranks")
 
 # Compute SE
 se_result = bc.standard_errors.compute(
     theta_hat=theta_hat,
-    num_simulations=NUM_SIMULS,
+    n_simulations=NUM_SIMULS,
     step_size=STEP_SIZE,
     beta_indices=structural_indices,
     seed=SEED,
@@ -186,9 +186,9 @@ if rank == 0 and se_result is not None:
     row_data = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-        "num_mpi": comm.Get_size(), "num_obs": num_obs,
-        "num_items": num_items, "num_features": num_features,
-        "num_simulations_se": NUM_SIMULS, "step_size": STEP_SIZE,
+        "num_mpi": comm.Get_size(), "n_obs": n_obs,
+        "n_items": n_items, "n_features": n_features,
+        "n_simulations_se": NUM_SIMULS, "step_size": STEP_SIZE,
         "total_time_sec": total_time,
         "A_cond_number": np.linalg.cond(se_result.A_matrix),
         "B_cond_number": np.linalg.cond(se_result.B_matrix),

@@ -8,7 +8,7 @@ The equilibrium problem is:
 
 Strategy: Use full feature structure but fix non-price theta components.
 - theta = [p_1, ..., p_J, theta_agent_mod (fixed), theta_item_quad (fixed)]
-- Prices (first num_items components) are free in [0, max_price]
+- Prices (first n_items components) are free in [0, max_price]
 - Other components are fixed to theta_hat values via bounds
 """
 
@@ -47,23 +47,23 @@ if rank == 0:
     INPUT_DIR = os.path.join(BASE_DIR, "data", "114402-V1", "input_data", "delta4")
     obs_bundle_full = np.load(os.path.join(INPUT_DIR, "matching_i_j.npy"))
     
-    num_obs_full = config["dimensions"]["num_obs"]
-    num_items = config["dimensions"]["num_items"]
-    num_features = config["dimensions"]["num_features"]
+    n_obs_full = config["dimensions"]["n_obs"]
+    n_items = config["dimensions"]["n_items"]
+    n_features = config["dimensions"]["n_features"]
     
     # Subset to top agents by bundle size
     agent_bundle_sizes = obs_bundle_full.sum(axis=1)
     top_agent_ids = np.argsort(agent_bundle_sizes)[-NUM_AGENTS_SUBSET:]
     
-    num_obs = len(top_agent_ids)
+    n_obs = len(top_agent_ids)
     obs_bundle = obs_bundle_full[top_agent_ids]
     
-    print(f"Selected {num_obs} agents (top by bundle size)")
+    print(f"Selected {n_obs} agents (top by bundle size)")
     print(f"Bundle sizes: min={obs_bundle.sum(axis=1).min()}, max={obs_bundle.sum(axis=1).max()}, mean={obs_bundle.sum(axis=1).mean():.1f}")
     
     # Load feature data (subset agents)
     item_data = {
-        "modular": -np.eye(num_items),  # Item fixed effects (will become prices)
+        "modular": -np.eye(n_items),  # Item fixed effects (will become prices)
         "quadratic": np.load(os.path.join(INPUT_DIR, "quadratic_characteristic_j_j_k.npy")),
         "weights": np.load(os.path.join(INPUT_DIR, "weight_j.npy"))
     }
@@ -74,8 +74,8 @@ if rank == 0:
     
     # Generate errors (1 simulation only)
     np.random.seed(1995)
-    errors_full = np.random.normal(0, 1, size=(NUM_SIMULATIONS, num_obs_full, num_items))
-    errors = errors_full[:, top_agent_ids, :]  # Shape: (1, num_obs, num_items)
+    errors_full = np.random.normal(0, 1, size=(NUM_SIMULATIONS, n_obs_full, n_items))
+    errors = errors_full[:, top_agent_ids, :]  # Shape: (1, n_obs, n_items)
     
     # Load estimated theta
     THETA_PATH = os.path.join(BASE_DIR, "estimation_results", "theta.npy")
@@ -91,48 +91,48 @@ if rank == 0:
     
     input_data = {
         "item_data": item_data,
-        "obs_data": agent_data,
+        "id_data": agent_data,
         "errors": errors,
         "obs_bundle": obs_bundle
     }
 else:
     input_data = None
-    num_obs = None
-    num_items = None
-    num_features = None
+    n_obs = None
+    n_items = None
+    n_features = None
     theta_hat = None
 
 # Broadcast dimensions to all ranks
-num_obs = comm.bcast(num_obs, root=0)
-num_items = comm.bcast(num_items, root=0)
-num_features = comm.bcast(num_features, root=0)
+n_obs = comm.bcast(n_obs, root=0)
+n_items = comm.bcast(n_items, root=0)
+n_features = comm.bcast(n_features, root=0)
 theta_hat = comm.bcast(theta_hat, root=0)
 
 # For equilibrium:
-# - First num_items theta components are prices (free, >= 0)
+# - First n_items theta components are prices (free, >= 0)
 # - Last 4 theta components are fixed to theta_hat values (agent_mod=1, item_quad=3)
 MAX_PRICE = 1000.0
 
 # Build bounds: prices in [0, MAX_PRICE], other components fixed to theta_hat
-theta_lbs = [0.0] * num_items + list(theta_hat[-4:])
-theta_ubs = [MAX_PRICE] * num_items + list(theta_hat[-4:])
+theta_lbs = [0.0] * n_items + list(theta_hat[-4:])
+theta_ubs = [MAX_PRICE] * n_items + list(theta_hat[-4:])
 
 if rank == 0:
     print(f"\nEquilibrium setup:")
-    print(f"  Agents: {num_obs}, Items: {num_items}, Features: {num_features}")
-    print(f"  Price variables: {num_items} (bounds [0, {MAX_PRICE}])")
+    print(f"  Agents: {n_obs}, Items: {n_items}, Features: {n_features}")
+    print(f"  Price variables: {n_items} (bounds [0, {MAX_PRICE}])")
     print(f"  Fixed theta components: {theta_hat[-4:]}")
 
 # Run the equilibrium computation
 bc = BundleChoice()
 bc.load_config({
     'dimensions': {
-        'num_obs': num_obs,
-        'num_items': num_items,
-        'num_features': num_features,
-        'num_simulations': NUM_SIMULATIONS,
+        'n_obs': n_obs,
+        'n_items': n_items,
+        'n_features': n_features,
+        'n_simulations': NUM_SIMULATIONS,
     },
-    'subproblem': config['subproblem'],  # Use same subproblem as estimation (QuadKnapsack)
+    'subproblem': config['subproblem'],  # Use same subproblem as estimation (QuadraticKnapsackGRB)
     'row_generation': {
         'max_iters': 200,
         'theta_lbs': theta_lbs,
@@ -153,9 +153,9 @@ if rank == 0:
     print(f"\n{result.summary()}")
     
     if result.converged:
-        # Extract prices (first num_items components)
-        prices = result.theta_hat[:num_items]
-        fixed_theta = result.theta_hat[num_items:]
+        # Extract prices (first n_items components)
+        prices = result.theta_hat[:n_items]
+        fixed_theta = result.theta_hat[n_items:]
         
         print(f"\n=== EQUILIBRIUM RESULTS ===")
         print(f"Prices: min={prices.min():.2f}, max={prices.max():.2f}, mean={prices.mean():.2f}")

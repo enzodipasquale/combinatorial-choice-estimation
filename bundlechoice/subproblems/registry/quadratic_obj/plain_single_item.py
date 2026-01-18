@@ -11,4 +11,4 @@ class PlainSingleItemSubproblem(QuadraticObjectiveMixin, BatchSubproblemBase):
         j_star = np.argmax(U, axis=1)
         max_vals = U[np.arange(self.data_manager.num_local_agent), j_star]
         return ((max_vals > 0)[:, None] & 
-                (np.arange(self.dimensions_cfg.num_items) == j_star[:, None]))
+                (np.arange(self.dimensions_cfg.n_items) == j_star[:, None]))

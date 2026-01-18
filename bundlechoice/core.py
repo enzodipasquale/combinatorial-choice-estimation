@@ -1,4 +1,5 @@
 from mpi4py import MPI
+from pathlib import Path
 from bundlechoice.config import BundleChoiceConfig
 from bundlechoice.comm_manager import CommManager
 from bundlechoice.data_manager import DataManager
@@ -54,20 +55,20 @@ class BundleChoice:
     #     return self.standard_errors_manager
 
     @property
-    def num_obs(self) -> int:
-        return self.config.dimensions.num_obs
+    def n_obs(self) -> int:
+        return self.config.dimensions.n_obs
 
     @property
-    def num_items(self) -> int:
-        return self.config.dimensions.num_items
+    def n_items(self) -> int:
+        return self.config.dimensions.n_items
 
     @property
-    def num_features(self) -> int:
-        return self.config.dimensions.num_features
+    def n_features(self) -> int:
+        return self.config.dimensions.n_features
 
     @property
-    def num_simulations(self) -> int:
-        return self.config.dimensions.num_simulations
+    def n_simulations(self) -> int:
+        return self.config.dimensions.n_simulations
 
     @property
     def rank(self) -> int:
@@ -78,8 +79,16 @@ class BundleChoice:
 
 
     def load_config(self, cfg):
+        if isinstance(cfg, (str, Path)):
+            cfg = BundleChoiceConfig.from_yaml(cfg)
+        elif isinstance(cfg, dict):
+            cfg = BundleChoiceConfig.from_dict(cfg)
+        cfg = self.comm_manager.bcast(cfg)
         self.config.update_in_place(cfg)
-    
+
+
+
+        
 
 
    

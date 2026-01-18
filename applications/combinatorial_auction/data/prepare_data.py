@@ -103,14 +103,14 @@ def process_weights_capacities(bidder_data: pd.DataFrame, bta_data: pd.DataFrame
 
 def generate_matching_matrix(
     bta_data: pd.DataFrame,
-    num_obs: int,
+    n_obs: int,
     bidder_num_to_index: dict,
 ) -> np.ndarray:
     """Generate matching matrix from observed winners."""
-    num_items = len(bta_data)
-    matching_i_j = np.zeros((num_obs, num_items), dtype=bool)
+    n_items = len(bta_data)
+    matching_i_j = np.zeros((n_obs, n_items), dtype=bool)
     
-    for j in range(num_items):
+    for j in range(n_items):
         winner_bidder_num = bta_data['bidder_num_fox'].values[j]
         # Skip FCC (9999) or any bidders not in our filtered list
         if winner_bidder_num in bidder_num_to_index:
@@ -201,7 +201,7 @@ def build_quadratic_features(
     quadratic_air_j_j = normalize_interaction_matrix(air_travel_j_j, weight_j)
     quadratic_list.append(quadratic_air_j_j)
     
-    # Stack into (num_items, num_items, num_quadratic_features)
+    # Stack into (n_items, n_items, num_quadratic_features)
     quadratic_characteristic_j_j_k = np.stack(quadratic_list, axis=2)
     
     density = (quadratic_characteristic_j_j_k.sum(2) > 0).sum() / quadratic_characteristic_j_j_k.sum(2).size
@@ -240,12 +240,12 @@ def build_modular_features(
         assert home_bta_i is not None, "home_bta_i required for HQ distance features"
         assert geo_distance_j_j is not None, "geo_distance_j_j required for HQ distance features"
         
-        num_obs = len(capacity_i)
-        num_items = geo_distance_j_j.shape[0]
+        n_obs = len(capacity_i)
+        n_items = geo_distance_j_j.shape[0]
         
         # Distance from bidder i's home BTA to item j's BTA
-        hq_distance_i_j = np.zeros((num_obs, num_items))
-        for i in range(num_obs):
+        hq_distance_i_j = np.zeros((n_obs, n_items))
+        for i in range(n_obs):
             hq_idx = int(home_bta_i[i]) - 1  # Convert to 0-indexed
             hq_distance_i_j[i, :] = geo_distance_j_j[hq_idx, :]
         
@@ -264,7 +264,7 @@ def build_modular_features(
         
         print(f"  HQ distance features: mean={hq_distance_normalized.mean():.4f}, max={hq_distance_normalized.max():.4f}")
     
-    # Stack into (num_obs, num_items, num_modular_features)
+    # Stack into (n_obs, n_items, num_modular_features)
     modular_characteristics_i_j_k = np.stack(modular_list, axis=2)
     
     print(f"Built modular features:")
@@ -287,7 +287,7 @@ def save_processed_data(
     output_dir = get_output_dir(delta, winners_only, hq_distance)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    num_obs, num_items = matching_i_j.shape
+    n_obs, n_items = matching_i_j.shape
     num_modular = modular_characteristics_i_j_k.shape[2]
     num_quadratic = quadratic_characteristic_j_j_k.shape[2]
     
@@ -298,32 +298,32 @@ def save_processed_data(
         modular_names = ["bidder_elig_pop", "hq_distance", "hq_distance_sq"]
     quadratic_names = ["pop_distance", "travel_survey", "air_travel"]
     
-    # 1. obs_bundle.csv - (num_obs, num_items) boolean matrix
-    obs_df = pd.DataFrame(matching_i_j.astype(int), columns=[f"item_{j}" for j in range(num_items)])
+    # 1. obs_bundle.csv - (n_obs, n_items) boolean matrix
+    obs_df = pd.DataFrame(matching_i_j.astype(int), columns=[f"item_{j}" for j in range(n_items)])
     obs_df.to_csv(output_dir / "obs_bundle.csv", index=False)
     
-    # 2. capacity.csv - (num_obs,) vector
+    # 2. capacity.csv - (n_obs,) vector
     pd.DataFrame({"capacity": capacity_i}).to_csv(output_dir / "capacity.csv", index=False)
     
-    # 3. weight.csv - (num_items,) vector
+    # 3. weight.csv - (n_items,) vector
     pd.DataFrame({"weight": weight_j}).to_csv(output_dir / "weight.csv", index=False)
     
-    # 4. modular_agent.csv - (num_obs, num_items, num_modular) flattened
-    # Store as (num_obs * num_items, num_modular) with agent_id, item_id columns
+    # 4. modular_agent.csv - (n_obs, n_items, num_modular) flattened
+    # Store as (n_obs * n_items, num_modular) with agent_id, item_id columns
     modular_rows = []
-    for i in range(num_obs):
-        for j in range(num_items):
+    for i in range(n_obs):
+        for j in range(n_items):
             row = {"agent_id": i, "item_id": j}
             for k, name in enumerate(modular_names):
                 row[name] = modular_characteristics_i_j_k[i, j, k]
             modular_rows.append(row)
     pd.DataFrame(modular_rows).to_csv(output_dir / "modular_agent.csv", index=False)
     
-    # 5. quadratic_item.csv - (num_items, num_items, num_quadratic) flattened
-    # Store as (num_items * num_items, num_quadratic) with item_i, item_j columns
+    # 5. quadratic_item.csv - (n_items, n_items, num_quadratic) flattened
+    # Store as (n_items * n_items, num_quadratic) with item_i, item_j columns
     quadratic_rows = []
-    for i in range(num_items):
-        for j in range(num_items):
+    for i in range(n_items):
+        for j in range(n_items):
             row = {"item_i": i, "item_j": j}
             for k, name in enumerate(quadratic_names):
                 row[name] = quadratic_characteristic_j_j_k[i, j, k]
@@ -337,8 +337,8 @@ def save_processed_data(
         "hq_distance": hq_distance,
         "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
         "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
-        "num_obs": num_obs,
-        "num_items": num_items,
+        "n_obs": n_obs,
+        "n_items": n_items,
         "num_modular_features": num_modular,
         "num_quadratic_features": num_quadratic,
         "modular_names": modular_names,

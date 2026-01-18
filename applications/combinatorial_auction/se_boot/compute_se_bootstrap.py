@@ -87,7 +87,7 @@ if rank == 0:
         sys.exit(1)
     
     input_data = bc.data.load_from_directory(INPUT_DIR, error_seed=SEED)
-    input_data["item_data"]["modular"] = -np.eye(bc.num_items)
+    input_data["item_data"]["modular"] = -np.eye(bc.n_items)
     
     print(f"\nLoaded data from {INPUT_DIR}")
 else:
@@ -96,7 +96,7 @@ else:
 # Apply theta bounds from config
 theta_bounds = config.get("theta_bounds", {})
 if theta_bounds:
-    theta_lbs = np.zeros(bc.num_features)
+    theta_lbs = np.zeros(bc.n_features)
     if "air_travel_lb" in theta_bounds:
         theta_lbs[-1] = theta_bounds["air_travel_lb"]
     if "travel_survey_lb" in theta_bounds:
@@ -131,7 +131,7 @@ structural_indices = np.array(bc.config.dimensions.get_index_by_name(), dtype=np
 structural_names = [bc.config.dimensions.get_feature_name(i) for i in structural_indices]
 
 if rank == 0:
-    print(f"Problem: {bc.num_obs} agents, {bc.num_items} items, {bc.num_features} features")
+    print(f"Problem: {bc.n_obs} agents, {bc.n_items} items, {bc.n_features} features")
     print(f"Structural parameters ({len(structural_indices)}): {structural_names}")
     print(f"MPI ranks: {comm.Get_size()}")
 
@@ -207,10 +207,10 @@ if rank == 0 and se_result is not None:
         "winners_only": WINNERS_ONLY,
         "hq_distance": HQ_DISTANCE,
         "num_mpi": comm.Get_size(),
-        "num_obs": bc.num_obs,
-        "num_items": bc.num_items,
-        "num_features": bc.num_features,
-        "num_simulations": bc.num_simulations,
+        "n_obs": bc.n_obs,
+        "n_items": bc.n_items,
+        "n_features": bc.n_features,
+        "n_simulations": bc.n_simulations,
         "num_bootstrap": NUM_BOOTSTRAP,
         "warmstart": WARMSTART,
         "seed": SEED,

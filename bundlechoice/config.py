@@ -1,10 +1,9 @@
 from dataclasses import dataclass, field, fields
-from typing import Optional, List, Any, Dict, Union, Callable
+from typing import Optional, List, Any, Callable
 from pathlib import Path
 import yaml
 
 class ConfigMixin:
-
     def update_in_place(self, other):
         for f in fields(self):
             if hasattr(self, f.name) and hasattr(other, f.name):
@@ -20,17 +19,18 @@ class ConfigMixin:
 
 @dataclass
 class DimensionsConfig(ConfigMixin):
-    num_obs: Optional[int] = None
-    num_items: Optional[int] = None
-    num_features: Optional[int] = None
-    num_simulations: int = 1
+    n_obs: Optional[int] = None
+    n_items: Optional[int] = None
+    n_features: Optional[int] = None
+    n_simulations: int = 1
     feature_names: Optional[List[str]] = None
 
     @property
     def num_agents(self):
-        if self.num_obs is None or self.num_simulations is None:
+        if self.n_obs is None or self.n_simulations is None:
             return None
-        return self.num_simulations * self.num_obs
+        return self.n_simulations * self.n_obs
+        
         
 @dataclass
 class SubproblemConfig(ConfigMixin):
@@ -63,7 +63,7 @@ class EllipsoidConfig(ConfigMixin):
 
 @dataclass
 class StandardErrorsConfig(ConfigMixin):
-    num_simulations: int = 10
+    n_simulations: int = 10
     step_size: float = 0.01
     seed: Optional[int] = None
     beta_indices: Optional[List[int]] = None

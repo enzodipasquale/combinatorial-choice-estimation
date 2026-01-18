@@ -47,7 +47,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             self.has_columns = False
             self.alpha_vars = []
             self.beta_vars = []
-            for k in range(self.dimensions_cfg.num_features):
+            for k in range(self.dimensions_cfg.n_features):
                 expr = gp.LinExpr()
                 alpha_var: Optional[gp.Var] = None
                 upper = self.theta_upper[k]
@@ -61,7 +61,7 @@ class ColumnGenerationManager(BaseEstimationManager):
                     beta_var = self.master_model.addVar(lb=0.0, obj=float(lower), name=f'beta[{k}]')
                     expr.addTerms(-1.0, beta_var)
                 self.beta_vars.append(beta_var)
-                rhs = float(obs_features[k] * max(1, self.dimensions_cfg.num_simulations))
+                rhs = float(obs_features[k] * max(1, self.dimensions_cfg.n_simulations))
                 if np.isfinite(self.theta_lower[k]) and self.theta_lower[k] >= 0:
                     constr = self.master_model.addConstr(expr >= rhs, name=f'feature_match[{k}]')
                 else:
@@ -70,12 +70,12 @@ class ColumnGenerationManager(BaseEstimationManager):
             if self.theta_init is not None:
                 self.theta_val = self.theta_init.astype(np.float64).copy()
             else:
-                self.theta_val = np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
+                self.theta_val = np.zeros(self.dimensions_cfg.n_features, dtype=np.float64)
             self.master_model.update()
             self._add_initial_columns()
             logger.info('Column generation master initialised (dual).')
         else:
-            self.theta_val = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            self.theta_val = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
         self.theta_val = self.comm_manager.Bcast(self.theta_val, root=0)
 
     def _compute_theta_from_duals(self, dual_prices):
@@ -96,7 +96,7 @@ class ColumnGenerationManager(BaseEstimationManager):
         max_reduced_cost = 0.0
         if self.comm_manager._is_root() and features_all is not None and (errors_all is not None):
             penalties = agent_penalties[:len(errors_all)]
-            scaled_errors = errors_all / max(1, self.dimensions_cfg.num_simulations)
+            scaled_errors = errors_all / max(1, self.dimensions_cfg.n_simulations)
             reduced_costs = scaled_errors - features_all @ dual_prices - penalties
             max_reduced_cost = float(np.max(reduced_costs))
             self._pricing_cache = (bundles_all, features_all, scaled_errors, reduced_costs)
@@ -128,7 +128,7 @@ class ColumnGenerationManager(BaseEstimationManager):
                 if coeff != 0.0:
                     column.addTerms(float(coeff), self.feature_constrs[k])
             column.addTerms(1.0, agent_constr)
-            var = self.master_model.addVar(obj=float(errors[idx] / max(1, self.dimensions_cfg.num_simulations)), lb=0.0, column=column, name=f'mu_{idx}_{len(self.column_vars)}')
+            var = self.master_model.addVar(obj=float(errors[idx] / max(1, self.dimensions_cfg.n_simulations)), lb=0.0, column=column, name=f'mu_{idx}_{len(self.column_vars)}')
             self.column_vars.append(var)
             self.active_columns.append({'bundle': bundles[idx].copy(), 'features': features[idx].copy(), 'errors': float(errors[idx]), 'agent_index': idx})
             num_added += 1
@@ -145,7 +145,7 @@ class ColumnGenerationManager(BaseEstimationManager):
             return
         input_data = getattr(self.data_manager, 'input_data', None)
         obs_bundles = None if input_data is None else input_data.get('obs_bundle')
-        if obs_bundles is None or self._features_at_obs_bundles_at_root is None:
+        if obs_bundles is None or self._weighted_features_at_obs_bundles_at_root is None:
             return
         obs_bundles = np.asarray(obs_bundles, dtype=bool)
         if obs_bundles.ndim == 2:
@@ -154,22 +154,22 @@ class ColumnGenerationManager(BaseEstimationManager):
             raise ValueError(f'Unexpected obs_bundles dimensionality: {obs_bundles.shape}')
         errors_tensor = input_data.get('errors') if input_data else None
         if errors_tensor is None:
-            errors_tensor = np.zeros((self.dimensions_cfg.num_simulations, self.dimensions_cfg.num_obs, self.dimensions_cfg.num_items), dtype=np.float64)
+            errors_tensor = np.zeros((self.dimensions_cfg.n_simulations, self.dimensions_cfg.n_obs, self.dimensions_cfg.n_items), dtype=np.float64)
         else:
             errors_tensor = np.asarray(errors_tensor, dtype=np.float64)
             if errors_tensor.ndim == 2:
                 errors_tensor = np.expand_dims(errors_tensor, axis=0)
             if errors_tensor.ndim != 3:
                 raise ValueError(f'Unexpected errors dimensionality: {errors_tensor.shape}')
-        num_sims = self.dimensions_cfg.num_simulations
-        num_obs = self.dimensions_cfg.num_obs
+        num_sims = self.dimensions_cfg.n_simulations
+        n_obs = self.dimensions_cfg.n_obs
         sim_indices = np.minimum(np.arange(num_sims), obs_bundles.shape[0] - 1)
         bundles_arr = obs_bundles[sim_indices]
-        features_arr = np.broadcast_to(self._features_at_obs_bundles_at_root[None, :, :], (num_sims, num_obs, self.dimensions_cfg.num_features)).copy()
+        features_arr = np.broadcast_to(self._weighted_features_at_obs_bundles_at_root[None, :, :], (num_sims, n_obs, self.dimensions_cfg.n_features)).copy()
         err_indices = np.minimum(np.arange(num_sims), errors_tensor.shape[0] - 1)
         errors_arr = np.einsum('sij,sij->si', errors_tensor[err_indices], bundles_arr.astype(np.float64))
-        flat_bundles = bundles_arr.reshape(-1, self.dimensions_cfg.num_items)
-        flat_features = features_arr.reshape(-1, self.dimensions_cfg.num_features)
+        flat_bundles = bundles_arr.reshape(-1, self.dimensions_cfg.n_items)
+        flat_features = features_arr.reshape(-1, self.dimensions_cfg.n_features)
         flat_errors = errors_arr.reshape(-1)
         reduced_costs = np.full(flat_bundles.shape[0], self.row_generation_cfg.tolerance_optimality + 1.0, dtype=np.float64)
         self._add_columns_to_master(flat_bundles, flat_features, flat_errors, reduced_costs)
@@ -178,7 +178,7 @@ class ColumnGenerationManager(BaseEstimationManager):
 
     def _master_iteration(self):
         stop = False
-        num_si = self.dimensions_cfg.num_simulations * self.dimensions_cfg.num_obs
+        num_si = self.dimensions_cfg.n_simulations * self.dimensions_cfg.n_obs
         if self.comm_manager._is_root():
             if self.has_columns:
                 assert self.master_model is not None
@@ -197,10 +197,10 @@ class ColumnGenerationManager(BaseEstimationManager):
                             agent_penalties[idx] = pi_val
                 self.theta_val = self._compute_theta_from_duals(dual_prices)
             else:
-                dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.dimensions_cfg.num_features, dtype=np.float64)
+                dual_prices = self.theta_val if self.theta_val is not None else np.zeros(self.dimensions_cfg.n_features, dtype=np.float64)
                 agent_penalties = np.zeros(num_si, dtype=np.float64)
         else:
-            dual_prices = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            dual_prices = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
             agent_penalties = np.empty(num_si, dtype=np.float64)
         dual_prices = self.comm_manager.Bcast(dual_prices, root=0)
         agent_penalties = self.comm_manager.Bcast(agent_penalties, root=0)
@@ -216,9 +216,9 @@ class ColumnGenerationManager(BaseEstimationManager):
                 if added > 0:
                     self.master_model.optimize()
         if self.comm_manager._is_root():
-            theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            theta_to_send = self.theta_val.copy() if self.theta_val is not None else np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
         else:
-            theta_to_send = np.empty(self.dimensions_cfg.num_features, dtype=np.float64)
+            theta_to_send = np.empty(self.dimensions_cfg.n_features, dtype=np.float64)
         self.theta_val, stop = self.comm_manager.Bcast(theta_to_send, root=0)
         return (bool(stop), pricing_time)
 

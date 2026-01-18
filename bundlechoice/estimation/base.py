@@ -15,40 +15,58 @@ class BaseEstimationManager:
 
         self.theta_val = None
         self.timing_stats = None
-        self.theta_obj_coef = self.oracles_manager._features_at_obs_bundles_at_root
 
-        self.obs_weights = None
+    @property
+    def theta_obj_coef(self):
+        return self._compute_theta_obj_coef()
 
-    def compute_obj_and_grad_at_root(self, theta):
+    def _compute_theta_obj_coef(self, local_obs_weights = None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_data["id_data"].get("obs_weights", None)
+            local_obs_weights = local_obs_weights if local_obs_weights is not None else np.ones(self.data_manager.num_local_agent)
+        local_obs_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
+        return self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_features)
+    
+    def _compute_u_obj_weights(self, local_obs_weights = None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_data["id_data"].get("obs_weights", None)
+            local_obs_weights = local_obs_weights if local_obs_weights is not None else np.ones(self.data_manager.num_local_agent)
+        
+
+    def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     
         bundles = self.subproblem_manager.solve_subproblems(theta)
         features = self.oracles_manager.features_oracle(bundles)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         
-        features_sum = self.comm_manager.sum_row_andReduce(features)
-        utility_sum = self.comm_manager.sum_row_andReduce(utility)
+        features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
+        utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
+        _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
+
         if self.comm_manager._is_root():
-            obj = utility_sum - (self.theta_obj_coef @ theta)
-            grad = (features_sum - self.theta_obj_coef)
+            obj = utility_sum - (_theta_obj_coef @ theta)
+            grad = (features_sum - _theta_obj_coef)
             return obj, grad
         else:
             return None, None
 
-    def compute_obj(self, theta):
+    def compute_obj(self, theta, local_obs_weights = None):
         bundles = self.subproblem_manager.solve_subproblems(theta)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
-        utility_sum = self.comm_manager.sum_row_andReduce(utility)
+        utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
+        _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
         if self.comm_manager._is_root():
-            return utility_sum - (self.theta_obj_coef @ theta)
+            return utility_sum - (_theta_obj_coef @ theta)
         else:
             return None
     
-    def compute_grad(self, theta):
+    def compute_grad(self, theta, local_obs_weights = None):
         bundles = self.subproblem_manager.solve_subproblems(theta)
         features = self.oracles_manager.features_oracle(bundles)
-        features_sum = self.comm_manager.sum_row_andReduce(features)
+        _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
+        features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
         if self.comm_manager._is_root():
-            return (features_sum - self.theta_obj_coef)
+            return (features_sum - _theta_obj_coef)
         else:
             return None
 

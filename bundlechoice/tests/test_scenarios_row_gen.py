@@ -28,16 +28,16 @@ def log(msg):
 
 def _greedy_data(n, m, k):
     obs = (np.random.rand(n, m) > 0.5).astype(float)
-    return {'agent_data': {'modular': np.random.randn(n, m, k), 'obs_bundles': obs}, 'item_data': {}, 'errors': np.random.randn(1, n, m)}
+    return {"id_data": {'modular': np.random.randn(n, m, k), 'obs_bundles': obs}, "item_data": {}, 'errors': np.random.randn(1, n, m)}
 
 if __name__ == '__main__':
     n, m, k = 6, 5, 4
     
     cfg = BundleChoiceConfig()
-    cfg.dimensions.num_obs = n
-    cfg.dimensions.num_items = m
-    cfg.dimensions.num_features = k
-    cfg.dimensions.num_simulations = 1
+    cfg.dimensions.n_obs = n
+    cfg.dimensions.n_items = m
+    cfg.dimensions.n_features = k
+    cfg.dimensions.n_simulations = 1
     cfg.subproblem.name = 'Greedy'
     cfg.row_generation.max_iters = 2
     cfg.row_generation.min_iters = 1
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     sm = SubproblemManager(cm, cfg, dm, om)
     
     np.random.seed(42)
-    data = _greedy_data(n, m, k) if rank == 0 else {'agent_data': {'obs_bundles': None}, 'item_data': {}}
+    data = _greedy_data(n, m, k) if rank == 0 else {"id_data": {'obs_bundles': None}, "item_data": {}}
     
     log("load_input_data")
     dm.load_input_data(data)

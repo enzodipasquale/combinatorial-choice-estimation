@@ -15,13 +15,13 @@ bootstrap:
 
 # BundleChoice settings
 dimensions:
-    num_obs: 255
-    num_items: 493
-    num_features: 497
-    num_simulations: 2
+    n_obs: 255
+    n_items: 493
+    n_features: 497
+    n_simulations: 2
 
 subproblem: 
-    name: QuadKnapsack
+    name: QuadraticKnapsackGRB
     settings:
         TimeLimit: 2
         MIPGap_tol: 1e-2
