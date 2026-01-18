@@ -31,7 +31,8 @@ class BaseEstimationManager:
         if local_obs_weights is None:
             local_obs_weights = self.data_manager.local_data["id_data"].get("obs_weights", None)
             local_obs_weights = local_obs_weights if local_obs_weights is not None else np.ones(self.data_manager.num_local_agent)
-        
+        all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.data_manager.agent_counts)
+        return all_weights if self.comm_manager._is_root() else None
 
     def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     

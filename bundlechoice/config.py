@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field, fields
-from typing import Optional, List, Any, Callable
 from pathlib import Path
 import yaml
 
@@ -19,11 +18,11 @@ class ConfigMixin:
 
 @dataclass
 class DimensionsConfig(ConfigMixin):
-    n_obs: Optional[int] = None
-    n_items: Optional[int] = None
-    n_features: Optional[int] = None
+    n_obs: int = None
+    n_items: int = None
+    n_features: int = None
     n_simulations: int = 1
-    feature_names: Optional[List[str]] = None
+    feature_names: list = None
 
     @property
     def num_agents(self):
@@ -34,7 +33,7 @@ class DimensionsConfig(ConfigMixin):
         
 @dataclass
 class SubproblemConfig(ConfigMixin):
-    name: Optional[str] = None
+    name: str = None
     settings: dict = field(default_factory=dict)
 
 @dataclass
@@ -46,17 +45,17 @@ class RowGenerationConfig(ConfigMixin):
     max_iters: float = float('inf')
     min_iters: int = 0
     gurobi_settings: dict = field(default_factory=dict)
-    theta_ubs: Any = 1000
-    theta_lbs: Any = None
-    parameters_to_log: Optional[List[int]] = None
+    theta_ubs: float = 1000
+    theta_lbs: float = 0
+    parameters_to_log: list = None
     verbose: bool = True
-    subproblem_callback: Optional[Callable[[int, Any, Optional[Any]], None]] = None
-    master_init_callback: Optional[Callable[[Any, Any, Any], None]] = None
+    subproblem_callback: object = None
+    master_init_callback: object = None
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):
     max_iterations: int = 1000
-    num_iters: Optional[int] = None
+    num_iters: int = None
     solver_precision: float = 1e-06
     initial_radius: float = 1.0
     verbose: bool = True
@@ -65,8 +64,8 @@ class EllipsoidConfig(ConfigMixin):
 class StandardErrorsConfig(ConfigMixin):
     n_simulations: int = 10
     step_size: float = 0.01
-    seed: Optional[int] = None
-    beta_indices: Optional[List[int]] = None
+    seed: int = None
+    beta_indices: list = None
     error_sigma: float = 1.0
 
 @dataclass
