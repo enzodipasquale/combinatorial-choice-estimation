@@ -51,9 +51,9 @@ bc.subproblems.generate_obs_bundles(theta_star)
 
 
 # Estimation via row generation
-bc.oracles.build_local_modular_error_oracle(seed=47)
-result = bc.row_generation.solve(verbose=True)
-bounds_info = bc.row_generation._check_bounds_hit()
+# bc.oracles.build_local_modular_error_oracle(seed=47)
+# result = bc.row_generation.solve(verbose=True)
+# bounds_info = bc.row_generation._check_bounds_hit()
 
 # if rank == 0:
 #     print("Theta star:", theta_star)

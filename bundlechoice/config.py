@@ -49,8 +49,6 @@ class RowGenerationConfig(ConfigMixin):
     theta_lbs: float = 0
     parameters_to_log: list = None
     verbose: bool = True
-    subproblem_callback: object = None
-    master_init_callback: object = None
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):

@@ -1,0 +1,24 @@
+# Sandwich SE Configuration (Local)
+# ==================================
+
+application:
+    delta: 4
+    winners_only: false
+    hq_distance: false
+
+sandwich:
+    n_simulations: 50
+    step_size: 1e-4
+    seed: 1995
+
+dimensions:
+    n_obs: 255
+    n_items: 493
+    n_features: 497
+    n_simulations: 1
+
+subproblem: 
+    name: QuadraticKnapsackGRB
+    settings:
+        TimeLimit: 5
+        MIPGap_tol: 1e-2

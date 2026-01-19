@@ -18,11 +18,16 @@ class ResamplingMixin:
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
             
             if b == 0:
-                self.row_generation_manager.solve(local_obs_weights=local_weights)
+                self.row_generation_manager.solve(local_obs_weights=local_weights, verbose = False)
+                self.row_generation_manager.update_objective_for_weights(local_weights)
+                if self.comm_manager._is_root():
+                    self.row_generation_manager.master_model.optimize()
+
             else:
                 self.row_generation_manager.update_objective_for_weights(local_weights)
                 if self.comm_manager._is_root():
                     self.row_generation_manager.master_model.optimize()
+    
             
             if self.comm_manager._is_root():
                 theta_boots.append(self.row_generation_manager.master_variables[0].X.copy())
