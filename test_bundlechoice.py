@@ -57,3 +57,30 @@ bounds_info = bc.row_generation._check_bounds_hit()
 if rank == 0:
     print("Theta star:", theta_star)
     print("Bounds info:", bounds_info)
+    print("--------------------------------")
+
+
+# Test update_objective_for_weights works
+if rank == 0:
+    print("\n=== Testing objective weight update ===")
+    theta_before = bc.row_generation.master_variables[0].X.copy()
+    
+    # Random weights (different from uniform)
+    np.random.seed(999)
+    weights = np.random.exponential(1.0, n_agents)
+    weights = weights / weights.sum()
+else:
+    weights = None
+
+
+local_weights = bc.comm_manager.Scatterv_by_row(weights, row_counts=bc.data.agent_counts)
+bc.row_generation.update_objective_for_weights(local_weights)
+if rank == 0:
+    bc.row_generation.master_model.optimize()
+    theta_after = bc.row_generation.master_variables[0].X
+    
+    diff = np.abs(theta_after - theta_before).max()
+    print(f"Theta before: {theta_before}")
+    print(f"Theta after:  {theta_after}")
+    print(f"Max diff: {diff:.6f}, Iters: {bc.row_generation.master_model.IterCount}")
+    print("PASS" if diff > 1e-6 else "FAIL: theta unchanged")
