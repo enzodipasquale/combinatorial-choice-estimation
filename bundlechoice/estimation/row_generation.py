@@ -5,6 +5,7 @@ from gurobipy import GRB
 from mpi4py import MPI
 from bundlechoice.utils import get_logger, suppress_output
 from .base import BaseEstimationManager
+from .result import EstimationResult
 logger = get_logger(__name__)
 
 class RowGenerationManager(BaseEstimationManager):
@@ -130,7 +131,7 @@ class RowGenerationManager(BaseEstimationManager):
             iteration += 1
         elapsed = time.perf_counter() - t0
         self._log_summary(iteration + 1, elapsed, pricing_times, master_times)
-        result = self._create_result(iteration + 1, self.master_model, self.theta_iter, self.cfg)
+        result = self._create_result(iteration + 1, (pricing_times, master_times))
         return result
 
 
@@ -249,12 +250,11 @@ class RowGenerationManager(BaseEstimationManager):
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
-    # def _log_bounds_warnings(self, bounds_info):
-    #     warnings_list = []
-    #     if self.comm_manager._is_root() and bounds_info["any_hit"]:
-    #         for bound_type in ["lower", "upper"]:
-    #             if bounds_info[f"hit_{bound_type}"]:
-    #                 msg = f"Theta hit {bound_type.upper()} bound at indices: {bounds_info[f"hit_{bound_type}"]}"
-    #                 logger.warning(msg)
-    #                 warnings_list.append(msg)
-    #     return warnings_list
+    def _create_result(self, num_iterations = None, timing_stats = None):
+        if self.comm_manager._is_root():
+            converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
+            return EstimationResult(
+                theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
+                final_objective=self.master_model.ObjVal,
+                timing= timing_stats,
+                warnings=None)
