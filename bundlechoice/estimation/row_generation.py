@@ -23,9 +23,10 @@ class RowGenerationManager(BaseEstimationManager):
         self.constraint_info = {}
         self.cfg = self.config.row_generation
         self.dim = self.config.dimensions
+        
 
     
-    def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None):
+    def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None, master_init_callback=None):
         theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
@@ -43,8 +44,8 @@ class RowGenerationManager(BaseEstimationManager):
             self.master_variables = (theta, u)
             if initial_constraints is not None:
                 self.add_constraints(initial_constraints['indices'], initial_constraints['bundles'])
-            if self.cfg.master_init_callback is not None:
-                self.cfg.master_init_callback(self.master_model, master_variables)
+            if master_init_callback is not None:
+                master_init_callback(self.master_model, theta, u)
             self.master_model.optimize()
             if self.master_model.Status != GRB.OPTIMAL:
                 raise RuntimeError('Master problem not optimal at initialization, status=%s', 
@@ -60,7 +61,7 @@ class RowGenerationManager(BaseEstimationManager):
                                                               dtype=np.float64,
                                                               shape=(self.dim.num_agents,))
 
-    def _master_iteration(self, pricing_results):
+    def _master_iteration(self, pricing_results, iteration, callback=None):
         features_local = self.oracles_manager.features_oracle(pricing_results)
         errors_local = self.oracles_manager.error_oracle(pricing_results)
         u_local = features_local @ self.theta_iter + errors_local
@@ -99,6 +100,8 @@ class RowGenerationManager(BaseEstimationManager):
                                                               row_counts=self.data_manager.agent_counts,
                                                               dtype=np.float64,
                                                               shape=(self.dim.num_agents,))
+        if callback is not None:
+            callback(iteration, self.subproblem_manager, self.master_model)
         return stop
 
     def solve(self, callback=None, 
@@ -107,24 +110,22 @@ class RowGenerationManager(BaseEstimationManager):
                     initial_constraints=None, 
                     init_master = True,
                     init_subproblems = True,
+                    master_iteration_callback=None,
+                    master_init_callback=None,
                     verbose = None):
 
         self.verbose = verbose if verbose is not None else True
         self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
-        self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
+        self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) if init_master else None
         
         iteration, pricing_times, master_times, t0 = 0, [], [], time.perf_counter()
         while iteration < self.cfg.max_iters:
-            
-            if self.cfg.subproblem_callback is not None:
-                self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
             t1 = time.perf_counter()
-            
             pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
             pricing_times.append(time.perf_counter() - t1)
             t2 = time.perf_counter()
-            stop = self._master_iteration(pricing_results)
+            stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
             master_times.append(time.perf_counter() - t2)
             if stop and iteration >= self.cfg.min_iters:
                 break

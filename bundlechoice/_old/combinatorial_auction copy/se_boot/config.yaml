@@ -1,0 +1,50 @@
+# Bootstrap SE Configuration (Cluster)
+# =====================================
+
+# Application parameters
+application:
+    delta: 4                    # Distance decay exponent (2 or 4)
+    winners_only: false         # Filter to winning bidders only
+    hq_distance: false          # Include HQ-to-item distance features
+
+# Bootstrap settings
+bootstrap:
+    num_samples: 50            # Number of bootstrap samples
+    warmstart: model_strip      # Warm-start strategy: none, theta, model, model_strip
+    seed: 1995
+    initial_estimation: false  # false = skip point estimation, start bootstrap directly
+
+# BundleChoice settings
+dimensions:
+    n_obs: 255
+    n_items: 493
+    n_features: 497
+    n_simulations: 1
+
+subproblem: 
+    name: QuadraticKnapsackGRB
+    settings:
+        TimeLimit: 10
+        MIPGap_tol: 1e-2
+
+row_generation:
+    max_iters: 200
+    theta_ubs: 1000
+    tolerance_optimality: 0.01
+    parameters_to_log: [0, -3, -2, -1]
+
+# Theta bounds (for structural parameters)
+theta_bounds:
+    air_travel_lb: -150
+    travel_survey_lb: -150
+
+# Custom constraints
+constraints:
+    pop_dominates_travel: true  # theta[-3] + theta[-2] + theta[-1] >= 0
+
+# Adaptive timeout settings
+adaptive_timeout:
+    initial: 1.0
+    final: 30.0
+    transition_iterations: 15
+    strategy: linear

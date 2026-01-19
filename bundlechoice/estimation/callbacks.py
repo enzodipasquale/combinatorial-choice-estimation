@@ -18,14 +18,5 @@ def adaptive_gurobi_timeout(initial_timeout=1.0, final_timeout=90.0, transition_
             timeout = final_timeout
         subproblem_manager.update_settings({'TimeLimit': timeout})
         subproblem_manager._suboptimal_mode = timeout < final_timeout - 1e-06
-        if log and master_model is not None:
-            logger.info(f'[Iter {iteration}] Subproblem timeout: {timeout:.2f}s (suboptimal={subproblem_manager._suboptimal_mode})')
     return callback
 
-def constant_timeout(timeout, log=False):
-    def callback(iteration, subproblem_manager, master_model):
-        subproblem_manager.update_settings({'TimeLimit': timeout})
-        subproblem_manager._suboptimal_mode = False
-        if log and master_model is not None:
-            logger.info(f'[Iter {iteration}] Subproblem timeout: {timeout:.2f}s')
-    return callback
