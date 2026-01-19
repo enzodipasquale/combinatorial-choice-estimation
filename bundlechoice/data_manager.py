@@ -14,7 +14,11 @@ class QuadraticDataInfo:
     quadratic_agent: int = 0
     quadratic_item: int = 0
     constraint_mask: np.ndarray = None
-    
+    modular_agent_names: str = None
+    modular_item_names: str = None
+    quadratic_agent_names: str = None
+    quadratic_item_names: str = None
+
     def __post_init__(self):
         offset, self.slices = 0, {}
         for key in ['modular_agent', 'modular_item', 'quadratic_agent', 'quadratic_item']:
@@ -22,10 +26,7 @@ class QuadraticDataInfo:
             if dim:
                 self.slices[key] = slice(offset, offset + dim)
                 offset += dim
-    modular_agent_names: str = None
-    modular_item_names: str = None
-    quadratic_agent_names: str = None
-    quadratic_item_names: str = None
+
 
 class DataManager:
 
@@ -39,21 +40,13 @@ class DataManager:
         self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
         
     @property
-    def global_ids(self):
-        return self._global_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
+    def agent_ids(self):
+        return self._agent_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
 
     @lru_cache(maxsize=1)
-    def _global_ids(self, n_obs, n_simulations):
+    def _agent_ids(self, n_obs, n_simulations):
         splits = np.array_split(np.arange(n_simulations * n_obs), self.comm_manager.comm_size)
         return splits[self.comm_manager.rank]
-
-    @property
-    def num_local_agent(self):
-        return len(self.global_ids)
-
-    @property
-    def obs_ids(self):
-        return self.global_ids % self.dimensions_cfg.n_obs
 
     @lru_cache(maxsize=1)
     def _agent_counts(self, num_agents, comm_size):
@@ -63,10 +56,21 @@ class DataManager:
     def agent_counts(self):
         return self._agent_counts(self.dimensions_cfg.num_agents, self.comm_manager.comm_size)
 
+    @property
+    def num_local_agent(self):
+        return len(self.agent_ids)
+
+    @property
+    def obs_ids(self):
+        return self.agent_ids % self.dimensions_cfg.n_obs
+
+    @property
+    def local_obs_bundles(self):
+        return np.asarray(self.local_data["id_data"]["obs_bundles"], dtype=bool)
+
+
     def load_input_data(self, input_data, preserve_global_data=False):
         self.input_data = input_data if self.comm_manager._is_root() else self.input_data
-        if self.comm_manager._is_root() and "obs_bundles" not in self.input_data["id_data"]:
-            raise ValueError("obs_bundles not found in input_data")
             
         local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(self.input_data["id_data"], 
                                                                                 agent_counts=self.agent_counts, 
@@ -80,7 +84,11 @@ class DataManager:
         self.input_data_dictionary_metadata["item_data"].update(item_data_metadata)
         
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
-        self.local_obs_bundles = np.array(self.local_data["id_data"]["obs_bundles"], dtype=bool)
+        
+        
+
+
+
         if preserve_global_data:
             self.input_data.update(input_data)
         else:
@@ -101,7 +109,9 @@ class DataManager:
     def _quadratic_data_info(self, _version):
         ad, id = self.local_data["id_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), dim(ad, "quadratic"), dim(id, "quadratic"), ad.get("constraint_mask"))
+        return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), 
+                                    dim(ad, "quadratic"), dim(id, "quadratic"), 
+                                    ad.get("constraint_mask"))
 
     def _detect_quadratic_features(self, path):
         path = Path(path)

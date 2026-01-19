@@ -5,7 +5,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 20, 10
+n_agents, n_items = 50, 20
 k_mod, k_quad = 2, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 0.5, 10])
@@ -24,9 +24,8 @@ if rank == 0:
         np.fill_diagonal(quadratic_item[:, :, k], 0)
         quadratic_item[:, :, k] = (quadratic_item[:, :, k] + quadratic_item[:, :, k].T) / 2
     
-    obs_bundles_placeholder = np.zeros((n_agents, n_items))
     input_data = {
-        "id_data": {"obs_bundles": obs_bundles_placeholder, "modular": modular_agent, "capacity": capacity},
+        "id_data": {"modular": modular_agent, "capacity": capacity},
         "item_data": {"quadratic": quadratic_item, "weights": weights}
     }
 else:
@@ -41,9 +40,7 @@ bc.oracles.build_local_modular_error_oracle(seed=42)
 
 # Generate obs_bundles by solving subproblems with theta_star
 bc.subproblems.load('QuadraticKnapsackGRB')
-obs_bundles_local = bc.subproblems.initialize_and_solve_subproblems(theta_star)
-bc.data.local_data["id_data"]["obs_bundles"]  = obs_bundles_local
-bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
+bc.subproblems.generate_obs_bundles(theta_star)
 
 # subproblem = bc.subproblems.load('QuadraticKnapsackGRB')
 # subproblem.initialize()
@@ -53,12 +50,8 @@ bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
 
 
 # Estimation via row generation
-bc.oracles.build_local_modular_error_oracle(seed=43)
-result = bc.row_generation.solve(
-    obs_weights=np.ones(bc.data_manager.num_local_agent),
-    init_master=True,
-    init_subproblems=False
-)
+bc.oracles.build_local_modular_error_oracle(seed=47)
+result = bc.row_generation.solve()
 
 if rank == 0:
     print("Converged:", result.converged)
