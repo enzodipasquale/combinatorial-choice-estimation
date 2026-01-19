@@ -129,23 +129,23 @@ class ResamplingMixin:
         final_theta_hat = theta_hat if initial_estimation else np.mean(theta_boots, axis=0)
         return self._finalize_resampling_result(final_theta_hat, theta_boots, beta_indices, 'Bayesian Bootstrap')
 
-    def _finalize_resampling_result(self, theta_hat, theta_samples, beta_indices, method_name, scale_factor=1.0):
-        if len(theta_samples) < 10:
-            logger.error('  Too few successful samples (%d)', len(theta_samples))
-            return None
-        theta_samples = np.array(theta_samples)
-        se_all = scale_factor * np.std(theta_samples, axis=0, ddof=1)
-        se = se_all[beta_indices]
-        theta_beta = theta_hat[beta_indices]
-        t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
-        self._log_se_table(theta_hat, se, beta_indices, t_stats, method_name)
-        n_params = len(beta_indices)
-        return StandardErrorsResult(se=se, se_all=se_all, theta_beta=theta_beta, beta_indices=beta_indices, 
-                                    variance=np.diag(se ** 2), A_matrix=np.eye(n_params), 
-                                    B_matrix=np.eye(n_params), t_stats=t_stats)
+    # def _finalize_resampling_result(self, theta_hat, theta_samples, beta_indices, method_name, scale_factor=1.0):
+    #     if len(theta_samples) < 10:
+    #         logger.error('  Too few successful samples (%d)', len(theta_samples))
+    #         return None
+    #     theta_samples = np.array(theta_samples)
+    #     se_all = scale_factor * np.std(theta_samples, axis=0, ddof=1)
+    #     se = se_all[beta_indices]
+    #     theta_beta = theta_hat[beta_indices]
+    #     t_stats = np.where(se > 1e-16, theta_beta / se, np.nan)
+    #     self._log_se_table(theta_hat, se, beta_indices, t_stats, method_name)
+    #     n_params = len(beta_indices)
+    #     return StandardErrorsResult(se=se, se_all=se_all, theta_beta=theta_beta, beta_indices=beta_indices, 
+    #                                 variance=np.diag(se ** 2), A_matrix=np.eye(n_params), 
+    #                                 B_matrix=np.eye(n_params), t_stats=t_stats)
 
-    def _log_se_table(self, theta_hat, se, beta_indices, t_stats, method):
-        lines = [f'Standard Errors ({method}):']
-        for i, idx in enumerate(beta_indices):
-            lines.append(f'  theta[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}')
-        logger.info('\n'.join(lines))
+    # def _log_se_table(self, theta_hat, se, beta_indices, t_stats, method):
+    #     lines = [f'Standard Errors ({method}):']
+    #     for i, idx in enumerate(beta_indices):
+    #         lines.append(f'  theta[{idx}] = {theta_hat[idx]:.6f}, SE = {se[i]:.6f}, t = {t_stats[i]:.2f}')
+    #     logger.info('\n'.join(lines))

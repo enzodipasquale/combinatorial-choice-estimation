@@ -13,7 +13,7 @@ class BaseEstimationManager:
         self.oracles_manager = oracles_manager
         self.subproblem_manager = subproblem_manager
 
-        self.theta_val = None
+        self.theta_iter = None
         self.timing_stats = None
 
     @property
@@ -85,28 +85,10 @@ class BaseEstimationManager:
                 warnings=warnings)
 
 
-    def _log_timing_summary(self, stats, obj_val=None, theta=None, header='SUMMARY'):
-        if not self.comm_manager._is_root():
-            return
-        total, n_iters = stats.get('total_time', 0), stats.get('num_iterations', 0)
-        pricing, master = stats.get('pricing_time', 0), stats.get('master_time', 0)
-        other = total - pricing - master
-        lines = [f'{"="*60}', header, f'{"="*60}']
-        if obj_val is not None:
-            lines.append(f'Objective: {obj_val:.6f}')
-        if theta is not None:
-            if len(theta) <= 10:
-                lines.append(f'Theta: {np.array2string(theta, precision=4, suppress_small=True)}')
-            else:
-                lines.append(f'Theta: [{theta[:3]}...{theta[-3:]}] (dim={len(theta)}, range=[{theta.min():.4f}, {theta.max():.4f}])')
-        lines.append(f'Iterations: {n_iters}, Time: {total:.2f}s')
-        if total > 0:
-            lines.append(f'  Pricing: {pricing:.2f}s ({100*pricing/total:.1f}%), Master: {master:.2f}s ({100*master/total:.1f}%), Other: {other:.2f}s')
-        logger.info('\n'.join(lines))
 
     def log_parameter(self):
         cfg = self.config.row_generation
-        if self.theta_val is None:
+        if self.theta_iter is None:
             return
         ids = cfg.parameters_to_log
-        logger.info('Parameters: %s', np.round(self.theta_val[ids] if ids else self.theta_val, 3))
+        logger.info('Parameters: %s', np.round(self.theta_iter[ids] if ids else self.theta_iter, 3))

@@ -5,10 +5,10 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 50, 20
-k_mod, k_quad = 2, 1
+n_agents, n_items = 10, 3
+k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
-theta_star = np.array([1.0, 0.5, 10])
+theta_star = np.array([1.0, 1, 1, 5])
 
 if rank == 0:
     cfg = {'dimensions': {'n_obs': n_agents, 'n_items': n_items, 'n_features': n_features},
@@ -52,9 +52,8 @@ bc.subproblems.generate_obs_bundles(theta_star)
 # Estimation via row generation
 bc.oracles.build_local_modular_error_oracle(seed=47)
 result = bc.row_generation.solve()
+bounds_info = bc.row_generation._check_bounds_hit()
 
 if rank == 0:
-    print("Converged:", result.converged)
-    print("Iterations:", result.num_iterations)
-    print("Theta hat:", result.theta_hat)
     print("Theta star:", theta_star)
+    print("Bounds info:", bounds_info)
