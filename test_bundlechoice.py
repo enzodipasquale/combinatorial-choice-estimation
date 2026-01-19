@@ -5,14 +5,15 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 50, 10
+n_agents, n_items = 50, 20
 k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 1, 1, 5])
 
 if rank == 0:
     cfg = {'dimensions': {'n_obs': n_agents, 'n_items': n_items, 'n_features': n_features},
-           'row_generation': {'max_iters': 100, 'tol_row_generation': 1e-8}}
+           'row_generation': {'max_iters': 100, 'tol_row_generation': 1e-8,
+                              'theta_lbs': [-10, -10, -10, -10]}}
     
     np.random.seed(42)
     weights = np.ones(n_items)
@@ -88,7 +89,7 @@ bounds_info = bc.row_generation._check_bounds_hit()
 
 
 # Test Bayesian bootstrap
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=10, seed=123)
+results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=100, seed=123)
 if rank == 0:
     print(results.mean)
-    print(results.t_stats)
+    print(results.se)

@@ -83,20 +83,6 @@ class BaseEstimationManager:
             return None
 
 
-    def _create_result(self, num_iterations, master_model, theta_sol, cfg):
-        if self.comm_manager._is_root():
-            converged = num_iterations < cfg.max_iters
-            final_objective = master_model.ObjVal if hasattr(master_model, 'ObjVal') else None
-            timing_stats = self.timing_stats
-            warnings = [] if final_objective is not None else ['All iterations were constraint violations']
-            return EstimationResult(
-                theta_hat=theta_sol, converged=converged, num_iterations=num_iterations,
-                final_objective=final_objective,
-                timing=timing_stats,
-                warnings=warnings)
-
-
-
     def log_parameter(self):
         cfg = self.config.row_generation
         if self.theta_iter is None:
