@@ -2,12 +2,23 @@ from dataclasses import dataclass
 import numpy as np
 
 @dataclass
-class StandardErrorsResult:
+class StandardErrorsResultBase:
+    mean: np.ndarray
     se: np.ndarray
-    se_all: np.ndarray
-    theta_beta: np.ndarray
-    beta_indices: np.ndarray
-    variance: np.ndarray
+    t_stats: np.ndarray
+    n_samples: int
+
+@dataclass
+class BayesianBootstrapResult(StandardErrorsResultBase):
+    ci_lower: np.ndarray
+    ci_upper: np.ndarray
+    confidence: float
+    samples: np.ndarray = None  # optional raw bootstrap samples
+
+@dataclass
+class SandwichResult(StandardErrorsResultBase):
+    variance: np.ndarray  # full covariance matrix
     A_matrix: np.ndarray
     B_matrix: np.ndarray
-    t_stats: np.ndarray
+    beta_indices: np.ndarray
+

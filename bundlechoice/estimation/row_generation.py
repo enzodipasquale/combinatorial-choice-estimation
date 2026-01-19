@@ -105,8 +105,10 @@ class RowGenerationManager(BaseEstimationManager):
                     theta_warmstart=None,  
                     initial_constraints=None, 
                     init_master = True,
-                    init_subproblems = True):
+                    init_subproblems = True,
+                    verbose = None):
 
+        self.verbose = verbose if verbose is not None else True
         self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
         self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
@@ -138,7 +140,8 @@ class RowGenerationManager(BaseEstimationManager):
         theta, u = self.master_variables
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
         self.constraint_info[constr] = (indices, bundles.copy())
-        logger.info('Added %d constraints', len(indices))
+        if self.verbose:        
+            logger.info('Added %d constraints', len(indices))
         return constr
     
     def _setup_gurobi_model(self, gurobi_settings=None):
@@ -159,6 +162,7 @@ class RowGenerationManager(BaseEstimationManager):
         theta.Obj = _theta_obj_coef
         u.Obj = _u_obj_weights
         self.master_model.update()
+        self.master_model.reset(0)
 
 
     def _enforce_slack_counter(self):
@@ -176,7 +180,7 @@ class RowGenerationManager(BaseEstimationManager):
         for constr in to_remove:
             self.master_model.remove(constr)
             self.slack_counter.pop(constr, None)
-        if to_remove:
+        if to_remove and self.verbose:
             logger.info('Removed %d slack constraints', len(to_remove))
         return len(to_remove)
 
@@ -193,13 +197,14 @@ class RowGenerationManager(BaseEstimationManager):
             self.slack_counter.pop(constr, None)
         if to_remove:
             self.master_model.update()
-            logger.info('Stripped %d slack constraints', len(to_remove))
+            if self.verbose:
+                logger.info('Stripped %d slack constraints', len(to_remove))
         return len(to_remove)
 
 
 
     def _log_summary(self, n_iters, total, pricing_times, master_times):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager._is_root() or not self.verbose:
             return
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
         vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
