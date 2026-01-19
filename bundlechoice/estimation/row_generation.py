@@ -38,7 +38,7 @@ class RowGenerationManager(BaseEstimationManager):
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
             u = self.master_model.addMVar(self.dim.num_agents, obj=u_obj_coef, name='utility')
-            master_variables = (theta, u)
+            
             if theta_warmstart is not None:
                 theta.Start = theta_warmstart
             self.master_variables = (theta, u)
@@ -48,14 +48,20 @@ class RowGenerationManager(BaseEstimationManager):
                 master_init_callback(self.master_model, theta, u)
             self.master_model.optimize()
             if self.master_model.Status != GRB.OPTIMAL:
-                raise RuntimeError('Master problem not optimal at initialization, status=%s', 
+                raise RuntimeError('Master problem cannot be solved at initialization, status=%s', 
                                     self.master_model.Status)
-            self.theta_iter = theta.X
+        self._Bcast_theta_and_Scatterv_u_vals()
+
+
+    def _Bcast_theta_and_Scatterv_u_vals(self):
+        if self.comm_manager._is_root():
+            theta, u = self.master_variables
+            theta_iter = theta.X
             u_iter = u.X
         else:
-            self.theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
-            u_iter = None
-        self.comm_manager.Bcast(self.theta_iter)
+            theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
+            u_iter = np.empty(self.dim.num_agents, dtype=np.float64)
+        self.theta_iter = self.comm_manager.Bcast(theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
                                                               row_counts=self.data_manager.agent_counts,
                                                               dtype=np.float64,
@@ -89,19 +95,19 @@ class RowGenerationManager(BaseEstimationManager):
             self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
             self.master_model.optimize()
-            theta_iter = self.master_variables[0].X
-            u_iter = self.master_variables[1].X
             self.cfg.tol_row_generation *= self.cfg.row_generation_decay
-        else:
-            theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
-            u_iter = np.empty(self.dim.num_agents, dtype=np.float64)
-        self.theta_iter = self.comm_manager.Bcast(theta_iter)
-        self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
-                                                              row_counts=self.data_manager.agent_counts,
-                                                              dtype=np.float64,
-                                                              shape=(self.dim.num_agents,))
+        self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
             callback(iteration, self.subproblem_manager, self.master_model)
+        return stop
+
+    def _row_generation_iteration(self, iteration, master_iteration_callback):
+        t0 = time.perf_counter()
+        pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
+        self.pricing_times.append(time.perf_counter() - t0)
+        t1 = time.perf_counter()
+        stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
+        self.master_times.append(time.perf_counter() - t1)
         return stop
 
     def solve(self, local_obs_weights=None,
@@ -116,22 +122,25 @@ class RowGenerationManager(BaseEstimationManager):
         self.verbose = verbose if verbose is not None else True
         self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
-        self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) if init_master else None
+        if init_master:
+            self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
+        elif self.master_variables is not None:
+            if local_obs_weights is not None:
+                self.update_objective_for_weights(local_obs_weights)
+            if self.comm_manager._is_root():
+                self.master_model.optimize()
+            self._Bcast_theta_and_Scatterv_u_vals()
+            # self._Bcast_theta_and_Scatterv_u_vals()
         
-        iteration, pricing_times, master_times, t0 = 0, [], [], time.perf_counter()
+        iteration, self.pricing_times, self.master_times, t0 = 0, [], [], time.perf_counter()
         while iteration < self.cfg.max_iters:
-            t1 = time.perf_counter()
-            pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-            pricing_times.append(time.perf_counter() - t1)
-            t2 = time.perf_counter()
-            stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
-            master_times.append(time.perf_counter() - t2)
+            stop = self._row_generation_iteration(iteration, master_iteration_callback)
             if stop and iteration >= self.cfg.min_iters:
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        self._log_summary(iteration + 1, elapsed, pricing_times, master_times)
-        result = self._create_result(iteration + 1, (pricing_times, master_times))
+        self._log_summary(iteration + 1, elapsed)
+        result = self._create_result(iteration + 1)
         return result
 
 
@@ -206,7 +215,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
 
-    def _log_summary(self, n_iters, total, pricing_times, master_times):
+    def _log_summary(self, n_iters, total):
         if not self.comm_manager._is_root() or not self.verbose:
             return
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
@@ -214,7 +223,7 @@ class RowGenerationManager(BaseEstimationManager):
         logger.info('Estimated Parameters:')
         logger.info(f'  {vals}')
 
-        p, m = np.array(pricing_times), np.array(master_times)
+        p, m = np.array(self.pricing_times), np.array(self.master_times)
         logger.info('Timing Summary:')
         logger.info(f'  Terminated after {n_iters} iterations in {total:.1f}s')
         logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
@@ -252,11 +261,11 @@ class RowGenerationManager(BaseEstimationManager):
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
-    def _create_result(self, num_iterations = None, timing_stats = None):
+    def _create_result(self, num_iterations = None):
         if self.comm_manager._is_root():
             converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
             return EstimationResult(
                 theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
                 final_objective=self.master_model.ObjVal,
-                timing= timing_stats,
+                timing= (self.pricing_times, self.master_times),
                 warnings=None)
