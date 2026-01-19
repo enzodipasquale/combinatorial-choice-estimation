@@ -8,9 +8,10 @@ class ResamplingMixin:
     def compute_bayesian_bootstrap(self, num_bootstrap=100, seed=None, verbose=False):
         theta_boots = []
         rng = np.random.default_rng(seed)
-        
+        row_gen = self.row_generation_manager
+        t0 =  time.perf_counter()
         for b in range(num_bootstrap):
-            t0 = time.perf_counter()
+            t1 = time.perf_counter()
             if self.comm_manager._is_root():
                 weights = rng.exponential(1.0, self.dim.n_obs)
                 weights /= weights.sum()
@@ -18,21 +19,15 @@ class ResamplingMixin:
             else:
                 weights = None
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
-            
-            if b == 0:
-                self.row_generation_manager.solve(local_obs_weights=local_weights, verbose=verbose)
-            
-            self.row_generation_manager.update_objective_for_weights(local_weights)
+            row_gen.solve(local_obs_weights=local_weights, verbose=verbose, init_subproblems = False)
             if self.comm_manager._is_root():
-                self.row_generation_manager.master_model.optimize()
-                theta_boots.append(self.row_generation_manager.master_variables[0].X.copy())
-            iter_time = time.perf_counter() - t0
-            print(iter_time)
-        
+                theta_boots.append(row_gen.master_variables[0].X.copy())
+            iter_time = time.perf_counter() - t1
+            if self.comm_manager._is_root():
+                print(len(row_gen.master_model.getConstrs()))
         if not self.comm_manager._is_root():
             return None
-        # print(np.array(theta_boots))
-
+        print(time.perf_counter() - t0)
         return self.compute_bootstrap_stats(theta_boots)
 
  
