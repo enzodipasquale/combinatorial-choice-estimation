@@ -15,7 +15,6 @@ class RowGenerationManager(BaseEstimationManager):
         self.master_variables = None
         self.timing_stats = None
         self.theta_iter = None
-        self.theta_sol = None
         self.u_iter = None
         self.u_iter_local = None
 
@@ -117,8 +116,6 @@ class RowGenerationManager(BaseEstimationManager):
             if self.cfg.subproblem_callback is not None:
                 self.cfg.subproblem_callback(iteration, self.subproblem_manager, self.master_model)
             t1 = time.perf_counter()
-            if self.comm_manager._is_root():
-                print("iteration", iteration)
             
             pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
             pricing_times.append(time.perf_counter() - t1)
@@ -129,11 +126,9 @@ class RowGenerationManager(BaseEstimationManager):
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        result = self._create_result(iteration +1, self.master_model, self.theta_iter, self.cfg)
+        self._log_summary(iteration + 1, elapsed, pricing_times, master_times)
+        result = self._create_result(iteration + 1, self.master_model, self.theta_iter, self.cfg)
         return result
-
-
-    #########
 
 
     def add_constraints(self, indices, bundles, features, errors):
@@ -185,20 +180,37 @@ class RowGenerationManager(BaseEstimationManager):
 
 
 
-    # def strip_slack_constraints(self, tolerance=1e-06):
-    #     if not self.comm_manager._is_root() or self.master_model is None:
-    #         return 0
-    #     to_remove = [c for c in self.master_model.getConstrs() 
-    #                 if c in self.constraint_info and abs(c.Slack) > tolerance]
-    #     for constr in to_remove:
-    #         self.master_model.remove(constr)
-    #         self.constraint_info.pop(constr, None)
-    #         self.slack_counter.pop(constr, None)
-    #     if to_remove:
-    #         self.master_model.update()
-    #         logger.info('Stripped %d slack constraints', len(to_remove))
-    #     return len(to_remove)
+    def strip_nonbasic_constraints(self):
+        if not self.comm_manager._is_root() or self.master_model is None:
+            return 0
+        to_remove = [c for c in self.master_model.getConstrs() 
+                    if c in self.constraint_info and c.CBasis == -1]
+        for constr in to_remove:
+            self.master_model.remove(constr)
+            self.constraint_info.pop(constr, None)
+            self.slack_counter.pop(constr, None)
+        if to_remove:
+            self.master_model.update()
+            logger.info('Stripped %d slack constraints', len(to_remove))
+        return len(to_remove)
 
+
+
+    def _log_summary(self, n_iters, total, pricing_times, master_times):
+        if not self.comm_manager._is_root():
+            return
+        idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
+        vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
+        logger.info('Estimated Parameters:')
+        logger.info(f'  {vals}')
+
+        p, m = np.array(pricing_times), np.array(master_times)
+        logger.info('Timing Summary:')
+        logger.info(f'  Terminated after {n_iters} iterations in {total:.1f}s')
+        logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
+        logger.info(f'  pricing  {p.sum():>7.2f}s  {p.mean():>7.3f}s  [{p.min():.3f}, {p.max():.3f}]')
+        logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {p.max():.3f}]')
+        
 
     # def get_binding_constraints(self, tolerance=1e-06):
     #     if not self.comm_manager._is_root() or self.master_model is None:
@@ -212,16 +224,22 @@ class RowGenerationManager(BaseEstimationManager):
     #     return {'indices': np.array(indices, dtype=np.int64), 'bundles': np.array(bundles, dtype=np.bool_)}
 
 
-    # def _check_bounds_hit(self, tol=1e-06):
-    #     empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
-    #     if not self.comm_manager._is_root() or self.master_model is None:
-    #         return empty
-    #     theta = self.master_variables[0]
-    #     hit_lower = [k for k in range(self.config.dimensions.n_features) 
-    #                 if abs(theta[k].X - theta[k].LB) < tol]
-    #     hit_upper = [k for k in range(self.config.dimensions.n_features) 
-    #                 if abs(theta[k].X - theta[k].UB) < tol]
-    #     return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
+    def _check_bounds_hit(self, tol=None):
+        empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
+        if not self.comm_manager._is_root() or self.master_model is None:
+            return empty
+        theta = self.master_variables[0]
+
+        if tol is None:
+            tol = max(1e-8, self.master_model.Params.FeasibilityTol)
+
+        hit_lower = [k for k in range(self.config.dimensions.n_features)
+                    if theta[k].LB > -GRB.INFINITY and (theta[k].X - theta[k].LB) <= tol]
+
+        hit_upper = [k for k in range(self.config.dimensions.n_features)
+                    if theta[k].UB <  GRB.INFINITY and (theta[k].UB - theta[k].X) <= tol]
+
+        return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
     # def _log_bounds_warnings(self, bounds_info):
