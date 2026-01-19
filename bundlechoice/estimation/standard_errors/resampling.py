@@ -19,7 +19,8 @@ class ResamplingMixin:
             else:
                 weights = None
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
-            row_gen.solve(local_obs_weights=local_weights, verbose=verbose, init_subproblems = False)
+            init_master = True if b == 0 else False
+            row_gen.solve(local_obs_weights=local_weights, verbose=True, init_subproblems = False, init_master = init_master)
             if self.comm_manager._is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
             iter_time = time.perf_counter() - t1
