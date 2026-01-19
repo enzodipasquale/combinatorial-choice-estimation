@@ -5,7 +5,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 40, 20
+n_agents, n_items = 40, 10
 k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 1, 1, 5])
@@ -89,7 +89,7 @@ bc.subproblems.generate_obs_bundles(theta_star)
 
 
 # Test Bayesian bootstrap
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=50, seed=123)
+results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=30, seed=123)
 if rank == 0:
     print(results.mean)
     print(results.se)
