@@ -23,9 +23,10 @@ class RowGenerationManager(BaseEstimationManager):
         self.cfg = self.config.row_generation
         self.dim = self.config.dimensions
 
+    
     def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None):
-        theta_obj_coef = self._compute_theta_obj_coef(self.obs_weights)
-        u_obj_coef = self._compute_u_obj_weights(self.obs_weights)
+        theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
+        u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
             self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
@@ -100,13 +101,13 @@ class RowGenerationManager(BaseEstimationManager):
         return stop
 
     def solve(self, callback=None, 
-                    obs_weights=None,
+                    local_obs_weights=None,
                     theta_warmstart=None,  
                     initial_constraints=None, 
                     init_master = True,
                     init_subproblems = True):
 
-        self.obs_weights = obs_weights
+        self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
         self._initialize_master_problem(initial_constraints, theta_warmstart) if init_master else None
         
@@ -149,13 +150,14 @@ class RowGenerationManager(BaseEstimationManager):
                     model.setParam(k, v)
         return model
 
-    def update_objective_for_weights(self, obs_weights):
+    def update_objective_for_weights(self, local_obs_weights):
+        _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
+        _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        weights_tiled = np.tile(obs_weights, self.config.dimensions.n_simulations)
-        theta.Obj = - weights_tiled * self.theta_obj_coef
-        u.Obj = weights_tiled
+        theta.Obj = _theta_obj_coef
+        u.Obj = _u_obj_weights
         self.master_model.update()
 
 
@@ -209,7 +211,7 @@ class RowGenerationManager(BaseEstimationManager):
         logger.info(f'  Terminated after {n_iters} iterations in {total:.1f}s')
         logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
         logger.info(f'  pricing  {p.sum():>7.2f}s  {p.mean():>7.3f}s  [{p.min():.3f}, {p.max():.3f}]')
-        logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {p.max():.3f}]')
+        logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {m.max():.3f}]')
         
 
     # def get_binding_constraints(self, tolerance=1e-06):
