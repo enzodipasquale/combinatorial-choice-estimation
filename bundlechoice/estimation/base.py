@@ -18,11 +18,6 @@ class BaseEstimationManager:
         self.timing_stats = None
 
         self._local_obs_weights = None
-
-    @property
-    def theta_obj_coef(self):
-        return self._compute_theta_obj_coef()
-
     @property
     def local_obs_weights(self):
         return self._get_local_obs_weights(self.data_manager._local_data_version, id(self._local_obs_weights))
