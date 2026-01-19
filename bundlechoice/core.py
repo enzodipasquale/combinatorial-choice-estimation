@@ -6,6 +6,7 @@ from bundlechoice.data_manager import DataManager
 from bundlechoice.oracles_manager import OraclesManager
 from bundlechoice.subproblems.subproblem_manager import SubproblemManager
 from bundlechoice.estimation import RowGenerationManager
+from bundlechoice.estimation.standard_errors import StandardErrorsManager
 from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
@@ -21,10 +22,10 @@ class BundleChoice:
         base = (comm, cfg, data, oracles)
         self.subproblem_manager = subpb = SubproblemManager(*base)
         base_est = (*base, subpb)
-        self.row_generation_manager = RowGenerationManager(*base_est)
+        self.row_generation_manager = row_gen = RowGenerationManager(*base_est)
         # self.column_generation_manager = ColumnGenerationManager(*base_est)
         # self.ellipsoid_manager = EllipsoidManager(*base_est)
-        # self.standard_errors_manager = StandardErrorsManager(*base_est)
+        self.standard_errors_manager = StandardErrorsManager(*base_est, row_gen)
 
     @property
     def data(self) -> 'DataManager':
@@ -50,9 +51,9 @@ class BundleChoice:
     # def column_generation(self) -> 'ColumnGenerationManager':
     #     return self.column_generation_manager
 
-    # @property
-    # def standard_errors(self) -> 'StandardErrorsManager':
-    #     return self.standard_errors_manager
+    @property
+    def standard_errors(self) -> 'StandardErrorsManager':
+        return self.standard_errors_manager
 
     @property
     def n_obs(self) -> int:
