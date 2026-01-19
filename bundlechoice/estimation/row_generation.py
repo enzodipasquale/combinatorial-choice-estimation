@@ -27,13 +27,13 @@ class RowGenerationManager(BaseEstimationManager):
 
     
     def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None, master_init_callback=None):
-        theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
+        _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
             self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
             theta = self.master_model.addMVar(self.dim.n_features, 
-                                                obj= theta_obj_coef, 
+                                                obj= _theta_obj_coef, 
                                                 lb= self.cfg.theta_lbs,
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
@@ -104,8 +104,7 @@ class RowGenerationManager(BaseEstimationManager):
             callback(iteration, self.subproblem_manager, self.master_model)
         return stop
 
-    def solve(self, callback=None, 
-                    local_obs_weights=None,
+    def solve(self, local_obs_weights=None,
                     theta_warmstart=None,  
                     initial_constraints=None, 
                     init_master = True,
@@ -156,10 +155,12 @@ class RowGenerationManager(BaseEstimationManager):
         return model
 
     def update_objective_for_weights(self, local_obs_weights):
+
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
         _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
         if not self.comm_manager._is_root() or self.master_model is None:
             return
+        
         theta, u = self.master_variables
         theta.Obj = _theta_obj_coef
         u.Obj = _u_obj_weights

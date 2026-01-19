@@ -5,7 +5,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 50, 20
+n_agents, n_items = 40, 20
 k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 1, 1, 5])
@@ -50,7 +50,7 @@ bc.subproblems.generate_obs_bundles(theta_star)
 # bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
 
 
-# Estimation via row generation
+# # Estimation via row generation
 # bc.oracles.build_local_modular_error_oracle(seed=47)
 # result = bc.row_generation.solve(verbose=True)
 # bounds_info = bc.row_generation._check_bounds_hit()
@@ -89,7 +89,10 @@ bc.subproblems.generate_obs_bundles(theta_star)
 
 
 # Test Bayesian bootstrap
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=100, seed=123)
+results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=50, seed=123)
 if rank == 0:
     print(results.mean)
     print(results.se)
+
+
+
