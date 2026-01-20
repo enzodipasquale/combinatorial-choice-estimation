@@ -69,9 +69,20 @@ class DataManager:
         return np.asarray(self.local_data["id_data"]["obs_bundles"], dtype=bool)
 
 
-    def load_input_data(self, input_data, preserve_global_data=False):
+    def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
         if self.comm_manager._is_root():
             self.input_data = input_data    
+        
+        self.distribute_data()
+        self._local_data_version = getattr(self, "_local_data_version", 0) + 1
+
+        if preserve_global_data:
+            self.input_data.update(input_data)
+        else:
+            self.input_data = {"id_data": {}, "item_data": {}} if self.comm_manager._is_root() else self.input_data
+
+
+    def distribute_data(self):
         local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(self.input_data["id_data"], 
                                                                                 agent_counts=self.agent_counts, 
                                                                                 return_metadata=True)
@@ -82,17 +93,6 @@ class DataManager:
         self.local_data["item_data"].update(item_data)
         self.input_data_dictionary_metadata["id_data"].update(agent_data_metadata)
         self.input_data_dictionary_metadata["item_data"].update(item_data_metadata)
-        
-        self._local_data_version = getattr(self, "_local_data_version", 0) + 1
-        
-        
-
-
-
-        if preserve_global_data:
-            self.input_data.update(input_data)
-        else:
-            self.input_data = {"id_data": {}, "item_data": {}} if self.comm_manager._is_root() else self.input_data
 
     def erase_input_data(self):
         self.input_data = {"id_data": {}, "item_data": {}}
@@ -100,6 +100,18 @@ class DataManager:
         self.local_data = {"id_data": {}, "item_data": {}}
         self._local_data_version = 0
                 
+
+
+
+
+
+
+
+
+
+
+
+
     @property
     def quadratic_data_info(self):
         return self._quadratic_data_info(self._local_data_version)

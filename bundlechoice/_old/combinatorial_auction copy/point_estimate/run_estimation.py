@@ -90,7 +90,7 @@ if rank != 0:
     bc.config.dimensions.n_items = n_items
     bc.config.dimensions.n_obs = n_obs
 
-bc.data.load_input_data(input_data)
+bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.subproblems.load()
 
