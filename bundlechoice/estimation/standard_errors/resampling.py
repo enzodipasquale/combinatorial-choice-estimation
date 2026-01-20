@@ -78,7 +78,7 @@ class ResamplingMixin:
         else:
             param_indices = list(range(min(5, self.dim.n_features)))
         
-        logger.info(" ")
+    
         logger.info("-"*100)
         logger.info(f"Bayesian Bootstrap Summary: {n_bootstrap} samples in {total_time:.1f}s")
         logger.info(f"{'Param':>8} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")

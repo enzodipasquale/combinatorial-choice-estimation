@@ -260,9 +260,7 @@ class RowGenerationManager(BaseEstimationManager):
         self._log_instance_summary()
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
         p = np.array([self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())])
-        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])
-        logger.info(" ")
-        
+        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])        
 
         logger.info("-"*60)
         vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
