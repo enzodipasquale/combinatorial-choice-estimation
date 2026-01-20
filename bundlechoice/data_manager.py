@@ -7,6 +7,13 @@ from bundlechoice.utils import get_logger
 
 logger = get_logger(__name__)
 
+def update_dict_recursive(target, source):
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            update_dict_recursive(target[key], value)
+        else:
+            target[key] = value
+
 @dataclass
 class QuadraticDataInfo:
     modular_agent: int = 0
@@ -71,15 +78,16 @@ class DataManager:
 
     def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
         if self.comm_manager._is_root():
-            self.input_data = input_data    
+            if preserve_global_data:
+                update_dict_recursive(self.input_data, input_data)
+            else:
+                self.input_data = input_data    
         
         self.distribute_data()
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
 
-        if preserve_global_data:
-            self.input_data.update(input_data)
-        else:
-            self.input_data = {"id_data": {}, "item_data": {}} if self.comm_manager._is_root() else self.input_data
+        if not preserve_global_data and self.comm_manager._is_root():
+            self.input_data = {"id_data": {}, "item_data": {}} 
 
 
     def distribute_data(self):
@@ -100,17 +108,6 @@ class DataManager:
         self.local_data = {"id_data": {}, "item_data": {}}
         self._local_data_version = 0
                 
-
-
-
-
-
-
-
-
-
-
-
 
     @property
     def quadratic_data_info(self):

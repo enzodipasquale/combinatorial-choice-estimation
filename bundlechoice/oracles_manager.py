@@ -1,9 +1,6 @@
 import numpy as np
 from functools import lru_cache
-from numpy.typing import NDArray
 from bundlechoice.utils import get_logger
-from bundlechoice.config import DimensionsConfig
-from bundlechoice.data_manager import DataManager
 logger = get_logger(__name__)
 
 class OraclesManager:
