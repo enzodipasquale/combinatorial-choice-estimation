@@ -147,25 +147,51 @@ class DataManager:
         if not files:
             return None, None
         
+        folder_str = str(folder_path)
+        
+        # Determine feature type once
+        if 'id_data/quadratic' in folder_str:
+            feature_type = 'id_data/quadratic'
+        elif 'id_data/modular' in folder_str:
+            feature_type = 'id_data/modular'
+        elif 'item_data/quadratic' in folder_str:
+            feature_type = 'item_data/quadratic'
+        elif 'item_data/modular' in folder_str:
+            feature_type = 'item_data/modular'
+        else:
+            feature_type = 'other'
+        
         arrays = []
         names = []
-        is_quadratic = 'quadratic' in str(folder_path)
-        is_id_quadratic = 'id_data/quadratic' in str(folder_path)
         
         for f in files:
             arr, col_names = self._load(f)
-            if is_id_quadratic:
+            if feature_type == 'id_data/quadratic':
+                # (n_obs, n_items^2) -> reshape to (n_obs, n_items, n_items)
                 arr = arr.reshape(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_items, self.dimensions_cfg.n_items)
-            arrays.append(arr)
-            
-            if 'item_data/modular' in str(folder_path):
-                names.extend([str(col_names[i]) for i in range(len(col_names))])
-            else:
+                arrays.append(arr)
                 names.append(f.stem)
-        if not is_quadratic:
-            combined = np.concatenate(arrays, axis=-1) if len(arrays) > 1 else np.expand_dims(arrays[0], axis=-1)
-        else:
+            elif feature_type == 'id_data/modular':
+                # (n_obs, n_items) per CSV -> stack to (n_obs, n_items, num_features)
+                arrays.append(arr)
+                names.append(f.stem)
+            elif feature_type == 'item_data/quadratic':
+                # (n_items, n_items) per CSV -> stack to (n_items, n_items, num_features)
+                arrays.append(arr)
+                names.append(f.stem)
+            elif feature_type == 'item_data/modular':
+                # (n_items, num_features) -> use directly
+                arrays.append(arr)
+                names.extend([str(col_names[i]) for i in range(len(col_names))])
+        
+        # Combine arrays based on feature type
+        if feature_type in ['id_data/quadratic', 'id_data/modular', 'item_data/quadratic']:
+            # Stack along feature dimension
             combined = np.stack(arrays, axis=-1) if len(arrays) > 1 else np.expand_dims(arrays[0], axis=-1)
+        elif feature_type == 'item_data/modular':
+            # Single CSV already has correct shape: (n_items, num_features)
+            combined = arrays[0]
+        
         return combined, names
 
     def load_quadratic_data_from_directory(self, path):
