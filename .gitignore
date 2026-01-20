@@ -28,6 +28,7 @@ run_with_timeout.sh
 *.mps
 *.ext3
 *.bas
+*.err
 
 # Images (generated/plot outputs)
 *.png
