@@ -131,31 +131,41 @@ class DataManager:
 
     def _load(self, f):
         f = Path(f)
-        return pd.read_csv(f).values if f.suffix == ".csv" else np.load(f)
+        if f.suffix == ".csv":
+            df = pd.read_csv(f)
+            return df.values, df.columns
+        elif f.suffix == ".npy":
+            return np.load(f), None
+     
     
-    def _load_folder_features(self, folder_path):
+    def _load_folder_features_data(self, folder_path):
         folder = Path(folder_path)
         if not folder.exists() or not folder.is_dir():
             return None, None
         
-        files = sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy"))
+        files = sorted(folder.glob("*.csv"))
         if not files:
             return None, None
         
         arrays = []
         names = []
-        for f in files:
-            arr = self._load(f)
-            arrays.append(arr)
-            # Extract feature names from filename, repeated for each column
-            base_name = f.stem
-            n_cols = arr.shape[-1]
-            if n_cols == 1:
-                names.append(base_name)
-            else:
-                names.extend([f"{base_name}_{i}" for i in range(n_cols)])
+        is_quadratic = 'quadratic' in str(folder_path)
+        is_id_quadratic = 'id_data/quadratic' in str(folder_path)
         
-        combined = np.concatenate(arrays, axis=-1) if len(arrays) > 1 else arrays[0]
+        for f in files:
+            arr, col_names = self._load(f)
+            if is_id_quadratic:
+                arr = arr.reshape(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_items, self.dimensions_cfg.n_items)
+            arrays.append(arr)
+            
+            if 'item_data/modular' in str(folder_path):
+                names.extend([str(col_names[i]) for i in range(len(col_names))])
+            else:
+                names.append(f.stem)
+        if not is_quadratic:
+            combined = np.concatenate(arrays, axis=-1) if len(arrays) > 1 else np.expand_dims(arrays[0], axis=-1)
+        else:
+            combined = np.stack(arrays, axis=-1) if len(arrays) > 1 else np.expand_dims(arrays[0], axis=-1)
         return combined, names
 
     def load_quadratic_data_from_directory(self, path):
@@ -172,7 +182,7 @@ class DataManager:
         if features_base.exists():
             for data_type, key in [('id_data', 'modular'), ('id_data', 'quadratic'),
                                 ('item_data', 'modular'), ('item_data', 'quadratic')]:
-                arr, names = self._load_folder_features(features_base / data_type / key)
+                arr, names = self._load_folder_features_data(features_base / data_type / key)
                 if arr is not None:
                     input_data[data_type][key] = arr
                     input_data[data_type][f"{key}_names"] = names
@@ -184,12 +194,12 @@ class DataManager:
                 folder = other_base / data_type
                 if folder.exists():
                     for f in sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy")):
-                        input_data[data_type][f.stem] = self._load(f)
+                        input_data[data_type][f.stem],_ = self._load(f)
         
         # Load obs_bundles
         obs_path = path / "obs_bundles.csv"
         if obs_path.exists():
-            input_data["id_data"]["obs_bundles"] = self._load(obs_path)
+            input_data["id_data"]["obs_bundles"], _= self._load(obs_path)
         
         return input_data
 

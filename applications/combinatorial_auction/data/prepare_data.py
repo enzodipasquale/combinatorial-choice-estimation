@@ -249,16 +249,16 @@ def save_processed_data(
     (features_dir / "id_data" / "modular").mkdir(parents=True, exist_ok=True)
     (features_dir / "item_data" / "quadratic").mkdir(parents=True, exist_ok=True)
     
-    # Modular features are agent-level (id_data)
+    # id modular: (n_obs, n_items) - one CSV per feature
     for k, name in enumerate(modular_names):
-        feature_data = modular_features[:, :, k]
+        feature_data = modular_features[:, :, k]  # Shape: (n_obs, n_items)
         pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
             features_dir / "id_data" / "modular" / f"{name}.csv", index=False
         )
     
-    # Quadratic features are item-level (item_data)
+    # item quadratic: (n_items, n_items) - one CSV per feature
     for k, name in enumerate(quadratic_names):
-        feature_data = quadratic_features[:, :, k]
+        feature_data = quadratic_features[:, :, k]  # Shape: (n_items, n_items)
         pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
             features_dir / "item_data" / "quadratic" / f"{name}.csv", index=False
         )
