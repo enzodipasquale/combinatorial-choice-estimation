@@ -44,8 +44,8 @@ debug/
 benchmark_warmstart.py
 
 # Batch job scripts
-slurm-*.out
-slurm-*.err
+*.out
+*.err
 *.sbatch
 
 #Other
