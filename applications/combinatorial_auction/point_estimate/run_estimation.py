@@ -44,18 +44,6 @@ if DELTA == 2:
     bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
     bc.config.row_generation.theta_lbs = theta_lbs
     bc.config.row_generation.theta_ubs = theta_ubs
-
-
-if rank == 0:
-    print(input_data.keys())
-    print(input_data["id_data"].keys())
-    print(input_data["item_data"].keys())
-
-    print(input_data["id_data"]["modular"].shape)
-    print(input_data["item_data"]["quadratic"].shape)
-
-    print(bc.n_features)
-
 result = bc.row_generation.solve(verbose=True)
 
 # if rank == 0:
