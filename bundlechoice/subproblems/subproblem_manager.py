@@ -52,3 +52,17 @@ class SubproblemManager:
         self.data_manager.local_data["id_data"]["obs_bundles"] = local_bundles.astype(bool)
         obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.data_manager.agent_counts)
         return obs_bundles
+
+
+    def update_gurobi_settings(self, settings_dict):
+        self.config.subproblem.settings.update(settings_dict)
+        
+        if self.subproblem is None:
+            return
+        
+        if hasattr(self.subproblem, 'local_pbs') and self.subproblem.local_pbs is not None:
+            import gurobipy as gp
+            for model in self.subproblem.local_pbs:
+                if model is not None:
+                    for param, value in settings_dict.items():
+                        model.setParam(param, value)
