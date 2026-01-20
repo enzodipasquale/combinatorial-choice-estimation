@@ -98,8 +98,6 @@ if rank == 0:
     print(results.se)
 
 
-
-
 # theta_boots = []
 # rng = np.random.default_rng(3)
 # row_gen = bc.row_generation_manager
