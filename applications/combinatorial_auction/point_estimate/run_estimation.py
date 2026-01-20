@@ -1,8 +1,9 @@
 #!/bin/env python
-import sys, os, json, yaml
+import sys, yaml, json
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
+from datetime import datetime
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
@@ -65,30 +66,22 @@ if adaptive_cfg := config.get("adaptive_timeout"):
         transition_iterations=adaptive_cfg.get("transition_iterations", 15),
     )
 
-theta_warmstart = None
-if app.get("use_previous_theta") and (theta_path := OUTPUT_DIR / "theta.npy").exists():
-    theta_warmstart = np.load(theta_path) if rank == 0 else None
-    theta_warmstart = comm.bcast(theta_warmstart, root=0)
-    if rank == 0 and theta_warmstart.shape[0] != bc.n_features:
-        theta_warmstart = None
+result = bc.row_generation.solve(verbose=True)
 
-result = bc.row_generation.solve(theta_warmstart=theta_warmstart, verbose=True)
-
-# if rank == 0:
-#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-#     result.save_npy(OUTPUT_DIR / "theta.npy")
-#     result.export_csv(
-#         OUTPUT_DIR / "theta_hat.csv",
-#         metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-#                   "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-#                   "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
-#         feature_names=feature_names,
-#     )
-#     from datetime import datetime
-#     json.dump({
-#         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-#         "n_features": bc.n_features, "feature_names": feature_names,
-#         "timestamp": datetime.now().isoformat(timespec="seconds"),
-#         "converged": result.converged, "num_iterations": result.num_iterations,
-#     }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
-#     print(result.summary())
+if rank == 0:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    result.save_npy(OUTPUT_DIR / "theta.npy")
+    result.export_csv(
+        OUTPUT_DIR / "theta_hat.csv",
+        metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+                  "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
+                  "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
+        feature_names=feature_names,
+    )
+    json.dump({
+        "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+        "n_features": bc.n_features, "feature_names": feature_names,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "converged": result.converged, "num_iterations": result.num_iterations,
+    }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
+    print(result.summary())
