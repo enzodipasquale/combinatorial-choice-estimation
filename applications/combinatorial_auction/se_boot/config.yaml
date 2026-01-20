@@ -6,6 +6,7 @@ application:
     delta: 4                    # Distance decay exponent (2 or 4)
     winners_only: false         # Filter to winning bidders only
     hq_distance: false          # Include HQ-to-item distance features
+    error_seed: 1995            # Seed for error oracle generation
 
 # Bootstrap settings
 bootstrap:

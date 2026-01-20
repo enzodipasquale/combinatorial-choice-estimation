@@ -7,6 +7,7 @@ application:
     winners_only: false         # Filter to winning bidders only
     hq_distance: false          # Include HQ-to-item distance features
     use_previous_theta: true    # Warm start from previous estimate
+    error_seed: 1995            # Seed for error oracle generation
 
 # BundleChoice settings
 dimensions:
