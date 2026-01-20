@@ -50,3 +50,5 @@ bundled_choice_estimation_EC26_v2.pdf
 
 
 debug_*.py
+my_tests/
+bundlechoice/_deprecated/
