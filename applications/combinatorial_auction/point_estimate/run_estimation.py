@@ -72,23 +72,23 @@ if app.get("use_previous_theta") and (theta_path := OUTPUT_DIR / "theta.npy").ex
     if rank == 0 and theta_warmstart.shape[0] != bc.n_features:
         theta_warmstart = None
 
-result = bc.row_generation.solve(theta_warmstart=theta_warmstart)
+# result = bc.row_generation.solve(theta_warmstart=theta_warmstart)
 
-if rank == 0:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    result.save_npy(OUTPUT_DIR / "theta.npy")
-    result.export_csv(
-        OUTPUT_DIR / "theta_hat.csv",
-        metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-                  "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-                  "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
-        feature_names=feature_names,
-    )
-    from datetime import datetime
-    json.dump({
-        "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-        "n_features": bc.n_features, "feature_names": feature_names,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "converged": result.converged, "num_iterations": result.num_iterations,
-    }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
-    print(result.summary())
+# if rank == 0:
+#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+#     result.save_npy(OUTPUT_DIR / "theta.npy")
+#     result.export_csv(
+#         OUTPUT_DIR / "theta_hat.csv",
+#         metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+#                   "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
+#                   "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
+#         feature_names=feature_names,
+#     )
+#     from datetime import datetime
+#     json.dump({
+#         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+#         "n_features": bc.n_features, "feature_names": feature_names,
+#         "timestamp": datetime.now().isoformat(timespec="seconds"),
+#         "converged": result.converged, "num_iterations": result.num_iterations,
+#     }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
+#     print(result.summary())
