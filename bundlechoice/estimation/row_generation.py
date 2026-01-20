@@ -243,7 +243,7 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             param_indices = list(range(min(5, len(self.theta_iter))))
         
-        if iteration % 10 == 0:
+        if iteration % 80 == 0:
             param_header = ', '.join(f'θ[{i}]' for i in param_indices)
             logger.info(f"{'Iter':>4} | {'Reduced Cost':>12} | {'Pricing (s)':>11} | {'Master (s)':>10} | {'#Viol':>5} "+ 
                             f"| {'Objective Val':>13} | {'Constr':>6} | Parameters ({param_header})")
@@ -257,6 +257,7 @@ class RowGenerationManager(BaseEstimationManager):
     def _log_summary(self, n_iters, total):
         if not self.comm_manager._is_root() or not self.verbose:
             return
+        self._log_instance_summary()
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
         p = np.array([self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())])
         m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])

@@ -13,7 +13,7 @@ class SubproblemManager:
         self.oracles_manager = oracles_manager
         self.subproblem = None
 
-    def load(self, subproblem=None):
+    def load_subproblem(self, subproblem=None):
         subproblem = subproblem or self.config.subproblem.name
         cls = SUBPROBLEM_REGISTRY.get(subproblem)
         if cls is None:
@@ -23,11 +23,12 @@ class SubproblemManager:
                                 self.oracles_manager, 
                                 self.config.subproblem, 
                                 self.config.dimensions)
+        
         return self.subproblem
 
     def initialize_subproblems(self):
         if self.subproblem is None:
-            self.load()
+            self.load_subproblem()
         self.subproblem.initialize()
 
     def initialize_and_solve_subproblems(self, theta):
