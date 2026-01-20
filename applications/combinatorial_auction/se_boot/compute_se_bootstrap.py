@@ -37,16 +37,7 @@ bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subprobl
 
 if rank == 0:
     input_dir = get_input_dir()
-    input_data = bc.data.load_quadratic_data_from_directory(
-        input_dir,
-        additional_agent_data={
-            "capacity": str(input_dir / "constraints" / "capacity.csv"),
-            "obs_bundles": str(input_dir / "obs_bundles.csv"),
-        },
-        additional_item_data={
-            "weights": str(input_dir / "constraints" / "weights.csv"),
-        },
-    )
+    input_data = bc.data.load_quadratic_data_from_directory(input_dir)
     input_data["item_data"]["modular"] = -np.eye(bc.n_items)
 else:
     input_data = None

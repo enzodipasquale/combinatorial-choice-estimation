@@ -76,7 +76,9 @@ class CommManager:
         return self.Reduce(sendbuf)
 
     def Bcast(self, array):
-        self.comm.Bcast(array, root=self.root)
+        if self._is_root():
+            array = np.ascontiguousarray(array)
+        self.comm.Bcast(array, root=self.root) 
         return array
 
 
@@ -106,7 +108,7 @@ class CommManager:
         for k, (kind, shape, dtype) in meta.items():
             if kind == 'arr':
                 arr = data_dict[k] if self._is_root() else np.empty(shape, dtype=dtype)
-                self.comm.Bcast(arr, root=self.root)
+                self.Bcast(arr)
                 out[k] = arr
             else:
                 out[k] = self.comm.bcast(data_dict[k] if self._is_root() else None, root=self.root)

@@ -7,7 +7,7 @@ from bundlechoice.utils import suppress_output
 class LinearKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase):
 
     def initialize_single_pb(self, local_id):
-        weights = self.data_manager.local_data["item_data"]['weights']
+        weights = self.data_manager.local_data["item_data"]['weight']
         capacity = self.data_manager.local_data["id_data"]['capacity'][local_id]
         with suppress_output():
             model = gp.Model()

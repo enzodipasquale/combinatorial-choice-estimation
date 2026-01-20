@@ -129,11 +129,15 @@ class DataManager:
                     quadratic_item_names=item_data.get("quadratic_names"),
                 )
 
-    def _load(self, f):
+    def _load_file_to_array(self, f):
         f = Path(f)
         if f.suffix == ".csv":
             df = pd.read_csv(f)
-            return df.values, df.columns
+            arr = df.values
+            # Squeeze single-column CSVs to 1D
+            if arr.ndim == 2 and arr.shape[1] == 1:
+                arr = arr.squeeze(axis=1)
+            return arr, df.columns
         elif f.suffix == ".npy":
             return np.load(f), None
      
@@ -148,48 +152,27 @@ class DataManager:
             return None, None
         
         folder_str = str(folder_path)
-        
-        # Determine feature type once
-        if 'id_data/quadratic' in folder_str:
-            feature_type = 'id_data/quadratic'
-        elif 'id_data/modular' in folder_str:
-            feature_type = 'id_data/modular'
-        elif 'item_data/quadratic' in folder_str:
-            feature_type = 'item_data/quadratic'
-        elif 'item_data/modular' in folder_str:
-            feature_type = 'item_data/modular'
-        else:
-            feature_type = 'other'
+        is_id_quadratic = 'id_data/quadratic' in folder_str
+        is_item_modular = 'item_data/modular' in folder_str
+        needs_stacking = not is_item_modular
         
         arrays = []
         names = []
         
         for f in files:
-            arr, col_names = self._load(f)
-            if feature_type == 'id_data/quadratic':
-                # (n_obs, n_items^2) -> reshape to (n_obs, n_items, n_items)
+            arr, col_names = self._load_file_to_array(f)
+            if is_id_quadratic:
                 arr = arr.reshape(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_items, self.dimensions_cfg.n_items)
-                arrays.append(arr)
+            
+            arrays.append(arr)
+            if is_item_modular:
+                names.extend([str(name) for name in col_names])
+            else:
                 names.append(f.stem)
-            elif feature_type == 'id_data/modular':
-                # (n_obs, n_items) per CSV -> stack to (n_obs, n_items, num_features)
-                arrays.append(arr)
-                names.append(f.stem)
-            elif feature_type == 'item_data/quadratic':
-                # (n_items, n_items) per CSV -> stack to (n_items, n_items, num_features)
-                arrays.append(arr)
-                names.append(f.stem)
-            elif feature_type == 'item_data/modular':
-                # (n_items, num_features) -> use directly
-                arrays.append(arr)
-                names.extend([str(col_names[i]) for i in range(len(col_names))])
         
-        # Combine arrays based on feature type
-        if feature_type in ['id_data/quadratic', 'id_data/modular', 'item_data/quadratic']:
-            # Stack along feature dimension
+        if needs_stacking:
             combined = np.stack(arrays, axis=-1) if len(arrays) > 1 else np.expand_dims(arrays[0], axis=-1)
-        elif feature_type == 'item_data/modular':
-            # Single CSV already has correct shape: (n_items, num_features)
+        else:
             combined = arrays[0]
         
         return combined, names
@@ -220,12 +203,12 @@ class DataManager:
                 folder = other_base / data_type
                 if folder.exists():
                     for f in sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy")):
-                        input_data[data_type][f.stem],_ = self._load(f)
+                        input_data[data_type][f.stem], _ = self._load_file_to_array(f)
         
         # Load obs_bundles
         obs_path = path / "obs_bundles.csv"
         if obs_path.exists():
-            input_data["id_data"]["obs_bundles"], _= self._load(obs_path)
+            input_data["id_data"]["obs_bundles"], _= self._load_file_to_array(obs_path)
         
         return input_data
 

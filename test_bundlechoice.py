@@ -27,7 +27,7 @@ if rank == 0:
     
     input_data = {
         "id_data": {"modular": modular_agent, "capacity": capacity},
-        "item_data": {"quadratic": quadratic_item, "weights": weights}
+        "item_data": {"quadratic": quadratic_item, "weight": weights}
     }
 else:
     cfg = None
