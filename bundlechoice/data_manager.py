@@ -70,8 +70,8 @@ class DataManager:
 
 
     def load_input_data(self, input_data, preserve_global_data=False):
-        self.input_data = input_data if self.comm_manager._is_root() else self.input_data
-            
+        if self.comm_manager._is_root():
+            self.input_data = input_data    
         local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(self.input_data["id_data"], 
                                                                                 agent_counts=self.agent_counts, 
                                                                                 return_metadata=True)
@@ -95,11 +95,10 @@ class DataManager:
             self.input_data = {"id_data": {}, "item_data": {}} if self.comm_manager._is_root() else self.input_data
 
     def erase_input_data(self):
-        self.input_data = {}
-        self.input_data_dictionary_metadata = None
-        self.local_data = None
+        self.input_data = {"id_data": {}, "item_data": {}}
+        self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
+        self.local_data = {"id_data": {}, "item_data": {}}
         self._local_data_version = 0
-        self.local_obs_bundles = None
                 
     @property
     def quadratic_data_info(self):
@@ -107,40 +106,62 @@ class DataManager:
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):
-        ad, id = self.local_data["id_data"], self.local_data["item_data"]
+        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadraticDataInfo(dim(ad, "modular"), dim(id, "modular"), 
-                                    dim(ad, "quadratic"), dim(id, "quadratic"), 
-                                    ad.get("constraint_mask"))
-
-    def _detect_quadratic_features(self, path):
-        path = Path(path)
-        available = {f.stem.lower(): f for f in path.iterdir() if f.suffix in (".csv", ".npy")}
-        agent_files, item_files = {}, {}
-        for feat in ["modular", "quadratic"]:
-            if f"{feat}_agent" in available:
-                agent_files[feat] = available[f"{feat}_agent"]
-                self.quadratic_data_info.modular_agent_names = pd.read_csv(agent_files[feat]).columns.tolist()
-            if f"{feat}_item" in available:
-                item_files[feat] = available[f"{feat}_item"]
-                self.quadratic_data_info.modular_item_names = pd.read_csv(item_files[feat]).columns.tolist()
-
-    def load_from_directory(self, path, agent_files=None, item_files=None, auto_detect_quadratic_features=False):
-        if not self.comm_manager._is_root():
-            return
-        path = Path(path)
-        if auto_detect_quadratic_features:
-            agent_files, item_files = self._detect_quadratic_features(path)
-        for k, f in (agent_files or {}).items():
-            # load csv as pandas dataframe and turn into numpy array    
-            self.input_data["id_data"][k] = pd.read_csv(f).values
-        for k, f in (item_files or {}).items():
-            self.input_data["item_data"][k] = pd.read_csv(f).values
+        return QuadraticDataInfo(
+                                    modular_agent=dim(agent_data, "modular"),
+                                    modular_item=dim(item_data, "modular"),
+                                    quadratic_agent=dim(agent_data, "quadratic"),
+                                    quadratic_item=dim(item_data, "quadratic"),
+                                    constraint_mask=agent_data.get("constraint_mask"),
+                                )
 
     def _load(self, f):
         f = Path(f)
         return pd.read_csv(f).values if f.suffix == ".csv" else np.load(f)
     
+    def _load_folder_features(self, folder_path):
+        folder = Path(folder_path)
+        if not folder.exists() or not folder.is_dir():
+            return None
+        arrays = [self._load(f) for f in sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy"))]
+        if not arrays:
+            return None
+        return np.concatenate(arrays, axis=-1) if len(arrays) > 1 else arrays[0]
 
+    def load_quadratic_data_from_directory(self, path, additional_agent_data= None, 
+                                        additional_item_data= None, error_seed= None):
+
+        if not self.comm_manager._is_root():
+            return None
+        
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Data directory not found: {path}")
+        
+        input_data = {"id_data": {}, "item_data": {}}
+        features_base = path / "features" if (path / "features").exists() else path
+        
+
+        for folder_name, data_type, key in [
+            ('modular_agent', 'id_data', 'modular'),
+            ('modular_item', 'item_data', 'modular'),
+            ('quadratic_agent', 'id_data', 'quadratic'),
+            ('quadratic_item', 'item_data', 'quadratic'),
+        ]:
+            arr = self._load_folder_features(features_base / folder_name)
+            if arr is not None:
+                input_data[data_type][key] = arr
+  
+        for key, file_path in (additional_agent_data or {}).items():
+            input_data["id_data"][key] = self._load(Path(file_path))
+        
+        for key, file_path in (additional_item_data or {}).items():
+            input_data["item_data"][key] = self._load(Path(file_path))
+        
+        if error_seed is not None:
+            input_data["_error_seed"] = error_seed
+        
+        return input_data
 
 
