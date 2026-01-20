@@ -16,7 +16,6 @@ class RowGenerationManager(BaseEstimationManager):
         self.master_variables = None
         self.timing_stats = None
         self.theta_iter = None
-        self.u_iter = None
         self.u_iter_local = None
 
         self.slack_counter = {}
@@ -38,7 +37,6 @@ class RowGenerationManager(BaseEstimationManager):
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
             u = self.master_model.addMVar(self.dim.num_agents, obj=u_obj_coef, name='utility')
-            
             if theta_warmstart is not None:
                 theta.Start = theta_warmstart
             self.master_variables = (theta, u)
