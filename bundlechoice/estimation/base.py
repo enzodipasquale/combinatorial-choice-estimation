@@ -85,3 +85,28 @@ class BaseEstimationManager:
             return
         ids = cfg.parameters_to_log
         logger.info('Parameters: %s', np.round(self.theta_iter[ids] if ids else self.theta_iter, 3))
+
+    def _log_instance_summary(self):
+        if not self.comm_manager._is_root():
+            return None
+        
+        dim = self.config.dimensions
+        metadata = {
+            'n_obs': dim.n_obs,
+            'n_items': dim.n_items,
+            'n_features': dim.n_features,
+            'n_simulations': dim.n_simulations,
+            'comm_size': self.comm_manager.comm_size,
+            'subproblem': self.config.subproblem.name,
+        }
+ 
+        logger.info("-"*100)
+        header = (f"{'n_obs':>6} | {'n_items':>8} | {'n_features':>11} | {'n_simulations':>14} |"
+                  +f" {'comm_size':>10} | {'subproblem':>20}")
+        values = (f"{metadata['n_obs']:>6} | {metadata['n_items']:>8} | {metadata['n_features']:>11} |"
+                  +f" {metadata['n_simulations']:>14} | {metadata['comm_size']:>10} | {metadata['subproblem'] or 'N/A':>20}")
+        logger.info(header)
+        logger.info(values)
+        logger.info("-"*100)
+        
+        return metadata

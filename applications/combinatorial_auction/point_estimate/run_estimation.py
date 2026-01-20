@@ -41,7 +41,7 @@ else:
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
-bc.subproblems.load()
+bc.subproblems.load_subproblem()
 
 feature_names = bc.config.dimensions.feature_names or []
 
