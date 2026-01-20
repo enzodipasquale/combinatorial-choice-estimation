@@ -15,14 +15,25 @@ class SubproblemManager:
 
     def load_subproblem(self, subproblem=None):
         subproblem = subproblem or self.config.subproblem.name
-        cls = SUBPROBLEM_REGISTRY.get(subproblem)
-        if cls is None:
-            raise ValueError(f"Unknown subproblem: '{subproblem}'. "
-                             f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
+        
+        if isinstance(subproblem, type):
+            cls = subproblem
+        elif callable(subproblem) and not isinstance(subproblem, str):
+            self.subproblem = subproblem(self.data_manager, 
+                                         self.oracles_manager, 
+                                         self.config.subproblem, 
+                                         self.config.dimensions)
+            return self.subproblem
+        else:
+            cls = SUBPROBLEM_REGISTRY.get(subproblem)
+            if cls is None:
+                raise ValueError(f"Unknown subproblem: '{subproblem}'. "
+                               f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
+        
         self.subproblem = cls(self.data_manager, 
-                                self.oracles_manager, 
-                                self.config.subproblem, 
-                                self.config.dimensions)
+                             self.oracles_manager, 
+                             self.config.subproblem, 
+                             self.config.dimensions)
         
         return self.subproblem
 
