@@ -45,6 +45,7 @@ benchmark_warmstart.py
 # Batch job scripts
 slurm-*.out
 slurm-*.err
+*.sbatch
 
 bundled_choice_estimation_EC26_v2.pdf
 
@@ -52,3 +53,4 @@ bundled_choice_estimation_EC26_v2.pdf
 debug_*.py
 my_tests/
 bundlechoice/_deprecated/
+
