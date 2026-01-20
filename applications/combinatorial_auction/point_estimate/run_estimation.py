@@ -39,27 +39,11 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-feature_names = bc.config.dimensions.feature_names or []
-
-# if DELTA == 2 and feature_names:
-#     theta_lbs, theta_ubs = np.zeros(bc.n_features), np.full(bc.n_features, 1000.0)
-#     bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
-#     for i, name in enumerate(feature_names):
-#         if name in bounds_map:
-#             theta_lbs[i], theta_ubs[i] = bounds_map[name]
-#         elif name.startswith("FE_"):
-#             theta_lbs[i], theta_ubs[i] = 0, 1000
-#     bc.config.row_generation.theta_lbs = theta_lbs
-#     bc.config.row_generation.theta_ubs = theta_ubs
-#     if rank == 0:
-#         print("Custom bounds for delta=2 applied")
-
-# if adaptive_cfg := config.get("adaptive_timeout"):
-#     bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(
-#         initial_timeout=adaptive_cfg.get("initial", 1.0),
-#         final_timeout=adaptive_cfg.get("final", 30.0),
-#         transition_iterations=adaptive_cfg.get("transition_iterations", 15),
-#     )
+if DELTA == 2:
+    theta_lbs, theta_ubs = np.zeros(bc.n_features), np.full(bc.n_features, 1000.0)
+    bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
+    bc.config.row_generation.theta_lbs = theta_lbs
+    bc.config.row_generation.theta_ubs = theta_ubs
 
 
 if rank == 0:

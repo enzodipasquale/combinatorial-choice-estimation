@@ -65,8 +65,6 @@ if adaptive_cfg := config.get("adaptive_timeout"):
         transition_iterations=adaptive_cfg.get("transition_iterations", 15),
     )
 
-feature_names = bc.config.dimensions.feature_names or []
-structural_idx = [i for i, n in enumerate(feature_names) if not n.startswith("FE_")]
 
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
@@ -76,34 +74,28 @@ theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
 
 se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED)
 
-if rank == 0 and se_result is not None:
-    theta_point = theta_hat
+# if rank == 0 and se_result is not None:
+#     theta_point = theta_hat
     
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    np.savez(OUTPUT_DIR / "se_bootstrap.npz", mean=se_result.mean, se=se_result.se, 
-             ci_lower=se_result.ci_lower, ci_upper=se_result.ci_upper)
+#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+#     np.savez(OUTPUT_DIR / "se_bootstrap.npz", mean=se_result.mean, se=se_result.se, 
+#              ci_lower=se_result.ci_lower, ci_upper=se_result.ci_upper)
     
-    row = {"timestamp": datetime.now().isoformat(timespec="seconds"), "delta": DELTA,
-           "winners_only": app.get("winners_only"), "hq_distance": app.get("hq_distance"),
-           "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-           "num_bootstrap": NUM_BOOTSTRAP, "seed": SEED,
-           "converged": result.converged, "num_iterations": result.num_iterations}
-    for i in structural_idx:
-        name = feature_names[i]
-        row[f"theta_{name}"] = theta_point[i]
-        row[f"se_{name}"] = se_result.se[i]
-        row[f"t_{name}"] = se_result.t_stats[i]
+#     row = {"timestamp": datetime.now().isoformat(timespec="seconds"), "delta": DELTA,
+#            "winners_only": app.get("winners_only"), "hq_distance": app.get("hq_distance"),
+#            "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
+#            "num_bootstrap": NUM_BOOTSTRAP, "seed": SEED,
+#            "converged": result.converged, "num_iterations": result.num_iterations}
+   
     
-    csv_path = OUTPUT_DIR / "se_bootstrap.csv"
-    write_header = not csv_path.exists()
-    with open(csv_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=row.keys())
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+#     csv_path = OUTPUT_DIR / "se_bootstrap.csv"
+#     write_header = not csv_path.exists()
+#     with open(csv_path, "a", newline="") as f:
+#         writer = csv.DictWriter(f, fieldnames=row.keys())
+#         if write_header:
+#             writer.writeheader()
+#         writer.writerow(row)
     
-    print("\nResults:")
-    for i in structural_idx:
-        print(f"  {feature_names[i]}: θ={theta_point[i]:.4f}, SE={se_result.se[i]:.4f}")
+#     print("\nResults:")
 
 comm.Barrier()
