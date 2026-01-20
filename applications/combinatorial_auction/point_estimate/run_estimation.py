@@ -72,7 +72,7 @@ if app.get("use_previous_theta") and (theta_path := OUTPUT_DIR / "theta.npy").ex
     if rank == 0 and theta_warmstart.shape[0] != bc.n_features:
         theta_warmstart = None
 
-# result = bc.row_generation.solve(theta_warmstart=theta_warmstart)
+result = bc.row_generation.solve(theta_warmstart=theta_warmstart, verbose=True)
 
 # if rank == 0:
 #     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

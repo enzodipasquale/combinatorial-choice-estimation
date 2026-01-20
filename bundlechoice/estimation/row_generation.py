@@ -68,21 +68,31 @@ class RowGenerationManager(BaseEstimationManager):
                                                               dtype=np.float64,
                                                               shape=(self.dim.num_agents,))
 
+    def _update_iteration_info(self, iteration, reduced_cost=None, violations_id=None, model=None, **kwargs):
+        if self.comm_manager._is_root():
+            if iteration not in self.iteration_history:
+                self.iteration_history[iteration] = {}
+            update_dict = {}
+            if reduced_cost is not None:
+                update_dict['reduced_cost'] = reduced_cost
+            if violations_id is not None:
+                update_dict['n_violations'] = len(violations_id)
+            if model is not None:
+                update_dict['objective'] = model.ObjVal
+                update_dict['n_constraints'] = model.NumConstrs
+            update_dict.update(kwargs)
+            self.iteration_history[iteration].update(update_dict)
+
     def _master_iteration(self, pricing_results, iteration, callback=None):
         features_local = self.oracles_manager.features_oracle(pricing_results)
         errors_local = self.oracles_manager.error_oracle(pricing_results)
         u_local = features_local @ self.theta_iter + errors_local
         local_reduced_costs = u_local - self.u_iter_local
         reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
-        stop = (reduced_cost[0] <= self.cfg.tol_row_generation) if self.comm_manager._is_root() else None
+        reduced_cost = reduced_cost[0] if self.comm_manager._is_root() else None
+        stop = (reduced_cost <= self.cfg.tol_row_generation) if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
-        if stop:
-            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
-            if suboptimal_mode:
-                logger.info('Reduced cost below tolerance, but suboptimal cuts mode active - continuing')
-                return False
-            return True
-
+    
         local_violations = np.where(local_reduced_costs > self.cfg.tol_row_generation)[0]
         local_violations_id = self.data_manager.obs_ids[local_violations]
         violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
@@ -91,12 +101,21 @@ class RowGenerationManager(BaseEstimationManager):
         features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
         errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
-        
+        self._update_iteration_info(iteration, reduced_cost, violations_id, self.master_model)
+                        
+        if stop:
+            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
+            if suboptimal_mode:
+                logger.info('Reduced cost below tolerance, but suboptimal cuts mode active - continuing')
+                return False
+            return True
+
         if self.comm_manager._is_root():
             self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
             self.master_model.optimize()
             self.cfg.tol_row_generation *= self.cfg.row_generation_decay
+            
         self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
             callback(iteration, self.subproblem_manager, self.master_model)
@@ -105,10 +124,13 @@ class RowGenerationManager(BaseEstimationManager):
     def _row_generation_iteration(self, iteration, master_iteration_callback):
         t0 = time.perf_counter()
         pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-        self.pricing_times.append(time.perf_counter() - t0)
+        pricing_time = time.perf_counter() - t0
         t1 = time.perf_counter()
         stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
-        self.master_times.append(time.perf_counter() - t1)
+        master_time = time.perf_counter() - t1
+        self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
+        self._log_iteration(iteration)
+        
         return stop
 
     def solve(self, local_obs_weights=None,
@@ -121,9 +143,7 @@ class RowGenerationManager(BaseEstimationManager):
                     verbose = None):
 
         self.verbose = verbose if verbose is not None else True
-        self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
-
         if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
         elif self.has_master_vars:
@@ -134,17 +154,12 @@ class RowGenerationManager(BaseEstimationManager):
             self._Bcast_theta_and_Scatterv_u_vals()
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
-        # if self.comm_manager._is_root():
-        #     theta_coeff = self.master_variables[0].Obj
-        #     u_coeff = self.master_variables[1].Obj
-        #     logger.info(f"before rg loop: {theta_coeff}")
-        #     logger.info(f"before rg loop: {u_coeff}")
-
+  
         result = self.row_generation_loop(master_iteration_callback)
         return result
 
     def row_generation_loop(self, master_iteration_callback):
-        iteration, self.pricing_times, self.master_times, t0 = 0, [], [], time.perf_counter()
+        iteration, self.iteration_history, t0 = 0, {}, time.perf_counter()
         while iteration < self.cfg.max_iters:
             stop = self._row_generation_iteration(iteration, master_iteration_callback)
             if stop and iteration >= self.cfg.min_iters:
@@ -156,16 +171,13 @@ class RowGenerationManager(BaseEstimationManager):
         return result
 
 
-
-
     def add_constraints(self, indices, bundles, features, errors):
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
         self.constraint_info[constr] = (indices, bundles.copy())
-        if self.verbose:        
-            logger.info('Added %d constraints', len(indices))
+       
         return constr
     
     def _setup_gurobi_model(self, gurobi_settings=None):
@@ -228,37 +240,44 @@ class RowGenerationManager(BaseEstimationManager):
 
 
 
+    def _log_iteration(self, iteration):
+        if not self.comm_manager._is_root():
+            return
+        info = self.iteration_history[iteration]   
+        
+        if self.cfg.parameters_to_log is not None:
+            param_indices = self.cfg.parameters_to_log
+        else:
+            param_indices = list(range(min(5, len(self.theta_iter))))
+        
+        if iteration % 10 == 0:
+            param_header = ', '.join(f'θ[{i}]' for i in param_indices)
+            logger.info(f"{'Iter':>4} | {'Reduced Cost':>12} | {'Pricing':>8} | {'Master':>8} | {'Viol':>5} | {'Objective':>12} | {'Constr':>6} | Parameters ({param_header})")
+        
+        param_vals = ', '.join(f'{self.theta_iter[i]:.5f}' for i in param_indices)
+        logger.info(f"{iteration:>4} | {info['reduced_cost']:>12.6f} | {info['pricing_time']:>7.3f}s | {info['master_time']:>7.3f}s | {info['n_violations']:>5} | {info['objective']:>12.5f} | {info['n_constraints']:>6} | ({param_vals})")
+
     def _log_summary(self, n_iters, total):
         if not self.comm_manager._is_root() or not self.verbose:
             return
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
-        logger.info("-"*55)
+        p = np.array([self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())])
+        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])
+        logger.info(" ")
+        
+
+        logger.info("-"*60)
         vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
         logger.info('Estimated Parameters:')
         logger.info(f'  {vals}')
         logger.info(f'Objective Value = {self.master_model.ObjVal}')
-
-        p, m = np.array(self.pricing_times), np.array(self.master_times)
         logger.info('Timing Summary:')
         logger.info(f'  Terminated after {n_iters} iterations in {total:.1f}s')
         logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
         logger.info(f'  pricing  {p.sum():>7.2f}s  {p.mean():>7.3f}s  [{p.min():.3f}, {p.max():.3f}]')
         logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {m.max():.3f}]')
-        logger.info("-"*55)
+        logger.info("-"*60)
         
-
-    # def get_binding_constraints(self, tolerance=1e-06):
-    #     if not self.comm_manager._is_root() or self.master_model is None:
-    #         return None
-    #     indices, bundles = [], []
-    #     for constr in self.master_model.getConstrs():
-    #         if constr in self.constraint_info and abs(constr.Slack) <= tolerance:
-    #             idx, bundle = self.constraint_info[constr]
-    #             indices.append(idx)
-    #             bundles.append(bundle)
-    #     return {'indices': np.array(indices, dtype=np.int64), 'bundles': np.array(bundles, dtype=np.bool_)}
-
-
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
         if not self.comm_manager._is_root() or self.master_model is None:
@@ -280,8 +299,10 @@ class RowGenerationManager(BaseEstimationManager):
     def _create_result(self, num_iterations = None):
         if self.comm_manager._is_root():
             converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
+            pricing_times = [self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())]
+            master_times = [self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())]
             return EstimationResult(
                 theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
                 final_objective=self.master_model.ObjVal,
-                timing= (self.pricing_times, self.master_times),
+                timing= (pricing_times, master_times),
                 warnings=None)

@@ -50,9 +50,9 @@ bc.subproblems.generate_obs_bundles(theta_star)
 # bc.data.local_obs_bundles = obs_bundles_local.astype(bool)
 
 
-# # Estimation via row generation
-# bc.oracles.build_local_modular_error_oracle(seed=47)
-# result = bc.row_generation.solve(verbose=True)
+# Estimation via row generation
+bc.oracles.build_local_modular_error_oracle(seed=47)
+result = bc.row_generation.solve(verbose=True)
 # bounds_info = bc.row_generation._check_bounds_hit()
 
 # if rank == 0:
@@ -89,13 +89,13 @@ bc.subproblems.generate_obs_bundles(theta_star)
 
 
 # Test Bayesian bootstrap
-bc.oracles.build_local_modular_error_oracle(seed=27)
+# bc.oracles.build_local_modular_error_oracle(seed=27)
 
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=10, seed=123)
+# results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=10, seed=123)
 
-if rank == 0:
-    print(results.mean)
-    print(results.se)
+# if rank == 0:
+#     print(results.mean)
+#     print(results.se)
 
 
 # theta_boots = []
