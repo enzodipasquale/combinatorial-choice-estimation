@@ -68,19 +68,16 @@ class RowGenerationManager(BaseEstimationManager):
                                                               dtype=np.float64,
                                                               shape=(self.dim.num_agents,))
 
-    def _update_iteration_info(self, iteration, reduced_cost=None, violations_id=None, model=None, **kwargs):
+
+    def _update_iteration_info(self, iteration, **kwargs):
         if self.comm_manager._is_root():
             if iteration not in self.iteration_history:
                 self.iteration_history[iteration] = {}
             update_dict = {}
-            if reduced_cost is not None:
-                update_dict['reduced_cost'] = reduced_cost
-            if violations_id is not None:
-                update_dict['n_violations'] = len(violations_id)
-            if model is not None:
-                update_dict['objective'] = model.ObjVal
-                update_dict['n_constraints'] = model.NumConstrs
             update_dict.update(kwargs)
+            update_dict.update({'objective': self.master_model.ObjVal, 
+                                'n_constraints': self.master_model.NumConstrs})
+            
             self.iteration_history[iteration].update(update_dict)
 
     def _master_iteration(self, pricing_results, iteration, callback=None):
@@ -101,15 +98,11 @@ class RowGenerationManager(BaseEstimationManager):
         features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
         errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
-        self._update_iteration_info(iteration, reduced_cost, violations_id, self.master_model)
+        self._update_iteration_info(iteration, reduced_cost = reduced_cost,
+                                               n_violations =  len(violations_id) if self.comm_manager._is_root() else None)
                         
         if stop:
-            suboptimal_mode = getattr(self.subproblem_manager, '_suboptimal_mode', False)
-            if suboptimal_mode:
-                logger.info('Reduced cost below tolerance, but suboptimal cuts mode active - continuing')
-                return False
             return True
-
         if self.comm_manager._is_root():
             self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
@@ -119,7 +112,7 @@ class RowGenerationManager(BaseEstimationManager):
         self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
             callback(iteration, self.subproblem_manager, self.master_model)
-        return stop
+        return False
 
     def _row_generation_iteration(self, iteration, master_iteration_callback):
         t0 = time.perf_counter()
@@ -137,13 +130,13 @@ class RowGenerationManager(BaseEstimationManager):
                     theta_warmstart=None,  
                     initial_constraints=None, 
                     initialize_master = True,
-                    init_subproblems = True,
+                    initialize_subproblems = True,
                     master_iteration_callback=None,
                     master_init_callback=None,
-                    verbose = None):
+                    verbose = False):
 
         self.verbose = verbose if verbose is not None else True
-        self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
+        self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
         elif self.has_master_vars:
@@ -241,7 +234,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _log_iteration(self, iteration):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager._is_root() or not self.verbose:
             return
         info = self.iteration_history[iteration]   
         
