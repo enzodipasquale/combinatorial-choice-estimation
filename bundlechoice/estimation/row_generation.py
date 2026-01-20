@@ -134,8 +134,11 @@ class RowGenerationManager(BaseEstimationManager):
                     master_iteration_callback=None,
                     master_init_callback=None,
                     verbose = False):
-
+        
+        
         self.verbose = verbose if verbose is not None else True
+        if self.verbose:
+            logger.info("Row Generation initializing...")
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
@@ -147,7 +150,8 @@ class RowGenerationManager(BaseEstimationManager):
             self._Bcast_theta_and_Scatterv_u_vals()
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
-  
+        if self.verbose:
+            logger.info("Row Generation initialized.")
         result = self.row_generation_loop(master_iteration_callback)
         return result
 

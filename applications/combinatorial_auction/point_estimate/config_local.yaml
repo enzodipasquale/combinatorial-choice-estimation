@@ -4,7 +4,7 @@
 # Application parameters
 application:
     delta: 4
-    winners_only: true
+    winners_only: false
     hq_distance: false
     use_previous_theta: true
     error_seed: 1995

@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -26,19 +27,16 @@ NUM_BOOTSTRAP, SEED = boot.get("num_samples", 200), boot.get("seed", 1995)
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
-def get_input_dir():
-    suffix = f"delta{DELTA}"
-    if app.get("winners_only"): suffix += "_winners"
-    if app.get("hq_distance"): suffix += "_hqdist"
-    return APP_DIR / "data/input_data" / suffix
-
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
 
 if rank == 0:
-    input_dir = get_input_dir()
-    input_data = bc.data.load_quadratic_data_from_directory(input_dir)
-    input_data["item_data"]["modular"] = -np.eye(bc.n_items)
+    input_data = prepare_data_main(
+        delta=DELTA,
+        winners_only=app.get("winners_only", False),
+        hq_distance=app.get("hq_distance", False),
+        save_data=False
+    )
 else:
     input_data = None
 
