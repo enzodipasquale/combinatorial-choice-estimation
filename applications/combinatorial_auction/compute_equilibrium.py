@@ -1,17 +1,4 @@
 #!/bin/env python
-"""
-Compute competitive equilibrium using estimated theta.
-
-The equilibrium problem is:
-    min_{p >= 0} sum_i u_i + sum_j p_j
-    s.t. u_i >= sum_k feature_iBk * theta_hat_k - sum_{j in B}p_j + error_iB
-
-Strategy: Use full feature structure but fix non-price theta components.
-- theta = [p_1, ..., p_J, theta_agent_mod (fixed), theta_item_quad (fixed)]
-- Prices (first n_items components) are free in [0, max_price]
-- Other components are fixed to theta_hat values via bounds
-"""
-
 import sys
 import os
 from pathlib import Path

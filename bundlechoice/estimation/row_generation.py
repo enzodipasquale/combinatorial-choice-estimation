@@ -22,7 +22,10 @@ class RowGenerationManager(BaseEstimationManager):
         self.constraint_info = {}
         self.cfg = self.config.row_generation
         self.dim = self.config.dimensions
-        
+
+    @property
+    def has_master_vars(self):
+        return self.comm_manager.bcast(self.master_model is not None)
 
     
     def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None, master_init_callback=None):
@@ -123,16 +126,14 @@ class RowGenerationManager(BaseEstimationManager):
 
         if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
+        elif self.has_master_vars:
+            if local_obs_weights is not None:
+                self.update_objective_for_weights(local_obs_weights)
+            if self.comm_manager._is_root():
+                self.master_model.optimize()
+            self._Bcast_theta_and_Scatterv_u_vals()
         else:
-            has_master = self.comm_manager.bcast(self.master_variables is not None if self.comm_manager._is_root() else None)
-            if has_master:
-                if local_obs_weights is not None:
-                    self.update_objective_for_weights(local_obs_weights)
-                if self.comm_manager._is_root():
-                    self.master_model.optimize()
-                self._Bcast_theta_and_Scatterv_u_vals()
-            else:
-                raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
+            raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
         # if self.comm_manager._is_root():
         #     theta_coeff = self.master_variables[0].Obj
         #     u_coeff = self.master_variables[1].Obj
