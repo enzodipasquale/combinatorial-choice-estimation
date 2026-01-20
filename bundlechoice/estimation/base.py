@@ -100,13 +100,14 @@ class BaseEstimationManager:
             'subproblem': self.config.subproblem.name,
         }
  
-        logger.info("-"*100)
         header = (f"{'n_obs':>6} | {'n_items':>8} | {'n_features':>11} | {'n_simulations':>14} |"
                   +f" {'comm_size':>10} | {'subproblem':>20}")
         values = (f"{metadata['n_obs']:>6} | {metadata['n_items']:>8} | {metadata['n_features']:>11} |"
                   +f" {metadata['n_simulations']:>14} | {metadata['comm_size']:>10} | {metadata['subproblem'] or 'N/A':>20}")
+        logger.info(" Problem metadata")
+        logger.info("-"*100)
         logger.info(header)
         logger.info(values)
-        logger.info("-"*100)
+  
         
         return metadata
