@@ -113,7 +113,7 @@ class RowGenerationManager(BaseEstimationManager):
     def solve(self, local_obs_weights=None,
                     theta_warmstart=None,  
                     initial_constraints=None, 
-                    init_master = True,
+                    initialize_master = True,
                     init_subproblems = True,
                     master_iteration_callback=None,
                     master_init_callback=None,
@@ -122,16 +122,29 @@ class RowGenerationManager(BaseEstimationManager):
         self.verbose = verbose if verbose is not None else True
         self._local_obs_weights = local_obs_weights
         self.subproblem_manager.initialize_subproblems() if init_subproblems else None  
-        if init_master:
+
+        if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
-        elif self.master_variables is not None:
-            if local_obs_weights is not None:
-                self.update_objective_for_weights(local_obs_weights)
-            if self.comm_manager._is_root():
-                self.master_model.optimize()
-            self._Bcast_theta_and_Scatterv_u_vals()
-            # self._Bcast_theta_and_Scatterv_u_vals()
-        
+        else:
+            has_master = self.comm_manager.bcast(self.master_variables is not None if self.comm_manager._is_root() else None)
+            if has_master:
+                if local_obs_weights is not None:
+                    self.update_objective_for_weights(local_obs_weights)
+                if self.comm_manager._is_root():
+                    self.master_model.optimize()
+                self._Bcast_theta_and_Scatterv_u_vals()
+            else:
+                raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
+        # if self.comm_manager._is_root():
+        #     theta_coeff = self.master_variables[0].Obj
+        #     u_coeff = self.master_variables[1].Obj
+        #     logger.info(f"before rg loop: {theta_coeff}")
+        #     logger.info(f"before rg loop: {u_coeff}")
+
+        result = self.row_generation_loop(master_iteration_callback)
+        return result
+
+    def row_generation_loop(self, master_iteration_callback):
         iteration, self.pricing_times, self.master_times, t0 = 0, [], [], time.perf_counter()
         while iteration < self.cfg.max_iters:
             stop = self._row_generation_iteration(iteration, master_iteration_callback)
@@ -142,6 +155,8 @@ class RowGenerationManager(BaseEstimationManager):
         self._log_summary(iteration + 1, elapsed)
         result = self._create_result(iteration + 1)
         return result
+
+
 
 
     def add_constraints(self, indices, bundles, features, errors):
@@ -169,7 +184,6 @@ class RowGenerationManager(BaseEstimationManager):
         _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
         if not self.comm_manager._is_root() or self.master_model is None:
             return
-        
         theta, u = self.master_variables
         theta.Obj = _theta_obj_coef
         u.Obj = _u_obj_weights
@@ -219,9 +233,11 @@ class RowGenerationManager(BaseEstimationManager):
         if not self.comm_manager._is_root() or not self.verbose:
             return
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
+        logger.info("-"*55)
         vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
         logger.info('Estimated Parameters:')
         logger.info(f'  {vals}')
+        logger.info(f'Objective Value = {self.master_model.ObjVal}')
 
         p, m = np.array(self.pricing_times), np.array(self.master_times)
         logger.info('Timing Summary:')
@@ -229,6 +245,7 @@ class RowGenerationManager(BaseEstimationManager):
         logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
         logger.info(f'  pricing  {p.sum():>7.2f}s  {p.mean():>7.3f}s  [{p.min():.3f}, {p.max():.3f}]')
         logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {m.max():.3f}]')
+        logger.info("-"*55)
         
 
     # def get_binding_constraints(self, tolerance=1e-06):

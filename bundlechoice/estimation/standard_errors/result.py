@@ -13,7 +13,7 @@ class BayesianBootstrapResult(StandardErrorsResultBase):
     ci_lower: np.ndarray
     ci_upper: np.ndarray
     confidence: float
-    samples: np.ndarray = None  # optional raw bootstrap samples
+    samples: np.ndarray = None  
 
 @dataclass
 class SandwichResult(StandardErrorsResultBase):

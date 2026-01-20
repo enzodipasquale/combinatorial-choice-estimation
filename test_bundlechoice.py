@@ -5,7 +5,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 40, 10
+n_agents, n_items = 100, 30
 k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 1, 1, 5])
@@ -89,10 +89,35 @@ bc.subproblems.generate_obs_bundles(theta_star)
 
 
 # Test Bayesian bootstrap
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=30, seed=123)
+bc.oracles.build_local_modular_error_oracle(seed=27)
+
+results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=10, seed=123)
+
 if rank == 0:
     print(results.mean)
     print(results.se)
 
 
+
+
+# theta_boots = []
+# rng = np.random.default_rng(3)
+# row_gen = bc.row_generation_manager
+# for b in range(2):
+#     if bc.comm_manager._is_root():
+#         weights = rng.exponential(1.0, bc.n_obs)
+#         weights /= weights.sum()
+#         weights = np.tile(weights, bc.n_simulations)
+#         print(weights)
+#     else:
+#         weights = None
+#     local_weights = bc.comm_manager.Scatterv_by_row(weights, row_counts=bc.data_manager.agent_counts)
+#     initialize_master = True if b == 0 else False
+#     row_gen.solve(local_obs_weights=local_weights, verbose=True, init_subproblems = False, initialize_master = initialize_master)
+#     if bc.comm_manager._is_root():
+#         theta_boots.append(row_gen.master_variables[0].X.copy())
+#         # print(len(row_gen.master_model.getConstrs()))
+
+# if bc.comm_manager._is_root():
+#     print(np.array(theta_boots))
 
