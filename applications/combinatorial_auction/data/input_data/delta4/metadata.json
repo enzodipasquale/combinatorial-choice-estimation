@@ -1,0 +1,20 @@
+{
+  "delta": 4,
+  "winners_only": false,
+  "hq_distance": false,
+  "weight_rounding_tick": 1000,
+  "pop_centroid_percentile": 0,
+  "n_obs": 255,
+  "n_items": 493,
+  "num_modular_features": 1,
+  "num_quadratic_features": 3,
+  "modular_names": [
+    "bidder_elig_pop"
+  ],
+  "quadratic_names": [
+    "pop_distance",
+    "travel_survey",
+    "air_travel"
+  ],
+  "timestamp": "2026-01-20T14:03:36"
+}

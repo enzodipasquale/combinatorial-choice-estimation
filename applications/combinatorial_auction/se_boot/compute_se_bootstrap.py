@@ -23,13 +23,14 @@ app = config.get("application", {})
 boot = config.get("bootstrap", {})
 DELTA = app.get("delta", 4)
 NUM_BOOTSTRAP, SEED = boot.get("num_samples", 200), boot.get("seed", 1995)
+ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 def get_input_dir():
     suffix = f"delta{DELTA}"
     if app.get("winners_only"): suffix += "_winners"
     if app.get("hq_distance"): suffix += "_hqdist"
-    return APP_DIR / "data/114402-V1/input_data" / suffix
+    return APP_DIR / "data/input_data" / suffix
 
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
@@ -45,7 +46,6 @@ if rank == 0:
         additional_item_data={
             "weights": str(input_dir / "constraints" / "weights.csv"),
         },
-        error_seed=SEED,
     )
     input_data["item_data"]["modular"] = -np.eye(bc.n_items)
 else:
@@ -53,6 +53,7 @@ else:
 
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
+bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load()
 
 if theta_bounds := config.get("theta_bounds"):

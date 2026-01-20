@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-Data preparation script for combinatorial auction estimation.
-
-Processes raw data from the Fox-Bajari replication package into the format
-required by BundleChoice framework.
-
-Usage:
-    python prepare_data.py              # Uses default delta=4
-    python prepare_data.py --delta 2    # Uses delta=2
-    python prepare_data.py --delta 4    # Uses delta=4 (explicit)
-"""
 
 import argparse
 import json
@@ -24,13 +13,12 @@ BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 def get_output_dir(delta: int, winners_only: bool = False, hq_distance: bool = False) -> Path:
-    """Get output directory based on parameters."""
     suffix = f"delta{delta}"
     if winners_only:
         suffix += "_winners"
     if hq_distance:
         suffix += "_hqdist"
-    return BASE_DIR / "114402-V1" / "input_data" / suffix
+    return BASE_DIR / "input_data" / suffix
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000
@@ -38,7 +26,6 @@ POP_CENTROID_PERCENTILE = 0  # Truncation threshold
 
 
 def load_raw_data() -> dict:
-    """Load all raw data files from the replication package."""
     print("Loading raw data files...")
     
     # BTA data (items/markets)
@@ -86,19 +73,17 @@ def load_raw_data() -> dict:
 
 
 def process_weights_capacities(bidder_data: pd.DataFrame, bta_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-    """Round weights and capacities to reduce encoding length."""
-    # Handle NaN values in capacities
-    capacity_i = bidder_data['pops_eligible'].fillna(0).to_numpy()
-    weight_j = bta_data['pop90'].to_numpy()
+    capacities = bidder_data['pops_eligible'].fillna(0).to_numpy()
+    weights = bta_data['pop90'].to_numpy()
     
-    weight_j_rounded = np.round(weight_j / WEIGHT_ROUNDING_TICK).astype(int)
-    capacity_i_rounded = np.round(capacity_i / WEIGHT_ROUNDING_TICK).astype(int)
+    weights_rounded = np.round(weights / WEIGHT_ROUNDING_TICK).astype(int)
+    capacities_rounded = np.round(capacities / WEIGHT_ROUNDING_TICK).astype(int)
     
     print(f"Processed weights/capacities:")
-    print(f"  Num items: {len(weight_j_rounded)}, weight range: [{weight_j_rounded.min()}, {weight_j_rounded.max()}]")
-    print(f"  Num agents: {len(capacity_i_rounded)}, capacity range: [{capacity_i_rounded.min()}, {capacity_i_rounded.max()}]")
+    print(f"  Num items: {len(weights_rounded)}, weight range: [{weights_rounded.min()}, {weights_rounded.max()}]")
+    print(f"  Num agents: {len(capacities_rounded)}, capacity range: [{capacities_rounded.min()}, {capacities_rounded.max()}]")
     
-    return weight_j_rounded, capacity_i_rounded
+    return weights_rounded, capacities_rounded
 
 
 def generate_matching_matrix(
@@ -106,36 +91,27 @@ def generate_matching_matrix(
     n_obs: int,
     bidder_num_to_index: dict,
 ) -> np.ndarray:
-    """Generate matching matrix from observed winners."""
     n_items = len(bta_data)
-    matching_i_j = np.zeros((n_obs, n_items), dtype=bool)
+    matching = np.zeros((n_obs, n_items), dtype=bool)
     
     for j in range(n_items):
         winner_bidder_num = bta_data['bidder_num_fox'].values[j]
         # Skip FCC (9999) or any bidders not in our filtered list
         if winner_bidder_num in bidder_num_to_index:
             winner_id = bidder_num_to_index[winner_bidder_num]
-            matching_i_j[winner_id, j] = True
+            matching[winner_id, j] = True
     
-    num_winners = np.unique(np.where(matching_i_j)[0]).size
+    num_winners = np.unique(np.where(matching)[0]).size
     print(f"Generated matching matrix:")
-    print(f"  Shape: {matching_i_j.shape}")
-    print(f"  Total matches: {matching_i_j.sum()}")
+    print(f"  Shape: {matching.shape}")
+    print(f"  Total matches: {matching.sum()}")
     print(f"  Unique winners: {num_winners}")
     
-    return matching_i_j
+    return matching
 
 
-def build_pop_centroid_features(weight_j: np.ndarray, geo_distance_j_j: np.ndarray, delta: int = 4) -> np.ndarray:
-    """Build population-weighted centroid interaction features.
-    
-    Args:
-        weight_j: Population weights for each market
-        geo_distance_j_j: Geographic distance matrix between markets
-        delta: Distance decay exponent (2 or 4)
-    """
-    # Compute interaction matrix
-    E_j_j = (weight_j[:, None] * weight_j[None, :]).astype(float)
+def build_pop_centroid_features(weights: np.ndarray, geo_distance_j_j: np.ndarray, delta: int = 4) -> np.ndarray:
+    E_j_j = (weights[:, None] * weights[None, :]).astype(float)
     np.fill_diagonal(E_j_j, 0)
     
     # Apply distance decay
@@ -143,7 +119,7 @@ def build_pop_centroid_features(weight_j: np.ndarray, geo_distance_j_j: np.ndarr
     E_j_j[mask] /= (geo_distance_j_j[mask] ** delta)
     
     # Normalize
-    pop_centroid_j_j = (weight_j[:, None] / weight_j.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
+    pop_centroid_j_j = (weights[:, None] / weights.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
     
     # Truncate (remove very small values)
     percentile_val = np.percentile(pop_centroid_j_j, POP_CENTROID_PERCENTILE)
@@ -158,98 +134,71 @@ def build_pop_centroid_features(weight_j: np.ndarray, geo_distance_j_j: np.ndarr
     return truncated_pop_centroid_j_j
 
 
-def normalize_interaction_matrix(matrix_j_j: np.ndarray, weight_j: np.ndarray) -> np.ndarray:
-    """Normalize interaction matrix by outflow and weight."""
+def normalize_interaction_matrix(matrix_j_j: np.ndarray, weights: np.ndarray) -> np.ndarray:
     matrix = matrix_j_j.copy() + 1e-15
     np.fill_diagonal(matrix, 0)
     
     outflow_j = matrix.sum(1)
     mask = outflow_j > 0
     matrix[mask] /= outflow_j[mask][:, None]
-    matrix *= weight_j[:, None] / weight_j[mask].sum()
+    matrix *= weights[:, None] / weights[mask].sum()
     
     return matrix
 
 
 def build_quadratic_features(
-    weight_j: np.ndarray,
+    weights: np.ndarray,
     geo_distance_j_j: np.ndarray,
     travel_survey_j_j: np.ndarray,
     air_travel_j_j: np.ndarray,
     delta: int = 4,
 ) -> np.ndarray:
-    """Build all quadratic item-item features.
-    
-    Args:
-        weight_j: Population weights for each market
-        geo_distance_j_j: Geographic distance matrix
-        travel_survey_j_j: Travel survey interaction matrix
-        air_travel_j_j: Air travel interaction matrix
-        delta: Distance decay exponent (2 or 4)
-    """
     quadratic_list = []
     
-    # Population-weighted centroid
-    pop_centroid_j_j = build_pop_centroid_features(weight_j, geo_distance_j_j, delta=delta)
+    pop_centroid_j_j = build_pop_centroid_features(weights, geo_distance_j_j, delta=delta)
     quadratic_list.append(pop_centroid_j_j)
     
-    # Travel survey interactions
-    quadratic_travel_j_j = normalize_interaction_matrix(travel_survey_j_j, weight_j)
+    quadratic_travel_j_j = normalize_interaction_matrix(travel_survey_j_j, weights)
     quadratic_list.append(quadratic_travel_j_j)
     
-    # Air travel interactions
-    quadratic_air_j_j = normalize_interaction_matrix(air_travel_j_j, weight_j)
+    quadratic_air_j_j = normalize_interaction_matrix(air_travel_j_j, weights)
     quadratic_list.append(quadratic_air_j_j)
     
-    # Stack into (n_items, n_items, num_quadratic_features)
-    quadratic_characteristic_j_j_k = np.stack(quadratic_list, axis=2)
+    quadratic_features = np.stack(quadratic_list, axis=2)
     
-    density = (quadratic_characteristic_j_j_k.sum(2) > 0).sum() / quadratic_characteristic_j_j_k.sum(2).size
+    density = (quadratic_features.sum(2) > 0).sum() / quadratic_features.sum(2).size
     print(f"Built quadratic features:")
-    print(f"  Shape: {quadratic_characteristic_j_j_k.shape}")
+    print(f"  Shape: {quadratic_features.shape}")
     print(f"  Density: {density:.4f}")
-    print(f"  Sum per feature: {quadratic_characteristic_j_j_k.sum((0, 1))}")
+    print(f"  Sum per feature: {quadratic_features.sum((0, 1))}")
     
-    return quadratic_characteristic_j_j_k
+    return quadratic_features
 
 
 def build_modular_features(
-    capacity_i: np.ndarray,
-    weight_j: np.ndarray,
+    capacities: np.ndarray,
+    weights: np.ndarray,
     home_bta_i: np.ndarray = None,
     geo_distance_j_j: np.ndarray = None,
     include_hq_distance: bool = False,
 ) -> np.ndarray:
-    """Build modular agent-item features.
-    
-    Args:
-        capacity_i: Bidder capacities
-        weight_j: Item weights (population)
-        home_bta_i: Home BTA for each bidder (1-indexed), required if include_hq_distance=True
-        geo_distance_j_j: Geographic distance matrix, required if include_hq_distance=True
-        include_hq_distance: Whether to include HQ-to-item distance features
-    """
     modular_list = []
     
-    # Feature 1: eligibility_i * pop_j (normalized)
-    modular_feat = (capacity_i[:, None] / weight_j.sum()) * (weight_j[None, :] / weight_j.sum())
+    modular_feat = (capacities[:, None] / weights.sum()) * (weights[None, :] / weights.sum())
     modular_list.append(modular_feat)
     
-    # Features 2-3: HQ-to-item distance and distance squared
     if include_hq_distance:
         assert home_bta_i is not None, "home_bta_i required for HQ distance features"
         assert geo_distance_j_j is not None, "geo_distance_j_j required for HQ distance features"
         
-        n_obs = len(capacity_i)
+        n_obs = len(capacities)
         n_items = geo_distance_j_j.shape[0]
         
-        # Distance from bidder i's home BTA to item j's BTA
         hq_distance_i_j = np.zeros((n_obs, n_items))
         for i in range(n_obs):
-            hq_idx = int(home_bta_i[i]) - 1  # Convert to 0-indexed
+            hq_idx = int(home_bta_i[i]) - 1
             hq_distance_i_j[i, :] = geo_distance_j_j[hq_idx, :]
         
-        # Normalize distance (divide by max to keep scale reasonable)
         max_dist = hq_distance_i_j.max()
         if max_dist > 0:
             hq_distance_normalized = hq_distance_i_j / max_dist
@@ -258,38 +207,35 @@ def build_modular_features(
         
         modular_list.append(hq_distance_normalized)
         
-        # Distance squared (normalized)
         hq_distance_sq_normalized = hq_distance_normalized ** 2
         modular_list.append(hq_distance_sq_normalized)
         
         print(f"  HQ distance features: mean={hq_distance_normalized.mean():.4f}, max={hq_distance_normalized.max():.4f}")
     
-    # Stack into (n_obs, n_items, num_modular_features)
-    modular_characteristics_i_j_k = np.stack(modular_list, axis=2)
+    modular_features = np.stack(modular_list, axis=2)
     
     print(f"Built modular features:")
-    print(f"  Shape: {modular_characteristics_i_j_k.shape}")
+    print(f"  Shape: {modular_features.shape}")
     
-    return modular_characteristics_i_j_k
+    return modular_features
 
 
 def save_processed_data(
-    matching_i_j: np.ndarray,
-    weight_j: np.ndarray,
-    capacity_i: np.ndarray,
-    modular_characteristics_i_j_k: np.ndarray,
-    quadratic_characteristic_j_j_k: np.ndarray,
+    matching: np.ndarray,
+    weights: np.ndarray,
+    capacities: np.ndarray,
+    modular_features: np.ndarray,
+    quadratic_features: np.ndarray,
     delta: int = 4,
     winners_only: bool = False,
     hq_distance: bool = False,
 ) -> None:
-    """Save all processed data in folder-based structure."""
     output_dir = get_output_dir(delta, winners_only, hq_distance)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    n_obs, n_items = matching_i_j.shape
-    num_modular = modular_characteristics_i_j_k.shape[2]
-    num_quadratic = quadratic_characteristic_j_j_k.shape[2]
+    n_obs, n_items = matching.shape
+    num_modular = modular_features.shape[2]
+    num_quadratic = quadratic_features.shape[2]
     
     # Define feature names
     if num_modular == 1:
@@ -298,33 +244,34 @@ def save_processed_data(
         modular_names = ["bidder_elig_pop", "hq_distance", "hq_distance_sq"]
     quadratic_names = ["pop_distance", "travel_survey", "air_travel"]
     
-    # Save feature data in folders
-    features_dir = output_dir / "features"
-    (features_dir / "modular_agent").mkdir(parents=True, exist_ok=True)
-    (features_dir / "quadratic_item").mkdir(parents=True, exist_ok=True)
+    # Save feature data in new folder structure
+    features_dir = output_dir / "features_data"
+    (features_dir / "id_data" / "modular").mkdir(parents=True, exist_ok=True)
+    (features_dir / "item_data" / "quadratic").mkdir(parents=True, exist_ok=True)
     
-    # Save modular agent features (one CSV per feature)
+    # Modular features are agent-level (id_data)
     for k, name in enumerate(modular_names):
-        feature_data = modular_characteristics_i_j_k[:, :, k]  # (n_obs, n_items)
+        feature_data = modular_features[:, :, k]
         pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
-            features_dir / "modular_agent" / f"{name}.csv", index=False
+            features_dir / "id_data" / "modular" / f"{name}.csv", index=False
         )
     
-    # Save quadratic item features (one CSV per feature)
+    # Quadratic features are item-level (item_data)
     for k, name in enumerate(quadratic_names):
-        feature_data = quadratic_characteristic_j_j_k[:, :, k]  # (n_items, n_items)
+        feature_data = quadratic_features[:, :, k]
         pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
-            features_dir / "quadratic_item" / f"{name}.csv", index=False
+            features_dir / "item_data" / "quadratic" / f"{name}.csv", index=False
         )
     
-    # Save constraint data
-    constraints_dir = output_dir / "constraints"
-    constraints_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"capacity": capacity_i}).to_csv(constraints_dir / "capacity.csv", index=False)
-    pd.DataFrame({"weight": weight_j}).to_csv(constraints_dir / "weights.csv", index=False)
+    # Save constraint data in other_data
+    other_dir = output_dir / "other_data"
+    (other_dir / "id_data").mkdir(parents=True, exist_ok=True)
+    (other_dir / "item_data").mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"capacity": capacities}).to_csv(other_dir / "id_data" / "capacity.csv", index=False)
+    pd.DataFrame({"weight": weights}).to_csv(other_dir / "item_data" / "weight.csv", index=False)
     
     # Save observed bundles
-    obs_df = pd.DataFrame(matching_i_j.astype(int), columns=[f"item_{j}" for j in range(n_items)])
+    obs_df = pd.DataFrame(matching.astype(int), columns=[f"item_{j}" for j in range(n_items)])
     obs_df.to_csv(output_dir / "obs_bundles.csv", index=False)
     
     # Save metadata
@@ -346,26 +293,24 @@ def save_processed_data(
         json.dump(metadata, f, indent=2)
     
     print(f"\nSaved processed data to {output_dir}:")
-    print(f"  features/modular_agent/: {num_modular} features → {modular_names}")
-    print(f"  features/quadratic_item/: {num_quadratic} features → {quadratic_names}")
-    print(f"  constraints/capacity.csv: {capacity_i.shape}")
-    print(f"  constraints/weights.csv: {weight_j.shape}")
-    print(f"  obs_bundles.csv: {matching_i_j.shape}")
+    print(f"  features_data/id_data/modular/: {num_modular} features → {modular_names}")
+    print(f"  features_data/item_data/quadratic/: {num_quadratic} features → {quadratic_names}")
+    print(f"  other_data/id_data/capacity.csv: {capacities.shape}")
+    print(f"  other_data/item_data/weight.csv: {weights.shape}")
+    print(f"  obs_bundles.csv: {matching.shape}")
     print(f"  metadata.json")
 
 
 def compute_feature_statistics(
-    matching_i_j: np.ndarray,
-    modular_characteristics_i_j_k: np.ndarray,
-    quadratic_characteristic_j_j_k: np.ndarray,
+    matching: np.ndarray,
+    modular_features: np.ndarray,
+    quadratic_features: np.ndarray,
 ) -> None:
-    """Compute and print statistics on features at observed matching."""
-    # Compute features at observed matching
-    phi_modular = (modular_characteristics_i_j_k * matching_i_j[:, :, None]).sum(1)
-    phi_quadratic = np.einsum('jlk,ij,il->ik', quadratic_characteristic_j_j_k, matching_i_j, matching_i_j)
+    phi_modular = (modular_features * matching[:, :, None]).sum(1)
+    phi_quadratic = np.einsum('jlk,ij,il->ik', quadratic_features, matching, matching)
     phi_hat_i_k = np.concatenate([phi_modular, phi_quadratic], axis=1)
     
-    winning = np.unique(np.where(matching_i_j)[0])
+    winning = np.unique(np.where(matching)[0])
     
     print(f"\nFeature statistics at observed matching:")
     print(f"  Total features: {phi_hat_i_k.shape[1]}")
@@ -375,7 +320,6 @@ def compute_feature_statistics(
 
 
 def parse_args():
-    """Parse command-line arguments or read from config file."""
     parser = argparse.ArgumentParser(
         description="Prepare data for combinatorial auction estimation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -429,13 +373,6 @@ Examples:
 
 
 def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
-    """Main data preparation pipeline.
-    
-    Args:
-        delta: Distance decay exponent (2 or 4)
-        winners_only: If True, filter to winning bidders only
-        hq_distance: If True, include HQ-to-item distance features
-    """
     print("=" * 70)
     print("Combinatorial Auction Data Preparation")
     print(f"  Distance parameter δ = {delta}")
@@ -480,60 +417,55 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
         print(f"Loaded home BTAs for {len(home_bta_i)} bidders")
     
     # Process weights and capacities
-    weight_j, capacity_i = process_weights_capacities(
+    weights, capacities = process_weights_capacities(
         raw_data["bidder_data"],
         raw_data["bta_data"]
     )
     
     # Generate matching matrix (using filtered bidder indices)
-    matching_i_j = generate_matching_matrix(
+    matching = generate_matching_matrix(
         raw_data["bta_data"],
-        len(capacity_i),
+        len(capacities),
         bidder_num_to_index,
     )
     
-    # Build features (before filtering agents)
-    modular_characteristics_i_j_k = build_modular_features(
-        capacity_i, 
-        weight_j,
+    modular_features = build_modular_features(
+        capacities, 
+        weights,
         home_bta_i=home_bta_i,
         geo_distance_j_j=raw_data["geo_distance_j_j"] if hq_distance else None,
         include_hq_distance=hq_distance,
     )
-    quadratic_characteristic_j_j_k = build_quadratic_features(
-        weight_j,
+    quadratic_features = build_quadratic_features(
+        weights,
         raw_data["geo_distance_j_j"],
         raw_data["travel_survey_j_j"],
         raw_data["air_travel_j_j"],
         delta=delta,
     )
     
-    # Filter to winners only if requested
     if winners_only:
-        winner_indices = np.where(matching_i_j.sum(axis=1) > 0)[0]
+        winner_indices = np.where(matching.sum(axis=1) > 0)[0]
         print(f"\nFiltering to winning bidders only:")
-        print(f"  Original agents: {len(capacity_i)}")
+        print(f"  Original agents: {len(capacities)}")
         print(f"  Winning agents: {len(winner_indices)}")
         
-        # Filter agent-level arrays
-        capacity_i = capacity_i[winner_indices]
-        matching_i_j = matching_i_j[winner_indices, :]
-        modular_characteristics_i_j_k = modular_characteristics_i_j_k[winner_indices, :, :]
+        capacities = capacities[winner_indices]
+        matching = matching[winner_indices, :]
+        modular_features = modular_features[winner_indices, :, :]
     
-    # Compute statistics
     compute_feature_statistics(
-        matching_i_j,
-        modular_characteristics_i_j_k,
-        quadratic_characteristic_j_j_k,
+        matching,
+        modular_features,
+        quadratic_features,
     )
     
-    # Save processed data
     save_processed_data(
-        matching_i_j,
-        weight_j,
-        capacity_i,
-        modular_characteristics_i_j_k,
-        quadratic_characteristic_j_j_k,
+        matching,
+        weights,
+        capacities,
+        modular_features,
+        quadratic_features,
         delta=delta,
         winners_only=winners_only,
         hq_distance=hq_distance,

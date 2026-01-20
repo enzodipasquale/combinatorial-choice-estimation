@@ -20,28 +20,19 @@ config = yaml.safe_load(open(BASE_DIR / ("config_local.yaml" if IS_LOCAL else "c
 
 app = config.get("application", {})
 DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta", 4), app.get("winners_only", False), app.get("hq_distance", False)
+ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 def get_input_dir():
     suffix = f"delta{DELTA}" + ("_winners" if WINNERS_ONLY else "") + ("_hqdist" if HQ_DISTANCE else "")
-    return APP_DIR / "data/114402-V1/input_data" / suffix
+    return APP_DIR / "data/input_data" / suffix
 
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
 
 if rank == 0:
     input_dir = get_input_dir()
-    input_data = bc.data.load_quadratic_data_from_directory(
-        input_dir,
-        additional_agent_data={
-            "capacity": str(input_dir / "constraints" / "capacity.csv"),
-            "obs_bundles": str(input_dir / "obs_bundles.csv"),
-        },
-        additional_item_data={
-            "weights": str(input_dir / "constraints" / "weights.csv"),
-        },
-        error_seed=1995,
-    )
+    input_data = bc.data.load_quadratic_data_from_directory(input_dir)
     input_data["item_data"]["modular"] = -np.eye(bc.n_items)
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
 else:
@@ -49,6 +40,7 @@ else:
 
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
+bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load()
 
 feature_names = bc.config.dimensions.feature_names or []

@@ -6,6 +6,7 @@ application:
     delta: 4
     winners_only: false
     hq_distance: false
+    error_seed: 1995
 
 # Bootstrap settings (smaller for local testing)
 bootstrap:

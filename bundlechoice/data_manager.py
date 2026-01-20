@@ -21,10 +21,10 @@ class QuadraticDataInfo:
     quadratic_agent: int = 0
     quadratic_item: int = 0
     constraint_mask: np.ndarray = None
-    modular_agent_names: str = None
-    modular_item_names: str = None
-    quadratic_agent_names: str = None
-    quadratic_item_names: str = None
+    modular_agent_names: list = None
+    modular_item_names: list = None
+    quadratic_agent_names: list = None
+    quadratic_item_names: list = None
 
     def __post_init__(self):
         offset, self.slices = 0, {}
@@ -118,12 +118,16 @@ class DataManager:
         agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
         return QuadraticDataInfo(
-                                    modular_agent=dim(agent_data, "modular"),
-                                    modular_item=dim(item_data, "modular"),
-                                    quadratic_agent=dim(agent_data, "quadratic"),
-                                    quadratic_item=dim(item_data, "quadratic"),
-                                    constraint_mask=agent_data.get("constraint_mask"),
-                                )
+                    modular_agent=dim(agent_data, "modular"),
+                    modular_item=dim(item_data, "modular"),
+                    quadratic_agent=dim(agent_data, "quadratic"),
+                    quadratic_item=dim(item_data, "quadratic"),
+                    constraint_mask=agent_data.get("constraint_mask"),
+                    modular_agent_names=agent_data.get("modular_names"),
+                    modular_item_names=item_data.get("modular_names"),
+                    quadratic_agent_names=agent_data.get("quadratic_names"),
+                    quadratic_item_names=item_data.get("quadratic_names"),
+                )
 
     def _load(self, f):
         f = Path(f)
@@ -132,45 +136,62 @@ class DataManager:
     def _load_folder_features(self, folder_path):
         folder = Path(folder_path)
         if not folder.exists() or not folder.is_dir():
-            return None
-        arrays = [self._load(f) for f in sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy"))]
-        if not arrays:
-            return None
-        return np.concatenate(arrays, axis=-1) if len(arrays) > 1 else arrays[0]
-
-    def load_quadratic_data_from_directory(self, path, additional_agent_data= None, 
-                                        additional_item_data= None, error_seed= None):
-
-        if not self.comm_manager._is_root():
-            return None
+            return None, None
         
+        files = sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy"))
+        if not files:
+            return None, None
+        
+        arrays = []
+        names = []
+        for f in files:
+            arr = self._load(f)
+            arrays.append(arr)
+            # Extract feature names from filename, repeated for each column
+            base_name = f.stem
+            n_cols = arr.shape[-1]
+            if n_cols == 1:
+                names.append(base_name)
+            else:
+                names.extend([f"{base_name}_{i}" for i in range(n_cols)])
+        
+        combined = np.concatenate(arrays, axis=-1) if len(arrays) > 1 else arrays[0]
+        return combined, names
+
+    def load_quadratic_data_from_directory(self, path):
+        if not self.comm_manager._is_root():
+            return None    
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Data directory not found: {path}")
         
         input_data = {"id_data": {}, "item_data": {}}
-        features_base = path / "features" if (path / "features").exists() else path
         
-
-        for folder_name, data_type, key in [
-            ('modular_agent', 'id_data', 'modular'),
-            ('modular_item', 'item_data', 'modular'),
-            ('quadratic_agent', 'id_data', 'quadratic'),
-            ('quadratic_item', 'item_data', 'quadratic'),
-        ]:
-            arr = self._load_folder_features(features_base / folder_name)
-            if arr is not None:
-                input_data[data_type][key] = arr
-  
-        for key, file_path in (additional_agent_data or {}).items():
-            input_data["id_data"][key] = self._load(Path(file_path))
+        # Load features_data
+        features_base = path / "features_data"
+        if features_base.exists():
+            for data_type, key in [('id_data', 'modular'), ('id_data', 'quadratic'),
+                                ('item_data', 'modular'), ('item_data', 'quadratic')]:
+                arr, names = self._load_folder_features(features_base / data_type / key)
+                if arr is not None:
+                    input_data[data_type][key] = arr
+                    input_data[data_type][f"{key}_names"] = names
         
-        for key, file_path in (additional_item_data or {}).items():
-            input_data["item_data"][key] = self._load(Path(file_path))
+        # Load other_data
+        other_base = path / "other_data"
+        if other_base.exists():
+            for data_type in ['id_data', 'item_data']:
+                folder = other_base / data_type
+                if folder.exists():
+                    for f in sorted(folder.glob("*.csv")) + sorted(folder.glob("*.npy")):
+                        input_data[data_type][f.stem] = self._load(f)
         
-        if error_seed is not None:
-            input_data["_error_seed"] = error_seed
+        # Load obs_bundles
+        obs_path = path / "obs_bundles.csv"
+        if obs_path.exists():
+            input_data["id_data"]["obs_bundles"] = self._load(obs_path)
         
         return input_data
 
 
+    

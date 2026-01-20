@@ -7,6 +7,7 @@ application:
     winners_only: true
     hq_distance: false
     use_previous_theta: true
+    error_seed: 1995
 
 # BundleChoice settings (smaller for local testing)
 dimensions:

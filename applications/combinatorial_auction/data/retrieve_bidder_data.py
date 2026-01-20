@@ -1,23 +1,3 @@
-"""
-Script to generate bidder_data.csv from FCC Form 175 data.
-
-This script replicates the data generation process from the original 
-retreive_data.ipynb notebook (commit 76d07914d47d77c2440ad206755d46a5e0fda500).
-
-The bidder_data.csv combines:
-1. biddercblk_03_28_2004_pln.csv from 114402-V1 (bidder_num_fox, bidder_num, co_name, pops_eligible)
-2. FCC Form 175 data (City, State, Applicant_Status, Legal_Classification)
-3. BTA mapping from county/state using btacnty1990.txt
-
-EXTERNAL DATA REQUIREMENTS (not in repo):
-- FCC Form 175 .txt files (pipe-delimited APP records)
-- btacnty1990.txt (FCC BTA-county mapping file)
-
-Usage:
-    python retrieve_bidder_data.py --form175-dir /path/to/form175_data --bta-mapping /path/to/btacnty1990.txt
-    python retrieve_bidder_data.py --verify  # Only verify existing bidder_data.csv
-"""
-
 import argparse
 import os
 from pathlib import Path
