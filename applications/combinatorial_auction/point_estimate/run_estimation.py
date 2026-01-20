@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -24,17 +25,11 @@ DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta", 4), app.get("winners_only", 
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
-def get_input_dir():
-    suffix = f"delta{DELTA}" + ("_winners" if WINNERS_ONLY else "") + ("_hqdist" if HQ_DISTANCE else "")
-    return APP_DIR / "data/input_data" / suffix
-
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
 
 if rank == 0:
-    input_dir = get_input_dir()
-    input_data = bc.data.load_quadratic_data_from_directory(input_dir)
-    input_data["item_data"]["modular"] = -np.eye(bc.n_items)
+    input_data = prepare_data_main(delta=DELTA, winners_only=WINNERS_ONLY, hq_distance=HQ_DISTANCE, save_data=False)
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
 else:
     input_data = None
@@ -46,42 +41,53 @@ bc.subproblems.load_subproblem()
 
 feature_names = bc.config.dimensions.feature_names or []
 
-if DELTA == 2 and feature_names:
-    theta_lbs, theta_ubs = np.zeros(bc.n_features), np.full(bc.n_features, 1000.0)
-    bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
-    for i, name in enumerate(feature_names):
-        if name in bounds_map:
-            theta_lbs[i], theta_ubs[i] = bounds_map[name]
-        elif name.startswith("FE_"):
-            theta_lbs[i], theta_ubs[i] = 0, 1000
-    bc.config.row_generation.theta_lbs = theta_lbs
-    bc.config.row_generation.theta_ubs = theta_ubs
-    if rank == 0:
-        print("Custom bounds for delta=2 applied")
+# if DELTA == 2 and feature_names:
+#     theta_lbs, theta_ubs = np.zeros(bc.n_features), np.full(bc.n_features, 1000.0)
+#     bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
+#     for i, name in enumerate(feature_names):
+#         if name in bounds_map:
+#             theta_lbs[i], theta_ubs[i] = bounds_map[name]
+#         elif name.startswith("FE_"):
+#             theta_lbs[i], theta_ubs[i] = 0, 1000
+#     bc.config.row_generation.theta_lbs = theta_lbs
+#     bc.config.row_generation.theta_ubs = theta_ubs
+#     if rank == 0:
+#         print("Custom bounds for delta=2 applied")
 
-if adaptive_cfg := config.get("adaptive_timeout"):
-    bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(
-        initial_timeout=adaptive_cfg.get("initial", 1.0),
-        final_timeout=adaptive_cfg.get("final", 30.0),
-        transition_iterations=adaptive_cfg.get("transition_iterations", 15),
-    )
+# if adaptive_cfg := config.get("adaptive_timeout"):
+#     bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(
+#         initial_timeout=adaptive_cfg.get("initial", 1.0),
+#         final_timeout=adaptive_cfg.get("final", 30.0),
+#         transition_iterations=adaptive_cfg.get("transition_iterations", 15),
+#     )
+
+
+if rank == 0:
+    print(input_data.keys())
+    print(input_data["id_data"].keys())
+    print(input_data["item_data"].keys())
+
+    print(input_data["id_data"]["modular"].shape)
+    print(input_data["item_data"]["quadratic"].shape)
+
+    print(bc.n_features)
 
 result = bc.row_generation.solve(verbose=True)
 
-if rank == 0:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    result.save_npy(OUTPUT_DIR / "theta.npy")
-    result.export_csv(
-        OUTPUT_DIR / "theta_hat.csv",
-        metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-                  "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-                  "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
-        feature_names=feature_names,
-    )
-    json.dump({
-        "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-        "n_features": bc.n_features, "feature_names": feature_names,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "converged": result.converged, "num_iterations": result.num_iterations,
-    }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
-    print(result.summary())
+# if rank == 0:
+#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+#     result.save_npy(OUTPUT_DIR / "theta.npy")
+#     result.export_csv(
+#         OUTPUT_DIR / "theta_hat.csv",
+#         metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+#                   "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
+#                   "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
+#         feature_names=feature_names,
+#     )
+#     json.dump({
+#         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
+#         "n_features": bc.n_features, "feature_names": feature_names,
+#         "timestamp": datetime.now().isoformat(timespec="seconds"),
+#         "converged": result.converged, "num_iterations": result.num_iterations,
+#     }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
+#     print(result.summary())
