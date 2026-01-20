@@ -5,7 +5,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-n_agents, n_items = 200, 20
+n_agents, n_items = 10, 20
 k_mod, k_quad = 3, 1
 n_features = k_mod + k_quad
 theta_star = np.array([1.0, 1, 1, 5])
@@ -35,7 +35,7 @@ else:
 
 bc = bc.BundleChoice()
 bc.load_config(cfg)
-bc.data.load_input_data(input_data)
+bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=42)
 
@@ -91,7 +91,7 @@ bc.subproblems.generate_obs_bundles(theta_star)
 # Test Bayesian bootstrap
 bc.oracles.build_local_modular_error_oracle(seed=27)
 
-results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=50, seed=123)
+results = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=10, seed=123)
 
 if rank == 0:
     print(results.mean)

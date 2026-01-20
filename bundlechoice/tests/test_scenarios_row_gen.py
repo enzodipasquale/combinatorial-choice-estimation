@@ -51,7 +51,7 @@ if __name__ == '__main__':
     data = _greedy_data(n, m, k) if rank == 0 else {"id_data": {'obs_bundles': None}, "item_data": {}}
     
     log("load_input_data")
-    dm.load_input_data(data)
+    dm.load_and_distribute_input_data(data)
     
     log("build_quadratic_features_from_data")
     om.build_quadratic_features_from_data()
