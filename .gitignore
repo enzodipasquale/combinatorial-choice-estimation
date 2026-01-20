@@ -47,12 +47,9 @@ slurm-*.out
 slurm-*.err
 *.sbatch
 
-bundled_choice_estimation.pdf
-
-
 #Other
 debug_*.py
 my_tests/
 bundlechoice/_deprecated/
 bundled_choice_estimation.pdf
-
+*.bash
