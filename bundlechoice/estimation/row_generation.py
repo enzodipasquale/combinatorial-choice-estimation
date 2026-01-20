@@ -252,10 +252,14 @@ class RowGenerationManager(BaseEstimationManager):
         
         if iteration % 10 == 0:
             param_header = ', '.join(f'θ[{i}]' for i in param_indices)
-            logger.info(f"{'Iter':>4} | {'Reduced Cost':>12} | {'Pricing':>8} | {'Master':>8} | {'Viol':>5} | {'Objective':>12} | {'Constr':>6} | Parameters ({param_header})")
+            logger.info(f"{'Iter':>4} | {'Reduced Cost':>12} | {'Pricing (s)':>11} | {'Master (s)':>10} | {'#Viol':>5} "+ 
+                            f"| {'Objective Val':>13} | {'Constr':>6} | Parameters ({param_header})")
+            logger.info("-"*120)
         
         param_vals = ', '.join(f'{self.theta_iter[i]:.5f}' for i in param_indices)
-        logger.info(f"{iteration:>4} | {info['reduced_cost']:>12.6f} | {info['pricing_time']:>7.3f}s | {info['master_time']:>7.3f}s | {info['n_violations']:>5} | {info['objective']:>12.5f} | {info['n_constraints']:>6} | ({param_vals})")
+        logger.info(f"{iteration:>4} | {info['reduced_cost']:>12.6f} | {info['pricing_time']:>10.3f}s | "+ 
+                        f"{info['master_time']:>9.3f}s | {info['n_violations']:>5} | {info['objective']:>13.5f} "+
+                        f"| {info['n_constraints']:>6} | ({param_vals})")
 
     def _log_summary(self, n_iters, total):
         if not self.comm_manager._is_root() or not self.verbose:
