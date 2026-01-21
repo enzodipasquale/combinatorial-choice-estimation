@@ -47,19 +47,21 @@ if DELTA == 2:
     bc.config.row_generation.theta_ubs = theta_ubs
 
 
-timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=1.0,
-    final_timeout=10,
-    transition_iterations=40,
-    strategy='linear',
-    log=True
-)
+# timeout_callback = adaptive_gurobi_timeout(
+#     initial_timeout=1.0,
+#     final_timeout=10,
+#     transition_iterations=40,
+#     strategy='linear',
+#     log=True
+# )
 
-# Pass it to solve
-result = bc.row_generation.solve(
-    master_iteration_callback=timeout_callback,
-    verbose=True
-)
+# # Pass it to solve
+# result = bc.row_generation.solve(
+#     master_iteration_callback=timeout_callback,
+#     verbose=True
+# )
+
+result = bc.row_generation.solve(verbose=True)
 
 # if rank == 0:
 #     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
