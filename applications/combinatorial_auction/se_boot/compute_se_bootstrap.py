@@ -69,8 +69,8 @@ if adaptive_cfg := config.get("adaptive_timeout"):
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
-result = bc.row_generation.solve()
-theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
+# result = bc.row_generation.solve()
+# theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
 
 se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED)
 
