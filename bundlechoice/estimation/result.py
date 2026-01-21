@@ -11,6 +11,7 @@ class EstimationResult:
     converged: bool
     num_iterations: int
     final_objective: None
+    n_constraints: int = None
     timing: dict = field(default_factory=dict)
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)

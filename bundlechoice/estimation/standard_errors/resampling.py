@@ -36,7 +36,8 @@ class ResamplingMixin:
             if self.comm_manager._is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b, time=boot_time, iterations=result.num_iterations,
-                                           objective=result.final_objective, converged=result.converged)
+                                           objective=result.final_objective, converged=result.converged,
+                                           n_constraints=result.n_constraints)
             self._log_bootstrap_iteration(b, row_gen.theta_iter)
         
         total_time = time.perf_counter() - t0
@@ -68,18 +69,19 @@ class ResamplingMixin:
         
         if bootstrap_iter % 80 == 0:
             param_width = len(param_indices) * 11 - 1
-            header1 = (f"{'Boot':>5} | {'Time':^7} | {'RG':^5} | "
-                      f"{'Objective':^12} | {f'Parameters':^{param_width}}")
+            header1 = (f"{'Boot':>5} | {'Time':^9} | {'RG':^5} | "
+                      f"{'#Constr':>7} | {'Objective':^12} | {f'Parameters':^{param_width}}")
             param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
-            header2 = (f"{'':>5} | {'(s)':^7} | {'Iters':^5} | "
-                      f"{'Value':^12} | {param_label_row}")
+            header2 = (f"{'':>5} | {'(s)':^9} | {'Iters':^5} | "
+                      f"{'':>7} | {'Value':^12} | {param_label_row}")
             logger.info(header1)
             logger.info(header2)
             logger.info("-" * len(header1))
         
         param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
-        row = (f"{bootstrap_iter:>5} | {format_number(info['time'], width=7, precision=3)} | "
+        row = (f"{bootstrap_iter:>5} | {format_number(info['time'], width=9, precision=3)} | "
                f"{info['iterations']:>5} | "
+               f"{info.get('n_constraints', 0):>7} | "
                f"{format_number(info['objective'], width=12, precision=5)} | {param_vals}")
         logger.info(row)
 

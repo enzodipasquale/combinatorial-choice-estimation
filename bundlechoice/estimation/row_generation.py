@@ -48,6 +48,7 @@ class RowGenerationManager(BaseEstimationManager):
             if master_init_callback is not None:
                 master_init_callback(self.master_model, theta, u)
             self.master_model.optimize()
+
             if self.master_model.Status != GRB.OPTIMAL:
                 raise RuntimeError('Master problem cannot be solved at initialization, status=%s', 
                                     self.master_model.Status)
@@ -349,5 +350,6 @@ class RowGenerationManager(BaseEstimationManager):
             return EstimationResult(
                 theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
                 final_objective=self.master_model.ObjVal,
+                n_constraints=self.master_model.NumConstrs,
                 timing= (pricing_times, master_times),
                 warnings=None)
