@@ -104,10 +104,10 @@ class BaseEstimationManager:
                   +f" {'comm_size':>10} | {'subproblem':>20}")
         values = (f"{metadata['n_obs']:>6} | {metadata['n_items']:>8} | {metadata['n_features']:>11} |"
                   +f" {metadata['n_simulations']:>14} | {metadata['comm_size']:>10} | {metadata['subproblem'] or 'N/A':>20}")
-        logger.info(" Problem metadata")
-        logger.info("-"*100)
+        logger.info(" PROBLEM METADATA")
+        logger.info("-"*90)
         logger.info(header)
         logger.info(values)
-  
+        logger.info("-"*90)
         
         return metadata
