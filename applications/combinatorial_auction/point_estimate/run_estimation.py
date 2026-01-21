@@ -1,9 +1,10 @@
 #!/bin/env python
-import sys, yaml, json
+import sys, yaml
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
-from datetime import datetime
+from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
@@ -45,7 +46,20 @@ if DELTA == 2:
     bc.config.row_generation.theta_lbs = theta_lbs
     bc.config.row_generation.theta_ubs = theta_ubs
 
-result = bc.row_generation.solve(verbose=True)
+
+timeout_callback = adaptive_gurobi_timeout(
+    initial_timeout=1.0,
+    final_timeout=10,
+    transition_iterations=40,
+    strategy='linear',
+    log=True
+)
+
+# Pass it to solve
+result = bc.row_generation.solve(
+    master_iteration_callback=timeout_callback,
+    verbose=True
+)
 
 # if rank == 0:
 #     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
