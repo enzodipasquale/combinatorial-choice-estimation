@@ -13,6 +13,7 @@ class SubproblemManager:
         self.oracles_manager = oracles_manager
         self.subproblem = None
 
+        self._subproblems_are_initialized = False
     def load_subproblem(self, subproblem=None):
         subproblem = subproblem or self.config.subproblem.name
         
@@ -41,6 +42,7 @@ class SubproblemManager:
         if self.subproblem is None:
             self.load_subproblem()
         self.subproblem.initialize()
+        self._subproblems_are_initialized = True
 
     def initialize_and_solve_subproblems(self, theta):
         theta = self.comm_manager.Bcast(theta)

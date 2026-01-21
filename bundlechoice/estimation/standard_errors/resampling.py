@@ -23,7 +23,11 @@ class ResamplingMixin:
                 weights = None
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
             initialize_master = True if b == 0 else False
-            result = row_gen.solve(local_obs_weights=local_weights, verbose=False, initialize_subproblems=False, initialize_master=initialize_master)
+            initialize_subproblems = True if (b == 0 and not self.subproblem_manager._subproblems_are_initialized) else False
+            result = row_gen.solve(local_obs_weights=local_weights, 
+                                    verbose=False, 
+                                    initialize_subproblems=initialize_subproblems, 
+                                    initialize_master=initialize_master)
             boot_time = time.perf_counter() - t_boot
             
             if self.comm_manager._is_root():
