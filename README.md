@@ -13,22 +13,30 @@ Requires MPI. Gurobi optional but needed for row generation.
 ## Quick Start
 
 ```python
-from bundlechoice import BundleChoice
-from bundlechoice.scenarios import ScenarioLibrary
+import bundlechoice as bc
 from mpi4py import MPI
 
-# Build scenario
-scenario = (
-    ScenarioLibrary.greedy()
-    .with_dimensions(n_obs=200, n_items=30)
-    .with_n_features(5)
-    .build()
-)
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
-# Prepare and estimate
-prepared = scenario.prepare(comm=MPI.COMM_WORLD, seed=42)
-bc = BundleChoice()
-prepared.apply(bc, comm=MPI.COMM_WORLD, stage="estimation")
+if rank == 0:
+    cfg = {'dimensions': {'n_obs': 100, 'n_items': 20, 'n_features': 5}}
+    input_data = {
+        "id_data": {"modular": features},  # (agents, items, features)
+        "item_data": {"quadratic": quadratic},  # optional
+    }
+else:
+    cfg = None
+    input_data = None
+
+bc = bc.BundleChoice()
+bc.load_config(cfg)
+bc.data.load_and_distribute_input_data(input_data)
+bc.oracles.build_quadratic_features_from_data()
+bc.oracles.build_local_modular_error_oracle(seed=42)
+
+bc.subproblems.load_subproblem('QuadraticKnapsackGRB')
+bc.subproblems.generate_obs_bundles(theta_star)
 
 result = bc.row_generation.solve()
 print(result.theta_hat)
@@ -36,43 +44,26 @@ print(result.theta_hat)
 
 Run: `mpirun -n 10 python script.py`
 
-## Scenarios
-
-```python
-ScenarioLibrary.greedy()                 # Greedy selection
-ScenarioLibrary.linear_knapsack()        # Linear utility + capacity
-ScenarioLibrary.quadratic_knapsack()     # Quadratic utility + capacity
-ScenarioLibrary.quadratic_supermodular() # Supermodular utilities
-ScenarioLibrary.plain_single_item()      # Single item choice
-```
-
 ## Custom Data
 
 ```python
-bc = BundleChoice()
-bc.load_config({
-    "dimensions": {"n_obs": 100, "n_items": 20, "n_features": 5},
-    "subproblem": {"name": "Greedy"},
-})
-
-if rank == 0:
-    input_data = {
-        "id_data": {"modular": features},  # (agents, items, features)
-        "errors": errors,                      # (sims, agents, items)
-        "obs_bundle": bundles,                 # (agents, items)
-    }
-else:
-    input_data = None
-
+bc = bc.BundleChoice()
+bc.load_config(cfg)
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
+bc.oracles.build_local_modular_error_oracle(seed=42)
+
+bc.subproblems.load_subproblem('QuadraticKnapsackGRB')
+bc.subproblems.generate_obs_bundles(theta_star)
+
 result = bc.row_generation.solve()
 ```
 
 ## Standard Errors
 
 ```python
-se_result = bc.standard_errors.compute_bayesian_bootstrap(result.theta_hat)
+bc.oracles.build_local_modular_error_oracle(seed=27)
+se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=50, seed=123)
 ```
 
 ## Tests
