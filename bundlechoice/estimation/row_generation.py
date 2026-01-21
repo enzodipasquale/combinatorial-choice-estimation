@@ -118,12 +118,20 @@ class RowGenerationManager(BaseEstimationManager):
     def _row_generation_iteration(self, iteration, master_iteration_callback):
         t0 = time.perf_counter()
         pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-        pricing_time = time.perf_counter() - t0
-        t1 = time.perf_counter()
+        pricing_time_local = time.perf_counter() - t0
+        
+        pricing_time = self.comm_manager.Reduce(np.array([pricing_time_local], dtype=np.float64),op=MPI.MAX)
+        pricing_time = pricing_time[0] if self.comm_manager._is_root() else None
+        
+        t1 = time.perf_counter() if self.comm_manager._is_root() else None
         stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
-        master_time = time.perf_counter() - t1
+        master_time = time.perf_counter() - t1 if self.comm_manager._is_root() else None
+        
         self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
-        self._log_iteration(iteration)
+        if self.comm_manager._is_root():
+            self._log_iteration(iteration)
+        
+        return stop
         
         return stop
 
