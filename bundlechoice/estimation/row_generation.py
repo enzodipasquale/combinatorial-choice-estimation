@@ -88,10 +88,10 @@ class RowGenerationManager(BaseEstimationManager):
         local_reduced_costs = u_local - self.u_iter_local
         reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
         reduced_cost = reduced_cost[0] if self.comm_manager._is_root() else None
-        stop = (reduced_cost <= self.cfg.tol_row_generation) if self.comm_manager._is_root() else None
+        stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager._is_root() else None
         stop = self.comm_manager.bcast(stop)
     
-        local_violations = np.where(local_reduced_costs > self.cfg.tol_row_generation)[0]
+        local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
         local_violations_id = self.data_manager.agent_ids[local_violations]
         violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
         
@@ -108,7 +108,7 @@ class RowGenerationManager(BaseEstimationManager):
             self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
             self.master_model.optimize()
-            self.cfg.tol_row_generation *= self.cfg.row_generation_decay
+            self.cfg.tolerance *= self.cfg.row_generation_decay
             
         self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
