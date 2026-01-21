@@ -1,6 +1,6 @@
 import numpy as np
 from .result import BayesianBootstrapResult
-from bundlechoice.utils import get_logger
+from bundlechoice.utils import get_logger, format_number
 logger = get_logger(__name__)
 import time
 
@@ -12,6 +12,9 @@ class ResamplingMixin:
         rng = np.random.default_rng(seed)
         row_gen = self.row_generation_manager
         t0 = time.perf_counter()
+
+        if self.verbose:
+            row_gen._log_instance_summary()
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
@@ -64,32 +67,40 @@ class ResamplingMixin:
             param_indices = list(range(min(5, self.dim.n_features)))
         
         if bootstrap_iter % 80 == 0:
-            param_header = ', '.join(f'θ[{i}]' for i in param_indices)
-            logger.info(f"{'Boot':>5} | {'Time (s)':>9} | {'RG Iter':>7} | {'Objective':>12} | Parameters ({param_header})")
-            logger.info("-"*100)
+            param_width = len(param_indices) * 11 - 1
+            header1 = (f"{'Boot':>5} | {'Time':^7} | {'RG':^5} | "
+                      f"{'Objective':^12} | {f'Parameters':^{param_width}}")
+            param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
+            header2 = (f"{'':>5} | {'(s)':^7} | {'Iters':^5} | "
+                      f"{'Value':^12} | {param_label_row}")
+            logger.info(header1)
+            logger.info(header2)
+            logger.info("-" * len(header1))
         
-        param_vals = ', '.join(f'{theta[i]:.5f}' for i in param_indices)
-        logger.info(f"{bootstrap_iter:>5} | {info['time']:>9.3f} | {info['iterations']:>7} | {info['objective']:>12.5f} | ({param_vals})")
+        param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
+        row = (f"{bootstrap_iter:>5} | {format_number(info['time'], width=7, precision=3)} | "
+               f"{info['iterations']:>5} | "
+               f"{format_number(info['objective'], width=12, precision=5)} | {param_vals}")
+        logger.info(row)
 
     def _log_bootstrap_summary(self, n_bootstrap, total_time, result):
         if not self.comm_manager._is_root() or not self.verbose:
             return
-        
-        self.row_generation_manager._log_instance_summary()
         
         if self.config.row_generation.parameters_to_log is not None:
             param_indices = self.config.row_generation.parameters_to_log
         else:
             param_indices = list(range(min(5, self.dim.n_features)))
         
-    
-        logger.info("-"*100)
-        logger.info(f"Bayesian Bootstrap Summary: {n_bootstrap} samples in {total_time:.1f}s")
-        logger.info(f"{'Param':>8} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
-        logger.info("-"*100)
+        logger.info(" " )
+        logger.info("-"*55)
+        logger.info(f" BAYESIAN BOOTSTRAP SUMMARY: {n_bootstrap} samples in {total_time:.1f}s")
+        logger.info("-"*55)
+        logger.info(f"{'Param':>6} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
+        logger.info("-"*55)
         for i in param_indices:
             logger.info(f"θ[{i:>3}] | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
-        logger.info("-"*100)
+        logger.info("-"*55)
 
  
 

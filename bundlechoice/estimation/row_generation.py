@@ -3,7 +3,7 @@ import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
 from mpi4py import MPI
-from bundlechoice.utils import get_logger, suppress_output
+from bundlechoice.utils import get_logger, suppress_output, format_number
 from .base import BaseEstimationManager
 from .result import EstimationResult
 logger = get_logger(__name__)
@@ -138,7 +138,7 @@ class RowGenerationManager(BaseEstimationManager):
         
         self.verbose = verbose if verbose is not None else True
         if self.verbose:
-            logger.info("Row Generation initializing...")
+            self._log_instance_summary()
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
             self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
@@ -151,7 +151,8 @@ class RowGenerationManager(BaseEstimationManager):
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
         if self.verbose:
-            logger.info("Row Generation initialized.")
+            logger.info(" " )
+            logger.info(" ROW GENERATION")
         result = self.row_generation_loop(master_iteration_callback)
         return result
 
@@ -248,35 +249,81 @@ class RowGenerationManager(BaseEstimationManager):
             param_indices = list(range(min(5, len(self.theta_iter))))
         
         if iteration % 80 == 0:
-            param_header = ', '.join(f'θ[{i}]' for i in param_indices)
-            logger.info(f"{'Iter':>4} | {'Reduced Cost':>12} | {'Pricing (s)':>11} | {'Master (s)':>10} | {'#Viol':>5} "+ 
-                            f"| {'Objective Val':>13} | {'Constr':>6} | Parameters ({param_header})")
-            logger.info("-"*120)
+            param_width = len(param_indices) * 11 - 1
+            header1 = (f"{'Iter':>4} | {'Reduced':^12} | {'Pricing':^11} | "
+                      f"{'Master':^10} | {'#Viol':^5} | {'Objective':^13} | "
+                      f"{'Constr':>6} | {f'Parameters':^{param_width}}")
+            param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
+            header2 = (f"{'':>4} | {'Cost':^12} | {'(s)':^11} | "
+                      f"{'(s)':^10} | {'':>5} | {'Value':^13} | "
+                      f"{'':>6} | {param_label_row}")
+            logger.info(header1)
+            logger.info(header2)
+            logger.info("-" * len(header1))
         
-        param_vals = ', '.join(f'{self.theta_iter[i]:.5f}' for i in param_indices)
-        logger.info(f"{iteration:>4} | {info['reduced_cost']:>12.6f} | {info['pricing_time']:>10.3f}s | "+ 
-                        f"{info['master_time']:>9.3f}s | {info['n_violations']:>5} | {info['objective']:>13.5f} "+
-                        f"| {info['n_constraints']:>6} | ({param_vals})")
+        param_vals = ' '.join(format_number(self.theta_iter[i], width=10, precision=5) for i in param_indices)
+        row = (f"{iteration:>4} | {format_number(info['reduced_cost'], width=12, precision=6)} | "
+               f"{format_number(info['pricing_time'], width=10, precision=3)}s | "
+               f"{format_number(info['master_time'], width=9, precision=3)}s | "
+               f"{info['n_violations']:>5} | "
+               f"{format_number(info['objective'], width=13, precision=5)} | "
+               f"{info['n_constraints']:>6} | {param_vals}")
+        logger.info(row)
 
-    def _log_summary(self, n_iters, total):
+    def _log_summary(self, n_iters, total_time):
         if not self.comm_manager._is_root() or not self.verbose:
             return
-        self._log_instance_summary()
+        
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
         p = np.array([self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())])
-        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])        
-
-        logger.info("-"*60)
-        vals = ', '.join(f'θ[{i}]={self.theta_iter[i]:.5f}' for i in idx)
-        logger.info('Estimated Parameters:')
-        logger.info(f'  {vals}')
-        logger.info(f'Objective Value = {self.master_model.ObjVal}')
-        logger.info('Timing Summary:')
-        logger.info(f'  Terminated after {n_iters} iterations in {total:.1f}s')
-        logger.info(f'  {"total":>17}  {"avg":>8}  {"range":>8}')
-        logger.info(f'  pricing  {p.sum():>7.2f}s  {p.mean():>7.3f}s  [{p.min():.3f}, {p.max():.3f}]')
-        logger.info(f'  master   {m.sum():>7.2f}s  {m.mean():>7.3f}s  [{m.min():.3f}, {m.max():.3f}]')
-        logger.info("-"*60)
+        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])
+        
+        # Get final iteration info
+        final_iter = max(self.iteration_history.keys())
+        final_info = self.iteration_history[final_iter]
+        n_constraints = final_info.get('n_constraints', self.master_model.NumConstrs)
+        n_violations = final_info.get('n_violations', 0)
+        reduced_cost = final_info.get('reduced_cost', 0.0)
+        logger.info(" " )
+        logger.info(" ROW GENERATION SUMMARY" )
+        logger.info("-" * 80)
+    
+        param_labels = ' | '.join(f'{f"θ[{i}]":>12}' for i in idx)
+        logger.info(f"{'Parameters':>17} | {param_labels}")
+        param_vals = ' | '.join(format_number(self.theta_iter[i], width=12, precision=5) for i in idx)
+        logger.info(f"{'':>17} | {param_vals}")
+        
+        logger.info("-" * 80)
+        
+        # Summary statistics header and values
+        logger.info(f"{'ObjVal':>12} | {'#Consts':>8} | {'#Viols':>6} | {'Reduced Cost':>12} | {'Time (s)':>9} | {'#Iters':>7}")
+        logger.info(
+            f"{format_number(self.master_model.ObjVal, width=12, precision=5)} | "
+            f"{n_constraints:>8} | "
+            f"{n_violations:>6} | "
+            f"{format_number(reduced_cost, width=12, precision=6)} | "
+            f"{format_number(total_time, width=9, precision=3)} | "
+            f"{n_iters:>7}"
+        )
+        
+        logger.info("-" * 80)
+        
+        # Timing summary table
+        logger.info(f"{'Time':>17} | {'Total (s)':>10} | {'Avg (s)':>10} | {'Range (s)':>11}")
+      
+        logger.info(
+            f"{'pricing':>17} | "
+            f"{format_number(p.sum(), width=10, precision=3)} | "
+            f"{format_number(p.mean(), width=10, precision=3)} | "
+            f"[{format_number(p.min(), precision=3)}, {format_number(p.max(), precision=3)}]"
+        )
+        logger.info(
+            f"{'master':>17} | "
+            f"{format_number(m.sum(), width=10, precision=3)} | "
+            f"{format_number(m.mean(), width=10, precision=3)} | "
+            f"[{format_number(m.min(), precision=3)}, {format_number(m.max(), precision=3)}]"
+        )
+        logger.info(" " )
         
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}

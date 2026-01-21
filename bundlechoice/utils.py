@@ -2,9 +2,6 @@ import logging
 import os
 import sys
 from contextlib import contextmanager
-from typing import Any, Dict
-import numpy as np
-from numpy.typing import NDArray
 try:
     from mpi4py import MPI
 except ImportError:
@@ -49,3 +46,23 @@ def suppress_output():
             sys.stderr = old_stderr
             logging.getLogger().setLevel(old_logging_level)
 
+def format_number(value, width=None, precision=6, use_scientific_threshold=1e-4):
+    if value == 0:
+        formatted = "0"
+    elif abs(value) < use_scientific_threshold or abs(value) >= 1.0 / use_scientific_threshold:
+        exp_str = f"{value:.{precision-1}e}"
+        if 'e' in exp_str:
+            base, exp = exp_str.split('e')
+            exp_val = int(exp)
+            if exp_val >= 0:
+                formatted = f"{base}e+{exp_val:02d}"
+            else:
+                formatted = f"{base}e{exp_val:03d}"
+        else:
+            formatted = exp_str
+    else:
+        formatted = f"{value:.{precision}f}".rstrip('0').rstrip('.')
+    
+    if width is not None:
+        return f"{formatted:>{width}}"
+    return formatted
