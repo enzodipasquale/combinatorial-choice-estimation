@@ -39,8 +39,7 @@ class SubproblemConfig(ConfigMixin):
 @dataclass
 class RowGenerationConfig(ConfigMixin):
     max_slack_counter: float = float('inf')
-    tol_row_generation: float = 1e-6
-    row_generation_decay: float = 1.0
+    tolerance: float = 1e-6
     max_iters: float = float('inf')
     min_iters: int = 0
     gurobi_settings: dict = field(default_factory=dict)
