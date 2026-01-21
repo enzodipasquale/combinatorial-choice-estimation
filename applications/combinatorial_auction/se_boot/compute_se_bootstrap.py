@@ -72,7 +72,7 @@ if rank == 0:
 # result = bc.row_generation.solve()
 # theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
 
-se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED)
+se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED, verbose = True)
 
 # if rank == 0 and se_result is not None:
 #     theta_point = theta_hat
