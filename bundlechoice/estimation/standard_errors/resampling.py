@@ -79,7 +79,8 @@ class ResamplingMixin:
             logger.info("-" * len(header1))
         
         param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
-        row = (f"{bootstrap_iter:>5} | {format_number(info['time'], width=9, precision=3)} | "
+        time_str = f"{info['time']:>9.3f}"
+        row = (f"{bootstrap_iter:>5} | {time_str} | "
                f"{info['iterations']:>5} | "
                f"{info.get('n_constraints', 0):>7} | "
                f"{format_number(info['objective'], width=12, precision=5)} | {param_vals}")
