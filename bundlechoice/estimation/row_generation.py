@@ -215,8 +215,6 @@ class RowGenerationManager(BaseEstimationManager):
         for constr in to_remove:
             self.master_model.remove(constr)
             self.slack_counter.pop(constr, None)
-        if to_remove and self.verbose:
-            logger.info('Removed %d slack constraints', len(to_remove))
         return len(to_remove)
 
 
