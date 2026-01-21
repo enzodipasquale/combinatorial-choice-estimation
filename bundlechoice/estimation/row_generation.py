@@ -108,7 +108,6 @@ class RowGenerationManager(BaseEstimationManager):
             self.add_constraints(violations_id, bundles, features, errors)
             self._enforce_slack_counter()
             self.master_model.optimize()
-            self.cfg.tolerance *= self.cfg.row_generation_decay
             
         self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
