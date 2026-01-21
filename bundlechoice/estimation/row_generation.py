@@ -91,7 +91,7 @@ class RowGenerationManager(BaseEstimationManager):
         stop = self.comm_manager.bcast(stop)
     
         local_violations = np.where(local_reduced_costs > self.cfg.tol_row_generation)[0]
-        local_violations_id = self.data_manager.obs_ids[local_violations]
+        local_violations_id = self.data_manager.agent_ids[local_violations]
         violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
         
         bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)

@@ -6,7 +6,7 @@ class GreedySubproblem(SerialSubproblemBase):
     modular_errors = None
 
     def initialize_single_pb(self, local_id):
-        self.modular_errors = self.oracles_manager._modular_local_errors[local_id]
+        self.modular_errors = self.oracles_manager._local_modular_errors[local_id]
         return None
 
     def solve_single_pb(self, local_id, theta, pb=None):

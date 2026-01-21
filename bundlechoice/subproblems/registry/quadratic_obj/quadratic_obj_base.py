@@ -15,7 +15,7 @@ class QuadraticObjectiveMixin:
         return self._qinfo.slices
 
     def _build_linear_coeff_single(self, local_id, theta):
-        L = self.oracles_manager._modular_local_errors[local_id].copy()
+        L = self.oracles_manager._local_modular_errors[local_id].copy()
         if 'modular_agent' in self._slices:
             L += (self.data_manager.local_data["id_data"]['modular'][local_id] 
                     @ theta[self._slices['modular_agent']])
@@ -35,7 +35,7 @@ class QuadraticObjectiveMixin:
         return Q
 
     def _build_linear_coeff_batch(self, theta):
-        L = self.oracles_manager._modular_local_errors.copy()
+        L = self.oracles_manager._local_modular_errors.copy()
         if 'modular_agent' in self._slices:
             L += (self.data_manager.local_data["id_data"]['modular'] 
                     @ theta[self._slices['modular_agent']])

@@ -17,7 +17,7 @@ class OraclesManager:
         self._error_oracle_vectorized = None
         self._features_oracle_takes_data = True
         self._error_oracle_takes_data = False
-        self._modular_local_errors = None
+        self._local_modular_errors = None
 
     @property
     def local_obs_features(self):
@@ -97,12 +97,12 @@ class OraclesManager:
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
         np.random.seed(seed + self.comm_manager.rank)
-        self._modular_local_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, 
+        self._local_modular_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, 
                                                                 self.dimensions_cfg.n_items))
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
-            self._modular_local_errors = self._modular_local_errors @ L
-        self._error_oracle = lambda bundles, ids: (self._modular_local_errors * bundles).sum(-1)
+            self._local_modular_errors = self._local_modular_errors @ L
+        self._error_oracle = lambda bundles, ids: (self._local_modular_errors * bundles).sum(-1)
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle
