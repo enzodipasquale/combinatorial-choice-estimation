@@ -32,5 +32,5 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         pb.optimize()
         try:
             return np.array(pb.x, dtype=bool)
-        except:
-            raise ValueError('Failed to solve quadratic knapsack subproblem')
+        except Exception as e:
+            raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')

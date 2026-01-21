@@ -34,4 +34,4 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         return self.local_pbs
 
     def solve(self, theta):
-        return np.array([self.solve_single_pb(i, theta, pb) for i, pb in enumerate(self.local_pbs)])
+        return np.array([self.solve_single_pb(i, theta, pb) for i, pb in enumerate(self.local_pbs)], dtype=bool)
