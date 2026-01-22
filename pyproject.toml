@@ -14,10 +14,9 @@ license = {text = "MIT"}
 dependencies = [
     "numpy>=1.24",
     "pandas>=2.0",
-    "gurobipy>=11.0",
+    "gurobipy>=11.0,<13.0",
     "mpi4py>=3.1",
     "pyyaml>=6.0",
-    "matplotlib>=3.7",
     "networkx>=3.0",
 ]
 

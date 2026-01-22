@@ -1,7 +1,6 @@
 numpy
 pandas
-#gurobipy<13.0
-gurobipy
+gurobipy<13.0
 mpi4py
 pyyaml
 networkx
