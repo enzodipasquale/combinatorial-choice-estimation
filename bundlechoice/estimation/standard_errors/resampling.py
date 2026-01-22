@@ -21,6 +21,8 @@ class ResamplingMixin:
 
         if self.verbose:
             row_gen._log_instance_summary()
+            logger.info(" " )
+            logger.info(" BAYESIAN BOOTSTRAP")
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
@@ -83,8 +85,9 @@ class ResamplingMixin:
             return
         if bootstrap_iter not in self.bootstrap_history:
             return
-        info = self.bootstrap_history[bootstrap_iter]
-        
+        if bootstrap_iter == 0:
+            logger.info("-"*55)
+        info = self.bootstrap_history[bootstrap_iter]    
         if self.config.row_generation.parameters_to_log is not None:
             param_indices = self.config.row_generation.parameters_to_log
         else:
