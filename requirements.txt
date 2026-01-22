@@ -1,4 +1,3 @@
-matplotlib
 numpy
 pandas
 #gurobipy<13.0
@@ -6,4 +5,3 @@ gurobipy
 mpi4py
 pyyaml
 networkx
-seaborn
