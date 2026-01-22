@@ -30,7 +30,7 @@ class RowGenerationManager(BaseEstimationManager):
         _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
-            self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
+            self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_settings)
             theta = self.master_model.addMVar(self.dim.n_features, 
                                                 obj= _theta_obj_coef, 
                                                 lb= self.cfg.theta_lbs,
@@ -171,8 +171,8 @@ class RowGenerationManager(BaseEstimationManager):
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
         return constr
     
-    def _setup_gurobi_model(self, gurobi_settings=None):
-        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(gurobi_settings or {})}
+    def _setup_gurobi_model(self, master_GRB_settings=None):
+        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(master_GRB_settings or {})}
         with suppress_output():
             model = gp.Model()
             for k, v in params.items():
