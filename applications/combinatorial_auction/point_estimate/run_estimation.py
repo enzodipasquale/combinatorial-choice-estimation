@@ -57,7 +57,7 @@ if DELTA == 2:
 
 # # Pass it to solve
 # result = bc.row_generation.solve(
-#     master_iteration_callback=timeout_callback,
+#     iteration_callback=timeout_callback,
 #     verbose=True
 # )
 

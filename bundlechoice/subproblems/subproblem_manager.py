@@ -76,7 +76,6 @@ class SubproblemManager:
             return
         
         if hasattr(self.subproblem, 'local_pbs') and self.subproblem.local_pbs is not None:
-            import gurobipy as gp
             for model in self.subproblem.local_pbs:
                 if model is not None:
                     for param, value in settings_dict.items():

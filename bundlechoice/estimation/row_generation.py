@@ -14,12 +14,10 @@ class RowGenerationManager(BaseEstimationManager):
         super().__init__(comm_manager, config, data_manager, oracles_manager, subproblem_manager)
         self.master_model = None
         self.master_variables = None
-        self.timing_stats = None
+
         self.theta_iter = None
         self.u_iter_local = None
 
-        self.slack_counter = {}
-        self.constraint_info = {}
         self.cfg = self.config.row_generation
         self.dim = self.config.dimensions
 
@@ -32,7 +30,6 @@ class RowGenerationManager(BaseEstimationManager):
         _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
-            self.constraint_info = {}
             self.master_model = self._setup_gurobi_model(self.cfg.gurobi_settings)
             theta = self.master_model.addMVar(self.dim.n_features, 
                                                 obj= _theta_obj_coef, 
@@ -75,7 +72,7 @@ class RowGenerationManager(BaseEstimationManager):
             
             self.iteration_history[iteration].update(update_dict)
 
-    def _master_iteration(self, pricing_results, iteration, callback=None):
+    def _master_iteration(self, pricing_results, iteration):
         features_local = self.oracles_manager.features_oracle(pricing_results)
         errors_local = self.oracles_manager.error_oracle(pricing_results)
         u_local = features_local @ self.theta_iter + errors_local
@@ -99,15 +96,13 @@ class RowGenerationManager(BaseEstimationManager):
         if stop:
             return True
         if self.comm_manager._is_root():
-            self.add_constraints(violations_id, bundles, features, errors)
+            self.add_master_constraints(violations_id, bundles, features, errors)
             self.master_model.optimize()
             
         self._Bcast_theta_and_Scatterv_u_vals()
-        if callback is not None:
-            callback(iteration, self)
         return False
 
-    def _row_generation_iteration(self, iteration, master_iteration_callback):
+    def _row_generation_iteration(self, iteration, callback):
         t0 = time.perf_counter()
         pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
         pricing_time_local = time.perf_counter() - t0
@@ -116,9 +111,10 @@ class RowGenerationManager(BaseEstimationManager):
         pricing_time = pricing_time[0] if self.comm_manager._is_root() else None
         
         t1 = time.perf_counter() if self.comm_manager._is_root() else None
-        stop = self._master_iteration(pricing_results, iteration, master_iteration_callback)
+        stop = self._master_iteration(pricing_results, iteration)
         master_time = time.perf_counter() - t1 if self.comm_manager._is_root() else None
-        
+        if callback is not None:
+            callback(iteration, self)
         self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
         self._log_iteration(iteration)     
         return stop
@@ -126,8 +122,8 @@ class RowGenerationManager(BaseEstimationManager):
     def solve(self, local_obs_weights=None,
                     initialize_master = True,
                     initialize_subproblems = True,
-                    master_iteration_callback=None,
-                    master_init_callback=None,
+                    iteration_callback=None,
+                    initialization_callback=None,
                     verbose = False):
         
         
@@ -145,20 +141,20 @@ class RowGenerationManager(BaseEstimationManager):
                 self.master_model.optimize()
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
-        if master_init_callback is not None:
-            master_init_callback(self)
+        if initialization_callback is not None:
+            initialization_callback(self)
 
         self._Bcast_theta_and_Scatterv_u_vals()
         if self.verbose:
             logger.info(" " )
             logger.info(" ROW GENERATION")
-        result = self.row_generation_loop(master_iteration_callback)
+        result = self.row_generation_loop(iteration_callback)
         return result
 
-    def row_generation_loop(self, master_iteration_callback):
+    def row_generation_loop(self, callback):
         iteration, self.iteration_history, t0 = 0, {}, time.perf_counter()
         while iteration < self.cfg.max_iters:
-            stop = self._row_generation_iteration(iteration, master_iteration_callback)
+            stop = self._row_generation_iteration(iteration, callback)
             if stop and iteration >= self.cfg.min_iters:
                 break
             iteration += 1
@@ -168,13 +164,11 @@ class RowGenerationManager(BaseEstimationManager):
         return result
 
 
-    def add_constraints(self, indices, bundles, features, errors):
+    def add_master_constraints(self, indices, bundles, features, errors):
         if not self.comm_manager._is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
-        self.constraint_info[constr] = (indices, bundles.copy())
-       
         return constr
     
     def _setup_gurobi_model(self, gurobi_settings=None):
@@ -200,19 +194,27 @@ class RowGenerationManager(BaseEstimationManager):
     def strip_nonbasic_constraints(self):
         if not self.comm_manager._is_root() or self.master_model is None:
             return 0
-        to_remove = [c for c in self.master_model.getConstrs() 
-                    if c in self.constraint_info and c.CBasis == -1]
+        to_remove = [c for c in self.master_model.getConstrs() if c.CBasis == 0]
         for constr in to_remove:
             self.master_model.remove(constr)
-            self.constraint_info.pop(constr, None)
-            self.slack_counter.pop(constr, None)
         if to_remove:
             self.master_model.update()
-            if self.verbose:
-                logger.info('Stripped %d slack constraints', len(to_remove))
         return len(to_remove)
 
-
+    def strip_slack_constraints(self, percentile=95.0):
+        if not self.comm_manager._is_root() or self.master_model is None:
+            return 0
+        
+        constraints = list(self.master_model.getConstrs())
+        slacks = np.array([c.Slack for c in constraints])
+        threshold = np.percentile(slacks, 100.0 - percentile)
+        
+        to_remove = [c for c in constraints if c.Slack <= threshold]
+        for constr in to_remove:
+            self.master_model.remove(constr)
+        if to_remove:
+            self.master_model.update()
+        return len(to_remove)
 
     def _log_iteration(self, iteration):
         if not self.comm_manager._is_root() or not self.verbose:
