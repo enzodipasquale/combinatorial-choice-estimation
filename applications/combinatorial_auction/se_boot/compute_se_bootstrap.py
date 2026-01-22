@@ -27,6 +27,9 @@ NUM_BOOTSTRAP, SEED = boot.get("num_samples", 200), boot.get("seed", 1995)
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
+
+
+
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
 
@@ -58,7 +61,7 @@ if config.get("constraints", {}).get("pop_dominates_travel"):
         theta, u = row_gen_manager.master_variables
         row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
         row_gen_manager.master_model.update()
-        
+
     bc.config.row_generation.initialization_callback = add_constraint
 
 if adaptive_cfg := config.get("adaptive_timeout"):
@@ -74,8 +77,25 @@ if rank == 0:
 
 # result = bc.row_generation.solve()
 # theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
+def strip_master_constraints(boot, rowgen):
+    rowgen.strip_slack_constraints(50)
+    bc.row_generation.strip_constraints_hard_threshold(30)
 
-se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED, verbose = True)
+
+timeout_callback = adaptive_gurobi_timeout(
+    initial_timeout=1.0,
+    final_timeout=1.0,
+    transition_iterations=10,
+    strategy='linear',
+    log=True
+    )
+
+se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
+                                                            seed=SEED, 
+                                                            verbose = True,
+                                                            row_gen_iteration_callback = timeout_callback,
+                                                            bootstrap_callback = strip_master_constraints
+                                                            )
 
 # if rank == 0 and se_result is not None:
 #     theta_point = theta_hat

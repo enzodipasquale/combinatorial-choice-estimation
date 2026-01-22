@@ -201,20 +201,36 @@ class RowGenerationManager(BaseEstimationManager):
             self.master_model.update()
         return len(to_remove)
 
-    def strip_slack_constraints(self, percentile=95.0):
+    def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
         if not self.comm_manager._is_root() or self.master_model is None:
             return 0
-        
         constraints = list(self.master_model.getConstrs())
         slacks = np.array([c.Slack for c in constraints])
         threshold = np.percentile(slacks, 100.0 - percentile)
-        
-        to_remove = [c for c in constraints if c.Slack <= threshold]
+        if (slacks < threshold).sum() < len(constraints) - hard_threshold:
+            return self.strip_constraints_hard_threshold(hard_threshold)
+        to_remove = [c for c in constraints if c.Slack < threshold]
         for constr in to_remove:
             self.master_model.remove(constr)
         if to_remove:
             self.master_model.update()
         return len(to_remove)
+
+    def strip_constraints_hard_threshold(self, n_constraints = float('inf')):
+        if not self.comm_manager._is_root() or self.master_model is None:
+            return 0
+        constraints = list(self.master_model.getConstrs())
+        if len(constraints) < n_constraints:
+            return 0
+        slacks = np.array([c.Slack for c in constraints])
+        to_remove = [constraints[c_id] for c_id in np.argsort(slacks)[:-n_constraints]]
+        for constr in to_remove:
+            self.master_model.remove(constr)
+        if to_remove:
+            self.master_model.update()
+        return len(to_remove)
+        
+        
 
     def _log_iteration(self, iteration):
         if not self.comm_manager._is_root() or not self.verbose:
