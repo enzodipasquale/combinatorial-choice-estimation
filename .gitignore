@@ -58,3 +58,4 @@ applications/**/config.yaml
 applications/**/config_local.yaml
 applications/firms_export
 bundlechoice/tests
+requirements_HPC.txt
