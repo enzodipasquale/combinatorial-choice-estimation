@@ -56,3 +56,4 @@ bundled_choice_estimation.pdf
 *.bash
 applications/**/config.yaml
 applications/**/config_local.yaml
+applications/firms_export
