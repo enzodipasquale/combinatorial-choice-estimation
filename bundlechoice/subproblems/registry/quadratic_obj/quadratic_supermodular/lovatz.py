@@ -10,9 +10,9 @@ class QuadraticSupermodularLovasz(SupermodularQuadraticObjectiveMixin, BatchSubp
         diag = np.arange(self.dimensions_cfg.n_items)
         P[:, diag, diag] += linear
         mask = self._qinfo.constraint_mask
-        num_iters = int(self.subproblem_cfg.settings.get(
+        num_iters = int(self.subproblem_cfg.GRB_settings.get(
             'num_iters_SGM', max(100000, 1000 * self.dimensions_cfg.n_items)))
-        alpha = float(self.subproblem_cfg.settings.get(
+        alpha = float(self.subproblem_cfg.GRB_settings.get(
             'alpha', 0.1 / np.sqrt(self.dimensions_cfg.n_items)))
         z = np.full((self.data_manager.num_local_agent, self.dimensions_cfg.n_items), 0.5)
         if mask is not None:

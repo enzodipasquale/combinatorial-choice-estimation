@@ -34,7 +34,7 @@ class DimensionsConfig(ConfigMixin):
 @dataclass
 class SubproblemConfig(ConfigMixin):
     name: str = None
-    settings: dict = field(default_factory=dict)
+    GRB_settings: dict = field(default_factory=dict)
 
 @dataclass
 class RowGenerationConfig(ConfigMixin):

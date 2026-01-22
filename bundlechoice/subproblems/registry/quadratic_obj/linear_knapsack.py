@@ -13,7 +13,7 @@ class LinearKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase)
             model = gp.Model()
             model.setParam('OutputFlag', 0)
             model.setParam('Threads', 1)
-            time_limit = self.subproblem_cfg.settings.get('TimeLimit')
+            time_limit = self.subproblem_cfg.GRB_settings.get('TimeLimit')
             if time_limit:
                 model.setParam('TimeLimit', time_limit)
             model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
