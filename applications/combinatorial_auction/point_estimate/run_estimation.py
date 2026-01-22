@@ -51,8 +51,7 @@ timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial", 1.0),
     final_timeout=adaptive_cfg.get("final", 1.0),
     transition_iterations=adaptive_cfg.get("transition_iterations", 10),
-    strategy=adaptive_cfg.get("strategy", "linear"),
-    log=adaptive_cfg.get("log", True)
+    strategy=adaptive_cfg.get("strategy", "linear")
 )
 
 # Pass it to solve
