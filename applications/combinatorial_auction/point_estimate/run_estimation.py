@@ -16,9 +16,7 @@ from applications.combinatorial_auction.data.prepare_data import main as prepare
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-IS_LOCAL = Path("/Users/enzo-macbookpro").exists()
-config = yaml.safe_load(open(BASE_DIR / ("config_local.yaml" if IS_LOCAL else "config.yaml")))
-
+config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 app = config.get("application", {})
 DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta", 4), app.get("winners_only", False), app.get("hq_distance", False)
 ERROR_SEED = app.get("error_seed", 1995)
@@ -38,9 +36,13 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-if DELTA == 2:
-    theta_lbs, theta_ubs = np.zeros(bc.n_features), np.full(bc.n_features, 1000.0)
-    bounds_map = {"bidder_elig_pop": (75, 1000), "pop_distance": (400, 650), "travel_survey": (-120, 1000), "air_travel": (-75, 1000)}
+if theta_bounds := config.get("theta_bounds"):
+    theta_lbs = np.zeros(bc.n_features)
+    theta_ubs = np.ones(bc.n_features) * 2000
+    for k,v in theta_bounds['lbs'].items():
+        theta_lbs[k] = v
+    for k,v in theta_bounds['ubs'].items():
+        theta_ubs[k] = v     
     bc.config.row_generation.theta_lbs = theta_lbs
     bc.config.row_generation.theta_ubs = theta_ubs
 
@@ -51,7 +53,7 @@ timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial", 1.0),
     final_timeout=adaptive_cfg.get("final", 1.0),
     transition_iterations=adaptive_cfg.get("transition_iterations", 10),
-    strategy=adaptive_cfg.get("strategy", "linear")
+    strategy=adaptive_cfg.get("strategy", "step")
 )
 
 # Pass it to solve
