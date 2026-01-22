@@ -57,3 +57,4 @@ bundled_choice_estimation.pdf
 applications/**/config.yaml
 applications/**/config_local.yaml
 applications/firms_export
+bundlechoice/tests
