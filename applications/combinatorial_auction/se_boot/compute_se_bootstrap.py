@@ -2,7 +2,6 @@
 import sys, os, csv, yaml
 import numpy as np
 from pathlib import Path
-from datetime import datetime
 from mpi4py import MPI
 
 BASE_DIR = Path(__file__).parent
@@ -26,8 +25,6 @@ DELTA = app.get("delta", 4)
 NUM_BOOTSTRAP, SEED = boot.get("num_samples", 200), boot.get("seed", 1995)
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
-
-
 
 
 bc = BundleChoice()
@@ -64,7 +61,8 @@ if config.get("constraints", {}).get("pop_dominates_travel"):
 
     bc.config.row_generation.initialization_callback = add_constraint
 
-if adaptive_cfg := config.get("adaptive_timeout"):
+callbacks = config.get("callbacks", {})
+if adaptive_cfg := callbacks.get("adaptive_timeout"):
     bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(
         initial_timeout=adaptive_cfg.get("initial", 1.0),
         final_timeout=adaptive_cfg.get("final", 30.0),
@@ -75,27 +73,26 @@ if adaptive_cfg := config.get("adaptive_timeout"):
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
-# result = bc.row_generation.solve()
-# theta_hat = comm.bcast(result.theta_hat if rank == 0 else None, root=0)
+
 def strip_master_constraints(boot, rowgen):
-    rowgen.strip_slack_constraints(50)
-    bc.row_generation.strip_constraints_hard_threshold(30)
+    strip_cfg = callbacks.get("strip", {})
+    percentile = strip_cfg.get("percentile", 50)
+    hard_threshold = strip_cfg.get("hard_threshold", 2)
+    rowgen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
 
-
+adaptive_cfg = callbacks.get("adaptive_timeout", {})
 timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=1.0,
-    final_timeout=1.0,
-    transition_iterations=10,
-    strategy='linear',
-    log=True
-    )
+    initial_timeout=adaptive_cfg.get("initial", 1.0),
+    final_timeout=adaptive_cfg.get("final", 1.0),
+    transition_iterations=adaptive_cfg.get("transition_iterations", 10),
+    strategy=adaptive_cfg.get("strategy", "linear"),
+    log=adaptive_cfg.get("log", True)
+)
+se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, seed=SEED, verbose=True,
+                                                     bootstrap_callback=lambda self, rowgen: strip_master_constraints(boot, rowgen),
+                                                     row_gen_iteration_callback=timeout_callback)
 
-se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
-                                                            seed=SEED, 
-                                                            verbose = True,
-                                                            row_gen_iteration_callback = timeout_callback,
-                                                            bootstrap_callback = strip_master_constraints
-                                                            )
+
 
 # if rank == 0 and se_result is not None:
 #     theta_point = theta_hat

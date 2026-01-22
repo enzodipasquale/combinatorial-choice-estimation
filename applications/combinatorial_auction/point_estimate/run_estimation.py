@@ -3,16 +3,14 @@ import sys, yaml
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
-from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
-
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+from bundlechoice import BundleChoice
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 
 comm = MPI.COMM_WORLD
@@ -47,21 +45,21 @@ if DELTA == 2:
     bc.config.row_generation.theta_ubs = theta_ubs
 
 
-# timeout_callback = adaptive_gurobi_timeout(
-#     initial_timeout=1.0,
-#     final_timeout=10,
-#     transition_iterations=40,
-#     strategy='linear',
-#     log=True
-# )
+callbacks = config.get("callbacks", {})
+adaptive_cfg = callbacks.get("adaptive_timeout", {})
+timeout_callback = adaptive_gurobi_timeout(
+    initial_timeout=adaptive_cfg.get("initial", 1.0),
+    final_timeout=adaptive_cfg.get("final", 1.0),
+    transition_iterations=adaptive_cfg.get("transition_iterations", 10),
+    strategy=adaptive_cfg.get("strategy", "linear"),
+    log=adaptive_cfg.get("log", True)
+)
 
-# # Pass it to solve
-# result = bc.row_generation.solve(
-#     iteration_callback=timeout_callback,
-#     verbose=True
-# )
-
-result = bc.row_generation.solve(verbose=True)
+# Pass it to solve
+result = bc.row_generation.solve(
+    iteration_callback=timeout_callback,
+    verbose=True
+)
 
 # if rank == 0:
 #     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
