@@ -56,12 +56,12 @@ class DataManager:
         return splits[self.comm_manager.rank]
 
     @lru_cache(maxsize=1)
-    def _agent_counts(self, num_agents, comm_size):
-        return np.array([len(v) for v in np.array_split(np.arange(num_agents), comm_size)], dtype=np.int64)
+    def _agent_counts(self, n_agents, comm_size):
+        return np.array([len(v) for v in np.array_split(np.arange(n_agents), comm_size)], dtype=np.int64)
 
     @property
     def agent_counts(self):
-        return self._agent_counts(self.dimensions_cfg.num_agents, self.comm_manager.comm_size)
+        return self._agent_counts(self.dimensions_cfg.n_agents, self.comm_manager.comm_size)
 
     @property
     def num_local_agent(self):

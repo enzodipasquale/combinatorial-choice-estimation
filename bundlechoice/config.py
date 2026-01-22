@@ -25,7 +25,7 @@ class DimensionsConfig(ConfigMixin):
     feature_names: list = None
 
     @property
-    def num_agents(self):
+    def n_agents(self):
         if self.n_obs is None or self.n_simulations is None:
             return None
         return self.n_simulations * self.n_obs

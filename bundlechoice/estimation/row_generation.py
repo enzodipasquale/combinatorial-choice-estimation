@@ -28,7 +28,7 @@ class RowGenerationManager(BaseEstimationManager):
         return self.comm_manager.bcast(self.master_model is not None)
 
     
-    def _initialize_master_problem(self, initial_constraints=None, theta_warmstart=None, master_init_callback=None):
+    def _initialize_master_problem(self):
         _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager._is_root():
@@ -39,20 +39,14 @@ class RowGenerationManager(BaseEstimationManager):
                                                 lb= self.cfg.theta_lbs,
                                                 ub= self.cfg.theta_ubs, 
                                                 name= 'parameter')
-            u = self.master_model.addMVar(self.dim.num_agents, obj=u_obj_coef, name='utility')
-            if theta_warmstart is not None:
-                theta.Start = theta_warmstart
+            u = self.master_model.addMVar(self.dim.n_agents, obj=u_obj_coef, name='utility')
             self.master_variables = (theta, u)
-            if initial_constraints is not None:
-                self.add_constraints(initial_constraints['indices'], initial_constraints['bundles'])
-            if master_init_callback is not None:
-                master_init_callback(self.master_model, theta, u)
             self.master_model.optimize()
 
             if self.master_model.Status != GRB.OPTIMAL:
                 raise RuntimeError('Master problem cannot be solved at initialization, status=%s', 
                                     self.master_model.Status)
-        self._Bcast_theta_and_Scatterv_u_vals()
+        
 
 
     def _Bcast_theta_and_Scatterv_u_vals(self):
@@ -62,12 +56,12 @@ class RowGenerationManager(BaseEstimationManager):
             u_iter = u.X
         else:
             theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
-            u_iter = np.empty(self.dim.num_agents, dtype=np.float64)
+            u_iter = np.empty(self.dim.n_agents, dtype=np.float64)
         self.theta_iter = self.comm_manager.Bcast(theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
                                                               row_counts=self.data_manager.agent_counts,
                                                               dtype=np.float64,
-                                                              shape=(self.dim.num_agents,))
+                                                              shape=(self.dim.n_agents,))
 
 
     def _update_iteration_info(self, iteration, **kwargs):
@@ -106,12 +100,11 @@ class RowGenerationManager(BaseEstimationManager):
             return True
         if self.comm_manager._is_root():
             self.add_constraints(violations_id, bundles, features, errors)
-            self._enforce_slack_counter()
             self.master_model.optimize()
             
         self._Bcast_theta_and_Scatterv_u_vals()
         if callback is not None:
-            callback(iteration, self.subproblem_manager, self.master_model)
+            callback(iteration, self)
         return False
 
     def _row_generation_iteration(self, iteration, master_iteration_callback):
@@ -127,16 +120,10 @@ class RowGenerationManager(BaseEstimationManager):
         master_time = time.perf_counter() - t1 if self.comm_manager._is_root() else None
         
         self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
-        if self.comm_manager._is_root():
-            self._log_iteration(iteration)
-        
+        self._log_iteration(iteration)     
         return stop
-        
-        return stop
-
+   
     def solve(self, local_obs_weights=None,
-                    theta_warmstart=None,  
-                    initial_constraints=None, 
                     initialize_master = True,
                     initialize_subproblems = True,
                     master_iteration_callback=None,
@@ -147,17 +134,21 @@ class RowGenerationManager(BaseEstimationManager):
         self.verbose = verbose if verbose is not None else True
         if self.verbose:
             self._log_instance_summary()
+
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
-            self._initialize_master_problem(initial_constraints, theta_warmstart, master_init_callback) 
+            self._initialize_master_problem() 
         elif self.has_master_vars:
             if local_obs_weights is not None:
                 self.update_objective_for_weights(local_obs_weights)
             if self.comm_manager._is_root():
                 self.master_model.optimize()
-            self._Bcast_theta_and_Scatterv_u_vals()
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
+        if master_init_callback is not None:
+            master_init_callback(self)
+
+        self._Bcast_theta_and_Scatterv_u_vals()
         if self.verbose:
             logger.info(" " )
             logger.info(" ROW GENERATION")
@@ -196,7 +187,6 @@ class RowGenerationManager(BaseEstimationManager):
         return model
 
     def update_objective_for_weights(self, local_obs_weights):
-
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
         _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
         if not self.comm_manager._is_root() or self.master_model is None:
@@ -206,26 +196,6 @@ class RowGenerationManager(BaseEstimationManager):
         u.Obj = _u_obj_weights
         self.master_model.update()
         self.master_model.reset(0)
-
-
-    def _enforce_slack_counter(self):
-        if self.cfg.max_slack_counter == float('inf'):
-            return 0
-        to_remove = []
-        for constr in self.master_model.getConstrs():
-            if constr.CBasis == 0:
-                self.slack_counter.pop(constr, None)
-                
-            else:
-                self.slack_counter[constr] = self.slack_counter.get(constr, 0) + 1
-                if self.slack_counter[constr] >= self.cfg.max_slack_counter:
-                        to_remove.append(constr)
-        for constr in to_remove:
-            self.master_model.remove(constr)
-            self.slack_counter.pop(constr, None)
-        return len(to_remove)
-
-
 
     def strip_nonbasic_constraints(self):
         if not self.comm_manager._is_root() or self.master_model is None:

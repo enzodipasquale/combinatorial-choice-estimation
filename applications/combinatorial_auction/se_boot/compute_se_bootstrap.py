@@ -54,8 +54,9 @@ if theta_bounds := config.get("theta_bounds"):
     bc.config.row_generation.theta_lbs = theta_lbs
 
 if config.get("constraints", {}).get("pop_dominates_travel"):
-    def add_constraint(model, theta, u):
-        model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
+    def add_constraint(row_gen_manager):
+        theta, u = row_gen_manager.master_variables
+        row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
     bc.config.row_generation.master_init_callback = add_constraint
 
 if adaptive_cfg := config.get("adaptive_timeout"):
