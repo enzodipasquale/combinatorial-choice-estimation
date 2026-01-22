@@ -2,7 +2,7 @@ from bundlechoice.utils import get_logger
 logger = get_logger(__name__)
 
 def adaptive_gurobi_timeout(initial_timeout=1.0, final_timeout=90.0, transition_iterations=10, strategy='linear', log=True):
-    def callback(iteration, subproblem_manager, master_model):
+    def callback(iteration, row_gen_manager):
         if iteration < transition_iterations:
             if strategy == 'linear':
                 progress = iteration / transition_iterations
@@ -16,7 +16,23 @@ def adaptive_gurobi_timeout(initial_timeout=1.0, final_timeout=90.0, transition_
                 raise ValueError(f"Unknown strategy: {strategy}")
         else:
             timeout = final_timeout
-        subproblem_manager.update_gurobi_settings({'TimeLimit': timeout})
-        subproblem_manager._suboptimal_mode = timeout < final_timeout - 1e-06
+        row_gen_manager.subproblem_manager.update_gurobi_settings({'TimeLimit': timeout})
+        row_gen_manager.subproblem_manager._suboptimal_mode = timeout < final_timeout - 1e-06
+    return callback
+
+def enforce_slack_counter():
+    def callback(iteration, row_gen_manager):
+        max_slack_counter = row_gen_manager.cfg.max_slack_counter
+        to_remove = []
+        for constr in row_gen_manager.master_model.getConstrs():
+            if constr.CBasis == 0:
+                row_gen_manager.slack_counter.pop(constr, None)
+            else:
+                row_gen_manager.slack_counter[constr] = row_gen_manager.slack_counter.get(constr, 0) + 1
+                if row_gen_manager.slack_counter[constr] >= max_slack_counter:
+                    to_remove.append(constr)
+        for constr in to_remove:
+            row_gen_manager.master_model.remove(constr)
+            row_gen_manager.slack_counter.pop(constr, None)
     return callback
 

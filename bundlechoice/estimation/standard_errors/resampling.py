@@ -5,7 +5,11 @@ logger = get_logger(__name__)
 import time
 
 class ResamplingMixin:
-    def compute_bayesian_bootstrap(self, num_bootstrap=100, seed=None, verbose=False):
+    def compute_bayesian_bootstrap(self, num_bootstrap=100, 
+                                            seed=None, 
+                                            verbose=False, 
+                                            master_init_callback = None, 
+                                            master_iter_callback = None):
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
@@ -27,17 +31,15 @@ class ResamplingMixin:
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
             initialize_master = True if b == 0 else False
             initialize_subproblems = True if (b == 0 and not self.subproblem_manager._subproblems_are_initialized) else False
-            result = row_gen.solve(local_obs_weights=local_weights, 
-                                    verbose=False, 
-                                    initialize_subproblems=initialize_subproblems, 
-                                    initialize_master=initialize_master)
-            boot_time = time.perf_counter() - t_boot
+            self.result = row_gen.solve(local_obs_weights=local_weights, 
+                                        verbose=False, 
+                                        initialize_subproblems=initialize_subproblems, 
+                                        initialize_master=initialize_master)
+            self.boot_time = time.perf_counter() - t_boot
             
             if self.comm_manager._is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
-                self._update_bootstrap_info(b, time=boot_time, iterations=result.num_iterations,
-                                           objective=result.final_objective, converged=result.converged,
-                                           n_constraints=result.n_constraints)
+                self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b, row_gen.theta_iter)
         
         total_time = time.perf_counter() - t0
@@ -49,11 +51,25 @@ class ResamplingMixin:
         
         return stats_result
 
-    def _update_bootstrap_info(self, bootstrap_iter, **kwargs):
-        if self.comm_manager._is_root():
-            if bootstrap_iter not in self.bootstrap_history:
-                self.bootstrap_history[bootstrap_iter] = {}
-            self.bootstrap_history[bootstrap_iter].update(kwargs)
+    def _update_bootstrap_info(self, bootstrap_iter):
+        if not self.comm_manager._is_root():
+            return
+        if bootstrap_iter not in self.bootstrap_history:
+            self.bootstrap_history[bootstrap_iter] = {}
+        
+        pricing_times, master_times = self.result.timing if isinstance(self.result.timing, tuple) else ([], [])
+        total_pricing_time = sum(pricing_times) if pricing_times else 0.0
+        total_master_time = sum(master_times) if master_times else 0.0
+        
+        self.bootstrap_history[bootstrap_iter].update({
+            'time': self.boot_time,
+            'iterations': self.result.num_iterations,
+            'objective': self.result.final_objective,
+            'converged': self.result.converged,
+            'n_constraints': self.result.n_constraints,
+            'pricing_time': total_pricing_time,
+            'master_time': total_master_time
+        })
 
     def _log_bootstrap_iteration(self, bootstrap_iter, theta):
         if not self.comm_manager._is_root() or not self.verbose:
@@ -69,10 +85,10 @@ class ResamplingMixin:
         
         if bootstrap_iter % 80 == 0:
             param_width = len(param_indices) * 11 - 1
-            header1 = (f"{'Boot':>5} | {'Time':^9} | {'RG':^5} | "
+            header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
                       f"{'#Constr':>7} | {'Objective':^12} | {f'Parameters':^{param_width}}")
             param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
-            header2 = (f"{'':>5} | {'(s)':^9} | {'Iters':^5} | "
+            header2 = (f"{'':>5} | {'(s)':^9} | {'(s)':^9} | {'(s)':^9} | {'Iters':^5} | "
                       f"{'':>7} | {'Value':^12} | {param_label_row}")
             logger.info(header1)
             logger.info(header2)
@@ -80,7 +96,9 @@ class ResamplingMixin:
         
         param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
         time_str = f"{info['time']:>9.3f}"
-        row = (f"{bootstrap_iter:>5} | {time_str} | "
+        pricing_time_str = f"{info.get('pricing_time', 0.0):>9.3f}"
+        master_time_str = f"{info.get('master_time', 0.0):>9.3f}"
+        row = (f"{bootstrap_iter:>5} | {time_str} | {pricing_time_str} | {master_time_str} | "
                f"{info['iterations']:>5} | "
                f"{info.get('n_constraints', 0):>7} | "
                f"{format_number(info['objective'], width=12, precision=5)} | {param_vals}")
