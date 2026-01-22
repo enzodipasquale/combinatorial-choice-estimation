@@ -76,7 +76,7 @@ class BundleChoice:
         return self.comm_manager.rank
 
     def is_root(self) -> bool:
-        return self.comm_manager._is_root()
+        return self.comm_manager.is_root()
 
 
     def load_config(self, cfg):

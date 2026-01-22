@@ -39,7 +39,8 @@ class OraclesManager:
             assert test_features.shape == (self.data_manager.num_local_agent, 
                                             self.dimensions_cfg.n_features)
             return True
-        except:
+        except (ValueError, IndexError, AssertionError) as e:
+            logger.debug(f"Vectorized oracle not supported: {e}")
             return False
 
     def _check_oracle_takes_data(self, oracle):
@@ -59,7 +60,7 @@ class OraclesManager:
         self._error_oracle_takes_data = self._check_oracle_takes_data(_error_oracle)
     
     def features_oracle(self, bundles, ids=None):
-        ids = np.arange(self.data_manager.num_local_agent) if ids is None else ids
+        ids = self.data_manager.local_agents_arange if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         if self._features_oracle_vectorized:
             return self._features_oracle(bundles, ids, *data_arg)
@@ -67,7 +68,7 @@ class OraclesManager:
             return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in ids])
 
     def error_oracle(self, bundles, ids=None):
-        ids = np.arange(self.data_manager.num_local_agent) if ids is None else ids
+        ids = self.data_manager.local_agents_arange if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         if self._error_oracle_vectorized:
             return self._error_oracle(bundles, ids, *data_arg)
@@ -109,7 +110,7 @@ class OraclesManager:
 
     def build_quadratic_features_from_data(self):
         qinfo = self.data_manager.quadratic_data_info
-        def features_oracle(bundles, ids, data):
+        def quadratic_features_oracle(bundles, ids, data):
             feats = []
             if qinfo.modular_agent:
                 modular = data["id_data"]['modular'][ids]
@@ -124,7 +125,7 @@ class OraclesManager:
                 quadratic = data["item_data"]['quadratic']
                 feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
             return np.concatenate(feats, axis=-1)
-        self._features_oracle = features_oracle
+        self._features_oracle = quadratic_features_oracle
         self._features_oracle_vectorized = True
         self._features_oracle_takes_data = True
         return self._features_oracle

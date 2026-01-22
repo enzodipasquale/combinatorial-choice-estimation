@@ -46,9 +46,7 @@ class DataManager:
         self.local_data = {"id_data": {}, "item_data": {}}
         self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
         
-    @property
-    def agent_ids(self):
-        return self._agent_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
+    
 
     @lru_cache(maxsize=1)
     def _agent_ids(self, n_obs, n_simulations):
@@ -59,9 +57,21 @@ class DataManager:
     def _agent_counts(self, n_agents, comm_size):
         return np.array([len(v) for v in np.array_split(np.arange(n_agents), comm_size)], dtype=np.int64)
 
+    @lru_cache(maxsize=1)
+    def _local_agents_arange(self, num_local_agent):
+        return np.arange(num_local_agent, dtype=np.int64)
+
+    @property
+    def agent_ids(self):
+        return self._agent_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
+
     @property
     def agent_counts(self):
         return self._agent_counts(self.dimensions_cfg.n_agents, self.comm_manager.comm_size)
+
+    @property
+    def local_agents_arange(self):
+        return self._local_agents_arange(self.num_local_agent)
 
     @property
     def num_local_agent(self):
@@ -77,7 +87,7 @@ class DataManager:
 
 
     def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             if preserve_global_data:
                 update_dict_recursive(self.input_data, input_data)
             else:
@@ -87,7 +97,7 @@ class DataManager:
         self.distribute_data(tiled_id_data_for_simulations, self.input_data["item_data"])
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
 
-        if not preserve_global_data and self.comm_manager._is_root():
+        if not preserve_global_data and self.comm_manager.is_root():
             self.input_data = {"id_data": {}, "item_data": {}} 
 
 
@@ -96,7 +106,7 @@ class DataManager:
         return np.tile(id_array, reps)
 
     def _tile_arrays_in_dict(self, dict):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return None
         dict_of_tiled_arrays = {}
         for k, v in dict.items():
@@ -194,7 +204,7 @@ class DataManager:
         return combined, names
 
     def load_quadratic_data_from_directory(self, path):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return None    
         path = Path(path)
         if not path.exists():

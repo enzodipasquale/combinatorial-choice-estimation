@@ -30,8 +30,8 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         pass
 
     def initialize(self):
-        self.local_pbs = [self.initialize_single_pb(i) for i in range(self.data_manager.num_local_agent)]
-        return self.local_pbs
+        self.local_problems = [self.initialize_single_pb(i) for i in range(self.data_manager.num_local_agent)]
+        return self.local_problems
 
     def solve(self, theta):
-        return np.array([self.solve_single_pb(i, theta, pb) for i, pb in enumerate(self.local_pbs)], dtype=bool)
+        return np.array([self.solve_single_pb(i, theta, pb) for i, pb in enumerate(self.local_problems)], dtype=bool)

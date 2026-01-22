@@ -39,7 +39,7 @@ class BaseEstimationManager:
         if local_obs_weights is None:
             local_obs_weights = self.local_obs_weights
         all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.data_manager.agent_counts)
-        return all_weights if self.comm_manager._is_root() else None
+        return all_weights if self.comm_manager.is_root() else None
 
     def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     
@@ -51,7 +51,7 @@ class BaseEstimationManager:
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
 
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             obj = utility_sum + (_theta_obj_coef @ theta)
             grad = (features_sum + _theta_obj_coef)
             return obj, grad
@@ -63,7 +63,7 @@ class BaseEstimationManager:
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             return utility_sum + (_theta_obj_coef @ theta)
         else:
             return None
@@ -73,7 +73,7 @@ class BaseEstimationManager:
         features = self.oracles_manager.features_oracle(bundles)
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
         features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             return (features_sum + _theta_obj_coef)
         else:
             return None
@@ -87,7 +87,7 @@ class BaseEstimationManager:
         logger.info('Parameters: %s', np.round(self.theta_iter[ids] if ids else self.theta_iter, 3))
 
     def _log_instance_summary(self):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return None
         
         dim = self.config.dimensions

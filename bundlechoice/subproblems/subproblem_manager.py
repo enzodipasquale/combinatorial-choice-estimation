@@ -75,8 +75,8 @@ class SubproblemManager:
         if self.subproblem is None:
             return
         
-        if hasattr(self.subproblem, 'local_pbs') and self.subproblem.local_pbs is not None:
-            for model in self.subproblem.local_pbs:
+        if hasattr(self.subproblem, 'local_problems') and self.subproblem.local_problems is not None:
+            for model in self.subproblem.local_problems:
                 if model is not None:
                     for param, value in settings_dict.items():
                         model.setParam(param, value)
