@@ -57,7 +57,9 @@ if config.get("constraints", {}).get("pop_dominates_travel"):
     def add_constraint(row_gen_manager):
         theta, u = row_gen_manager.master_variables
         row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
-    bc.config.row_generation.master_init_callback = add_constraint
+        row_gen_manager.master_model.update()
+        
+    bc.config.row_generation.initialization_callback = add_constraint
 
 if adaptive_cfg := config.get("adaptive_timeout"):
     bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(

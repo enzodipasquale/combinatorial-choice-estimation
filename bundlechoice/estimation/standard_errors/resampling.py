@@ -8,8 +8,10 @@ class ResamplingMixin:
     def compute_bayesian_bootstrap(self, num_bootstrap=100, 
                                             seed=None, 
                                             verbose=False, 
-                                            master_init_callback = None, 
-                                            master_iter_callback = None):
+                                            row_gen_iteration_callback = None,
+                                            row_gen_initialization_callback = None, 
+                                            bootstrap_callback = None
+                                            ):
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
@@ -31,16 +33,20 @@ class ResamplingMixin:
             local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
             initialize_master = True if b == 0 else False
             initialize_subproblems = True if (b == 0 and not self.subproblem_manager._subproblems_are_initialized) else False
-            self.result = row_gen.solve(local_obs_weights=local_weights, 
-                                        verbose=False, 
-                                        initialize_subproblems=initialize_subproblems, 
-                                        initialize_master=initialize_master)
+            self.result = row_gen.solve(local_obs_weights= local_weights, 
+                                        verbose= False, 
+                                        initialize_subproblems= initialize_subproblems, 
+                                        initialize_master= initialize_master,
+                                        iteration_callback= row_gen_iteration_callback,
+                                        initialization_callback= row_gen_initialization_callback)
             self.boot_time = time.perf_counter() - t_boot
             
             if self.comm_manager._is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b, row_gen.theta_iter)
+            if bootstrap_callback is not None:
+                bootstrap_callback(self, row_gen)
         
         total_time = time.perf_counter() - t0
         if not self.comm_manager._is_root():
