@@ -342,9 +342,12 @@ class RowGenerationManager(BaseEstimationManager):
             converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
             pricing_times = [self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())]
             master_times = [self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())]
+            final_iter = max(self.iteration_history.keys())
+            final_reduced_cost = self.iteration_history[final_iter].get('reduced_cost', 0.0)
             return EstimationResult(
                 theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
                 final_objective=self.master_model.ObjVal,
                 n_constraints=self.master_model.NumConstrs,
+                final_reduced_cost=final_reduced_cost,
                 timing= (pricing_times, master_times),
                 warnings=None)
