@@ -16,13 +16,12 @@ from applications.combinatorial_auction.data.prepare_data import main as prepare
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-IS_LOCAL = Path("/Users/enzo-macbookpro").exists()
-config = yaml.safe_load(open(BASE_DIR / ("config_local.yaml" if IS_LOCAL else "config.yaml")))
+config = yaml.safe_load(open(BASE_DIR /  "config.yaml"))
 
 app = config.get("application", {})
 boot = config.get("bootstrap", {})
 DELTA = app.get("delta", 4)
-NUM_BOOTSTRAP, SEED = boot.get("num_samples", 200), boot.get("seed", 1995)
+NUM_BOOTSTRAP, SEED = boot.get("num_samples", 100), boot.get("seed", 1995)
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
@@ -48,22 +47,19 @@ bc.subproblems.load_subproblem()
 if theta_bounds := config.get("theta_bounds"):
     theta_lbs = np.zeros(bc.n_features)
     theta_ubs = np.ones(bc.n_features) * 2000
-
     for k,v in theta_bounds['lbs'].items():
         theta_lbs[k] = v
     for k,v in theta_bounds['ubs'].items():
-        theta_ubs[k] = v
-        
+        theta_ubs[k] = v     
     bc.config.row_generation.theta_lbs = theta_lbs
     bc.config.row_generation.theta_ubs = theta_ubs
 
 if config.get("constraints", {}).get("pop_dominates_travel"):
-    def add_constraint(row_gen_manager):
+    def custom_constraint(row_gen_manager):
         theta, u = row_gen_manager.master_variables
         row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
         row_gen_manager.master_model.update()
-
-    bc.config.row_generation.initialization_callback = add_constraint
+    bc.config.row_generation.initialization_callback = custom_constraint
 
 callbacks = config.get("callbacks", {})
 if adaptive_cfg := callbacks.get("adaptive_timeout"):
@@ -71,6 +67,7 @@ if adaptive_cfg := callbacks.get("adaptive_timeout"):
         initial_timeout=adaptive_cfg.get("initial", 1.0),
         final_timeout=adaptive_cfg.get("final", 30.0),
         transition_iterations=adaptive_cfg.get("transition_iterations", 15),
+        strategy = adaptive_cfg.get("strategy", "step")
     )
 
 
