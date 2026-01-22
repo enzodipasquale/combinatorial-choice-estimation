@@ -29,7 +29,7 @@ class RowGenerationManager(BaseEstimationManager):
     def _initialize_master_problem(self):
         _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_settings)
             theta = self.master_model.addMVar(self.dim.n_features, 
                                                 obj= _theta_obj_coef, 
@@ -47,7 +47,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _Bcast_theta_and_Scatterv_u_vals(self):
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             theta, u = self.master_variables
             theta_iter = theta.X
             u_iter = u.X
@@ -62,7 +62,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _update_iteration_info(self, iteration, **kwargs):
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             if iteration not in self.iteration_history:
                 self.iteration_history[iteration] = {}
             update_dict = {}
@@ -78,8 +78,8 @@ class RowGenerationManager(BaseEstimationManager):
         u_local = features_local @ self.theta_iter + errors_local
         local_reduced_costs = u_local - self.u_iter_local
         reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
-        reduced_cost = reduced_cost[0] if self.comm_manager._is_root() else None
-        stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager._is_root() else None
+        reduced_cost = reduced_cost[0] if self.comm_manager.is_root() else None
+        stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager.is_root() else None
         stop = self.comm_manager.bcast(stop)
     
         local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
@@ -91,11 +91,11 @@ class RowGenerationManager(BaseEstimationManager):
         errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
         self._update_iteration_info(iteration, reduced_cost = reduced_cost,
-                                               n_violations =  len(violations_id) if self.comm_manager._is_root() else None)
+                                               n_violations =  len(violations_id) if self.comm_manager.is_root() else None)
                         
         if stop:
             return True
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             self.add_master_constraints(violations_id, bundles, features, errors)
             self.master_model.optimize()
             
@@ -108,11 +108,11 @@ class RowGenerationManager(BaseEstimationManager):
         pricing_time_local = time.perf_counter() - t0
         
         pricing_time = self.comm_manager.Reduce(np.array([pricing_time_local], dtype=np.float64),op=MPI.MAX)
-        pricing_time = pricing_time[0] if self.comm_manager._is_root() else None
+        pricing_time = pricing_time[0] if self.comm_manager.is_root() else None
         
-        t1 = time.perf_counter() if self.comm_manager._is_root() else None
+        t1 = time.perf_counter() if self.comm_manager.is_root() else None
         stop = self._master_iteration(pricing_results, iteration)
-        master_time = time.perf_counter() - t1 if self.comm_manager._is_root() else None
+        master_time = time.perf_counter() - t1 if self.comm_manager.is_root() else None
         if callback is not None:
             callback(iteration, self)
         self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
@@ -137,7 +137,7 @@ class RowGenerationManager(BaseEstimationManager):
         elif self.has_master_vars:
             if local_obs_weights is not None:
                 self.update_objective_for_weights(local_obs_weights)
-            if self.comm_manager._is_root():
+            if self.comm_manager.is_root():
                 self.master_model.optimize()
         else:
             raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
@@ -165,7 +165,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def add_master_constraints(self, indices, bundles, features, errors):
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
@@ -183,7 +183,7 @@ class RowGenerationManager(BaseEstimationManager):
     def update_objective_for_weights(self, local_obs_weights):
         _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
         _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
         theta.Obj = _theta_obj_coef
@@ -192,7 +192,7 @@ class RowGenerationManager(BaseEstimationManager):
         self.master_model.reset(0)
 
     def strip_nonbasic_constraints(self):
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return 0
         to_remove = [c for c in self.master_model.getConstrs() if c.CBasis == 0]
         for constr in to_remove:
@@ -202,7 +202,7 @@ class RowGenerationManager(BaseEstimationManager):
         return len(to_remove)
 
     def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return 0
         constraints = list(self.master_model.getConstrs())
         slacks = np.array([c.Slack for c in constraints])
@@ -217,7 +217,7 @@ class RowGenerationManager(BaseEstimationManager):
         return len(to_remove)
 
     def strip_constraints_hard_threshold(self, n_constraints = float('inf')):
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return 0
         constraints = list(self.master_model.getConstrs())
         if len(constraints) < n_constraints:
@@ -233,7 +233,7 @@ class RowGenerationManager(BaseEstimationManager):
         
 
     def _log_iteration(self, iteration):
-        if not self.comm_manager._is_root() or not self.verbose:
+        if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.iteration_history[iteration]   
         
@@ -265,7 +265,7 @@ class RowGenerationManager(BaseEstimationManager):
         logger.info(row)
 
     def _log_summary(self, n_iters, total_time):
-        if not self.comm_manager._is_root() or not self.verbose:
+        if not self.comm_manager.is_root() or not self.verbose:
             return
         
         idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
@@ -321,7 +321,7 @@ class RowGenerationManager(BaseEstimationManager):
         
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
-        if not self.comm_manager._is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None:
             return empty
         theta = self.master_variables[0]
 
@@ -338,7 +338,7 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _create_result(self, num_iterations = None):
-        if self.comm_manager._is_root():
+        if self.comm_manager.is_root():
             converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
             pricing_times = [self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())]
             master_times = [self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())]

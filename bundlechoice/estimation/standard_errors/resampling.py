@@ -26,7 +26,7 @@ class ResamplingMixin:
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
-            if self.comm_manager._is_root():
+            if self.comm_manager.is_root():
                 weights = rng.exponential(1.0, self.dim.n_obs)
                 weights /= weights.mean()
                 weights = np.tile(weights, self.dim.n_simulations)
@@ -43,7 +43,7 @@ class ResamplingMixin:
                                         initialization_callback= row_gen_initialization_callback)
             self.boot_time = time.perf_counter() - t_boot
             
-            if self.comm_manager._is_root():
+            if self.comm_manager.is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b, row_gen.theta_iter)
@@ -51,7 +51,7 @@ class ResamplingMixin:
                 bootstrap_callback(self, row_gen)
         
         total_time = time.perf_counter() - t0
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return None
         
         stats_result = self.compute_bootstrap_stats(theta_boots)
@@ -60,7 +60,7 @@ class ResamplingMixin:
         return stats_result
 
     def _update_bootstrap_info(self, bootstrap_iter):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return
         if bootstrap_iter not in self.bootstrap_history:
             self.bootstrap_history[bootstrap_iter] = {}
@@ -81,7 +81,7 @@ class ResamplingMixin:
         })
 
     def _log_bootstrap_iteration(self, bootstrap_iter, theta):
-        if not self.comm_manager._is_root() or not self.verbose:
+        if not self.comm_manager.is_root() or not self.verbose:
             return
         if bootstrap_iter not in self.bootstrap_history:
             return
@@ -117,7 +117,7 @@ class ResamplingMixin:
         logger.info(row)
 
     def _log_bootstrap_summary(self, n_bootstrap, total_time, result):
-        if not self.comm_manager._is_root() or not self.verbose:
+        if not self.comm_manager.is_root() or not self.verbose:
             return
         
         if self.config.row_generation.parameters_to_log is not None:
@@ -138,7 +138,7 @@ class ResamplingMixin:
  
 
     def compute_bootstrap_stats(self, theta_boots, theta_hat=None, confidence=0.95):
-        if not self.comm_manager._is_root():
+        if not self.comm_manager.is_root():
             return None
         
         theta_boots = np.asarray(theta_boots)
