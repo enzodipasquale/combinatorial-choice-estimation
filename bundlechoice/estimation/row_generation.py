@@ -5,7 +5,7 @@ from gurobipy import GRB
 from mpi4py import MPI
 from bundlechoice.utils import get_logger, suppress_output, format_number
 from .base import BaseEstimationManager
-from .result import EstimationResult
+from .result import RowGenerationEstimationResult
 logger = get_logger(__name__)
 
 class RowGenerationManager(BaseEstimationManager):
@@ -118,8 +118,9 @@ class RowGenerationManager(BaseEstimationManager):
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        self._log_summary(iteration + 1, elapsed)
-        result = self._create_result(iteration + 1)
+        result = self._create_result(iteration + 1, total_time=elapsed)
+        if result is not None and self.verbose:
+            result.log_summary(self.cfg.parameters_to_log)
         return result
 
     def _row_generation_iteration(self, iteration):
@@ -269,61 +270,6 @@ class RowGenerationManager(BaseEstimationManager):
                f"{info['n_constraints']:>6} | {param_vals}")
         logger.info(row)
 
-    def _log_summary(self, n_iters, total_time):
-        if not self.comm_manager.is_root() or not self.verbose:
-            return
-        
-        idx = self.cfg.parameters_to_log or range(len(self.theta_iter))
-        p = np.array([self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())])
-        m = np.array([self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())])
-        
-        # Get final iteration info
-        final_iter = max(self.iteration_history.keys())
-        final_info = self.iteration_history[final_iter]
-        n_constraints = final_info.get('n_constraints', self.master_model.NumConstrs)
-        n_violations = final_info.get('n_violations', 0)
-        reduced_cost = final_info.get('reduced_cost', 0.0)
-        logger.info(" " )
-        logger.info(" ROW GENERATION SUMMARY" )
-        logger.info("-" * 80)
-    
-        param_labels = ' | '.join(f'{f"θ[{i}]":>12}' for i in idx)
-        logger.info(f"{'Parameters':>17} | {param_labels}")
-        param_vals = ' | '.join(format_number(self.theta_iter[i], width=12, precision=5) for i in idx)
-        logger.info(f"{'':>17} | {param_vals}")
-        
-        logger.info("-" * 80)
-        
-        # Summary statistics header and values
-        logger.info(f"{'ObjVal':>12} | {'#Consts':>8} | {'#Viols':>6} | {'Reduced Cost':>12} | {'Time (s)':>9} | {'#Iters':>7}")
-        logger.info(
-            f"{format_number(self.master_model.ObjVal, width=12, precision=5)} | "
-            f"{n_constraints:>8} | "
-            f"{n_violations:>6} | "
-            f"{format_number(reduced_cost, width=12, precision=6)} | "
-            f"{format_number(total_time, width=9, precision=3)} | "
-            f"{n_iters:>7}"
-        )
-        
-        logger.info("-" * 80)
-        
-        # Timing summary table
-        logger.info(f"{'Time':>17} | {'Total (s)':>10} | {'Avg (s)':>10} | {'Range (s)':>11}")
-      
-        logger.info(
-            f"{'pricing':>17} | "
-            f"{format_number(p.sum(), width=10, precision=3)} | "
-            f"{format_number(p.mean(), width=10, precision=3)} | "
-            f"[{format_number(p.min(), precision=3)}, {format_number(p.max(), precision=3)}]"
-        )
-        logger.info(
-            f"{'master':>17} | "
-            f"{format_number(m.sum(), width=10, precision=3)} | "
-            f"{format_number(m.mean(), width=10, precision=3)} | "
-            f"[{format_number(m.min(), precision=3)}, {format_number(m.max(), precision=3)}]"
-        )
-        logger.info(" " )
-        
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
         if not self.comm_manager.is_root() or self.master_model is None:
@@ -342,17 +288,23 @@ class RowGenerationManager(BaseEstimationManager):
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
 
 
-    def _create_result(self, num_iterations = None):
+    def _create_result(self, num_iterations=None, total_time=None):
         if self.comm_manager.is_root():
             converged = num_iterations < self.cfg.max_iters if num_iterations is not None else None
             pricing_times = [self.iteration_history[i]['pricing_time'] for i in sorted(self.iteration_history.keys())]
             master_times = [self.iteration_history[i]['master_time'] for i in sorted(self.iteration_history.keys())]
             final_iter = max(self.iteration_history.keys())
-            final_reduced_cost = self.iteration_history[final_iter].get('reduced_cost', 0.0)
-            return EstimationResult(
-                theta_hat=self.theta_iter, converged=converged, num_iterations=num_iterations,
+            final_info = self.iteration_history[final_iter]
+            final_reduced_cost = final_info.get('reduced_cost', 0.0)
+            final_n_violations = final_info.get('n_violations', 0)
+            return RowGenerationEstimationResult(
+                theta_hat=self.theta_iter, 
+                converged=converged, 
+                num_iterations=num_iterations,
                 final_objective=self.master_model.ObjVal,
                 n_constraints=self.master_model.NumConstrs,
                 final_reduced_cost=final_reduced_cost,
-                timing= (pricing_times, master_times),
+                total_time=total_time, 
+                final_n_violations=final_n_violations,
+                timing=(pricing_times, master_times),
                 warnings=None)
