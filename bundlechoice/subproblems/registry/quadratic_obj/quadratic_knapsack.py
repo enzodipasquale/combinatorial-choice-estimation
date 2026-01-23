@@ -8,10 +8,6 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
     weights = None
     capacity = None 
 
-    def initialize(self):
-        super().initialize()
-        self.local_vars = [model.getVars() for model in self.local_problems]
-
     def _pre_solve_batched_computations(self, theta):
         self.L_all = self._build_linear_coeff_batch(theta)
         self.Q_all = self._build_quadratic_coeff_batch(theta)
@@ -27,7 +23,8 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
             if time_limit:
                 model.setParam('TimeLimit', time_limit)
             model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-            B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY)
+            B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, name = 'bundle')
+            self._pre_initilize_cache.append(B)
             model.addConstr(weights @ B <= capacity)
             model.update()
         return model
@@ -43,7 +40,8 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
 
-        for j, var in enumerate(self.local_vars[local_id]):
-            var.Start = float(result[j])
+        # for j, var in enumerate(self.local_B_vars[local_id]):
+        #     var.Start = float(result[j])
+        self._pre_initilize_cache[local_id].Start = result
         
         return result
