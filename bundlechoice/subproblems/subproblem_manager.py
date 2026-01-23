@@ -64,7 +64,7 @@ class SubproblemManager:
 
 
     def update_gurobi_settings(self, settings_dict):
-        self.config.subproblem.GRB_settings.update(settings_dict)
+        self.config.subproblem.GRB_Params.update(settings_dict)
         
         if self.subproblem is None:
             return

@@ -34,7 +34,7 @@ class DimensionsConfig(ConfigMixin):
 @dataclass
 class SubproblemConfig(ConfigMixin):
     name: str = None
-    GRB_settings: dict = field(default_factory=dict)
+    GRB_Params: dict = field(default_factory=dict)
 
 @dataclass
 class RowGenerationConfig(ConfigMixin):
@@ -42,7 +42,7 @@ class RowGenerationConfig(ConfigMixin):
     tolerance: float = 1e-6
     max_iters: float = float('inf')
     min_iters: int = 0
-    master_GRB_settings: dict = field(default_factory=dict)
+    master_GRB_Params: dict = field(default_factory=dict)
     theta_ubs: float = 1000
     theta_lbs: float = 0
     parameters_to_log: list = None
