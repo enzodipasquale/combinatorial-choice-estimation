@@ -34,9 +34,9 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         return self.local_problems
 
     def solve(self, theta):
-    n_agents = len(self.local_pbs)
-    n_items = self.dimensions_cfg.n_items
-    results = np.empty((n_agents, n_items), dtype=bool)
-    for i, pb in enumerate(self.local_pbs):
-        results[i] = self.solve_single_pb(i, theta, pb)
-    return results
+        n_agents = len(self.local_problems)
+        n_items = self.dimensions_cfg.n_items
+        results = np.empty((n_agents, n_items), dtype=bool)
+        for i, pb in enumerate(self.local_problems):
+            results[i] = self.solve_single_pb(i, theta, pb)
+        return results
