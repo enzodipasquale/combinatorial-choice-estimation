@@ -25,12 +25,12 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
             model.update()
         return model
 
-    def solve_single_pb(self, local_id, theta, pb):
+    def solve_single_pb(self, local_id, theta, model):
         L = self._build_linear_coeff_single(local_id, theta)
         Q = self._build_quadratic_coeff_single(local_id, theta)
-        pb.setMObjective(Q, L, 0.0, sense=gp.GRB.MAXIMIZE)
-        pb.optimize()
+        model.setMObjective(Q, L, 0.0, sense=gp.GRB.MAXIMIZE)
+        model.optimize()
         try:
-            return np.array(pb.x, dtype=bool)
+            return np.array(model.x, dtype=bool)
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
