@@ -4,3 +4,4 @@ gurobipy<13.0
 mpi4py
 pyyaml
 networkx
+scipy
