@@ -1,7 +1,7 @@
 import numpy as np
 from functools import lru_cache
 from bundlechoice.utils import get_logger
-from .result import EstimationResult
+from .result import RowGenerationEstimationResult
 
 logger = get_logger(__name__)
 

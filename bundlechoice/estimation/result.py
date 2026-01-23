@@ -1,74 +1,68 @@
-import csv
-import os
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 import numpy as np
 
+from bundlechoice.utils import get_logger, format_number
+
+logger = get_logger(__name__)
+
+
 @dataclass
-class EstimationResult:
+class RowGenerationEstimationResult:
     theta_hat: np.ndarray
     converged: bool
     num_iterations: int
     final_objective: None
     n_constraints: int = None
     final_reduced_cost: float = None
+    total_time: float = None
+    final_n_violations: int = None
     timing: dict = field(default_factory=dict)
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
-    metadata: dict = field(default_factory=dict) 
+    metadata: dict = field(default_factory=dict)
 
-    def summary(self):
-        lines = ['=== Estimation Results ===']
-        lines.append(f'Converged: {self.converged}')
-        lines.append(f'Iterations: {self.num_iterations}')
-        if self.final_objective is not None:
-            lines.append(f'Final objective: {self.final_objective:.6f}')
-        if self.timing:
-            lines.append(f"Total time: {self.timing.get('total_time', 0):.2f}s")
-        if self.warnings:
-            lines.append(f'Warnings: {len(self.warnings)}')
-            for w in self.warnings:
-                lines.append(f'  - {w}')
-        return '\n'.join(lines)
-
-    def export_csv(self, path, metadata=None, feature_names=None, append=True):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        row = {'timestamp': datetime.now().isoformat(timespec='seconds'), 'converged': self.converged, 'num_iterations': self.num_iterations}
-        if self.final_objective is not None:
-            row['final_objective'] = self.final_objective
-        if self.timing:
-            for key, val in self.timing.items():
-                row[key] = val
-        if metadata:
-            row.update(metadata)
-        for i, val in enumerate(self.theta_hat):
-            name = feature_names[i] if feature_names and i < len(feature_names) else f'theta_{i}'
-            row[f'theta_{name}' if feature_names else name] = val
-        file_exists = path.exists()
-        if append and file_exists:
-            with open(path, 'r', newline='') as f:
-                reader = csv.DictReader(f)
-                existing_rows = list(reader)
-                existing_cols = list(reader.fieldnames) if reader.fieldnames else []
-            all_cols = existing_cols.copy()
-            for col in row.keys():
-                if col not in all_cols:
-                    all_cols.append(col)
-            with open(path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=all_cols)
-                writer.writeheader()
-                for existing_row in existing_rows:
-                    writer.writerow({k: v for k, v in existing_row.items() if k})
-                writer.writerow(row)
+    def log_summary(self, parameters_to_log=None):
+        idx = parameters_to_log if parameters_to_log is not None else range(len(self.theta_hat))
+        if isinstance(self.timing, tuple) and len(self.timing) >= 2:
+            p, m = np.array(self.timing[0]), np.array(self.timing[1])
         else:
-            with open(path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=row.keys())
-                writer.writeheader()
-                writer.writerow(row)
+            p, m = np.array([]), np.array([])
+        n_constraints = self.n_constraints if self.n_constraints is not None else 0
+        n_violations = self.final_n_violations if self.final_n_violations is not None else 0
+        reduced_cost = self.final_reduced_cost or 0.0
+        total_time = self.total_time or 0.0
+        n_iters = self.num_iterations
+        obj_val = self.final_objective
 
-    def save_npy(self, path):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(path, self.theta_hat)
+        logger.info(" ")
+        logger.info(" ROW GENERATION SUMMARY")
+        logger.info("-" * 80)
+        param_labels = ' | '.join(f'{f"θ[{i}]":>12}' for i in idx)
+        logger.info(f"{'Parameters':>17} | {param_labels}")
+        param_vals = ' | '.join(format_number(self.theta_hat[i], width=12, precision=5) for i in idx)
+        logger.info(f"{'':>17} | {param_vals}")
+        logger.info("-" * 80)
+        logger.info(f"{'ObjVal':>12} | {'#Consts':>8} | {'#Viols':>6} | {'Reduced Cost':>12} | {'Time (s)':>9} | {'#Iters':>7}")
+        logger.info(
+            f"{format_number(obj_val, width=12, precision=5)} | "
+            f"{n_constraints:>8} | "
+            f"{n_violations:>6} | "
+            f"{format_number(reduced_cost, width=12, precision=6)} | "
+            f"{format_number(total_time, width=9, precision=3)} | "
+            f"{n_iters:>7}"
+        )
+        logger.info("-" * 80)
+        logger.info(f"{'Time':>17} | {'Total (s)':>10} | {'Avg (s)':>10} | {'Range (s)':>11}")
+        logger.info(
+            f"{'pricing':>17} | "
+            f"{format_number(p.sum(), width=10, precision=3)} | "
+            f"{format_number(p.mean(), width=10, precision=3)} | "
+            f"[{format_number(p.min(), precision=3)}, {format_number(p.max(), precision=3)}]"
+        )
+        logger.info(
+            f"{'master':>17} | "
+            f"{format_number(m.sum(), width=10, precision=3)} | "
+            f"{format_number(m.mean(), width=10, precision=3)} | "
+            f"[{format_number(m.min(), precision=3)}, {format_number(m.max(), precision=3)}]"
+        )
+        logger.info(" ")
