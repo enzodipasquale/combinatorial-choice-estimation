@@ -8,6 +8,10 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
     weights = None
     capacity = None 
 
+    def initialize(self):
+        super().initialize()
+        self.local_vars = [model.getVars() for model in self.local_problems]
+
     def _pre_solve_batched_computations(self, theta):
         self.L_all = self._build_linear_coeff_batch(theta)
         self.Q_all = self._build_quadratic_coeff_batch(theta)
@@ -33,11 +37,13 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         Q = self.Q_all[local_id]
         model.setMObjective(Q, L, 0.0, sense=gp.GRB.MAXIMIZE)
         model.optimize()
-        result = np.array(model.x, dtype=bool)
-
-        for j, var in enumerate(model.getVars()):
-            var.Start = float(result[j])
+        
         try:
-            return result
+            result = np.array(model.x, dtype=bool)
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
+
+        for j, var in enumerate(self.local_vars[local_id]):
+            var.Start = float(result[j])
+        
+        return result
