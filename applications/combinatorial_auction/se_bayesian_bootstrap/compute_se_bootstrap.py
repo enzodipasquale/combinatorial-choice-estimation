@@ -86,11 +86,6 @@ def strip_master_constraints(boot, rowgen):
 
 
 adaptive_cfg = callbacks.get("adaptive_timeout", {})
-
-
-def set_subproblem_timeout(row_gen):
-    row_gen.subproblem_manager.update_gurobi_settings({'TimeLimit': adaptive_cfg.get("initial", 1.0)})
-
 timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial", 1.0),
     final_timeout=adaptive_cfg.get("final", 1.0),
@@ -100,10 +95,8 @@ timeout_callback = adaptive_gurobi_timeout(
 se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
                                                                 seed=SEED, 
                                                                 verbose=True,
-                                                                bootstrap_callback=lambda self, 
-                                                                rowgen: strip_master_constraints,
-                                                                row_gen_iteration_callback=timeout_callback, 
-                                                                row_gen_initialization_callback= set_subproblem_timeout)
+                                                                bootstrap_callback=strip_master_constraints,
+                                                                row_gen_iteration_callback=timeout_callback)
 
 
 

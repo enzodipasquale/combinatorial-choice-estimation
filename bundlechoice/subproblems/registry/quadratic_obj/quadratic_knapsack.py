@@ -38,6 +38,6 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         for j, var in enumerate(model.getVars()):
             var.Start = float(result[j])
         try:
-            return np.array(model.x, dtype=bool)
+            return result
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
