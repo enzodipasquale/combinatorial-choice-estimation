@@ -59,7 +59,7 @@ def load_raw_data() -> dict:
         "bta_data": bta_data,
         "bidder_data": bidder_data,
         "bta_adjacency": bta_adjacency,
-        "geo_distance_": geo_distance,
+        "geo_distance": geo_distance,
         "travel_survey": travel_survey,
         "air_travel": air_travel,
     }
@@ -98,31 +98,31 @@ def generate_matching_matrix(
     return matching
 
 
-def build_pop_centroid_features(weights: np.ndarray, geo_distance_j_j: np.ndarray, delta: int = 4) -> np.ndarray:
+def build_pop_centroid_features(weights: np.ndarray, geo_distance: np.ndarray, delta: int = 4) -> np.ndarray:
     E_j_j = (weights[:, None] * weights[None, :]).astype(float)
     np.fill_diagonal(E_j_j, 0)
     
     # Apply distance decay
-    mask = geo_distance_j_j > 0
-    E_j_j[mask] /= (geo_distance_j_j[mask] ** delta)
+    mask = geo_distance > 0
+    E_j_j[mask] /= (geo_distance[mask] ** delta)
     
     # Normalize
-    pop_centroid_j_j = (weights[:, None] / weights.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
+    pop_centroid = (weights[:, None] / weights.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
     
     # Truncate (remove very small values)
-    percentile_val = np.percentile(pop_centroid_j_j, POP_CENTROID_PERCENTILE)
-    truncated_pop_centroid_j_j = np.where(pop_centroid_j_j > percentile_val, pop_centroid_j_j, 0)
+    percentile_val = np.percentile(pop_centroid, POP_CENTROID_PERCENTILE)
+    truncated_pop_centroid = np.where(pop_centroid > percentile_val, pop_centroid, 0)
     
-    return truncated_pop_centroid_j_j
+    return truncated_pop_centroid
 
 
-def normalize_interaction_matrix(matrix_j_j: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    matrix = matrix_j_j.copy() + 1e-15
+def normalize_interaction_matrix(matrix: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    matrix = matrix.copy() + 1e-15
     np.fill_diagonal(matrix, 0)
     
-    outflow_j = matrix.sum(1)
-    mask = outflow_j > 0
-    matrix[mask] /= outflow_j[mask][:, None]
+    outflow = matrix.sum(1)
+    mask = outflow > 0
+    matrix[mask] /= outflow[mask][:, None]
     matrix *= weights[:, None] / weights[mask].sum()
     
     return matrix
@@ -130,21 +130,21 @@ def normalize_interaction_matrix(matrix_j_j: np.ndarray, weights: np.ndarray) ->
 
 def build_quadratic_features(
     weights: np.ndarray,
-    geo_distance_j_j: np.ndarray,
-    travel_survey_j_j: np.ndarray,
-    air_travel_j_j: np.ndarray,
+    geo_distance: np.ndarray,
+    travel_survey: np.ndarray,
+    air_travel: np.ndarray,
     delta: int = 4,
 ) -> np.ndarray:
     quadratic_list = []
     
-    pop_centroid_j_j = build_pop_centroid_features(weights, geo_distance_j_j, delta=delta)
-    quadratic_list.append(pop_centroid_j_j)
+    pop_centroid = build_pop_centroid_features(weights, geo_distance, delta=delta)
+    quadratic_list.append(pop_centroid)
     
-    quadratic_travel_j_j = normalize_interaction_matrix(travel_survey_j_j, weights)
-    quadratic_list.append(quadratic_travel_j_j)
+    quadratic_travel = normalize_interaction_matrix(travel_survey, weights)
+    quadratic_list.append(quadratic_travel)
     
-    quadratic_air_j_j = normalize_interaction_matrix(air_travel_j_j, weights)
-    quadratic_list.append(quadratic_air_j_j)
+    quadratic_air = normalize_interaction_matrix(air_travel, weights)
+    quadratic_list.append(quadratic_air)
     
     quadratic_features = np.stack(quadratic_list, axis=2)
 
@@ -155,7 +155,7 @@ def build_modular_features(
     capacities: np.ndarray,
     weights: np.ndarray,
     home_bta_i: np.ndarray = None,
-    geo_distance_j_j: np.ndarray = None,
+    geo_distance: np.ndarray = None,
     include_hq_distance: bool = False,
 ) -> np.ndarray:
     modular_list = []
@@ -165,21 +165,21 @@ def build_modular_features(
     
     if include_hq_distance:
         assert home_bta_i is not None, "home_bta_i required for HQ distance features"
-        assert geo_distance_j_j is not None, "geo_distance_j_j required for HQ distance features"
+        assert geo_distance is not None, "geo_distance required for HQ distance features"
         
         n_obs = len(capacities)
-        n_items = geo_distance_j_j.shape[0]
+        n_items = geo_distance.shape[0]
         
-        hq_distance_i_j = np.zeros((n_obs, n_items))
+        hq_distance = np.zeros((n_obs, n_items))
         for i in range(n_obs):
             hq_idx = int(home_bta_i[i]) - 1
-            hq_distance_i_j[i, :] = geo_distance_j_j[hq_idx, :]
+            hq_distance[i, :] = geo_distance[hq_idx, :]
         
-        max_dist = hq_distance_i_j.max()
+        max_dist = hq_distance.max()
         if max_dist > 0:
-            hq_distance_normalized = hq_distance_i_j / max_dist
+            hq_distance_normalized = hq_distance / max_dist
         else:
-            hq_distance_normalized = hq_distance_i_j
+            hq_distance_normalized = hq_distance
         
         modular_list.append(hq_distance_normalized)
         
@@ -326,14 +326,14 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
         capacities, 
         weights,
         home_bta_i=home_bta_i,
-        geo_distance_j_j=raw_data["geo_distance_j_j"] if hq_distance else None,
+        geo_distance=raw_data["geo_distance"] if hq_distance else None,
         include_hq_distance=hq_distance,
     )
     quadratic_features = build_quadratic_features(
         weights,
-        raw_data["geo_distance_j_j"],
-        raw_data["travel_survey_j_j"],
-        raw_data["air_travel_j_j"],
+        raw_data["geo_distance"],
+        raw_data["travel_survey"],
+        raw_data["air_travel"],
         delta=delta,
     )
     
@@ -345,12 +345,7 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
         matching = matching[winner_indices, :]
         modular_features = modular_features[winner_indices, :, :]
     
-    compute_feature_statistics(
-        matching,
-        modular_features,
-        quadratic_features,
-    )
-    
+
     input_data = build_input_data(
         matching,
         weights,

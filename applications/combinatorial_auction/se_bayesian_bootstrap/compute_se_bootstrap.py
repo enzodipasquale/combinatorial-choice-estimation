@@ -33,8 +33,7 @@ if rank == 0:
     input_data = prepare_data_main(
         delta=DELTA,
         winners_only=app.get("winners_only", False),
-        hq_distance=app.get("hq_distance", False),
-        save_data=False
+        hq_distance=app.get("hq_distance", False)
     )
 else:
     input_data = None
