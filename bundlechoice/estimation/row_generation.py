@@ -21,6 +21,8 @@ class RowGenerationManager(BaseEstimationManager):
         self.cfg = self.config.row_generation
         self.dim = self.config.dimensions
 
+        self.all_concatenated_constraints = None
+
     @property
     def has_master_vars(self):
         return self.comm_manager.bcast(self.master_model is not None)
@@ -181,6 +183,10 @@ class RowGenerationManager(BaseEstimationManager):
             return
         theta, u = self.master_variables
         constr = self.master_model.addConstr(u[indices] >= features @ theta + errors)
+        if self.all_concatenated_constraints is None:
+            self.all_concatenated_constraints = constr
+        else:
+            self.all_concatenated_constraints = gp.concatenate([self.all_concatenated_constraints, constr])
         return constr
     
     def _setup_gurobi_model(self, master_GRB_Params=None):
@@ -202,46 +208,35 @@ class RowGenerationManager(BaseEstimationManager):
         u.Obj = _u_obj_weights
         self.master_model.update()
         self.master_model.reset(0)
-
-    def strip_nonbasic_constraints(self):
-        if not self.comm_manager.is_root() or self.master_model is None:
-            return 0
-        to_remove = [c for c in self.master_model.getConstrs() if c.CBasis == 0]
-        for constr in to_remove:
-            self.master_model.remove(constr)
-        if to_remove:
-            self.master_model.update()
-        return len(to_remove)
-
+        
     def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
-        if not self.comm_manager.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
             return 0
-        constraints = list(self.master_model.getConstrs())
-        slacks = np.array([c.Slack for c in constraints])
+        slacks = self.all_concatenated_constraints.Slack
         threshold = np.percentile(slacks, 100.0 - percentile)
-        if (slacks < threshold).sum() < len(constraints) - hard_threshold:
+        below_threshold = slacks < threshold
+        n_below = below_threshold.sum()
+        if n_below < len(slacks) - hard_threshold:
             return self.strip_constraints_hard_threshold(hard_threshold)
-        to_remove = [c for c in constraints if c.Slack < threshold]
-        for constr in to_remove:
-            self.master_model.remove(constr)
-        if to_remove:
-            self.master_model.update()
-        return len(to_remove)
+        to_keep_id = np.where(~below_threshold)[0]
+        to_remove_id = np.where(below_threshold)[0]
+        to_remove = self.all_concatenated_constraints[to_remove_id]
+        self.all_concatenated_constraints = self.all_concatenated_constraints[to_keep_id]
+        self.master_model.remove(to_remove)
+        return len(to_remove_id)
 
     def strip_constraints_hard_threshold(self, n_constraints = float('inf')):
-        if not self.comm_manager.is_root() or self.master_model is None:
+        if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
             return 0
-        constraints = list(self.master_model.getConstrs())
-        if len(constraints) < n_constraints:
+        if self.master_model.NumConstrs < n_constraints:
             return 0
-        slacks = np.array([c.Slack for c in constraints])
-        to_remove = [constraints[c_id] for c_id in np.argsort(slacks)[:-n_constraints]]
-        for constr in to_remove:
-            self.master_model.remove(constr)
-        if to_remove:
-            self.master_model.update()
-        return len(to_remove)
-        
+        slacks = self.all_concatenated_constraints.Slack
+        sorted_slacks = np.argsort(slacks)
+        to_remove_id, to_keep_id = sorted_slacks[:-n_constraints], sorted_slacks[-n_constraints:]
+        to_remove = self.all_concatenated_constraints[to_remove_id]
+        self.all_concatenated_constraints = self.all_concatenated_constraints[to_keep_id]
+        self.master_model.remove(to_remove)
+        return len(to_remove_id)
         
 
     def _log_iteration(self, iteration):
