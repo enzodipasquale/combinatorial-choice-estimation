@@ -30,6 +30,10 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         Q = self._build_quadratic_coeff_single(local_id, theta)
         model.setMObjective(Q, L, 0.0, sense=gp.GRB.MAXIMIZE)
         model.optimize()
+        result = np.array(model.x, dtype=bool)
+
+        for j, var in enumerate(model.getVars()):
+            var.Start = float(result[j])
         try:
             return np.array(model.x, dtype=bool)
         except Exception as e:
