@@ -33,6 +33,7 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         pass
 
     def initialize(self):
+        self._pre_initilize_cache = []
         self.local_problems = [self.initialize_single_pb(i) for i in range(self.data_manager.num_local_agent)]
         return self.local_problems
 
