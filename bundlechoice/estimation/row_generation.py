@@ -132,7 +132,7 @@ class RowGenerationManager(BaseEstimationManager):
         pricing_time = pricing_time[0] if self.comm_manager.is_root() else None
         
         t1 = time.perf_counter() if self.comm_manager.is_root() else None
-        stop, reduced_cost, n_violations = self._master_iteration(pricing_results, iteration)
+        stop, reduced_cost, n_violations = self._master_iteration(pricing_results)
         master_time = time.perf_counter() - t1 if self.comm_manager.is_root() else None
         self._Bcast_theta_and_Scatterv_u_vals()
         self._update_iteration_info(iteration, pricing_time=pricing_time, 
@@ -142,7 +142,7 @@ class RowGenerationManager(BaseEstimationManager):
         self._log_iteration(iteration)     
         return stop
 
-    def _master_iteration(self, pricing_results, iteration):
+    def compute_constraints_coeff(self, pricing_results):
             features_local = self.oracles_manager.features_oracle(pricing_results)
             errors_local = self.oracles_manager.error_oracle(pricing_results)
             u_local = features_local @ self.theta_iter + errors_local
@@ -160,13 +160,19 @@ class RowGenerationManager(BaseEstimationManager):
             features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
             errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
             violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
-            n_violations =  len(violations_id) if self.comm_manager.is_root() else None              
+            n_violations =  len(violations_id) if self.comm_manager.is_root() else None
+
+            return (violations_id, bundles, features, errors) ,(stop, reduced_cost, n_violations) 
+
+
+    def _master_iteration(self, pricing_results):
+            contraints_coeff, (stop, reduced_cost, n_violations) = self.compute_constraints_coeff(pricing_results)       
             if stop:
                 if self.comm_manager.is_root():
                     self.master_model.optimize()
                 return True, reduced_cost, n_violations
             if self.comm_manager.is_root():
-                self.add_master_constraints(violations_id, bundles, features, errors)
+                self.add_master_constraints(*contraints_coeff)
                 self.master_model.optimize()
             return False, reduced_cost, n_violations
 

@@ -96,9 +96,9 @@ class OraclesManager:
         return vals.ravel()[0] if np.ndim(id) == 0 else vals
 
 
-    def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None):
+    def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None, sigma = 1):
         np.random.seed(seed + self.comm_manager.rank)
-        self._local_modular_errors = np.random.normal(0, 1, (self.data_manager.num_local_agent, 
+        self._local_modular_errors = np.random.normal(0, sigma, (self.data_manager.num_local_agent, 
                                                                 self.dimensions_cfg.n_items))
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
