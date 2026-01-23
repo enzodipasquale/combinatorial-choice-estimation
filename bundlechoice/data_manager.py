@@ -61,6 +61,14 @@ class DataManager:
     def _local_agents_arange(self, num_local_agent):
         return np.arange(num_local_agent, dtype=np.int64)
 
+    @lru_cache(maxsize=1)
+    def _get_local_obs_bundles(self, _version):
+        return np.asarray(self.local_data["id_data"]["obs_bundles"], dtype=bool)
+
+    @property
+    def local_obs_bundles(self):
+        return self._get_local_obs_bundles(self._local_data_version)
+
     @property
     def agent_ids(self):
         return self._agent_ids(self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations)
@@ -80,10 +88,6 @@ class DataManager:
     @property
     def obs_ids(self):
         return self.agent_ids % self.dimensions_cfg.n_obs
-
-    @property
-    def local_obs_bundles(self):
-        return np.asarray(self.local_data["id_data"]["obs_bundles"], dtype=bool)
 
 
     def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
