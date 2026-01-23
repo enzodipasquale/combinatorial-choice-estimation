@@ -26,7 +26,7 @@ bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
 
 if rank == 0:
-    input_data = prepare_data_main(delta=DELTA, winners_only=WINNERS_ONLY, hq_distance=HQ_DISTANCE, save_data=False)
+    input_data = prepare_data_main(delta=DELTA, winners_only=WINNERS_ONLY, hq_distance=HQ_DISTANCE)
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
 else:
     input_data = None
