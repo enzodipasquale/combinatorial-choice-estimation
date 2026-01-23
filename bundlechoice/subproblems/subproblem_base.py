@@ -22,6 +22,10 @@ class BatchSubproblemBase(BaseSubproblem, ABC):
 class SerialSubproblemBase(BaseSubproblem, ABC):
 
     @abstractmethod
+    def _pre_solve_batched_computations(self):
+        pass
+
+    @abstractmethod
     def initialize_single_pb(self, agent_id):
         pass
 
@@ -34,6 +38,7 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         return self.local_problems
 
     def solve(self, theta):
+        self._pre_solve_batched_computations(theta)
         n_agents = len(self.local_problems)
         n_items = self.dimensions_cfg.n_items
         results = np.empty((n_agents, n_items), dtype=bool)

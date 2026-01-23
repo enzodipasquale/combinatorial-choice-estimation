@@ -5,10 +5,13 @@ from .quadratic_obj_base import QuadraticObjectiveMixin
 from bundlechoice.utils import suppress_output
 
 class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBase):
-
     weights = None
     capacity = None 
 
+    def _pre_solve_batched_computations(self, theta):
+        self.L_all = self._build_linear_coeff_batch(theta)
+        self.Q_all = self._build_quadratic_coeff_batch(theta)
+        
     def initialize_single_pb(self, local_id):
         weights = self.data_manager.local_data["item_data"]['weight']
         capacity = self.data_manager.local_data["id_data"]['capacity'][local_id]
@@ -26,8 +29,8 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
         return model
 
     def solve_single_pb(self, local_id, theta, model):
-        L = self._build_linear_coeff_single(local_id, theta)
-        Q = self._build_quadratic_coeff_single(local_id, theta)
+        L = self.L_all[local_id]
+        Q = self.Q_all[local_id]
         model.setMObjective(Q, L, 0.0, sense=gp.GRB.MAXIMIZE)
         model.optimize()
         result = np.array(model.x, dtype=bool)
