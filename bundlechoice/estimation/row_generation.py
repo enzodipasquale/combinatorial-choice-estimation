@@ -72,52 +72,9 @@ class RowGenerationManager(BaseEstimationManager):
             
             self.iteration_history[iteration].update(update_dict)
 
-    def _master_iteration(self, pricing_results, iteration):
-        features_local = self.oracles_manager.features_oracle(pricing_results)
-        errors_local = self.oracles_manager.error_oracle(pricing_results)
-        u_local = features_local @ self.theta_iter + errors_local
-        local_reduced_costs = u_local - self.u_iter_local
-        reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
-        reduced_cost = reduced_cost[0] if self.comm_manager.is_root() else None
-        stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager.is_root() else None
-        stop = self.comm_manager.bcast(stop)
-    
-        local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
-        local_violations_id = self.data_manager.agent_ids[local_violations]
-        violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
-        
-        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
-        features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
-        errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
-        violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
-        self._update_iteration_info(iteration, reduced_cost = reduced_cost,
-                                               n_violations =  len(violations_id) if self.comm_manager.is_root() else None)
-                        
-        if stop:
-            return True
-        if self.comm_manager.is_root():
-            self.add_master_constraints(violations_id, bundles, features, errors)
-            self.master_model.optimize()
-            
-        self._Bcast_theta_and_Scatterv_u_vals()
-        return False
+   
 
-    def _row_generation_iteration(self, iteration, callback):
-        t0 = time.perf_counter()
-        pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-        pricing_time_local = time.perf_counter() - t0
-        
-        pricing_time = self.comm_manager.Reduce(np.array([pricing_time_local], dtype=np.float64),op=MPI.MAX)
-        pricing_time = pricing_time[0] if self.comm_manager.is_root() else None
-        
-        t1 = time.perf_counter() if self.comm_manager.is_root() else None
-        stop = self._master_iteration(pricing_results, iteration)
-        master_time = time.perf_counter() - t1 if self.comm_manager.is_root() else None
-        if callback is not None:
-            callback(iteration, self)
-        self._update_iteration_info(iteration, pricing_time=pricing_time, master_time=master_time)
-        self._log_iteration(iteration)     
-        return stop
+
    
     def solve(self, local_obs_weights=None,
                     initialize_master = True,
@@ -154,7 +111,9 @@ class RowGenerationManager(BaseEstimationManager):
     def row_generation_loop(self, callback):
         iteration, self.iteration_history, t0 = 0, {}, time.perf_counter()
         while iteration < self.cfg.max_iters:
-            stop = self._row_generation_iteration(iteration, callback)
+            if callback is not None:
+                callback(iteration, self)
+            stop = self._row_generation_iteration(iteration)
             if stop and iteration >= self.cfg.min_iters:
                 break
             iteration += 1
@@ -163,6 +122,52 @@ class RowGenerationManager(BaseEstimationManager):
         result = self._create_result(iteration + 1)
         return result
 
+    def _row_generation_iteration(self, iteration):
+        t0 = time.perf_counter()
+        pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
+        pricing_time_local = time.perf_counter() - t0
+        
+        pricing_time = self.comm_manager.Reduce(np.array([pricing_time_local], dtype=np.float64),op=MPI.MAX)
+        pricing_time = pricing_time[0] if self.comm_manager.is_root() else None
+        
+        t1 = time.perf_counter() if self.comm_manager.is_root() else None
+        stop, reduced_cost, n_violations = self._master_iteration(pricing_results, iteration)
+        master_time = time.perf_counter() - t1 if self.comm_manager.is_root() else None
+        self._Bcast_theta_and_Scatterv_u_vals()
+        self._update_iteration_info(iteration, pricing_time=pricing_time, 
+                                                master_time=master_time,
+                                                reduced_cost = reduced_cost,
+                                                n_violations = n_violations)
+        self._log_iteration(iteration)     
+        return stop
+
+    def _master_iteration(self, pricing_results, iteration):
+            features_local = self.oracles_manager.features_oracle(pricing_results)
+            errors_local = self.oracles_manager.error_oracle(pricing_results)
+            u_local = features_local @ self.theta_iter + errors_local
+            local_reduced_costs = u_local - self.u_iter_local
+            reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
+            reduced_cost = reduced_cost[0] if self.comm_manager.is_root() else None
+            stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager.is_root() else None
+            stop = self.comm_manager.bcast(stop)
+        
+            local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
+            local_violations_id = self.data_manager.agent_ids[local_violations]
+            violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
+            
+            bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
+            features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
+            errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
+            violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
+            n_violations =  len(violations_id) if self.comm_manager.is_root() else None              
+            if stop:
+                if self.comm_manager.is_root():
+                    self.master_model.optimize()
+                return True, reduced_cost, n_violations
+            if self.comm_manager.is_root():
+                self.add_master_constraints(violations_id, bundles, features, errors)
+                self.master_model.optimize()
+            return False, reduced_cost, n_violations
 
     def add_master_constraints(self, indices, bundles, features, errors):
         if not self.comm_manager.is_root() or self.master_model is None:
