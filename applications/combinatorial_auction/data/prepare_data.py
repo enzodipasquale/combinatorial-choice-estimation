@@ -31,16 +31,12 @@ def load_raw_data() -> dict:
     # BTA data (items/markets)
     bta_data = pd.read_csv(DATA_DIR / "btadata_2004_03_12_1.csv")
    
-    
     # Bidder data (agents)
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
-  
-    
+   
     # Adjacency matrix
     bta_adjacency = pd.read_csv(DATA_DIR / "btamatrix_merged.csv", header=None)
-    bta_adjacency = bta_adjacency.drop(bta_adjacency.columns[0], axis=1)
-    bta_adjacency_j_j = bta_adjacency.values.astype(float)
-  
+    bta_adjacency = bta_adjacency.drop(bta_adjacency.columns[0], axis=1).values.astype(float)
     
     # Geographic distance matrix
     geo_distance = pd.read_csv(
@@ -48,27 +44,24 @@ def load_raw_data() -> dict:
         delimiter=' ',
         header=None
     )
-    geo_distance = geo_distance.drop(geo_distance.columns[-1], axis=1)
-    geo_distance_j_j = geo_distance.values.astype(float)
+    geo_distance = geo_distance.drop(geo_distance.columns[-1], axis=1).values.astype(float)
  
     
     # Travel survey matrix (read with header=None to get full 493x493 matrix)
-    travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None)
-    travel_survey_j_j = travel_survey.values.astype(float)
+    travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None).values.astype(float)
  
     
     # Air travel matrix (read with header=None to get full 493x493 matrix)
-    air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None)
-    air_travel_j_j = air_travel.values.astype(float)
+    air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None).values.astype(float)
    
     
     return {
         "bta_data": bta_data,
         "bidder_data": bidder_data,
-        "bta_adjacency_j_j": bta_adjacency_j_j,
-        "geo_distance_j_j": geo_distance_j_j,
-        "travel_survey_j_j": travel_survey_j_j,
-        "air_travel_j_j": air_travel_j_j,
+        "bta_adjacency": bta_adjacency,
+        "geo_distance_": geo_distance,
+        "travel_survey": travel_survey,
+        "air_travel": air_travel,
     }
 
 
@@ -120,9 +113,6 @@ def build_pop_centroid_features(weights: np.ndarray, geo_distance_j_j: np.ndarra
     percentile_val = np.percentile(pop_centroid_j_j, POP_CENTROID_PERCENTILE)
     truncated_pop_centroid_j_j = np.where(pop_centroid_j_j > percentile_val, pop_centroid_j_j, 0)
     
-    density = np.count_nonzero(truncated_pop_centroid_j_j) / truncated_pop_centroid_j_j.size
-  
-    
     return truncated_pop_centroid_j_j
 
 
@@ -157,8 +147,6 @@ def build_quadratic_features(
     quadratic_list.append(quadratic_air_j_j)
     
     quadratic_features = np.stack(quadratic_list, axis=2)
-    
-    density = (quadratic_features.sum(2) > 0).sum() / quadratic_features.sum(2).size
 
     return quadratic_features
 
@@ -217,93 +205,19 @@ def build_input_data(
     
     input_data = {
         "id_data": {
-            "modular": modular_features,  # (n_obs, n_items, num_modular)
+            "modular": modular_features,  
             "capacity": capacities,
             "obs_bundles": matching.astype(int),
         },
         "item_data": {
-            "modular": -np.eye(n_items),  # Item fixed effects (negative identity matrix)
-            "quadratic": quadratic_features,  # (n_items, n_items, num_quadratic)
+            "modular": -np.eye(n_items), 
+            "quadratic": quadratic_features,  
             "weight": weights,
         }
     }
     
     return input_data
 
-
-def save_processed_data(
-    matching: np.ndarray,
-    weights: np.ndarray,
-    capacities: np.ndarray,
-    modular_features: np.ndarray,
-    quadratic_features: np.ndarray,
-    delta: int = 4,
-    winners_only: bool = False,
-    hq_distance: bool = False,
-) -> None:
-    output_dir = get_output_dir(delta, winners_only, hq_distance)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    n_obs, n_items = matching.shape
-    num_modular = modular_features.shape[2]
-    num_quadratic = quadratic_features.shape[2]
-    
-    # Save feature data in new folder structure
-    features_dir = output_dir / "features_data"
-    (features_dir / "id_data" / "modular").mkdir(parents=True, exist_ok=True)
-    (features_dir / "item_data" / "quadratic").mkdir(parents=True, exist_ok=True)
-    
-    # id modular: (n_obs, n_items) - one CSV per feature
-    for k in range(num_modular):
-        feature_data = modular_features[:, :, k]  # Shape: (n_obs, n_items)
-        pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
-            features_dir / "id_data" / "modular" / f"feature_{k}.csv", index=False
-        )
-    
-    # item quadratic: (n_items, n_items) - one CSV per feature
-    for k in range(num_quadratic):
-        feature_data = quadratic_features[:, :, k]  # Shape: (n_items, n_items)
-        pd.DataFrame(feature_data, columns=[f"item_{j}" for j in range(n_items)]).to_csv(
-            features_dir / "item_data" / "quadratic" / f"feature_{k}.csv", index=False
-        )
-    
-    # Save constraint data in other_data
-    other_dir = output_dir / "other_data"
-    (other_dir / "id_data").mkdir(parents=True, exist_ok=True)
-    (other_dir / "item_data").mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"capacity": capacities}).to_csv(other_dir / "id_data" / "capacity.csv", index=False)
-    pd.DataFrame({"weight": weights}).to_csv(other_dir / "item_data" / "weight.csv", index=False)
-    
-    # Save observed bundles
-    obs_df = pd.DataFrame(matching.astype(int), columns=[f"item_{j}" for j in range(n_items)])
-    obs_df.to_csv(output_dir / "obs_bundles.csv", index=False)
-    
-    # Save metadata
-    metadata = {
-        "delta": delta,
-        "winners_only": winners_only,
-        "hq_distance": hq_distance,
-        "weight_rounding_tick": WEIGHT_ROUNDING_TICK,
-        "pop_centroid_percentile": POP_CENTROID_PERCENTILE,
-        "n_obs": n_obs,
-        "n_items": n_items,
-        "num_modular_features": num_modular,
-        "num_quadratic_features": num_quadratic,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-    }
-    with open(output_dir / "metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
-
-def compute_feature_statistics(
-    matching: np.ndarray,
-    modular_features: np.ndarray,
-    quadratic_features: np.ndarray,
-) -> None:
-    phi_modular = (modular_features * matching[:, :, None]).sum(1)
-    phi_quadratic = np.einsum('jlk,ij,il->ik', quadratic_features, matching, matching)
-    phi_hat_i_k = np.concatenate([phi_modular, phi_quadratic], axis=1)
-    
-    winning = np.unique(np.where(matching)[0])
 
 
 def parse_args():
@@ -340,11 +254,6 @@ Examples:
         action="store_true",
         help="Include HQ-to-item distance features (adds 2 modular features)"
     )
-    parser.add_argument(
-        "--save",
-        action="store_true",
-        help="Save processed data to disk (default: False)"
-    )
     args = parser.parse_args()
     
     # If config provided, read parameters from it
@@ -364,7 +273,7 @@ Examples:
     return args
 
 
-def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False, save_data: bool = False):
+def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
 
     # Load raw data
     raw_data = load_raw_data()
@@ -450,22 +359,10 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False, 
         quadratic_features,
     )
     
-    if save_data:
-        save_processed_data(
-            matching,
-            weights,
-            capacities,
-            modular_features,
-            quadratic_features,
-            delta=delta,
-            winners_only=winners_only,
-            hq_distance=hq_distance,
-        )
-
     return input_data
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, hq_distance=args.hq_distance, save_data=args.save)
+    main(delta=args.delta, winners_only=args.winners_only, hq_distance=args.hq_distance)
 
