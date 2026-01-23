@@ -19,9 +19,9 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
             model = gp.Model()
             model.setParam('OutputFlag', 0)
             model.setParam('Threads', 1)
-            time_limit = self.subproblem_cfg.GRB_settings.get('TimeLimit')
-            if time_limit:
-                model.setParam('TimeLimit', time_limit)
+            for k, v in self.subproblem_cfg.GRB_Params.items():
+                if v is not None:
+                    model.setParam(k, v)
             model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
             B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, name = 'bundle')
             self._pre_initilize_cache.append(B)
@@ -39,6 +39,6 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
             result = np.array(model.x, dtype=bool)
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
-            
+
         self._pre_initilize_cache[local_id].Start = result
         return result
