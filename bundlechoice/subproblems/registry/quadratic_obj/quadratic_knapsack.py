@@ -39,9 +39,6 @@ class QuadraticKnapsackGRBSubproblem(QuadraticObjectiveMixin, SerialSubproblemBa
             result = np.array(model.x, dtype=bool)
         except Exception as e:
             raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={local_id}, exception={e}')
-
-        # for j, var in enumerate(self.local_B_vars[local_id]):
-        #     var.Start = float(result[j])
+            
         self._pre_initilize_cache[local_id].Start = result
-        
         return result
