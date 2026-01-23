@@ -22,7 +22,7 @@ class BatchSubproblemBase(BaseSubproblem, ABC):
 class SerialSubproblemBase(BaseSubproblem, ABC):
 
     @abstractmethod
-    def _pre_solve_batched_computations(self):
+    def _pre_solve_batched_computations(self, theta):
         pass
 
     @abstractmethod
