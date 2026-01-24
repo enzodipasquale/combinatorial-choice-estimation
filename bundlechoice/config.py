@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 import yaml
+import numpy as np
 
 class ConfigMixin:
     def update_in_place(self, other):
@@ -45,8 +46,26 @@ class RowGenerationConfig(ConfigMixin):
     master_GRB_Params: dict = field(default_factory=dict)
     theta_ubs: float = 1000
     theta_lbs: float = 0
+    theta_bounds: dict = None
     parameters_to_log: list = None
     verbose: bool = True
+
+    def theta_bounds_arrays(self, n_features: int):
+        if not self.theta_bounds:
+            return self.theta_lbs, self.theta_ubs
+
+        lb = self.theta_bounds.get("lb", self.theta_lbs)
+        ub = self.theta_bounds.get("ub", self.theta_ubs)
+
+        theta_lbs = np.full(n_features, float(lb))
+        theta_ubs = np.full(n_features, float(ub))
+
+        for k, v in (self.theta_bounds.get("lbs") or {}).items():
+            theta_lbs[int(k)] = float(v)
+        for k, v in (self.theta_bounds.get("ubs") or {}).items():
+            theta_ubs[int(k)] = float(v)
+
+        return theta_lbs, theta_ubs
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):
