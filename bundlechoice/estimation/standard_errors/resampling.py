@@ -85,21 +85,20 @@ class ResamplingMixin:
             return
         if bootstrap_iter not in self.bootstrap_history:
             return
-        if bootstrap_iter == 0:
-            logger.info("-"*55)
         info = self.bootstrap_history[bootstrap_iter]    
         if self.config.row_generation.parameters_to_log is not None:
             param_indices = self.config.row_generation.parameters_to_log
         else:
             param_indices = list(range(min(5, self.dim.n_features)))
         
-        if bootstrap_iter % 80 == 0:
+        if bootstrap_iter % 100 == 0:
             param_width = len(param_indices) * 11 - 1
             header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
                       f"{'#Constr':>7} | {'Reduced':^12} | {'Objective':^12} | {f'Parameters':^{param_width}}")
             param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
             header2 = (f"{'':>5} | {'(s)':^9} | {'(s)':^9} | {'(s)':^9} | {'Iters':^5} | "
                       f"{'':>7} | {'Cost':^12} | {'Value':^12} | {param_label_row}")
+            logger.info("-" * len(header1))
             logger.info(header1)
             logger.info(header2)
             logger.info("-" * len(header1))

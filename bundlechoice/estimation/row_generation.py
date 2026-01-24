@@ -33,10 +33,11 @@ class RowGenerationManager(BaseEstimationManager):
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
+            lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
             theta = self.master_model.addMVar(self.dim.n_features, 
                                                 obj= _theta_obj_coef, 
-                                                lb= self.cfg.theta_lbs,
-                                                ub= self.cfg.theta_ubs, 
+                                                lb= lb,
+                                                ub= ub, 
                                                 name= 'parameter')
             u = self.master_model.addMVar(self.dim.n_agents, obj=u_obj_coef, name='utility')
             self.master_variables = (theta, u)
@@ -151,10 +152,10 @@ class RowGenerationManager(BaseEstimationManager):
             local_reduced_costs = u_local - self.u_iter_local
             reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
             reduced_cost = reduced_cost[0] if self.comm_manager.is_root() else None
-            stop = (reduced_cost <= self.cfg.tolerance) if self.comm_manager.is_root() else None
+            stop = (reduced_cost <= float(self.cfg.tolerance)) if self.comm_manager.is_root() else None
             stop = self.comm_manager.bcast(stop)
         
-            local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
+            local_violations = np.where(local_reduced_costs > float(self.cfg.tolerance))[0]
             local_violations_id = self.data_manager.agent_ids[local_violations]
             violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
             
@@ -208,7 +209,7 @@ class RowGenerationManager(BaseEstimationManager):
         u.Obj = _u_obj_weights
         self.master_model.update()
         self.master_model.reset(0)
-        
+
     def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
         if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
             return 0
