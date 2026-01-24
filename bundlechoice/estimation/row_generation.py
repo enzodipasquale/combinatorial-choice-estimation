@@ -42,7 +42,7 @@ class RowGenerationManager(BaseEstimationManager):
             u = self.master_model.addMVar(self.dim.n_agents, obj=u_obj_coef, name='utility')
             self.master_variables = (theta, u)
             self.master_model.optimize()
-
+            self.all_concatenated_constraints = None
             if self.master_model.Status != GRB.OPTIMAL:
                 raise RuntimeError('Master problem cannot be solved at initialization, status=%s', 
                                     self.master_model.Status)
@@ -129,10 +129,9 @@ class RowGenerationManager(BaseEstimationManager):
     def _row_generation_iteration(self, iteration):
         t0 = time.perf_counter()
         pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-        pricing_time_local = time.perf_counter() - t0
-        
-        pricing_time = self.comm_manager.Reduce(np.array([pricing_time_local], dtype=np.float64),op=MPI.MAX)
-        pricing_time = pricing_time[0] if self.comm_manager.is_root() else None
+        if self.verbose:
+            self.comm_manager._barrier()
+        pricing_time = time.perf_counter() - t0
         
         t1 = time.perf_counter() if self.comm_manager.is_root() else None
         stop, reduced_cost, n_violations = self._master_iteration(pricing_results)
@@ -146,26 +145,40 @@ class RowGenerationManager(BaseEstimationManager):
         return stop
 
     def compute_constraints_coeff(self, pricing_results):
-            features_local = self.oracles_manager.features_oracle(pricing_results)
-            errors_local = self.oracles_manager.error_oracle(pricing_results)
-            u_local = features_local @ self.theta_iter + errors_local
-            local_reduced_costs = u_local - self.u_iter_local
-            reduced_cost = self.comm_manager.Reduce(local_reduced_costs.max(0), op=MPI.MAX)
-            reduced_cost = reduced_cost[0] if self.comm_manager.is_root() else None
-            stop = (reduced_cost <= float(self.cfg.tolerance)) if self.comm_manager.is_root() else None
-            stop = self.comm_manager.bcast(stop)
+        features_local = self.oracles_manager.features_oracle(pricing_results)
+        errors_local = self.oracles_manager.error_oracle(pricing_results)
+        u_local = features_local @ self.theta_iter + errors_local
+        local_reduced_costs = u_local - self.u_iter_local
         
-            local_violations = np.where(local_reduced_costs > float(self.cfg.tolerance))[0]
-            local_violations_id = self.data_manager.agent_ids[local_violations]
-            violation_counts = self.comm_manager.Allgather(np.array([len(local_violations)], dtype=np.int64)).flatten()
-            
-            bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
-            features = self.comm_manager.Gatherv_by_row(features_local[local_violations], row_counts=violation_counts)
-            errors = self.comm_manager.Gatherv_by_row(errors_local[local_violations], row_counts=violation_counts)
-            violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
-            n_violations =  len(violations_id) if self.comm_manager.is_root() else None
+        local_max_rc = local_reduced_costs.max() 
+        local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
+        local_meta = np.array([local_max_rc, len(local_violations)], dtype=np.float64)
+        all_meta = self.comm_manager.Allgather(local_meta).reshape(-1, 2)
+        
+        global_max_rc = all_meta[:, 0].max()
+        violation_counts = all_meta[:, 1].astype(np.int64)
+        stop = global_max_rc <= self.cfg.tolerance
+        reduced_cost = global_max_rc if self.comm_manager.is_root() else None
+        # === End of change ===
+        
+        local_violations_id = self.data_manager.agent_ids[local_violations]
+        features_and_errors_local = np.column_stack([
+            features_local[local_violations], 
+            errors_local[local_violations]
+        ])
+        
+        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
+        features_and_errors = self.comm_manager.Gatherv_by_row(features_and_errors_local, row_counts=violation_counts)
+        violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
+        
+        if self.comm_manager.is_root():
+            features = features_and_errors[:, :-1]
+            errors = features_and_errors[:, -1]
+            n_violations = len(violations_id)
+        else:
+            features, errors, n_violations = None, None, None
 
-            return (violations_id, bundles, features, errors) ,(stop, reduced_cost, n_violations) 
+        return (violations_id, bundles, features, errors), (stop, reduced_cost, n_violations)
 
 
     def _master_iteration(self, pricing_results):
