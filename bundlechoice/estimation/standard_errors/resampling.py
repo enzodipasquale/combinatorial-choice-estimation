@@ -5,12 +5,14 @@ logger = get_logger(__name__)
 import time
 
 class ResamplingMixin:
+    
     def compute_bayesian_bootstrap(self, num_bootstrap=100, 
                                             seed=None, 
                                             verbose=False, 
                                             row_gen_iteration_callback = None,
                                             row_gen_initialization_callback = None, 
-                                            bootstrap_callback = None
+                                            bootstrap_callback = None,
+                                            alpha_mixing = 0.0
                                             ):
         theta_boots = []
         self.bootstrap_history = {}
@@ -23,12 +25,14 @@ class ResamplingMixin:
             row_gen._log_instance_summary()
             logger.info(" " )
             logger.info(" BAYESIAN BOOTSTRAP")
+
+        prev_weights = None
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
             if self.comm_manager.is_root():
-                weights = rng.exponential(1.0, self.dim.n_obs)
-                weights /= weights.mean()
+                weights = self._generate_bootstrap_weights(rng, prev_weights, alpha_mixing)
+                prev_weights = weights.copy()
                 weights = np.tile(weights, self.dim.n_simulations)
             else:
                 weights = None
@@ -58,6 +62,30 @@ class ResamplingMixin:
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         
         return stats_result
+
+    # def _generate_bootstrap_weights(self, rng, prev_weights=None, alpha_mixing=0.0):
+    #     new_weights = rng.exponential(1.0, self.dim.n_obs)
+    #     new_weights /= new_weights.mean()
+        
+    #     if alpha_mixing > 0.0 and prev_weights is not None:
+    #         weights = alpha_mixing * prev_weights + (1 - alpha_mixing) * new_weights
+    #         weights /= weights.mean()
+    #     else:
+    #         weights = new_weights
+    #     return weights
+
+    def _generate_bootstrap_weights(self, rng, prev_weights=None, alpha_mixing=0.0):
+        if prev_weights is None:
+            weights = rng.exponential(1.0, self.dim.n_obs)
+            weights /= weights.mean()
+        else:
+            weights = prev_weights.copy()
+            n_to_update = max(1, int(alpha_mixing * self.dim.n_obs))
+            update_ids = rng.choice(self.dim.n_obs, size=n_to_update, replace=False)
+            weights[update_ids] = rng.exponential(1.0, n_to_update)
+            weights /= weights.mean()
+        
+        return weights
 
     def _update_bootstrap_info(self, bootstrap_iter):
         if not self.comm_manager.is_root():

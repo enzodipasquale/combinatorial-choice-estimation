@@ -81,10 +81,6 @@ def strip_master_constraints(boot, rowgen):
     rowgen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
 
 
-
-
-
-
 adaptive_cfg = callbacks.get("adaptive_timeout", {})
 timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial", 1.0),
