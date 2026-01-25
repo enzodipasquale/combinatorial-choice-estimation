@@ -1,19 +1,16 @@
 # Virtual environments
 .bundle/
 
-# Python artifacts
+# Artifacts
 __pycache__/
 *.py[cod]
 *.so
 *.egg-info/
 *.egg-info
 .hypothesis/
-
-# Jupyter Notebook artifacts
 .ipynb_checkpoints/
 
 # Build and system files
-Makefile
 run_with_timeout.sh
 .DS_Store
 
@@ -29,33 +26,28 @@ run_with_timeout.sh
 *.ext3
 *.bas
 *.err
+*.out
+
+# Batch job scripts
+*.sbatch
 
 # Images (generated/plot outputs)
 *.png
 
 # Project-specific directories
-bundlechoice/_legacy/
+bundlechoice/_deprecated/
 bundlechoice/scenarios/
 /applications/firms_export/
 experiments/
 paper/
-debug_se/
 debug/
-benchmark_warmstart.py
-
-# Batch job scripts
-*.out
-*.err
-*.sbatch
 
 #Other
 debug_*.py
 my_tests/
-bundlechoice/_deprecated/
 bundled_choice_estimation.pdf
 *.bash
 applications/**/config.yaml
-applications/**/config_local.yaml
 applications/firms_export
 bundlechoice/tests
 requirements_HPC.txt

@@ -22,7 +22,7 @@ class DimensionsConfig(ConfigMixin):
     n_obs: int = None
     n_items: int = None
     n_features: int = None
-    n_simulations: int = 1
+    n_simulations: int = None
     feature_names: list = None
 
     @property
