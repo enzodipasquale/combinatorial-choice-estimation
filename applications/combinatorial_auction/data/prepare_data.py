@@ -271,6 +271,7 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     # print(elig_pops_at_winning_bundle.mean())
     # print(elig_pops_at_winning_bundle.std())
 
+    
     modular_features = build_modular_features(
                                     capacities, 
                                     weights,
@@ -278,7 +279,7 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
                                     geo_distance=raw_data["geo_distance"] if hq_distance else None,
                                     include_hq_distance=hq_distance,
                                 )
-    travel = raw_data["travel_survey"]                          
+                           
     quadratic_features = build_quadratic_features(
                                     weights,
                                     raw_data["geo_distance"],
@@ -295,13 +296,13 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     # print(quad_at_obs.mean(0))
     # print(quad_at_obs.std(0))
     
+    
     if winners_only:
         winner_indices = np.where(matching.sum(axis=1) > 0)[0]
         capacities = capacities[winner_indices]
         matching = matching[winner_indices, :]
         modular_features = modular_features[winner_indices, :, :]
 
-    
     input_data = build_input_data(
         matching,
         weights,
