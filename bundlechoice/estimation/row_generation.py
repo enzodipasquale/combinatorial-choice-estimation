@@ -293,10 +293,10 @@ class RowGenerationManager(BaseEstimationManager):
         if tol is None:
             tol = max(1e-8, self.master_model.Params.FeasibilityTol)
 
-        hit_lower = [k for k in range(self.config.dimensions.n_features)
+        hit_lower = [k for k in range(self.dim.n_features)
                     if theta[k].LB > -GRB.INFINITY and (theta[k].X - theta[k].LB) <= tol]
 
-        hit_upper = [k for k in range(self.config.dimensions.n_features)
+        hit_upper = [k for k in range(self.dim.n_features)
                     if theta[k].UB <  GRB.INFINITY and (theta[k].UB - theta[k].X) <= tol]
 
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}
