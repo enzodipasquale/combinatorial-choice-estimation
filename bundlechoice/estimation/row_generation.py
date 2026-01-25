@@ -311,6 +311,7 @@ class RowGenerationManager(BaseEstimationManager):
             final_info = self.iteration_history[final_iter]
             final_reduced_cost = final_info.get('reduced_cost', 0.0)
             final_n_violations = final_info.get('n_violations', 0)
+            theta, u = self.master_variables
             return RowGenerationEstimationResult(
                 theta_hat=self.theta_iter, 
                 converged=converged, 
@@ -320,5 +321,6 @@ class RowGenerationManager(BaseEstimationManager):
                 final_reduced_cost=final_reduced_cost,
                 total_time=total_time, 
                 final_n_violations=final_n_violations,
+                u_hat=u.X,
                 timing=(pricing_times, master_times),
                 warnings=None)
