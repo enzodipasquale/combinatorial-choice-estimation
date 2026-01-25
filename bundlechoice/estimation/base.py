@@ -27,20 +27,19 @@ class BaseEstimationManager:
     def _get_local_obs_weights(self, _data_version, _weights_id):
         weights = self.data_manager.local_data["id_data"].get("obs_weights", None)
         weights = self._local_obs_weights if self._local_obs_weights is not None else weights
-        n_simulations = self.config.dimensions.n_simulations
-        return weights/n_simulations if weights is not None else np.ones(self.data_manager.num_local_agent)/n_simulations
+        return weights if weights is not None else np.ones(self.data_manager.num_local_agent)
 
     def _compute_theta_obj_coef(self, local_obs_weights = None):
         if local_obs_weights is None:
             local_obs_weights = self.local_obs_weights
-        local_obs_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
+        local_obs_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)/self.config.dimensions.n_simulations
         return self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_features)
     
     def _compute_u_obj_weights(self, local_obs_weights = None):
         if local_obs_weights is None:
             local_obs_weights = self.local_obs_weights
         all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.data_manager.agent_counts)
-        return all_weights if self.comm_manager.is_root() else None
+        return all_weights/self.config.dimensions.n_simulations if self.comm_manager.is_root() else None
 
     def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     

@@ -29,13 +29,13 @@ class RowGenerationManager(BaseEstimationManager):
 
     
     def _initialize_master_problem(self):
-        _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
+        theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
             theta = self.master_model.addMVar(self.dim.n_features, 
-                                                obj= _theta_obj_coef, 
+                                                obj= theta_obj_coef, 
                                                 lb= lb,
                                                 ub= ub, 
                                                 name= 'parameter')
