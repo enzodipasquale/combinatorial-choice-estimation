@@ -284,7 +284,7 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     bidder_data = raw_data["bidder_data"]
     n_before = len(bidder_data)
     bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 9999]
-    bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 256]
+    # bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 256]
     bidder_data = bidder_data.reset_index(drop=True)
     raw_data["bidder_data"] = bidder_data
     n_after = len(bidder_data)
