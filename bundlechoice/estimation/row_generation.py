@@ -94,6 +94,8 @@ class RowGenerationManager(BaseEstimationManager):
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
             self._initialize_master_problem() 
+            self._Bcast_theta_and_Scatterv_u_vals()
+
         elif self.has_master_vars:
             if local_obs_weights is not None:
                 self.update_objective_for_weights(local_obs_weights)
@@ -104,7 +106,7 @@ class RowGenerationManager(BaseEstimationManager):
         if initialization_callback is not None:
             initialization_callback(self)
 
-        self._Bcast_theta_and_Scatterv_u_vals()
+        # self._Bcast_theta_and_Scatterv_u_vals()
         if self.verbose:
             logger.info(" " )
             logger.info(" ROW GENERATION")
@@ -129,13 +131,10 @@ class RowGenerationManager(BaseEstimationManager):
     def _row_generation_iteration(self, iteration):
         t0 = time.perf_counter()
         pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
-        if self.verbose:
-            self.comm_manager._barrier()
-        pricing_time = time.perf_counter() - t0
-        
-        t1 = time.perf_counter() if self.comm_manager.is_root() else None
-        stop, reduced_cost, n_violations = self._master_iteration(pricing_results)
-        master_time = time.perf_counter() - t1 if self.comm_manager.is_root() else None
+        stop, reduced_cost, n_violations, times = self._master_iteration(pricing_results)
+        t1, t2 = times
+        pricing_time = t1 - t0
+        master_time = t2 - t1 if self.comm_manager.is_root() else None
         self._Bcast_theta_and_Scatterv_u_vals()
         self._update_iteration_info(iteration, pricing_time=pricing_time, 
                                                 master_time=master_time,
@@ -182,15 +181,15 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _master_iteration(self, pricing_results):
-            contraints_coeff, (stop, reduced_cost, n_violations) = self.compute_constraints_coeff(pricing_results)       
-            if stop:
-                if self.comm_manager.is_root():
-                    self.master_model.optimize()
-                return True, reduced_cost, n_violations
-            if self.comm_manager.is_root():
-                self.add_master_constraints(*contraints_coeff)
-                self.master_model.optimize()
-            return False, reduced_cost, n_violations
+        contraints_coeff, (stop, reduced_cost, n_violations) = self.compute_constraints_coeff(pricing_results)
+        t1 = time.perf_counter()
+        if (not stop) and self.comm_manager.is_root():
+            self.add_master_constraints(*contraints_coeff)
+        if self.comm_manager.is_root():
+            self.master_model.optimize()
+        t2 = time.perf_counter()
+        return stop, reduced_cost, n_violations, (t1, t2)
+  
 
     def add_master_constraints(self, indices, bundles, features, errors):
         if not self.comm_manager.is_root() or self.master_model is None:
