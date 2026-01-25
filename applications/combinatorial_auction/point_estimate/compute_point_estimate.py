@@ -19,7 +19,7 @@ rank = comm.Get_rank()
 config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 app = config.get("application", {})
 DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta", 4), app.get("winners_only", False), app.get("hq_distance", False)
-ERROR_SEED = app.get("error_seed", 1995)
+ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 bc = BundleChoice()
@@ -36,18 +36,18 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-callbacks = config.get("callbacks", {})
-adaptive_cfg = callbacks.get("adaptive_timeout", {})
+callbacks = config.get("callbacks")
+adaptive_cfg = callbacks.get("adaptive_timeout")
 timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial"),
     final_timeout=adaptive_cfg.get("final"),
     transition_iterations=adaptive_cfg.get("transition_iterations"),
-    strategy=adaptive_cfg.get("strategy", "step")
+    strategy=adaptive_cfg.get("strategy")
 )
 
 # Pass it to solve
 result = bc.row_generation.solve(
-    iteration_callback=timeout_callback,
+    # iteration_callback=timeout_callback,
     verbose=True
 )
 

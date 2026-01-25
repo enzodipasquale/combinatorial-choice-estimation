@@ -63,7 +63,7 @@ def generate_matching_matrix(
 
 
 def build_pop_centroid_features(weights: np.ndarray, geo_distance: np.ndarray, delta: int = 4) -> np.ndarray:
-    E_j_j = (weights[:, None] * weights[None, :]).astype(float)/ (weights.sum() **2)
+    E_j_j = (weights[:, None] * weights[None, :]).astype(float) #/ (weights.sum() **2)
     np.fill_diagonal(E_j_j, 0)
     
     # Apply distance decay
@@ -153,7 +153,6 @@ def build_input_data(
     modular_features: np.ndarray,
     quadratic_features: np.ndarray,
 ) -> dict:
-    """Build input_data dictionary for BundleChoice without saving to disk."""
     n_items = weights.shape[0]
     
     input_data = {
@@ -266,10 +265,7 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     # pop_at_winning_bundle = pop_at_winning_bundle[pop_at_winning_bundle >0]
     # print(pop_at_winning_bundle.mean())
     # print(pop_at_winning_bundle.std())
-    # elig_pops_at_winning_bundle = (capacities / weights.sum())* (matching @ (weights / weights.sum()))
-    # elig_pops_at_winning_bundle = elig_pops_at_winning_bundle[elig_pops_at_winning_bundle >0]
-    # print(elig_pops_at_winning_bundle.mean())
-    # print(elig_pops_at_winning_bundle.std())
+
 
     
     modular_features = build_modular_features(
@@ -279,6 +275,15 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
                                     geo_distance=raw_data["geo_distance"] if hq_distance else None,
                                     include_hq_distance=hq_distance,
                                 )
+
+    
+    # elig_pop = modular_features[:,:,0]
+    # elig_pops_at_winning_bundle = (matching * elig_pop).sum(1)
+    # elig_pops_at_winning_bundle = elig_pops_at_winning_bundle[elig_pops_at_winning_bundle >0]
+    # print("- stats: modular")
+    # print(elig_pops_at_winning_bundle.mean())
+    # print(elig_pops_at_winning_bundle.std())
+
                            
     quadratic_features = build_quadratic_features(
                                     weights,
