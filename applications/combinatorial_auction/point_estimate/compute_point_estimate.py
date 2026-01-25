@@ -36,15 +36,15 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-if theta_bounds := config.get("theta_bounds"):
-    theta_lbs = np.zeros(bc.n_features)
-    theta_ubs = np.ones(bc.n_features) * 2000
-    for k,v in theta_bounds['lbs'].items():
-        theta_lbs[k] = v
-    for k,v in theta_bounds['ubs'].items():
-        theta_ubs[k] = v     
-    bc.config.row_generation.theta_lbs = theta_lbs
-    bc.config.row_generation.theta_ubs = theta_ubs
+# if theta_bounds := config.get("theta_bounds"):
+#     theta_lbs = np.zeros(bc.n_features)
+#     theta_ubs = np.ones(bc.n_features) * 2000
+#     for k,v in theta_bounds['lbs'].items():
+#         theta_lbs[k] = v
+#     for k,v in theta_bounds['ubs'].items():
+#         theta_ubs[k] = v     
+#     bc.config.row_generation.theta_lbs = theta_lbs
+#     bc.config.row_generation.theta_ubs = theta_ubs
 
 
 callbacks = config.get("callbacks", {})
