@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 # Processing parameters
-WEIGHT_ROUNDING_TICK = 5000
+WEIGHT_ROUNDING_TICK = 1000
 POP_CENTROID_PERCENTILE = 0  # Truncation threshold
 
 
