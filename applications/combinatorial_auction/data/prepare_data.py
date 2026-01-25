@@ -117,7 +117,7 @@ def build_pop_centroid_features(weights: np.ndarray, geo_distance: np.ndarray, d
 
 
 def normalize_interaction_matrix(matrix: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    matrix = matrix.copy() + 1e-15
+    # matrix = matrix.copy() + 1e-15
     np.fill_diagonal(matrix, 0)
     
     outflow = matrix.sum(1)
