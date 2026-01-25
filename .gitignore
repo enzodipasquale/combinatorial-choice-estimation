@@ -41,13 +41,10 @@ bundlechoice/scenarios/
 experiments/
 paper/
 debug/
-
-#Other
 debug_*.py
 my_tests/
 bundled_choice_estimation.pdf
 *.bash
 applications/**/config.yaml
-applications/firms_export
 bundlechoice/tests
 requirements_HPC.txt
