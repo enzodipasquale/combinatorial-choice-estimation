@@ -19,6 +19,14 @@ class ResamplingMixin:
         row_gen = self.row_generation_manager
         t0 = time.perf_counter()
 
+        if self.comm_manager.is_root():
+            weights = rng.exponential(1.0, (self.dim.n_obs, num_bootstrap,))
+            weights /= weights.mean(axis=0, keepdims=True)
+            weights = weights = np.tile(weights, (self.dim.n_simulations, 1))
+        else:
+            weights = None
+        local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
+
         if self.verbose:
             row_gen._log_instance_summary()
             logger.info(" " )
@@ -26,16 +34,9 @@ class ResamplingMixin:
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
-            if self.comm_manager.is_root():
-                weights = rng.exponential(1.0, self.dim.n_obs)
-                weights /= weights.mean()
-                weights = np.tile(weights, self.dim.n_simulations)
-            else:
-                weights = None
-            local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
             initialize_master = True if b == 0 else False
             initialize_subproblems = True if (b == 0 and not self.subproblem_manager._subproblems_are_initialized) else False
-            self.result = row_gen.solve(local_obs_weights= local_weights, 
+            self.result = row_gen.solve(local_obs_weights= local_weights[:, b], 
                                         verbose= False, 
                                         initialize_subproblems= initialize_subproblems, 
                                         initialize_master= initialize_master,
