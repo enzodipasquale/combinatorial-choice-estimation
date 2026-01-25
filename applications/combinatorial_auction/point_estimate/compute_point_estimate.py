@@ -39,9 +39,9 @@ bc.subproblems.load_subproblem()
 callbacks = config.get("callbacks", {})
 adaptive_cfg = callbacks.get("adaptive_timeout", {})
 timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=adaptive_cfg.get("initial", 1.0),
-    final_timeout=adaptive_cfg.get("final", 1.0),
-    transition_iterations=adaptive_cfg.get("transition_iterations", 10),
+    initial_timeout=adaptive_cfg.get("initial"),
+    final_timeout=adaptive_cfg.get("final"),
+    transition_iterations=adaptive_cfg.get("transition_iterations"),
     strategy=adaptive_cfg.get("strategy", "step")
 )
 
