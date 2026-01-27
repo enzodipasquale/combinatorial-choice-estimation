@@ -14,9 +14,7 @@ class ResamplingMixin:
             weights = weights = np.tile(weights, (self.dim.n_simulations, 1))
         else:
             weights = None
-        local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
-
-        return local_weights
+        return weights
 
     def generate_weights_standard_bootstrap(self, seed, num_bootstrap):
         rng = np.random.default_rng(seed)
@@ -28,13 +26,7 @@ class ResamplingMixin:
             weights = np.tile(weights, (self.dim.n_simulations, 1))
         else:
             weights = None
-        
-        local_weights = self.comm_manager.Scatterv_by_row(
-            weights, 
-            row_counts=self.data_manager.agent_counts
-        )
-        
-        return local_weights
+        return weights
 
 
     def compute_bootstrap(self, num_bootstrap=100, 
@@ -50,11 +42,14 @@ class ResamplingMixin:
         row_gen = self.row_generation_manager
         t0 = time.perf_counter()
         if method == 'bayesian':
-            local_weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
+            weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
         elif method == 'standard':
-            local_weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
+            weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
 
-
+        local_weights = self.comm_manager.Scatterv_by_row(weights, 
+                                                            row_counts=self.data_manager.agent_counts,
+                                                            dtype = np.float64,
+                                                            shape = (self.dim.n_agents, num_bootstrap))
         if self.verbose:
             row_gen._log_instance_summary()
             logger.info(" " )
