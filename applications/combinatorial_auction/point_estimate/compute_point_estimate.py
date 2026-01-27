@@ -18,8 +18,8 @@ rank = comm.Get_rank()
 
 config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 app = config.get("application", {})
-DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta", 4), app.get("winners_only", False), app.get("hq_distance", False)
-ERROR_SEED = app.get("error_seed", 1995)
+DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta"), app.get("winners_only"), app.get("hq_distance")
+ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 bc = BundleChoice()
@@ -36,23 +36,12 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-# if theta_bounds := config.get("theta_bounds"):
-#     theta_lbs = np.zeros(bc.n_features)
-#     theta_ubs = np.ones(bc.n_features) * 2000
-#     for k,v in theta_bounds['lbs'].items():
-#         theta_lbs[k] = v
-#     for k,v in theta_bounds['ubs'].items():
-#         theta_ubs[k] = v     
-#     bc.config.row_generation.theta_lbs = theta_lbs
-#     bc.config.row_generation.theta_ubs = theta_ubs
-
-
 callbacks = config.get("callbacks", {})
 adaptive_cfg = callbacks.get("adaptive_timeout", {})
 timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=adaptive_cfg.get("initial", 1.0),
-    final_timeout=adaptive_cfg.get("final", 1.0),
-    transition_iterations=adaptive_cfg.get("transition_iterations", 10),
+    initial_timeout=adaptive_cfg.get("initial"),
+    final_timeout=adaptive_cfg.get("final"),
+    transition_iterations=adaptive_cfg.get("transition_iterations"),
     strategy=adaptive_cfg.get("strategy", "step")
 )
 
