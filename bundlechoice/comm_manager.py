@@ -95,7 +95,7 @@ class CommManager:
         for k, (kind, shape, dtype) in meta.items():
             if kind == 'arr':
                 send_arr = data_dict[k] if self.is_root() else None
-                out[k] = self.Scatterv_by_row(send_arr, row_counts=agent_counts)
+                out[k] = self.Scatterv_by_row(send_arr, row_counts=agent_counts, dtype= dtype, shape= shape)
             else:
                 out[k] = self.comm.bcast(data_dict[k] if self.is_root() else None, root=self.root)
         if return_metadata:
