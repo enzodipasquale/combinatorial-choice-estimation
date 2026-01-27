@@ -43,15 +43,6 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-if theta_bounds := config.get("theta_bounds"):
-    theta_lbs = np.zeros(bc.n_features)
-    theta_ubs = np.ones(bc.n_features) * 2000
-    for k,v in theta_bounds['lbs'].items():
-        theta_lbs[k] = v
-    for k,v in theta_bounds['ubs'].items():
-        theta_ubs[k] = v     
-    bc.config.row_generation.theta_lbs = theta_lbs
-    bc.config.row_generation.theta_ubs = theta_ubs
 
 if config.get("constraints", {}).get("pop_dominates_travel"):
     def custom_constraint(row_gen_manager):
@@ -60,32 +51,24 @@ if config.get("constraints", {}).get("pop_dominates_travel"):
         row_gen_manager.master_model.update()
     bc.config.row_generation.initialization_callback = custom_constraint
 
-callbacks = config.get("callbacks", {})
-if adaptive_cfg := callbacks.get("adaptive_timeout"):
-    bc.config.row_generation.subproblem_callback = adaptive_gurobi_timeout(
-        initial_timeout=adaptive_cfg.get("initial", 1.0),
-        final_timeout=adaptive_cfg.get("final", 30.0),
-        transition_iterations=adaptive_cfg.get("transition_iterations", 15),
-        strategy = adaptive_cfg.get("strategy", "step")
-    )
-
+callbacks = config.get("callbacks")
 
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
 
 def strip_master_constraints(boot, rowgen):
-    strip_cfg = callbacks.get("strip", {})
-    percentile = strip_cfg.get("percentile", 50)
-    hard_threshold = strip_cfg.get("hard_threshold", 2)
+    strip_cfg = callbacks.get("strip")
+    percentile = strip_cfg.get("percentile")
+    hard_threshold = strip_cfg.get("hard_threshold")
     rowgen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
 
 
-adaptive_cfg = callbacks.get("adaptive_timeout", {})
+adaptive_cfg = callbacks.get("adaptive_timeout")
 timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=adaptive_cfg.get("initial", 1.0),
-    final_timeout=adaptive_cfg.get("final", 1.0),
-    transition_iterations=adaptive_cfg.get("transition_iterations", 20),
+    initial_timeout=adaptive_cfg.get("initial"),
+    final_timeout=adaptive_cfg.get("final"),
+    transition_iterations=adaptive_cfg.get("transition_iterations"),
     strategy=adaptive_cfg.get("strategy", "step")
 )
 se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
