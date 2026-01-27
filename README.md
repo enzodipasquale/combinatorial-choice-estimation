@@ -63,7 +63,7 @@ result = bc.row_generation.solve()
 
 ```python
 bc.oracles.build_local_modular_error_oracle(seed=27)
-se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=50, seed=123)
+se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=50, seed=123)
 ```
 
 ## Tests
