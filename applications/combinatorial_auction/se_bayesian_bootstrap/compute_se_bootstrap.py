@@ -81,10 +81,6 @@ def strip_master_constraints(boot, rowgen):
     rowgen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
 
 
-
-
-
-
 adaptive_cfg = callbacks.get("adaptive_timeout", {})
 timeout_callback = adaptive_gurobi_timeout(
     initial_timeout=adaptive_cfg.get("initial", 1.0),
@@ -92,11 +88,12 @@ timeout_callback = adaptive_gurobi_timeout(
     transition_iterations=adaptive_cfg.get("transition_iterations", 20),
     strategy=adaptive_cfg.get("strategy", "step")
 )
-se_result = bc.standard_errors.compute_bayesian_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
+se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
                                                                 seed=SEED, 
                                                                 verbose=True,
                                                                 bootstrap_callback=strip_master_constraints,
-                                                                row_gen_iteration_callback=timeout_callback)
+                                                                row_gen_iteration_callback=timeout_callback,
+                                                                method= 'bayesian')
 
 
 

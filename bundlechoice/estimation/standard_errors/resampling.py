@@ -5,27 +5,55 @@ logger = get_logger(__name__)
 import time
 
 class ResamplingMixin:
-    def compute_bayesian_bootstrap(self, num_bootstrap=100, 
-                                            seed=None, 
-                                            verbose=False, 
-                                            row_gen_iteration_callback = None,
-                                            row_gen_initialization_callback = None, 
-                                            bootstrap_callback = None
-                                            ):
-        theta_boots = []
-        self.bootstrap_history = {}
-        self.verbose = verbose
-        rng = np.random.default_rng(seed)
-        row_gen = self.row_generation_manager
-        t0 = time.perf_counter()
 
+    def generate_weights_bayesian_bootstrap(self, seed, num_bootstrap):
+        rng = np.random.default_rng(seed)
         if self.comm_manager.is_root():
-            weights = rng.exponential(1.0, (self.dim.n_obs, num_bootstrap,))
+            weights = rng.exponential(1.0, (self.dim.n_obs, num_bootstrap))
             weights /= weights.mean(axis=0, keepdims=True)
             weights = weights = np.tile(weights, (self.dim.n_simulations, 1))
         else:
             weights = None
         local_weights = self.comm_manager.Scatterv_by_row(weights, row_counts=self.data_manager.agent_counts)
+
+        return local_weights
+
+    def generate_weights_standard_bootstrap(self, seed, num_bootstrap):
+        rng = np.random.default_rng(seed)
+        if self.comm_manager.is_root():
+            weights = rng.multinomial(self.dim.n_obs, 
+                                        pvals=np.ones(self.dim.n_obs) / self.dim.n_obs,
+                                        size=num_bootstrap
+                                    ).T  
+            weights = np.tile(weights, (self.dim.n_simulations, 1))
+        else:
+            weights = None
+        
+        local_weights = self.comm_manager.Scatterv_by_row(
+            weights, 
+            row_counts=self.data_manager.agent_counts
+        )
+        
+        return local_weights
+
+
+    def compute_bootstrap(self, num_bootstrap=100, 
+                                            seed=None, 
+                                            verbose=False, 
+                                            row_gen_iteration_callback = None,
+                                            row_gen_initialization_callback = None, 
+                                            bootstrap_callback = None,
+                                            method = 'bayesian'):
+        theta_boots = []
+        self.bootstrap_history = {}
+        self.verbose = verbose
+        row_gen = self.row_generation_manager
+        t0 = time.perf_counter()
+        if method == 'bayesian':
+            local_weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
+        elif method == 'standard':
+            local_weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
+
 
         if self.verbose:
             row_gen._log_instance_summary()
@@ -117,7 +145,7 @@ class ResamplingMixin:
         logger.info(row)
 
     def _log_bootstrap_summary(self, n_bootstrap, total_time, result):
-        if not self.comm_manager.is_root() or not self.verbose:
+        if not self.comm_manager.is_root():
             return
         
         if self.config.row_generation.parameters_to_log is not None:
