@@ -265,12 +265,9 @@ def main(delta=4, winners_only=False, hq_distance=False):
     
     if winners_only:
         winner_indices = np.where(matching.sum(axis=1) > 0)[0]
-
-        
         capacities = capacities[winner_indices]
         matching = matching[winner_indices, :]
         modular_features = modular_features[winner_indices, :, :]
-    
 
     input_data = build_input_data(
         matching,
