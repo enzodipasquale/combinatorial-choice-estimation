@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Tuple
-from datetime import datetime
 
 # Data paths
 BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
-
-def get_output_dir(delta: int, winners_only: bool = False, hq_distance: bool = False) -> Path:
-    suffix = f"delta{delta}"
-    if winners_only:
-        suffix += "_winners"
-    if hq_distance:
-        suffix += "_hqdist"
-    return BASE_DIR / "input_data" / suffix
 
 # Processing parameters
 WEIGHT_ROUNDING_TICK = 1000
 POP_CENTROID_PERCENTILE = 0  # Truncation threshold
 
 
-def load_raw_data() -> dict:
-
-    
-    # BTA data (items/markets)
+def load_raw_data():
     bta_data = pd.read_csv(DATA_DIR / "btadata_2004_03_12_1.csv")
-   
-    # Bidder data (agents)
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
    
     # Adjacency matrix
@@ -45,16 +29,9 @@ def load_raw_data() -> dict:
         header=None
     )
     geo_distance = geo_distance.drop(geo_distance.columns[-1], axis=1).values.astype(float)
- 
-    
-    # Travel survey matrix (read with header=None to get full 493x493 matrix)
     travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None).values.astype(float)
- 
-    
-    # Air travel matrix (read with header=None to get full 493x493 matrix)
     air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None).values.astype(float)
    
-    
     return {
         "bta_data": bta_data,
         "bidder_data": bidder_data,
@@ -65,59 +42,41 @@ def load_raw_data() -> dict:
     }
 
 
-def process_weights_capacities(bidder_data: pd.DataFrame, bta_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+def process_weights_capacities(bidder_data, bta_data):
     capacities = bidder_data['pops_eligible'].fillna(0).to_numpy()
     weights = bta_data['pop90'].to_numpy()
-    
     weights_rounded = np.round(weights / WEIGHT_ROUNDING_TICK).astype(int)
     capacities_rounded = np.round(capacities / WEIGHT_ROUNDING_TICK).astype(int)
-    
- 
-    
     return weights_rounded, capacities_rounded
 
 
-def generate_matching_matrix(
-    bta_data: pd.DataFrame,
-    n_obs: int,
-    bidder_num_to_index: dict,
-) -> np.ndarray:
+def generate_matching_matrix(bta_data, n_obs, bidder_num_to_index):
     n_items = len(bta_data)
     matching = np.zeros((n_obs, n_items), dtype=bool)
-    
     for j in range(n_items):
         winner_bidder_num = bta_data['bidder_num_fox'].values[j]
-        # Skip FCC (9999) or any bidders not in our filtered list
         if winner_bidder_num in bidder_num_to_index:
             winner_id = bidder_num_to_index[winner_bidder_num]
             matching[winner_id, j] = True
-    
-    num_winners = np.unique(np.where(matching)[0]).size
-   
-    
     return matching
 
 
-def build_pop_centroid_features(weights: np.ndarray, geo_distance: np.ndarray, delta: int = 4) -> np.ndarray:
+def build_pop_centroid_features(weights, geo_distance, delta=4):
     E_j_j = (weights[:, None] * weights[None, :]).astype(float)
     np.fill_diagonal(E_j_j, 0)
     
-    # Apply distance decay
     mask = geo_distance > 0
     E_j_j[mask] /= (geo_distance[mask] ** delta)
     
-    # Normalize
     pop_centroid = (weights[:, None] / weights.sum()) * (E_j_j / E_j_j.sum(1)[:, None])
     
-    # Truncate (remove very small values)
     percentile_val = np.percentile(pop_centroid, POP_CENTROID_PERCENTILE)
     truncated_pop_centroid = np.where(pop_centroid > percentile_val, pop_centroid, 0)
     
     return truncated_pop_centroid
 
 
-def normalize_interaction_matrix(matrix: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    # matrix = matrix.copy() + 1e-15
+def normalize_interaction_matrix(matrix, weights):
     np.fill_diagonal(matrix, 0)
     
     outflow = matrix.sum(1)
@@ -128,13 +87,7 @@ def normalize_interaction_matrix(matrix: np.ndarray, weights: np.ndarray) -> np.
     return matrix
 
 
-def build_quadratic_features(
-    weights: np.ndarray,
-    geo_distance: np.ndarray,
-    travel_survey: np.ndarray,
-    air_travel: np.ndarray,
-    delta: int = 4,
-) -> np.ndarray:
+def build_quadratic_features(weights, geo_distance, travel_survey, air_travel, delta=4):
     quadratic_list = []
     
     pop_centroid = build_pop_centroid_features(weights, geo_distance, delta=delta)
@@ -151,13 +104,7 @@ def build_quadratic_features(
     return quadratic_features
 
 
-def build_modular_features(
-    capacities: np.ndarray,
-    weights: np.ndarray,
-    home_bta_i: np.ndarray = None,
-    geo_distance: np.ndarray = None,
-    include_hq_distance: bool = False,
-) -> np.ndarray:
+def build_modular_features(capacities, weights, home_bta_i=None, geo_distance=None, include_hq_distance=False):
     modular_list = []
     
     modular_feat = (capacities[:, None] / weights.sum()) * (weights[None, :] / weights.sum())
@@ -185,24 +132,13 @@ def build_modular_features(
         
         hq_distance_sq_normalized = hq_distance_normalized ** 2
         modular_list.append(hq_distance_sq_normalized)
-        
-     
     modular_features = np.stack(modular_list, axis=2)
- 
     
     return modular_features
 
 
-def build_input_data(
-    matching: np.ndarray,
-    weights: np.ndarray,
-    capacities: np.ndarray,
-    modular_features: np.ndarray,
-    quadratic_features: np.ndarray,
-) -> dict:
-    """Build input_data dictionary for BundleChoice without saving to disk."""
+def build_input_data(matching, weights, capacities, modular_features, quadratic_features):
     n_items = weights.shape[0]
-    
     input_data = {
         "id_data": {
             "modular": modular_features,  
@@ -273,30 +209,22 @@ Examples:
     return args
 
 
-def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
+def main(delta=4, winners_only=False, hq_distance=False):
 
     # Load raw data
     raw_data = load_raw_data()
     
     # Filter bidder data:
-    # 1. Remove FCC (bidder_num_fox == 9999) if present
-    # 2. Remove bidder 256 (has NaN capacity and is not in original Fox-Bajari sample)
     bidder_data = raw_data["bidder_data"]
-    n_before = len(bidder_data)
-    bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 9999]
-    # bidder_data = bidder_data[bidder_data['bidder_num_fox'] != 256]
+    bidder_data = bidder_data[bidder_data['pops_eligible'].notna()]
     bidder_data = bidder_data.reset_index(drop=True)
     raw_data["bidder_data"] = bidder_data
-    n_after = len(bidder_data)
 
-    
-    # Create mapping from bidder_num_fox to index (0-based) for matching matrix
     bidder_num_to_index = {
         bidder_num: idx
         for idx, bidder_num in enumerate(raw_data["bidder_data"]['bidder_num_fox'].values)
     }
     
-    # Load bidder home BTAs if needed
     home_bta_i = None
     if hq_distance:
         # Load from bidder_data.csv which has home BTA for each bidder
@@ -309,13 +237,11 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
             for bidder_num in raw_data["bidder_data"]['bidder_num_fox'].values
         ])
      
-    # Process weights and capacities
     weights, capacities = process_weights_capacities(
         raw_data["bidder_data"],
         raw_data["bta_data"]
     )
     
-    # Generate matching matrix (using filtered bidder indices)
     matching = generate_matching_matrix(
         raw_data["bta_data"],
         len(capacities),
@@ -355,7 +281,6 @@ def main(delta: int = 4, winners_only: bool = False, hq_distance: bool = False):
     )
     
     return input_data
-
 
 if __name__ == "__main__":
     args = parse_args()
