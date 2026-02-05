@@ -1,7 +1,8 @@
 #!/bin/env python
-import sys, yaml
+import sys, os, csv, json, yaml
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 from mpi4py import MPI
 
 BASE_DIR = Path(__file__).parent
@@ -19,6 +20,8 @@ rank = comm.Get_rank()
 config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 app = config.get("application", {})
 DELTA, WINNERS_ONLY, HQ_DISTANCE = app.get("delta"), app.get("winners_only"), app.get("hq_distance")
+CONTINENTAL_ONLY = app.get("continental_only", False)
+INCLUDE_ADJACENCY = app.get("adjacency", False)
 ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
@@ -26,8 +29,13 @@ bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
 
 if rank == 0:
-    input_data = prepare_data_main(delta=DELTA, winners_only=WINNERS_ONLY, hq_distance=HQ_DISTANCE)
-    print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
+    input_data = prepare_data_main(
+        delta=DELTA,
+        winners_only=WINNERS_ONLY,
+        hq_distance=HQ_DISTANCE,
+        continental_only=CONTINENTAL_ONLY,
+        include_adjacency=INCLUDE_ADJACENCY,
+    )
 else:
     input_data = None
 
@@ -51,20 +59,34 @@ result = bc.row_generation.solve(
     verbose=True
 )
 
-# if rank == 0:
-#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-#     result.save_npy(OUTPUT_DIR / "theta.npy")
-#     result.export_csv(
-#         OUTPUT_DIR / "theta_hat.csv",
-#         metadata={"delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-#                   "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-#                   "n_simulations": bc.n_simulations, "num_mpi": comm.Get_size()},
-#         feature_names=feature_names,
-#     )
-#     json.dump({
-#         "delta": DELTA, "winners_only": WINNERS_ONLY, "hq_distance": HQ_DISTANCE,
-#         "n_features": bc.n_features, "feature_names": feature_names,
-#         "timestamp": datetime.now().isoformat(timespec="seconds"),
-#         "converged": result.converged, "num_iterations": result.num_iterations,
-#     }, open(OUTPUT_DIR / "theta_metadata.json", "w"), indent=2)
-#     print(result.summary())
+if rank == 0 and app.get("save_results", True):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    row = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
+        "delta": DELTA,
+        "winners_only": WINNERS_ONLY,
+        "hq_distance": HQ_DISTANCE,
+        "error_seed": ERROR_SEED,
+        "n_obs": bc.n_obs,
+        "n_items": bc.n_items,
+        "n_features": bc.n_features,
+        "n_simulations": bc.n_simulations,
+        "num_mpi": comm.Get_size(),
+        "converged": result.converged,
+        "num_iterations": result.num_iterations,
+        "total_time": result.total_time,
+        "final_objective": result.final_objective,
+        "n_constraints": result.n_constraints,
+        "final_reduced_cost": result.final_reduced_cost,
+        "final_n_violations": result.final_n_violations,
+        "theta_hat": json.dumps(result.theta_hat.tolist()),
+    }
+    csv_path = OUTPUT_DIR / "point_estimate_runs.csv"
+    fieldnames = list(row.keys())
+    write_header = not csv_path.exists()
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)

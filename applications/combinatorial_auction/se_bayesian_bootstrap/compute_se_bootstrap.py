@@ -1,7 +1,8 @@
 #!/bin/env python
-import sys, os, csv, yaml
+import sys, os, csv, json, yaml
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 from mpi4py import MPI
 
 BASE_DIR = Path(__file__).parent
@@ -21,23 +22,29 @@ config = yaml.safe_load(open(BASE_DIR /  "config.yaml"))
 app = config.get("application", {})
 boot = config.get("bootstrap", {})
 DELTA = app.get("delta", 4)
+WINNERS_ONLY = app.get("winners_only", False)
+HQ_DISTANCE = app.get("hq_distance", False)
+CONTINENTAL_ONLY = app.get("continental_only", False)
+INCLUDE_ADJACENCY = app.get("adjacency", False)
 NUM_BOOTSTRAP, SEED = boot.get("num_samples", 100), boot.get("seed", 1995)
 ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 
-bc = BundleChoice()
-bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
-
 if rank == 0:
     input_data = prepare_data_main(
         delta=DELTA,
-        winners_only=app.get("winners_only", False),
-        hq_distance=app.get("hq_distance", False)
+        winners_only=WINNERS_ONLY,
+        hq_distance=HQ_DISTANCE,
+        continental_only=CONTINENTAL_ONLY,
+        include_adjacency=INCLUDE_ADJACENCY,
     )
 else:
     input_data = None
 
+
+bc = BundleChoice()
+bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
@@ -80,28 +87,36 @@ se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP,
 
 
 
-# if rank == 0 and se_result is not None:
-#     theta_point = theta_hat
-    
-#     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-#     np.savez(OUTPUT_DIR / "se_bootstrap.npz", mean=se_result.mean, se=se_result.se, 
-#              ci_lower=se_result.ci_lower, ci_upper=se_result.ci_upper)
-    
-#     row = {"timestamp": datetime.now().isoformat(timespec="seconds"), "delta": DELTA,
-#            "winners_only": app.get("winners_only"), "hq_distance": app.get("hq_distance"),
-#            "n_obs": bc.n_obs, "n_items": bc.n_items, "n_features": bc.n_features,
-#            "num_bootstrap": NUM_BOOTSTRAP, "seed": SEED,
-#            "converged": result.converged, "num_iterations": result.num_iterations}
-   
-    
-#     csv_path = OUTPUT_DIR / "se_bootstrap.csv"
-#     write_header = not csv_path.exists()
-#     with open(csv_path, "a", newline="") as f:
-#         writer = csv.DictWriter(f, fieldnames=row.keys())
-#         if write_header:
-#             writer.writeheader()
-#         writer.writerow(row)
-    
-#     print("\nResults:")
-
-comm.Barrier()
+if rank == 0 and se_result is not None and app.get("save_results", True):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    row = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
+        "delta": DELTA,
+        "winners_only": app.get("winners_only"),
+        "hq_distance": app.get("hq_distance"),
+        "error_seed": ERROR_SEED,
+        "n_obs": bc.n_obs,
+        "n_items": bc.n_items,
+        "n_features": bc.n_features,
+        "num_bootstrap": NUM_BOOTSTRAP,
+        "bootstrap_seed": SEED,
+        "n_samples": se_result.n_samples,
+        "confidence": se_result.confidence,
+        "pop_dominates_travel": config.get("constraints", {}).get("pop_dominates_travel"),
+        "mean_se": float(np.mean(se_result.se)),
+        "max_se": float(np.max(se_result.se)),
+        "theta_mean": json.dumps(se_result.mean.tolist()),
+        "se": json.dumps(se_result.se.tolist()),
+        "ci_lower": json.dumps(se_result.ci_lower.tolist()),
+        "ci_upper": json.dumps(se_result.ci_upper.tolist()),
+        "t_stats": json.dumps(se_result.t_stats.tolist()),
+    }
+    csv_path = OUTPUT_DIR / "se_bootstrap_runs.csv"
+    fieldnames = list(row.keys())
+    write_header = not csv_path.exists()
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
