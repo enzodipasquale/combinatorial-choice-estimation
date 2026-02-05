@@ -142,19 +142,33 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
         delta=delta,
     )
     
-    if winners_only:
-        winner_indices = np.where(matching.sum(axis=1) > 0)[0]
-        capacity = capacity[winner_indices]
-        matching = matching[winner_indices, :]
-        modular_features = modular_features[winner_indices, :, :]
+
 
     if continental_only:
         continental_ids = np.where(~raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
+        non_continental_ids = np.where(raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
+
+        # Filter bidders
+        matching_non_continental = matching[:,non_continental_ids]
+        bidders_to_keep = np.where((matching.sum(1) -matching_non_continental.sum(1) > 0) | (matching.sum(1) == 0))[0]
+
+        #Filter BTAs
         pop = pop[continental_ids]
         matching = matching[:,continental_ids]
         modular_features = modular_features[:,continental_ids,:]
         quadratic_features = quadratic_features[continental_ids][:,continental_ids]
         weight = weight[continental_ids]
+
+        # Filter Bidders
+        capacity = capacity[bidders_to_keep]
+        matching = matching[bidders_to_keep, :]
+        modular_features = modular_features[bidders_to_keep, :, :]
+
+    if winners_only:
+        winner_indices = np.where(matching.sum(axis=1) > 0)[0]
+        capacity = capacity[winner_indices]
+        matching = matching[winner_indices, :]
+        modular_features = modular_features[winner_indices, :, :]
 
     n_items = weight.shape[0]
     input_data = {
@@ -169,11 +183,12 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
             "weight": weight,
         }
     }
-    print(n_items)
+
     print(modular_features.shape)
     print(capacity.shape)
     print(matching.shape)
     print(quadratic_features.shape)
+    print(weight.shape)
 
     return input_data
 
