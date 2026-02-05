@@ -33,9 +33,9 @@ class OraclesManager:
             test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.n_items), dtype=bool)
             ids = np.arange(self.data_manager.num_local_agent)
             if oracle.__code__.co_argcount == 2:
-                test_features = oracle(ids, test_bundles)
+                test_features = oracle(test_bundles, ids)
             else: 
-                test_features = oracle(ids, test_bundles, self.data_manager.local_data)
+                test_features = oracle(test_bundles, ids, self.data_manager.local_data)
             assert test_features.shape == (self.data_manager.num_local_agent, 
                                             self.dimensions_cfg.n_features)
             return True
@@ -103,7 +103,7 @@ class OraclesManager:
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
             self._local_modular_errors = self._local_modular_errors @ L
-        self._error_oracle = lambda bundles, ids: (self._local_modular_errors * bundles).sum(-1)
+        self._error_oracle = lambda bundles, ids: (self._local_modular_errors[ids] * bundles).sum(-1)
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle
