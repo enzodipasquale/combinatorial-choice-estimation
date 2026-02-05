@@ -264,12 +264,12 @@ class RowGenerationManager(BaseEstimationManager):
         
         if iteration % 80 == 0:
             param_width = len(param_indices) * 11 - 1
-            header1 = (f"{'Iter':>4} | {'Reduced':^12} | {'Pricing':^11} | "
-                      f"{'Master':^10} | {'#Viol':^5} | {'Objective':^13} | "
+            header1 = (f"{'Iter':>4} | {'Reduced':^12} | {'#Viol':^5} | {'Pricing':^11} | "
+                      f"{'Master':^10} | {'Objective':^13} | "
                       f"{'Constr':>6} | {f'Parameters':^{param_width}}")
             param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
-            header2 = (f"{'':>4} | {'Cost':^12} | {'(s)':^11} | "
-                      f"{'(s)':^10} | {'':>5} | {'Value':^13} | "
+            header2 = (f"{'':>4} | {'Cost':^12} | {'':^5} | {'(s)':^11} | "
+                      f"{'(s)':^10} | {'Value':^13} | "
                       f"{'':>6} | {param_label_row}")
             logger.info(header1)
             logger.info(header2)
@@ -277,9 +277,9 @@ class RowGenerationManager(BaseEstimationManager):
         
         param_vals = ' '.join(format_number(self.theta_iter[i], width=10, precision=5) for i in param_indices)
         row = (f"{iteration:>4} | {format_number(info['reduced_cost'], width=12, precision=6)} | "
+               f"{info['n_violations']:>5} | "
                f"{format_number(info['pricing_time'], width=10, precision=3)}s | "
                f"{format_number(info['master_time'], width=9, precision=3)}s | "
-               f"{info['n_violations']:>5} | "
                f"{format_number(info['objective'], width=13, precision=5)} | "
                f"{info['n_constraints']:>6} | {param_vals}")
         logger.info(row)
