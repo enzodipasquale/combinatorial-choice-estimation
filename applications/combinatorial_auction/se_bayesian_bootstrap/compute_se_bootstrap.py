@@ -36,8 +36,6 @@ if rank == 0:
         delta=DELTA,
         winners_only=WINNERS_ONLY,
         hq_distance=HQ_DISTANCE,
-        continental_only=CONTINENTAL_ONLY,
-        include_adjacency=INCLUDE_ADJACENCY,
     )
 else:
     input_data = None
