@@ -25,18 +25,26 @@ INCLUDE_ADJACENCY = app.get("adjacency", False)
 ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
+
+input_data = prepare_data_main(
+    delta=DELTA,
+    winners_only=WINNERS_ONLY,
+    hq_distance=HQ_DISTANCE,
+)
+
+n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
+n_quad_item = input_data["item_data"]["quadratic"].shape[-1]
+n_mod_agent = input_data["id_data"]["modular"].shape[-1]
+n_mod_item = input_data["item_data"]["modular"].shape[-1]
+n_features = n_quad_item + n_mod_agent + n_mod_item
+config["dimensions"]["n_obs"] = n_obs
+config["dimensions"]["n_items"] = n_items   
+config["dimensions"]["n_features"] = n_features   
+
+print(n_obs, n_features )
+
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
-
-if rank == 0:
-    input_data = prepare_data_main(
-        delta=DELTA,
-        winners_only=WINNERS_ONLY,
-        hq_distance=HQ_DISTANCE,
-    )
-else:
-    input_data = None
-
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)

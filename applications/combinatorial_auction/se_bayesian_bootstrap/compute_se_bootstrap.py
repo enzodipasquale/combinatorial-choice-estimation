@@ -31,15 +31,20 @@ ERROR_SEED = app.get("error_seed", 1995)
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 
-if rank == 0:
-    input_data = prepare_data_main(
-        delta=DELTA,
-        winners_only=WINNERS_ONLY,
-        hq_distance=HQ_DISTANCE,
-    )
-else:
-    input_data = None
+input_data = prepare_data_main(
+    delta=DELTA,
+    winners_only=WINNERS_ONLY,
+    hq_distance=HQ_DISTANCE,
+)
 
+n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
+n_quad_item = input_data["item_data"]["quadratic"].shape[-1]
+n_mod_agent = input_data["id_data"]["modular"].shape[-1]
+n_mod_item = input_data["item_data"]["modular"].shape[-1]
+n_features = n_quad_item + n_mod_agent + n_mod_item
+config["dimensions"]["n_obs"] = n_obs
+config["dimensions"]["n_items"] = n_items   
+config["dimensions"]["n_features"] = n_features   
 
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
