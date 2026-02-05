@@ -3,10 +3,8 @@ from ..subproblem_base import SerialSubproblemBase
 
 class GreedySubproblem(SerialSubproblemBase):
     find_best_item = None
-    modular_errors = None
 
     def initialize_single_pb(self, local_id):
-        self.modular_errors = self.oracles_manager._local_modular_errors[local_id]
         return None
 
     def solve_single_pb(self, local_id, theta, pb=None):
@@ -17,7 +15,7 @@ class GreedySubproblem(SerialSubproblemBase):
     def _naive_greedy_solve(self, local_id, theta):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
-        base_utility = 0
+        base_utility = self.oracles_manager.utility_oracle_individual(bundle, theta, local_id)
 
         while np.any(items_left):
             best_item, best_utility = None, base_utility
@@ -31,16 +29,19 @@ class GreedySubproblem(SerialSubproblemBase):
                 break
             bundle[best_item] = True
             items_left[best_item] = False
+            base_utility = best_utility
         return bundle
 
     def _greedy_with_find_best_item(self, local_id, theta):
+        modular_error = self.oracles_manager._local_modular_errors[local_id]
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0
         while np.any(items_left):
-            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, self.modular_errors)
+            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, best_val, self.data_manager.local_data, modular_error)
             if val <= best_val:
                 break
             bundle[best_item] = True
             items_left[best_item] = False
+            best_val = val 
         return bundle

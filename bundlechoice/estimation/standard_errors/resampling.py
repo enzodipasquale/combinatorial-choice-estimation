@@ -101,7 +101,8 @@ class ResamplingMixin:
             'n_constraints': self.result.n_constraints,
             'pricing_time': total_pricing_time,
             'master_time': total_master_time,
-            'reduced_cost': self.result.final_reduced_cost
+            'reduced_cost': self.result.final_reduced_cost,
+            'n_violations': self.result.final_n_violations 
         })
 
     def _log_bootstrap_iteration(self, bootstrap_iter, theta):
@@ -118,10 +119,10 @@ class ResamplingMixin:
         if bootstrap_iter % 100 == 0:
             param_width = len(param_indices) * 11 - 1
             header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
-                      f"{'#Constr':>7} | {'Reduced':^12} | {'Objective':^12} | {f'Parameters':^{param_width}}")
+                      f"{'#Constr':>7} | {'Reduced':^12} | {'#Viol':^5} | {'Objective':^12} | {f'Parameters':^{param_width}}")
             param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
             header2 = (f"{'':>5} | {'(s)':^9} | {'(s)':^9} | {'(s)':^9} | {'Iters':^5} | "
-                      f"{'':>7} | {'Cost':^12} | {'Value':^12} | {param_label_row}")
+                      f"{'':>7} | {'Cost':^12} | {'':^5} | {'Value':^12} | {param_label_row}")
             logger.info("-" * len(header1))
             logger.info(header1)
             logger.info(header2)
@@ -136,6 +137,7 @@ class ResamplingMixin:
                f"{info['iterations']:>5} | "
                f"{info.get('n_constraints', 0):>7} | "
                f"{reduced_cost_str} | "
+               f"{info.get('n_violations', 0):>5} | "
                f"{format_number(info['objective'], width=12, precision=5)} | {param_vals}")
         logger.info(row)
 
@@ -182,5 +184,6 @@ class ResamplingMixin:
             ci_lower=ci_lower,
             ci_upper=ci_upper,
             confidence=confidence,
+            samples=theta_boots,
         )
 
