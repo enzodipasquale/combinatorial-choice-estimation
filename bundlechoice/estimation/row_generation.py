@@ -29,13 +29,13 @@ class RowGenerationManager(BaseEstimationManager):
 
     
     def _initialize_master_problem(self):
-        _theta_obj_coef = self._compute_theta_obj_coef(self.local_obs_weights)
-        u_obj_coef = self._compute_u_obj_weights(self.local_obs_weights)
+        theta_obj_coef = self.compute_theta_obj_coef()
+        u_obj_coef = self.compute_u_obj_weights()
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
             theta = self.master_model.addMVar(self.dim.n_features, 
-                                                obj= _theta_obj_coef, 
+                                                obj= theta_obj_coef, 
                                                 lb= lb,
                                                 ub= ub, 
                                                 name= 'parameter')
@@ -95,17 +95,16 @@ class RowGenerationManager(BaseEstimationManager):
         if initialize_master:
             self._initialize_master_problem() 
 
-        elif self.has_master_vars:
-            if local_obs_weights is not None:
-                self.update_objective_for_weights(local_obs_weights)
-            if self.comm_manager.is_root():
-                self.master_model.optimize()
-        else:
-            raise RuntimeError('initialize_master was set to False and no master_variables values where found.')
+        if local_obs_weights is not None:
+            self.update_objective_for_weights(local_obs_weights)
+        if self.comm_manager.is_root():
+            self.master_model.optimize()
+
         if initialization_callback is not None:
             initialization_callback(self)
 
         self._Bcast_theta_and_Scatterv_u_vals()
+
         if self.verbose:
             logger.info(" " )
             logger.info(" ROW GENERATION")
@@ -211,15 +210,14 @@ class RowGenerationManager(BaseEstimationManager):
         return model
 
     def update_objective_for_weights(self, local_obs_weights):
-        _theta_obj_coef = self._compute_theta_obj_coef(local_obs_weights)
-        _u_obj_weights = self._compute_u_obj_weights(local_obs_weights)
+        theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
+        u_obj_weights = self.compute_u_obj_weights(local_obs_weights)
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        theta.Obj = _theta_obj_coef
-        u.Obj = _u_obj_weights
+        theta.Obj = theta_obj_coef
+        u.Obj = u_obj_weights
         self.master_model.update()
-        self.master_model.reset(0)
 
     def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
         if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
