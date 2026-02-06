@@ -70,7 +70,7 @@ class ResamplingMixin:
             if self.comm_manager.is_root():
                 theta_boots.append(row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b)
-            self._log_bootstrap_iteration(b, row_gen.theta_iter)
+            self._log_bootstrap_iteration(b)
             if bootstrap_callback is not None:
                 bootstrap_callback(self, row_gen)
         
@@ -105,10 +105,8 @@ class ResamplingMixin:
             'n_violations': self.result.final_n_violations 
         })
 
-    def _log_bootstrap_iteration(self, bootstrap_iter, theta):
+    def _log_bootstrap_iteration(self, bootstrap_iter):
         if not self.comm_manager.is_root() or not self.verbose:
-            return
-        if bootstrap_iter not in self.bootstrap_history:
             return
         info = self.bootstrap_history[bootstrap_iter]    
         if self.config.row_generation.parameters_to_log is not None:
@@ -127,7 +125,7 @@ class ResamplingMixin:
             logger.info(header1)
             logger.info(header2)
             logger.info("-" * len(header1))
-        
+        theta = self.result.theta_hat
         param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
         time_str = f"{info['time']:>9.3f}"
         pricing_time_str = f"{info.get('pricing_time', 0.0):>9.3f}"
