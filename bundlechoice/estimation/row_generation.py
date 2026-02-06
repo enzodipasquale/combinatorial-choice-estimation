@@ -94,7 +94,6 @@ class RowGenerationManager(BaseEstimationManager):
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
             self._initialize_master_problem() 
-            self._Bcast_theta_and_Scatterv_u_vals()
 
         elif self.has_master_vars:
             if local_obs_weights is not None:
@@ -106,7 +105,7 @@ class RowGenerationManager(BaseEstimationManager):
         if initialization_callback is not None:
             initialization_callback(self)
 
-        # self._Bcast_theta_and_Scatterv_u_vals()
+        self._Bcast_theta_and_Scatterv_u_vals()
         if self.verbose:
             logger.info(" " )
             logger.info(" ROW GENERATION")
