@@ -28,9 +28,9 @@ class RowGenerationManager(BaseEstimationManager):
         return self.comm_manager.bcast(self.master_model is not None)
 
     
-    def _initialize_master_problem(self):
-        theta_obj_coef = self.compute_theta_obj_coef()
-        u_obj_coef = self.compute_u_obj_weights()
+    def _initialize_master_problem(self, local_obs_weights):
+        theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
+        u_obj_coef = self.compute_u_obj_weights(local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
@@ -93,10 +93,10 @@ class RowGenerationManager(BaseEstimationManager):
 
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
         if initialize_master:
-            self._initialize_master_problem() 
-
-        if local_obs_weights is not None:
+            self._initialize_master_problem(local_obs_weights) 
+        elif local_obs_weights is not None:
             self.update_objective_for_weights(local_obs_weights)
+
         if self.comm_manager.is_root():
             self.master_model.optimize()
 
