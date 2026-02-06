@@ -58,7 +58,7 @@ class ResamplingMixin:
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
             initialize_master = True if b == 0 else False
-            initialize_subproblems = True if (b == 0 and not self.subproblem_manager._subproblems_are_initialized) else False
+            initialize_subproblems = True if b == 0  else False
             self.result = row_gen.solve(local_obs_weights= local_weights[:, b], 
                                         verbose= False, 
                                         initialize_subproblems= initialize_subproblems, 
