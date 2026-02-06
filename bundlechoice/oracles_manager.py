@@ -88,9 +88,12 @@ class OraclesManager:
 
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None, sigma = 1):
-        np.random.seed(seed + self.comm_manager.rank)
-        self._local_modular_errors = np.random.normal(0, sigma, (self.data_manager.num_local_agent, 
-                                                                self.dimensions_cfg.n_items))
+        n_local = self.data_manager.num_local_agent
+        n_items = self.dimensions_cfg.n_items
+        self._local_modular_errors = np.empty((n_local, n_items))
+        for i, global_id in enumerate(self.data_manager.agent_ids):
+            np.random.seed((np.abs(seed)+1) * (global_id + 1))
+            self._local_modular_errors[i] = np.random.normal(0, sigma, n_items)
         if items_correlation_matrix is not None:
             L = np.linalg.cholesky(items_correlation_matrix)
             self._local_modular_errors = self._local_modular_errors @ L
