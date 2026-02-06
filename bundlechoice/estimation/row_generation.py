@@ -28,9 +28,9 @@ class RowGenerationManager(BaseEstimationManager):
         return self.comm_manager.bcast(self.master_model is not None)
 
     
-    def _initialize_master_problem(self, local_obs_weights):
-        theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
-        u_obj_coef = self.compute_u_obj_weights(local_obs_weights)
+    def _initialize_master_problem(self):
+        theta_obj_coef = self.compute_theta_obj_coef(self.local_obs_weights)
+        u_obj_coef = self.compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
@@ -92,13 +92,18 @@ class RowGenerationManager(BaseEstimationManager):
             self._log_instance_summary()
 
         self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
-        if initialize_master:
-            self._initialize_master_problem(local_obs_weights) 
-        elif local_obs_weights is not None:
-            self.update_objective_for_weights(local_obs_weights)
 
-        if self.comm_manager.is_root():
-            self.master_model.optimize()
+        if local_obs_weights is None:
+            self.local_obs_weights = np.ones(self.data_manager.num_local_agent)
+        else:
+            self.local_obs_weights= local_obs_weights
+
+        if initialize_master:
+            self._initialize_master_problem() 
+        else:
+            self.update_objective_for_weights()
+            if self.comm_manager.is_root():
+                self.master_model.optimize()
 
         if initialization_callback is not None:
             initialization_callback(self)
@@ -147,8 +152,9 @@ class RowGenerationManager(BaseEstimationManager):
         u_local = features_local @ self.theta_iter + errors_local
         local_reduced_costs = u_local - self.u_iter_local
         
-        local_max_rc = local_reduced_costs.max() 
-        local_violations = np.where(local_reduced_costs > self.cfg.tolerance)[0]
+        weighted_reduced_costs = self.local_obs_weights * local_reduced_costs
+        local_max_rc = weighted_reduced_costs.max()
+        local_violations = np.where(weighted_reduced_costs > self.cfg.tolerance)[0]
         local_meta = np.array([local_max_rc, len(local_violations)], dtype=np.float64)
         all_meta = self.comm_manager.Allgather(local_meta).reshape(-1, 2)
         
@@ -209,9 +215,9 @@ class RowGenerationManager(BaseEstimationManager):
                     model.setParam(k, v)
         return model
 
-    def update_objective_for_weights(self, local_obs_weights):
-        theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
-        u_obj_weights = self.compute_u_obj_weights(local_obs_weights)
+    def update_objective_for_weights(self):
+        theta_obj_coef = self.compute_theta_obj_coef(self.local_obs_weights)
+        u_obj_weights = self.compute_u_obj_weights(self.local_obs_weights)
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
