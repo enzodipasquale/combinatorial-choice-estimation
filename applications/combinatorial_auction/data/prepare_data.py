@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 WEIGHT_ROUNDING_TICK = 1000
-POP_CENTROID_PERCENTILE = 90
+POP_CENTROID_PERCENTILE = 0
 
 NON_CONTINENTAL_MARKETS = (
     "Anchorag", "Fairbank", "Juneau,",           # Alaska
@@ -21,7 +21,7 @@ NON_CONTINENTAL_MARKETS = (
     "Guam", "US Virgi", "American", "Northern",  # territories
 )
 
-def load_raw_data():
+def load_raw_data(continental_only):
     
     # BTA data (items/markets)
     bta_data = pd.read_csv(DATA_DIR / "btadata_2004_03_12_1.csv")
@@ -29,17 +29,41 @@ def load_raw_data():
     # Bidder data (agents)
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
     form175 = pd.read_csv(DATA_DIR / "fccform175nomiss.csv", header=None)
+
+
     bidder_data.loc[bidder_data["bidder_num_fox"] == 67, "pops_eligible"] = form175.loc[form175[0] == 67, 3].item()
     bidder_data = bidder_data[bidder_data["bidder_num"] != 9999]
-   
+
+    # DCR/DCC: swap bidder_num_fox so winner 190 gets 89M, winner 234 gets 11M
+    mask_190 = bidder_data["bidder_num_fox"] == 190
+    mask_234 = bidder_data["bidder_num_fox"] == 234
+    print("Swapping bidder_num_fox 190 ↔ 234:")
+    print(bidder_data.loc[mask_190])
+    print(bidder_data.loc[mask_234])
+    bidder_data.loc[mask_190, "bidder_num_fox"] = 234
+    bidder_data.loc[mask_234, "bidder_num_fox"] = 190
+
     # Quadratic BTA data
     bta_adjacency = pd.read_csv(DATA_DIR / "btamatrix_merged.csv", header=None)
     bta_adjacency = bta_adjacency.drop(bta_adjacency.columns[0], axis=1).values.astype(float)
-    
     geo_distance = pd.read_csv(DATA_DIR / "distancesmat_dio_perl_fixed.dat", delimiter=' ',header=None)
     geo_distance = geo_distance.drop(geo_distance.columns[-1], axis=1).values.astype(float)
     travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None).values.astype(float)
     air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None).values.astype(float)
+
+    if continental_only:
+        continental_ids = np.where(~bta_data['market'].isin(NON_CONTINENTAL_MARKETS))[0]
+        non_continental_ids = np.where(bta_data['market'].isin(NON_CONTINENTAL_MARKETS))[0]
+        matching_full = generate_matching_matrix(bidder_data, bta_data)
+        bidders_to_keep = np.where((matching_full.sum(1) - matching_full[:, non_continental_ids].sum(1) > 0)
+                                    | (matching_full.sum(1) == 0))[0]
+        bidder_data = bidder_data.iloc[bidders_to_keep].reset_index(drop=True)
+        bta_data = bta_data.iloc[continental_ids].reset_index(drop=True)
+        bta_adjacency = bta_adjacency[continental_ids][:, continental_ids]
+        geo_distance = geo_distance[continental_ids][:, continental_ids]
+        travel_survey = travel_survey[continental_ids][:, continental_ids]
+        air_travel = air_travel[continental_ids][:, continental_ids]
+
     
     return {
         "bta_data": bta_data,
@@ -50,17 +74,15 @@ def load_raw_data():
         "air_travel": air_travel,
     }
 
-def process_weight_capacity(bidder_data, bta_data, continental_ids):
+def process_weight_capacity(bidder_data, bta_data):
     elig = bidder_data['pops_eligible'].to_numpy()
     pop = bta_data['pop90'].to_numpy()
     
-    weight = np.round(pop / WEIGHT_ROUNDING_TICK).astype(int)
-    capacity = np.round(elig / WEIGHT_ROUNDING_TICK).astype(int)
+    weight = np.round(pop // WEIGHT_ROUNDING_TICK).astype(int)
+    capacity = np.round(elig // WEIGHT_ROUNDING_TICK).astype(int)
     
-    if continental_ids is None:
-        pop_sum = pop.sum()
-    else:
-        pop_sum = pop[continental_ids].sum()
+    
+    pop_sum = pop.sum()
     pop = pop/pop_sum
     elig = elig/pop_sum
 
@@ -85,7 +107,7 @@ def build_pop_centroid_features(pop, geo_distance, delta=4):
 
 
 def normalize_interaction_matrix(matrix, pop):
-    # matrix = matrix.copy() + 1e-15
+    # matrix = matrix.copy() + 1e-10
     np.fill_diagonal(matrix, 0)
     outflow = matrix.sum(1)
     mask = outflow > 0
@@ -125,18 +147,12 @@ def build_modular_features(elig, pop, home_bta_i=None, geo_distance=None, includ
 
 def main(delta=4, winners_only=False, hq_distance=False, continental_only = False):
 
-    # Load raw data
-    raw_data = load_raw_data()
+    raw_data = load_raw_data(continental_only)
     home_bta_i = None
-    if continental_only:
-        continental_ids = np.where(~raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
-    else: 
-        continental_ids = None
 
     weight, capacity, pop, elig,  = process_weight_capacity(
         raw_data["bidder_data"],
-        raw_data["bta_data"],
-        continental_ids
+        raw_data["bta_data"]
     )
     
     matching = generate_matching_matrix(
@@ -161,27 +177,6 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
     
 
 
-    if continental_only:
-        continental_ids = np.where(~raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
-        non_continental_ids = np.where(raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
-
-        # Filter bidders
-        matching_non_continental = matching[:,non_continental_ids]
-        bidders_to_keep = np.where((matching.sum(1) -matching_non_continental.sum(1) > 0) | (matching.sum(1) == 0))[0]
-
-        #Filter BTAs
-        pop = pop[continental_ids]
-        matching = matching[:,continental_ids]
-        modular_features = modular_features[:,continental_ids,:]
-        quadratic_features = quadratic_features[continental_ids][:,continental_ids]
-        weight = weight[continental_ids]
-
-        # Filter Bidders
-        capacity = capacity[bidders_to_keep]
-        elig = elig[bidders_to_keep]
-        matching = matching[bidders_to_keep, :]
-        modular_features = modular_features[bidders_to_keep, :, :]
-
     if winners_only:
         winner_indices = np.where(matching.sum(axis=1) > 0)[0]
         capacity = capacity[winner_indices]
@@ -203,11 +198,11 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
         }
     }
    
-    print_descriptive_stats(modular_features, matching, quadratic_features, capacity, elig, weight, pop)
+    print_descriptive_stats(raw_data, modular_features, matching, quadratic_features, capacity, elig, weight, pop)
     return input_data
 
 
-def print_descriptive_stats(modular_features, matching, quadratic_features, capacity, elig, weight, pop):
+def print_descriptive_stats(raw_data, modular_features, matching, quadratic_features, capacity, elig, weight, pop):
     print(" Sizes")
     print(modular_features.shape)
     print(capacity.shape)
@@ -241,6 +236,13 @@ def print_descriptive_stats(modular_features, matching, quadratic_features, capa
     print(quad_stats.std(0))
     print(quad_stats.min(0))
     print(quad_stats.max(0))
+    print(quadratic_features.sum((0,1)))
+
+    print(' Other')
+    violations = matching @ weight - capacity
+    viold_id = np.where(violations>0)
+    print(viold_id)
+    print(violations[viold_id])
     
 
 
