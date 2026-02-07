@@ -28,7 +28,9 @@ def load_raw_data():
    
     # Bidder data (agents)
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
-    bidder_data = bidder_data[bidder_data["pops_eligible"].notna()].reset_index(drop=True)
+    form175 = pd.read_csv(DATA_DIR / "fccform175nomiss.csv", header=None)
+    bidder_data.loc[bidder_data["bidder_num_fox"] == 67, "pops_eligible"] = form175.loc[form175[0] == 67, 3].item()
+    bidder_data = bidder_data[bidder_data["bidder_num"] != 9999]
    
     # Quadratic BTA data
     bta_adjacency = pd.read_csv(DATA_DIR / "btamatrix_merged.csv", header=None)
@@ -48,14 +50,21 @@ def load_raw_data():
         "air_travel": air_travel,
     }
 
-def process_weight_capacity(bidder_data, bta_data):
-    eligibility = bidder_data['pops_eligible'].to_numpy()
+def process_weight_capacity(bidder_data, bta_data, continental_ids):
+    elig = bidder_data['pops_eligible'].to_numpy()
     pop = bta_data['pop90'].to_numpy()
     
     weight = np.round(pop / WEIGHT_ROUNDING_TICK).astype(int)
-    capacity = np.round(eligibility / WEIGHT_ROUNDING_TICK).astype(int)
+    capacity = np.round(elig / WEIGHT_ROUNDING_TICK).astype(int)
     
-    return weight, capacity, pop, eligibility, 
+    if continental_ids is None:
+        pop_sum = pop.sum()
+    else:
+        pop_sum = pop[continental_ids].sum()
+    pop = pop/pop_sum
+    elig = elig/pop_sum
+
+    return weight, capacity, pop, elig 
 
 def generate_matching_matrix(bidder_data, bta_data):
     n_items = len(bta_data)
@@ -81,7 +90,7 @@ def normalize_interaction_matrix(matrix, pop):
     outflow = matrix.sum(1)
     mask = outflow > 0
     matrix[mask] /= outflow[mask][:, None]
-    matrix *= pop[:, None] / pop[mask].sum()
+    matrix *= pop[:, None] 
     return matrix
 
 def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4):
@@ -104,11 +113,11 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     return quadratic_features
 
 
-def build_modular_features(eligibility, pop, home_bta_i=None, geo_distance=None, include_hq_distance=False):
+def build_modular_features(elig, pop, home_bta_i=None, geo_distance=None, include_hq_distance=False):
     modular_list = []
     
-    eligibility_times_pop = (eligibility[:, None] / pop.sum()) * (pop[None, :] / pop.sum())
-    modular_list.append(eligibility_times_pop)
+    elig_times_pop = elig[:, None] * pop[None, :] 
+    modular_list.append(elig_times_pop)
     modular_features = np.stack(modular_list, axis=2)
     
     return modular_features
@@ -119,10 +128,15 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
     # Load raw data
     raw_data = load_raw_data()
     home_bta_i = None
+    if continental_only:
+        continental_ids = np.where(~raw_data["bta_data"]['market'].isin(NON_CONTINENTAL_MARKETS))[0]
+    else: 
+        continental_ids = None
 
-    weight, capacity, pop, eligibility,  = process_weight_capacity(
+    weight, capacity, pop, elig,  = process_weight_capacity(
         raw_data["bidder_data"],
-        raw_data["bta_data"]
+        raw_data["bta_data"],
+        continental_ids
     )
     
     matching = generate_matching_matrix(
@@ -131,7 +145,7 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
     )
     
     modular_features = build_modular_features(
-        eligibility, 
+        elig, 
         pop,
         home_bta_i=home_bta_i,
         geo_distance=raw_data["geo_distance"],
@@ -164,12 +178,14 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
 
         # Filter Bidders
         capacity = capacity[bidders_to_keep]
+        elig = elig[bidders_to_keep]
         matching = matching[bidders_to_keep, :]
         modular_features = modular_features[bidders_to_keep, :, :]
 
     if winners_only:
         winner_indices = np.where(matching.sum(axis=1) > 0)[0]
         capacity = capacity[winner_indices]
+        elig = elig[winner_indices]
         matching = matching[winner_indices, :]
         modular_features = modular_features[winner_indices, :, :]
 
@@ -186,14 +202,47 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
             "weight": weight,
         }
     }
+   
+    print_descriptive_stats(modular_features, matching, quadratic_features, capacity, elig, weight, pop)
+    return input_data
 
+
+def print_descriptive_stats(modular_features, matching, quadratic_features, capacity, elig, weight, pop):
+    print(" Sizes")
     print(modular_features.shape)
     print(capacity.shape)
     print(matching.shape)
     print(quadratic_features.shape)
     print(weight.shape)
+    print(elig.shape)
+    print(pop.shape)
+    print(matching.sum())
+    
 
-    return input_data
+    winners = np.where(matching.sum(1)>0)[0]
+    m = matching[winners]
+
+    mean_pop = ((m @ pop )/ pop.sum()).mean()
+    std_pop = ((m @ pop )/ pop.sum()).std()
+    
+    modular_stats = (modular_features[winners] * m[:,:,None]).sum(1)
+
+    print(" ")
+    print(" Modular")
+    print(mean_pop, std_pop)
+    print(modular_stats.mean(), modular_stats.std())
+
+
+
+    quad_stats = np.einsum('ij,jlk,il->ik',m , quadratic_features , m)
+    print(" ")
+    print(" Quadratic")
+    print(quad_stats.mean(0))
+    print(quad_stats.std(0))
+    print(quad_stats.min(0))
+    print(quad_stats.max(0))
+    
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
