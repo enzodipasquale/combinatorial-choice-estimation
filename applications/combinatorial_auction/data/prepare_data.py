@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).parent  # data/
 DATA_DIR = BASE_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
 WEIGHT_ROUNDING_TICK = 1000
+POP_CENTROID_PERCENTILE = 90
 
 NON_CONTINENTAL_MARKETS = (
     "Anchorag", "Fairbank", "Juneau,",           # Alaska
@@ -87,8 +88,10 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     quadratic_list = []
     
     pop_centroid = build_pop_centroid_features(pop, geo_distance, delta=delta)
-    quadratic_pop_centroid = normalize_interaction_matrix(pop_centroid, pop)
-    quadratic_list.append(quadratic_pop_centroid)
+    pop_centroid = normalize_interaction_matrix(pop_centroid, pop)
+    percentile_val = np.percentile(pop_centroid, POP_CENTROID_PERCENTILE)
+    truncated_pop_centroid = np.where(pop_centroid > percentile_val, pop_centroid, 0)
+    quadratic_list.append(truncated_pop_centroid)
     
     quadratic_travel = normalize_interaction_matrix(travel_survey, pop)
     quadratic_list.append(quadratic_travel)
