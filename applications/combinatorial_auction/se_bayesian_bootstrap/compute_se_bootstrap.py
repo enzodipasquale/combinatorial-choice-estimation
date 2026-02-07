@@ -56,25 +56,20 @@ bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
 bc.subproblems.load_subproblem()
 
-
-if config.get("constraints", {}).get("pop_dominates_travel"):
-    def custom_constraint(row_gen_manager):
-        theta, u = row_gen_manager.master_variables
-        row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
-        row_gen_manager.master_model.update()
-    bc.config.row_generation.initialization_callback = custom_constraint
-
-callbacks = config.get("callbacks")
-
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
-
-def strip_master_constraints(boot, rowgen):
-    strip_cfg = callbacks.get("strip")
-    percentile = strip_cfg.get("percentile")
-    hard_threshold = strip_cfg.get("hard_threshold")
-    rowgen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
+callbacks = config.get("callbacks")
+def boot_callback(iter, boot):
+    if iter == 0 and boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
+        theta, _ = boot.row_gen.master_variables
+        boot.row_gen.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
+        boot.row_gen.master_model.update()
+    if iter > 0:
+        strip_cfg = callbacks.get("strip")
+        percentile = strip_cfg.get("percentile")
+        hard_threshold = strip_cfg.get("hard_threshold")
+        boot.row_gen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
 
 
 adaptive_cfg = callbacks.get("adaptive_timeout")
@@ -87,7 +82,7 @@ timeout_callback = adaptive_gurobi_timeout(
 se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
                                                                 seed=BOOT_SEED, 
                                                                 verbose=True,
-                                                                bootstrap_callback=strip_master_constraints,
+                                                                bootstrap_callback=boot_callback,
                                                                 row_gen_iteration_callback=timeout_callback,
                                                                 method= 'bayesian')
 
