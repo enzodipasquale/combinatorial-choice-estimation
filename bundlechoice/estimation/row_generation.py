@@ -224,6 +224,24 @@ class RowGenerationManager(BaseEstimationManager):
         u.Obj = u_obj_weights
         self.master_model.update()
 
+    def copy_master_model(self):
+        if not self.comm_manager.is_root() or self.master_model is None:
+            return None, None
+        
+        model = self.master_model.copy()
+        all_vars = model.getVars()
+        # Variables were added in order: theta (n_features), then u (n_agents)
+        theta = gp.MVar.fromlist(all_vars[:self.dim.n_features])
+        u = gp.MVar.fromlist(all_vars[self.dim.n_features:self.dim.n_features + self.dim.n_agents])
+        return model, (theta, u)
+
+    def install_master_model(self, model, variables):
+        if not self.comm_manager.is_root():
+            return
+        self.master_model = model
+        self.master_variables = variables
+        self.all_concatenated_constraints = None
+        
     def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
         if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
             return 0

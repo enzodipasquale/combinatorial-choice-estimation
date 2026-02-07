@@ -61,7 +61,7 @@ if rank == 0:
 
 callbacks = config.get("callbacks")
 def boot_callback(iter, boot):
-    if iter == 0 and boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
+    if boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
         theta, _ = boot.row_gen.master_variables
         boot.row_gen.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
         boot.row_gen.master_model.update()
