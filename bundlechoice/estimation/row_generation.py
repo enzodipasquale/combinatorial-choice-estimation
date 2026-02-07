@@ -90,9 +90,8 @@ class RowGenerationManager(BaseEstimationManager):
         self.verbose = verbose if verbose is not None else True
         if self.verbose:
             self._log_instance_summary()
-
-        self.subproblem_manager.initialize_subproblems() if initialize_subproblems else None  
-
+        if initialize_subproblems:
+            self.subproblem_manager.initialize_subproblems() 
         if local_obs_weights is None:
             self.local_obs_weights = np.ones(self.data_manager.num_local_agent)
         else:

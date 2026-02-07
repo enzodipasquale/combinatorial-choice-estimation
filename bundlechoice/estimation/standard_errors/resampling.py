@@ -39,7 +39,8 @@ class ResamplingMixin:
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
-        row_gen = self.row_generation_manager
+        self.row_gen = self.row_generation_manager
+        self.row_gen.subproblem_manager.initialize_subproblems() 
         t0 = time.perf_counter()
         if method == 'bayesian':
             weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
@@ -50,29 +51,31 @@ class ResamplingMixin:
                                                             row_counts=self.data_manager.agent_counts,
                                                             dtype = np.float64,
                                                             shape = (self.dim.n_agents, num_bootstrap))
+        self.row_gen.local_obs_weights = local_weights[:, 0]
+        self.row_gen._initialize_master_problem() 
+        
         if self.verbose:
-            row_gen._log_instance_summary()
+            self.row_gen._log_instance_summary()
             logger.info(" " )
             logger.info(" BAYESIAN BOOTSTRAP")
         
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
-            initialize_master = True if b == 0 else False
-            initialize_subproblems = True if b == 0  else False
-            self.result = row_gen.solve(local_obs_weights= local_weights[:, b], 
+            if bootstrap_callback is not None:
+                bootstrap_callback(b, self)
+            self.result = self.row_gen.solve(local_obs_weights= local_weights[:, b], 
                                         verbose= False, 
-                                        initialize_subproblems= initialize_subproblems, 
-                                        initialize_master= initialize_master,
+                                        initialize_subproblems= False, 
+                                        initialize_master= False,
                                         iteration_callback= row_gen_iteration_callback,
                                         initialization_callback= row_gen_initialization_callback)
             self.boot_time = time.perf_counter() - t_boot
             
             if self.comm_manager.is_root():
-                theta_boots.append(row_gen.master_variables[0].X.copy())
+                theta_boots.append(self.row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b)
-            if bootstrap_callback is not None:
-                bootstrap_callback(self, row_gen)
+            
         
         total_time = time.perf_counter() - t0
         if not self.comm_manager.is_root():
