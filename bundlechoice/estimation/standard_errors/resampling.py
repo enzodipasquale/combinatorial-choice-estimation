@@ -1,4 +1,5 @@
 import numpy as np
+import gurobipy as gp
 from .result import BayesianBootstrapResult
 from bundlechoice.utils import get_logger, format_number
 logger = get_logger(__name__)
@@ -29,7 +30,7 @@ class ResamplingMixin:
         return weights
 
 
-    def compute_bootstrap(self, num_bootstrap=100, 
+    def compute_bootstrap_(self, num_bootstrap=100, 
                                             seed=None, 
                                             verbose=False, 
                                             row_gen_iteration_callback = None,
@@ -84,6 +85,90 @@ class ResamplingMixin:
         stats_result = self.compute_bootstrap_stats(theta_boots)
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         
+        return stats_result
+
+
+
+    def compute_bootstrap(self, num_bootstrap=100, 
+                        seed=None, verbose=False, 
+                        row_gen_iteration_callback=None,
+                        row_gen_initialization_callback=None, 
+                        bootstrap_callback=None,
+                        method='bayesian'):
+        theta_boots = []
+        self.bootstrap_history = {}
+        self.verbose = verbose
+        self.row_gen = self.row_generation_manager
+        self.row_gen.subproblem_manager.initialize_subproblems() 
+        t0 = time.perf_counter()
+
+        # === 1. Point estimation with uniform weights ===
+        uniform_weights = np.ones(self.data_manager.num_local_agent)
+        self.point_result = self.row_gen.solve(
+            local_obs_weights=uniform_weights,
+            initialize_master=True,
+            initialize_subproblems=False,
+            iteration_callback=row_gen_iteration_callback,
+            initialization_callback=row_gen_initialization_callback,
+            verbose=verbose
+        )
+
+        # === 2. Snapshot the converged model (root only) ===
+        base_model, base_vars = self.row_gen.copy_master_model()
+
+        # === 3. Generate and scatter bootstrap weights ===
+        if method == 'bayesian':
+            weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
+        elif method == 'standard':
+            weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
+
+        local_weights = self.comm_manager.Scatterv_by_row(
+            weights, row_counts=self.data_manager.agent_counts,
+            dtype=np.float64, shape=(self.dim.n_agents, num_bootstrap))
+
+        if self.verbose:
+            self.row_gen._log_instance_summary()
+            logger.info(" ")
+            logger.info(" BAYESIAN BOOTSTRAP")
+
+        # === 4. Bootstrap loop ===
+        for b in range(num_bootstrap):
+            t_boot = time.perf_counter()
+            if bootstrap_callback is not None:
+                bootstrap_callback(b, self)
+
+            # Copy base model → fresh start each boot
+            if self.comm_manager.is_root():
+                model_b = base_model.copy()
+                all_vars = model_b.getVars()
+                theta_b = gp.MVar.fromlist(all_vars[:self.dim.n_features])
+                u_b = gp.MVar.fromlist(all_vars[self.dim.n_features:
+                                                self.dim.n_features + self.dim.n_agents])
+                self.row_gen.install_master_model(model_b, (theta_b, u_b))
+
+            # solve with initialize_master=False: updates obj, re-optimizes, then row-generates
+            self.result = self.row_gen.solve(
+                local_obs_weights=local_weights[:, b],
+                verbose=False,
+                initialize_subproblems=False,
+                initialize_master=False,
+                iteration_callback=row_gen_iteration_callback,
+                initialization_callback=row_gen_initialization_callback)
+
+            self.boot_time = time.perf_counter() - t_boot
+
+            if self.comm_manager.is_root():
+                theta_boots.append(self.row_gen.master_variables[0].X.copy())
+                self._update_bootstrap_info(b)
+            self._log_bootstrap_iteration(b)
+
+        total_time = time.perf_counter() - t0
+        if not self.comm_manager.is_root():
+            return None
+
+        theta_hat = self.point_result.theta_hat if self.comm_manager.is_root() else None
+        stats_result = self.compute_bootstrap_stats(theta_boots, theta_hat=theta_hat)
+        self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         return stats_result
 
     def _update_bootstrap_info(self, bootstrap_iter):
