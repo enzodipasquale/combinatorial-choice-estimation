@@ -59,3 +59,4 @@ applications/**/config_local.yaml
 applications/firms_export
 bundlechoice/tests
 requirements_HPC.txt
+applications/combinatorial_auction/data/maps/
