@@ -39,7 +39,7 @@ class RowGenerationManager(BaseEstimationManager):
                                                 lb= lb,
                                                 ub= ub, 
                                                 name= 'parameter')
-            u = self.master_model.addMVar(self.dim.n_agents, obj=u_obj_coef, name='utility')
+            u = self.master_model.addMVar(self.dim.n_agents, lb = 0, obj=u_obj_coef, name='utility')
             self.master_variables = (theta, u)
             self.master_model.optimize()
             self.all_concatenated_constraints = None
