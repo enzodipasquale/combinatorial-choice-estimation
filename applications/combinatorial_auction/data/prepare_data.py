@@ -107,7 +107,7 @@ def build_pop_centroid_features(pop, geo_distance, delta=4):
 
 
 def normalize_interaction_matrix(matrix, pop):
-    # matrix = matrix.copy() + 1e-10
+    matrix = matrix.copy() 
     np.fill_diagonal(matrix, 0)
     outflow = matrix.sum(1)
     mask = outflow > 0
@@ -124,10 +124,10 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     truncated_pop_centroid = np.where(pop_centroid > percentile_val, pop_centroid, 0)
     quadratic_list.append(truncated_pop_centroid)
     
-    quadratic_travel = normalize_interaction_matrix(travel_survey, pop)
-    quadratic_list.append(quadratic_travel)
+    quadratic_travel = normalize_interaction_matrix(travel_survey + 1e-10, pop)
+    quadratic_list.append(quadratic_travel )
     
-    quadratic_air = normalize_interaction_matrix(air_travel, pop)
+    quadratic_air = normalize_interaction_matrix(air_travel + 1e-10, pop)
     quadratic_list.append(quadratic_air)
     
     quadratic_features = np.stack(quadratic_list, axis=2)
