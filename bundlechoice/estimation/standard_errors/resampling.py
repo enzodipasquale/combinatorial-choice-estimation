@@ -99,7 +99,6 @@ class ResamplingMixin:
         self.bootstrap_history = {}
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
-        self.row_gen.subproblem_manager.initialize_subproblems() 
         t0 = time.perf_counter()
 
         # === 1. Point estimation with uniform weights ===
@@ -107,7 +106,7 @@ class ResamplingMixin:
         self.point_result = self.row_gen.solve(
             local_obs_weights=uniform_weights,
             initialize_master=True,
-            initialize_subproblems=False,
+            initialize_subproblems=True,
             iteration_callback=row_gen_iteration_callback,
             initialization_callback=row_gen_initialization_callback,
             verbose=verbose
@@ -134,9 +133,7 @@ class ResamplingMixin:
         # === 4. Bootstrap loop ===
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
-            if bootstrap_callback is not None:
-                bootstrap_callback(b, self)
-
+            
             # Copy base model → fresh start each boot
             if self.comm_manager.is_root():
                 model_b = base_model.copy()
@@ -145,6 +142,9 @@ class ResamplingMixin:
                 u_b = gp.MVar.fromlist(all_vars[self.dim.n_features:
                                                 self.dim.n_features + self.dim.n_agents])
                 self.row_gen.install_master_model(model_b, (theta_b, u_b))
+        
+            if bootstrap_callback is not None:
+                bootstrap_callback(b, self)
 
             # solve with initialize_master=False: updates obj, re-optimizes, then row-generates
             self.result = self.row_gen.solve(

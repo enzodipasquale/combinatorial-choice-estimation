@@ -78,6 +78,10 @@ result = bc.row_generation.solve(
     verbose=True
 )
 
+if rank == 0:
+    print(result.theta_hat)
+    print(result.theta_hat[1:-3].max())
+
 if rank == 0 and result is not None and app.get("save_results", True):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     row = {
