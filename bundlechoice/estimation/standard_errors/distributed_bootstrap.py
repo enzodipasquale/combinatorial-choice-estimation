@@ -285,8 +285,10 @@ class DistributedBootstrapMixin:
                 if newly_converged:
                     param_labels = ' '.join(f"{'θ['+str(i)+']':>10}" for i in param_indices)
                     logger.info(
-                        "          Boot  #Constr   Reduced Cost     Objective  Range θ          %s",
-                        param_labels)
+                        "       %s  %s  %s  %s  %s  %s",
+                        'Boot'.rjust(6), '#Constr'.rjust(7),
+                        'Reduced Cost'.rjust(14), 'Objective'.rjust(12),
+                        'Range θ'.center(15), param_labels)
                     for k in newly_converged:
                         theta_k = theta_results[k]
                         info = converged_info.get(k)
@@ -326,8 +328,8 @@ class DistributedBootstrapMixin:
         """Print header every 80 rounds."""
         if rg_round % 80 != 0:
             return
-        h1 = " Round  Act.   Pricing      Comm    Master   Max Reduced  Total #Viol"
-        h2 = "                   (s)       (s)       (s)          Cost              "
+        h1 = f" {'Round':>5}  {'Act.':>4}  {'Pricing':>9}  {'Comm':>9}  {'Master':>9}  {'Max Reduced':>14}  {'Total':>11}"
+        h2 = f" {'':>5}  {'':>4}  {'(s)':>9}  {'(s)':>9}  {'(s)':>9}  {'Cost':>14}  {'#Viol':>11}"
         sep = "-" * len(h1)
         logger.info(sep)
         logger.info(h1)
