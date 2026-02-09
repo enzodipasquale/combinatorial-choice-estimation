@@ -41,10 +41,13 @@ class DistributedBootstrapMixin:
         local_weights = comm.Scatterv_by_row(
             weights, row_counts=self.data_manager.agent_counts,
             dtype=np.float64, shape=(self.dim.n_agents, K))
+        # Broadcast full weights so each master rank has its u_obj column
+        all_weights = comm.bcast(weights if comm.is_root() else None)
 
-        # === Phase 4: Compute objectives (collective) and build master models (local) ===
+        # === Phase 4: Build master models (1 Allreduce + 1 bcast, then local builds) ===
         local_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
-        master = self._setup_all_masters(K, base_data, local_weights, local_features)
+        master = self._setup_all_masters(K, base_data, local_weights, local_features, all_weights)
+        del all_weights
 
         # === Phase 5: Distributed row generation ===
         theta_boots = self._distributed_rg_loop(
@@ -79,26 +82,20 @@ class DistributedBootstrapMixin:
     # Phase 4
     # -------------------------------------------------------------------------
 
-    def _setup_all_masters(self, K, base_data, local_weights, local_features):
-        """All ranks participate in collective ops; only rank k builds model k."""
+    def _setup_all_masters(self, K, base_data, local_weights, local_features, all_weights):
+        """One Allreduce for theta objectives, then each master builds its model."""
         comm = self.comm_manager
-        agent_counts = self.data_manager.agent_counts
+
+        # All theta_obj_coefs at once: (K, n_features)
+        local_theta_obj_all = -local_weights.T @ local_features       # (K, n_features)
+        theta_obj_all = np.empty_like(local_theta_obj_all)
+        comm.comm.Allreduce(local_theta_obj_all, theta_obj_all, op=MPI.SUM)
+
         master = None
-
-        for k in range(K):
-            # Collective: all ranks must participate
-            local_theta_obj = np.ascontiguousarray(
-                (-local_weights[:, k][:, None] * local_features).sum(0))
-            theta_obj_coef = np.empty_like(local_theta_obj)
-            comm.comm.Reduce(local_theta_obj, theta_obj_coef, op=MPI.SUM, root=k)
-
-            u_obj_weights = comm.Gatherv_by_row(
-                local_weights[:, k], row_counts=agent_counts, root=k)
-
-            if comm.rank == k:
-                master = self._build_master_model(
-                    base_data, theta_obj_coef, u_obj_weights)
-
+        if comm.rank < K:
+            k = comm.rank
+            master = self._build_master_model(
+                base_data, theta_obj_all[k], all_weights[:, k])
         return master
 
     def _build_master_model(self, base_data, theta_obj_coef, u_obj_weights):
@@ -140,16 +137,31 @@ class DistributedBootstrapMixin:
         rank = comm.rank
         n_features, n_agents = self.dim.n_features, self.dim.n_agents
         agent_counts = self.data_manager.agent_counts
+        n_local = self.data_manager.num_local_agent
 
         active = np.ones(K, dtype=np.int32)
         boot_iters = np.zeros(K, dtype=np.int32)
-        consec_no_viol = np.zeros(K, dtype=np.int32)
         theta_results = [None] * K
+        n_converged_total = 0
+
+        # Precompute local agent offset (constant across rounds)
+        local_agent_start = int(agent_counts[:rank].sum())
+
+        # Pre-allocate buffers for Allreduce of thetas and u's
+        all_thetas_buf = np.zeros((K, n_features), dtype=np.float64)
+        all_u_buf = np.zeros((K, n_agents), dtype=np.float64)
+        all_thetas = np.empty_like(all_thetas_buf)
+        all_u = np.empty_like(all_u_buf)
+
+        # Info fields sent from converged master to root:
+        # [obj_val, n_constraints, reduced_cost, n_iters]
+        _INFO_LEN = 4
 
         if self.verbose and comm.is_root():
             logger.info(" ")
             logger.info(" DISTRIBUTED BOOTSTRAP (%d samples, %d ranks)", K, comm.comm_size)
 
+        t_boot_start = time.perf_counter()
         rg_round = 0
         while rg_round < cfg.max_iters:
             n_active = int(active.sum())
@@ -158,55 +170,62 @@ class DistributedBootstrapMixin:
 
             active_masters = np.where(active)[0]
 
+            # --- Callback before pricing ---
             if iteration_callback is not None:
                 iteration_callback(int(boot_iters[active_masters[0]]), self.row_gen)
 
-            # --- Step 1: Pricing (collective, sequential over k) ---
+            # === Step 1: Broadcast all thetas and u's (2 Allreduces) ===
             t_price = time.perf_counter()
+
+            all_thetas_buf[:] = 0.0
+            all_u_buf[:] = 0.0
+            if rank < K and active[rank]:
+                all_thetas_buf[rank] = master['theta'].X
+                all_u_buf[rank] = master['u'].X
+
+            comm.comm.Allreduce(all_thetas_buf, all_thetas, op=MPI.SUM)
+            comm.comm.Allreduce(all_u_buf, all_u, op=MPI.SUM)
+
+            # === Step 2: Solve subproblems for each active theta ===
             local_viols = {}
             for k in active_masters:
-                if rank == k:
-                    theta_k = np.ascontiguousarray(master['theta'].X)
-                    u_k = np.ascontiguousarray(master['u'].X)
-                else:
-                    theta_k = np.empty(n_features, dtype=np.float64)
-                    u_k = np.empty(n_agents, dtype=np.float64)
+                theta_k = all_thetas[k]
+                u_local_k = all_u[k, local_agent_start:local_agent_start + n_local]
 
-                theta_k = comm.Bcast(theta_k, root=k)
-                u_local_k = comm.Scatterv_by_row(u_k, row_counts=agent_counts,
-                                                  dtype=np.float64, shape=(n_agents,), root=k)
                 bundles = self.subproblem_manager.solve_subproblems(theta_k)
                 local_viols[k] = self.row_gen._compute_local_violations(
                     bundles, theta_k, u_local_k, local_weights[:, k])
             t_price = time.perf_counter() - t_price
 
-            # --- Step 2: Gather violations (collective, sequential over k) ---
+            # === Step 3: Batched convergence check (1 Allgather) ===
             t_comm = time.perf_counter()
-            convergence_flags = {}
-            gathered_data = {}
 
+            local_meta_all = np.zeros((K, 2), dtype=np.float64)
             for k in active_masters:
-                max_rc, n_viol, viol_ids, viol_bun, viol_fe = local_viols[k]
-                local_meta = np.array([max_rc, n_viol], dtype=np.float64)
-                all_meta = comm.Allgather(local_meta).reshape(-1, 2)
-                global_max_rc = all_meta[:, 0].max()
-                viol_counts = all_meta[:, 1].astype(np.int64)
-                no_violations = global_max_rc <= cfg.tolerance
+                max_rc, n_viol = local_viols[k][0], local_viols[k][1]
+                local_meta_all[k] = [max_rc, n_viol]
 
-                if no_violations:
-                    consec_no_viol[k] += 1
-                    convergence_flags[k] = True
-                else:
-                    consec_no_viol[k] = 0
-                    convergence_flags[k] = False
-                    g_bun = comm.Gatherv_by_row(viol_bun, row_counts=viol_counts, root=k)
-                    g_fe = comm.Gatherv_by_row(viol_fe, row_counts=viol_counts, root=k)
-                    g_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
-                    if rank == k:
-                        gathered_data[k] = (g_ids, g_fe[:, :-1], g_fe[:, -1])
+            all_meta_all = comm.Allgather(local_meta_all.ravel()).reshape(comm.comm_size, K, 2)
+            global_max_rc = all_meta_all[:, :, 0].max(axis=0)       # (K,)
+            global_n_viol = all_meta_all[:, :, 1].sum(axis=0).astype(np.int64)  # (K,)
+            viol_counts_all = all_meta_all[:, :, 1].astype(np.int64) # (comm_size, K)
+            convergence_flags = global_max_rc <= cfg.tolerance       # (K,)
+
+            # Gatherv violations to each master (only non-converged)
+            gathered_data = {}
+            for k in active_masters:
+                if convergence_flags[k]:
+                    continue
+                viol_counts = viol_counts_all[:, k]
+                _, _, viol_ids, viol_bun, viol_fe = local_viols[k]
+                g_bun = comm.Gatherv_by_row(viol_bun, row_counts=viol_counts, root=k)
+                g_fe = comm.Gatherv_by_row(viol_fe, row_counts=viol_counts, root=k)
+                g_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
+                if rank == k:
+                    gathered_data[k] = (g_ids, g_fe[:, :-1], g_fe[:, -1])
             t_comm = time.perf_counter() - t_comm
 
-            # --- Step 3: All masters solve in parallel (no communication) ---
+            # === Step 4: All masters solve in parallel (no communication) ===
             t_master = time.perf_counter()
             if rank < K and active[rank] and not convergence_flags[rank]:
                 ids, features, errors = gathered_data[rank]
@@ -215,28 +234,74 @@ class DistributedBootstrapMixin:
                 master['model'].optimize()
             t_master = time.perf_counter() - t_master
 
-            # --- Step 4: Update bookkeeping ---
+            # === Step 5: Update bookkeeping ===
             newly_converged = []
             for k in active_masters:
                 boot_iters[k] += 1
                 if convergence_flags[k] and boot_iters[k] >= cfg.min_iters:
                     newly_converged.append(k)
 
+            # Collect theta + info from converged masters
+            converged_info = {}
             for k in newly_converged:
                 active[k] = 0
                 if rank == k:
                     theta_results[k] = master['theta'].X.copy()
-                if k != 0:
+                    info_k = np.array([
+                        master['model'].ObjVal,
+                        master['model'].NumConstrs,
+                        global_max_rc[k],
+                        boot_iters[k]
+                    ], dtype=np.float64)
+                if k == 0:
+                    if rank == 0:
+                        converged_info[k] = info_k
+                else:
                     if rank == k:
                         comm.comm.Send(np.ascontiguousarray(theta_results[k]), dest=0, tag=k)
+                        comm.comm.Send(info_k, dest=0, tag=K + k)
                     elif rank == 0:
                         theta_results[k] = np.empty(n_features, dtype=np.float64)
                         comm.comm.Recv(theta_results[k], source=k, tag=k)
+                        info_k = np.empty(_INFO_LEN, dtype=np.float64)
+                        comm.comm.Recv(info_k, source=k, tag=K + k)
+                        converged_info[k] = info_k
 
+            n_converged_total += len(newly_converged)
+
+            # === Logging ===
             if self.verbose and comm.is_root():
-                logger.info("Round %4d | active %4d | pricing %.1fs | comm %.1fs | master %.1fs | converged %d",
-                            rg_round, int(active.sum()), t_price, t_comm, t_master,
-                            len(newly_converged))
+                param_indices = cfg.parameters_to_log or list(range(min(5, n_features)))
+                self._log_rg_round_header(rg_round, param_indices)
+                active_rc = global_max_rc[active_masters]
+                active_viol = global_n_viol[active_masters]
+                max_rc = active_rc.max()
+                total_viol = int(active_viol.sum())
+                logger.info(
+                    " %5d  %4d  %8.1fs  %8.1fs  %8.1fs  %s  %11d",
+                    rg_round, n_active, t_price, t_comm, t_master,
+                    self._fmt_rc(max_rc), total_viol)
+
+                if newly_converged:
+                    param_labels = ' '.join(f"{'θ['+str(i)+']':>10}" for i in param_indices)
+                    logger.info(
+                        "          Boot  #Constr   Reduced Cost     Objective  Range θ          %s",
+                        param_labels)
+                    for k in newly_converged:
+                        theta_k = theta_results[k]
+                        info = converged_info.get(k)
+                        if info is not None:
+                            obj_val, n_constr, red_cost, n_iters = info
+                            param_vals = ' '.join(
+                                format_number(theta_k[i], width=10, precision=5)
+                                for i in param_indices)
+                            rng = f"[{theta_k.min():.1f}, {theta_k.max():.1f}]"
+                            logger.info(
+                                "       ↳  %4d  %7d  %s  %s  %-15s  %s",
+                                k, int(n_constr),
+                                self._fmt_rc(red_cost),
+                                format_number(obj_val, width=12, precision=5),
+                                rng, param_vals)
 
             rg_round += 1
 
@@ -246,12 +311,35 @@ class DistributedBootstrapMixin:
                 theta_results[k] = master['theta'].X.copy()
             if k != 0:
                 if rank == k:
-                    comm.comm.Send(np.ascontiguousarray(theta_results[k]), dest=0, tag=K + k)
+                    comm.comm.Send(np.ascontiguousarray(theta_results[k]), dest=0, tag=2 * K + k)
                 elif rank == 0:
                     theta_results[k] = np.empty(n_features, dtype=np.float64)
-                    comm.comm.Recv(theta_results[k], source=k, tag=K + k)
+                    comm.comm.Recv(theta_results[k], source=k, tag=2 * K + k)
 
         return theta_results if rank == 0 else None
+
+    # -------------------------------------------------------------------------
+    # Logging helpers
+    # -------------------------------------------------------------------------
+
+    def _log_rg_round_header(self, rg_round, param_indices):
+        """Print header every 80 rounds."""
+        if rg_round % 80 != 0:
+            return
+        h1 = " Round  Act.   Pricing      Comm    Master   Max Reduced  Total #Viol"
+        h2 = "                   (s)       (s)       (s)          Cost              "
+        sep = "-" * len(h1)
+        logger.info(sep)
+        logger.info(h1)
+        logger.info(h2)
+        logger.info(sep)
+
+    @staticmethod
+    def _fmt_rc(val, width=14):
+        """Format reduced cost: scientific notation for tiny values."""
+        if abs(val) < 1e-6 and val != 0:
+            return f"{val:.5e}".rjust(width)
+        return format_number(val, width=width, precision=6)
 
     # -------------------------------------------------------------------------
     # Phase 6
@@ -269,13 +357,15 @@ class DistributedBootstrapMixin:
     def _log_distributed_bootstrap_summary(self, n_bootstrap, total_time, result):
         if not self.comm_manager.is_root():
             return
+        theta_hat = self.point_result.theta_hat
         idx = self.config.row_generation.parameters_to_log or list(range(min(5, self.dim.n_features)))
         logger.info(" ")
-        logger.info("-" * 55)
+        logger.info("-" * 70)
         logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs", n_bootstrap, total_time)
-        logger.info("-" * 55)
-        logger.info(f"{'Param':>6} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
-        logger.info("-" * 55)
+        logger.info("-" * 70)
+        logger.info(f"{'Param':>8} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
+        logger.info("-" * 70)
         for i in idx:
-            logger.info(f"θ[{i:>3}] | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
-        logger.info("-" * 55)
+            logger.info(f"  θ[{i:>3}] | {theta_hat[i]:>12.5f} | {result.mean[i]:>12.5f} | "
+                        f"{result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
+        logger.info("-" * 70)
