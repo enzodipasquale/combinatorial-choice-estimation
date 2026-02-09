@@ -151,31 +151,35 @@ class RowGenerationManager(BaseEstimationManager):
         self._log_iteration(iteration)     
         return stop
 
-    def compute_constraints_coeff(self, pricing_results):
+
+    def _compute_local_violations(self, pricing_results, theta, u_local, weights):
         features_local = self.oracles_manager.features_oracle(pricing_results)
         errors_local = self.oracles_manager.error_oracle(pricing_results)
-        u_local = features_local @ self.theta_iter + errors_local
-        local_reduced_costs = u_local - self.u_iter_local
-        
-        weighted_reduced_costs = self.local_obs_weights * local_reduced_costs
+        u_theta = features_local @ theta + errors_local
+        weighted_reduced_costs = weights * (u_theta - u_local)
+
         local_max_rc = weighted_reduced_costs.max()
         local_violations = np.where(weighted_reduced_costs > self.cfg.tolerance)[0]
-        local_meta = np.array([local_max_rc, len(local_violations)], dtype=np.float64)
-        all_meta = self.comm_manager.Allgather(local_meta).reshape(-1, 2)
+        local_violations_id = self.data_manager.agent_ids[local_violations]
+        features_and_errors_local = np.column_stack([
+                                                        features_local[local_violations], 
+                                                        errors_local[local_violations]
+                                                    ])
+        bundles_local = pricing_results[local_violations]
+        return local_max_rc, len(local_violations), local_violations_id, bundles_local, features_and_errors_local
+
+    def compute_constraints_coeff(self, pricing_results):
+        local_max_rc, n_local_viol, local_violations_id, bundles_local, features_and_errors_local = \
+            self._compute_local_violations(pricing_results, self.theta_iter, self.u_iter_local, self.local_obs_weights)
         
+        local_meta = np.array([local_max_rc, n_local_viol], dtype=np.float64)
+        all_meta = self.comm_manager.Allgather(local_meta).reshape(-1, 2)
         global_max_rc = all_meta[:, 0].max()
         violation_counts = all_meta[:, 1].astype(np.int64)
         stop = global_max_rc <= self.cfg.tolerance
         reduced_cost = global_max_rc if self.comm_manager.is_root() else None
-        # === End of change ===
-        
-        local_violations_id = self.data_manager.agent_ids[local_violations]
-        features_and_errors_local = np.column_stack([
-            features_local[local_violations], 
-            errors_local[local_violations]
-        ])
-        
-        bundles = self.comm_manager.Gatherv_by_row(pricing_results[local_violations], row_counts=violation_counts)
+
+        bundles = self.comm_manager.Gatherv_by_row(bundles_local, row_counts=violation_counts)
         features_and_errors = self.comm_manager.Gatherv_by_row(features_and_errors_local, row_counts=violation_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
         

@@ -24,39 +24,39 @@ class CommManager:
     def gather(self, data):
         return self.comm.gather(data, root=self.root)
 
-    def Scatterv_by_row(self, send_array, row_counts, dtype=None, shape=None):
+    def Scatterv_by_row(self, send_array, row_counts, dtype=None, shape=None, root=0):
         if dtype is None or shape is None:
-            dtype, shape = self.bcast((send_array.dtype, send_array.shape) if self.is_root() else (None, None))
+            dtype, shape = self.comm.bcast((send_array.dtype, send_array.shape) if self.rank == root else (None, None), root=root)
         tail_shape = shape[1:]
         tail_stride = int(np.prod(tail_shape)) if tail_shape else 1
         counts = row_counts * tail_stride
-        if self.is_root():
+        if self.rank == root:
             send_array = np.ascontiguousarray(send_array, dtype=dtype).ravel()
             sendbuf = (send_array, counts)
         else:
             sendbuf = None
         recvbuf = np.empty(int(counts[self.rank]), dtype=dtype)
-        self.comm.Scatterv(sendbuf, recvbuf, root=self.root)
+        self.comm.Scatterv(sendbuf, recvbuf, root=root)
         if len(tail_shape):
             recvbuf = recvbuf.reshape((int(row_counts[self.rank]),) + tail_shape)
         return recvbuf
 
-    def Gatherv_by_row(self, local_array, row_counts = None):
+    def Gatherv_by_row(self, local_array, row_counts=None, root=0):
         local_flat = np.ascontiguousarray(local_array).ravel()
         if row_counts is None:
             local_size = np.array([local_flat.size], dtype=np.int64)
-            counts = np.empty(self.comm_size, dtype=np.int64) if self.is_root() else None
-            self.comm.Gather(local_size, counts, root=self.root)
+            counts = np.empty(self.comm_size, dtype=np.int64) if self.rank == root else None
+            self.comm.Gather(local_size, counts, root=root)
         else:
             counts = row_counts * int(np.prod(local_array.shape[1:]))
-        if self.is_root():
+        if self.rank == root:
             recvbuf = np.empty(int(counts.sum()), dtype=local_array.dtype)
-            self.comm.Gatherv(local_flat, (recvbuf, counts), root=self.root)
+            self.comm.Gatherv(local_flat, (recvbuf, counts), root=root)
             if local_array.ndim > 1:
                 return recvbuf.reshape((-1,) + local_array.shape[1:])
             return recvbuf
         else:
-            self.comm.Gatherv(local_flat, None, root=self.root)
+            self.comm.Gatherv(local_flat, None, root=root)
             return None
     def Allgather(self, array):
         sendbuf = np.ascontiguousarray(array)
@@ -75,10 +75,10 @@ class CommManager:
         sendbuf = array.sum(0)
         return self.Reduce(sendbuf)
 
-    def Bcast(self, array):
-        if self.is_root():
+    def Bcast(self, array, root=0):
+        if self.rank == root:
             array = np.ascontiguousarray(array)
-        self.comm.Bcast(array, root=self.root) 
+        self.comm.Bcast(array, root=root)
         return array
 
 
