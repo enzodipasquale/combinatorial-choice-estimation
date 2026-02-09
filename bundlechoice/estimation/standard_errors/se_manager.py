@@ -1,6 +1,8 @@
 from .resampling import ResamplingMixin
+from .distributed_bootstrap import DistributedBootstrapMixin
 
-class StandardErrorsManager(ResamplingMixin):
+
+class StandardErrorsManager(ResamplingMixin, DistributedBootstrapMixin):
 
     def __init__(self, comm_manager, config, data_manager, oracles_manager, subproblem_manager, row_generation_manager):
         self.comm_manager = comm_manager
