@@ -19,7 +19,12 @@ def adaptive_gurobi_timeout(initial_timeout=1.0, final_timeout=90.0, transition_
                 raise ValueError(f"Unknown strategy: {strategy}")
         else:
             timeout = final_timeout
-        row_gen_manager.subproblem_manager.update_gurobi_settings({'TimeLimit': timeout})
+        settings = {'TimeLimit': timeout}
+        if iteration == 0:
+            settings['MIPFocus'] = 1
+        else:
+            settings['MIPFocus'] = 0
+        row_gen_manager.subproblem_manager.update_gurobi_settings(settings)
 
 
     return callback
