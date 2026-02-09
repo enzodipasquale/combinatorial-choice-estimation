@@ -158,6 +158,9 @@ class DistributedBootstrapMixin:
 
             active_masters = np.where(active)[0]
 
+            if iteration_callback is not None:
+                iteration_callback(int(boot_iters[active_masters[0]]), self.row_gen)
+
             # --- Step 1: Pricing (collective, sequential over k) ---
             t_price = time.perf_counter()
             local_viols = {}
@@ -218,9 +221,6 @@ class DistributedBootstrapMixin:
                 boot_iters[k] += 1
                 if convergence_flags[k] and boot_iters[k] >= cfg.min_iters:
                     newly_converged.append(k)
-
-            if iteration_callback is not None:
-                iteration_callback(int(boot_iters[active_masters[0]]), self.row_gen)
 
             for k in newly_converged:
                 active[k] = 0
