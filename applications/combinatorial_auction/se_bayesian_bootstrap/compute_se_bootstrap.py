@@ -79,12 +79,21 @@ timeout_callback = adaptive_gurobi_timeout(
     transition_iterations=adaptive_cfg.get("transition_iterations"),
     strategy=adaptive_cfg.get("strategy", "step")
 )
-se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
-                                                                seed=BOOT_SEED, 
-                                                                verbose=True,
-                                                                bootstrap_callback=boot_callback,
-                                                                row_gen_iteration_callback=timeout_callback,
-                                                                method= 'bayesian')
+# se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
+#                                                                 seed=BOOT_SEED, 
+#                                                                 verbose=True,
+#                                                                 bootstrap_callback=boot_callback,
+#                                                                 row_gen_iteration_callback=timeout_callback,
+#                                                                 method= 'bayesian')
+
+se_result = bc.standard_errors.compute_distributed_bootstrap(
+                                                    num_bootstrap=NUM_BOOTSTRAP,
+                                                    seed=BOOT_SEED,
+                                                    verbose=True,
+                                                    row_gen_iteration_callback=timeout_callback,
+                                                    method='bayesian',
+                                                )
+
 
 
 if rank == 0 and se_result is not None and app.get("save_results", True):
