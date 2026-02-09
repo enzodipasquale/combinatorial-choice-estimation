@@ -213,7 +213,7 @@ class DistributedBootstrapMixin:
                     bundles, theta_k, u_local_k, local_weights[:, k])
             t_price = time.perf_counter() - t_price_start
 
-            # === Step 3: Batched convergence check (1 Allgather) + Gatherv violations ===
+            # === Step 3: Batched convergence check (1 Allgather) + root-relay violations ===
             t_comm2 = time.perf_counter()
 
             local_meta_all = np.zeros((K, 2), dtype=np.float64)
@@ -224,29 +224,85 @@ class DistributedBootstrapMixin:
             all_meta_all = comm.Allgather(local_meta_all.ravel()).reshape(comm.comm_size, K, 2)
             global_max_rc = all_meta_all[:, :, 0].max(axis=0)       # (K,)
             global_n_viol = all_meta_all[:, :, 1].sum(axis=0).astype(np.int64)  # (K,)
-            viol_counts_all = all_meta_all[:, :, 1].astype(np.int64) # (comm_size, K)
             convergence_flags = global_max_rc <= cfg.tolerance       # (K,)
 
-            # Gatherv violations to each master (only non-converged)
+            # Identify non-converged boots
+            nc_masters = [k for k in active_masters if not convergence_flags[k]]
+
+            # Pack local violations across all non-converged boots into single buffers
+            # Each row gets a boot index prepended to fe: [boot_k, features..., error]
+            local_ids_list, local_fe_list = [], []
+            for k in nc_masters:
+                _, n_viol_k, viol_ids, _, viol_fe = local_viols[k]
+                if n_viol_k > 0:
+                    local_ids_list.append(viol_ids)
+                    # Prepend boot index as first column
+                    boot_col = np.full((n_viol_k, 1), k, dtype=viol_fe.dtype)
+                    local_fe_list.append(np.hstack([boot_col, viol_fe]))
+
+            if local_ids_list:
+                packed_ids = np.concatenate(local_ids_list)
+                packed_fe = np.concatenate(local_fe_list)
+            else:
+                packed_ids = np.empty(0, dtype=np.int64)
+                packed_fe = np.empty((0, n_features + 2), dtype=np.float64)  # boot_k + features + error
+
+            # Total local packed count
+            packed_count = np.array([len(packed_ids)], dtype=np.int64)
+            all_packed_counts = np.empty(comm.comm_size, dtype=np.int64)
+            comm.comm.Allgather(packed_count, all_packed_counts)
+
+            # 2 Gathervs to root 0 (instead of 3K Gathervs to K different roots)
+            g_ids = comm.Gatherv_by_row(packed_ids, row_counts=all_packed_counts, root=0)
+            g_fe = comm.Gatherv_by_row(packed_fe, row_counts=all_packed_counts, root=0)
+
+            # Root 0 splits by boot and sends to each master via point-to-point
             gathered_data = {}
-            for k in active_masters:
-                if convergence_flags[k]:
-                    continue
-                viol_counts = viol_counts_all[:, k]
-                _, _, viol_ids, viol_bun, viol_fe = local_viols[k]
-                g_bun = comm.Gatherv_by_row(viol_bun, row_counts=viol_counts, root=k)
-                g_fe = comm.Gatherv_by_row(viol_fe, row_counts=viol_counts, root=k)
-                g_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
-                if rank == k:
-                    gathered_data[k] = (g_ids, g_fe[:, :-1], g_fe[:, -1])
+            if rank == 0 and nc_masters:
+                boot_indices = g_fe[:, 0].astype(np.int64)
+                g_fe_body = g_fe[:, 1:]  # (n_total_viol, n_features + 1)
+                for k in nc_masters:
+                    mask = boot_indices == k
+                    k_ids = np.ascontiguousarray(g_ids[mask])
+                    k_features = np.ascontiguousarray(g_fe_body[mask, :-1])
+                    k_errors = np.ascontiguousarray(g_fe_body[mask, -1])
+                    if k == 0:
+                        gathered_data[0] = (k_ids, k_features, k_errors)
+                    else:
+                        # Send count first so receiver knows buffer sizes
+                        n_k = np.array([len(k_ids)], dtype=np.int64)
+                        comm.comm.Send(n_k, dest=k, tag=4 * K + k)
+                        if n_k[0] > 0:
+                            comm.comm.Send(k_ids, dest=k, tag=5 * K + k)
+                            comm.comm.Send(k_features, dest=k, tag=6 * K + k)
+                            comm.comm.Send(k_errors, dest=k, tag=7 * K + k)
+            elif rank < K and active[rank] and not convergence_flags[rank] and rank != 0:
+                # Receive my violations from root 0
+                n_k = np.empty(1, dtype=np.int64)
+                comm.comm.Recv(n_k, source=0, tag=4 * K + rank)
+                if n_k[0] > 0:
+                    k_ids = np.empty(n_k[0], dtype=np.int64)
+                    k_features = np.empty((n_k[0], n_features), dtype=np.float64)
+                    k_errors = np.empty(n_k[0], dtype=np.float64)
+                    comm.comm.Recv(k_ids, source=0, tag=5 * K + rank)
+                    comm.comm.Recv(k_features, source=0, tag=6 * K + rank)
+                    comm.comm.Recv(k_errors, source=0, tag=7 * K + rank)
+                    gathered_data[rank] = (k_ids, k_features, k_errors)
+                else:
+                    gathered_data[rank] = (np.empty(0, dtype=np.int64),
+                                           np.empty((0, n_features), dtype=np.float64),
+                                           np.empty(0, dtype=np.float64))
+
             t_comm = (time.perf_counter() - t_comm2) + (t_price_start - t_comm)
 
             # === Step 4: All masters solve in parallel (no communication) ===
             t_master = time.perf_counter()
             if rank < K and active[rank] and not convergence_flags[rank]:
-                ids, features, errors = gathered_data[rank]
-                master['model'].addConstr(
-                    master['u'][ids] >= features @ master['theta'] + errors)
+                if rank in gathered_data:
+                    ids, features, errors = gathered_data[rank]
+                    if len(ids) > 0:
+                        master['model'].addConstr(
+                            master['u'][ids] >= features @ master['theta'] + errors)
                 master['model'].optimize()
             t_master = time.perf_counter() - t_master
 
