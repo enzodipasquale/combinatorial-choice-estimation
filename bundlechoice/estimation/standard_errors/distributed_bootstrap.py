@@ -157,9 +157,9 @@ class DistributedBootstrapMixin:
                 break
 
             active_masters = np.where(active)[0]
-            t_price = time.perf_counter()
 
-            # --- Pricing: solve subproblems for each active theta ---
+            # --- Step 1: Pricing (collective, sequential over k) ---
+            t_price = time.perf_counter()
             local_viols = {}
             for k in active_masters:
                 if rank == k:
@@ -172,20 +172,18 @@ class DistributedBootstrapMixin:
                 theta_k = comm.Bcast(theta_k, root=k)
                 u_local_k = comm.Scatterv_by_row(u_k, row_counts=agent_counts,
                                                   dtype=np.float64, shape=(n_agents,), root=k)
-
                 bundles = self.subproblem_manager.solve_subproblems(theta_k)
                 local_viols[k] = self.row_gen._compute_local_violations(
                     bundles, theta_k, u_local_k, local_weights[:, k])
-
             t_price = time.perf_counter() - t_price
 
-            # --- Master: gather violations, add constraints, optimize ---
-            t_master = time.perf_counter()
-            newly_converged = []
+            # --- Step 2: Gather violations (collective, sequential over k) ---
+            t_comm = time.perf_counter()
+            convergence_flags = {}
+            gathered_data = {}
 
             for k in active_masters:
                 max_rc, n_viol, viol_ids, viol_bun, viol_fe = local_viols[k]
-
                 local_meta = np.array([max_rc, n_viol], dtype=np.float64)
                 all_meta = comm.Allgather(local_meta).reshape(-1, 2)
                 global_max_rc = all_meta[:, 0].max()
@@ -194,28 +192,36 @@ class DistributedBootstrapMixin:
 
                 if no_violations:
                     consec_no_viol[k] += 1
+                    convergence_flags[k] = True
                 else:
                     consec_no_viol[k] = 0
-                    gathered_bun = comm.Gatherv_by_row(viol_bun, row_counts=viol_counts, root=k)
-                    gathered_fe = comm.Gatherv_by_row(viol_fe, row_counts=viol_counts, root=k)
-                    gathered_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
-
+                    convergence_flags[k] = False
+                    g_bun = comm.Gatherv_by_row(viol_bun, row_counts=viol_counts, root=k)
+                    g_fe = comm.Gatherv_by_row(viol_fe, row_counts=viol_counts, root=k)
+                    g_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
                     if rank == k:
-                        features = gathered_fe[:, :-1]
-                        errors = gathered_fe[:, -1]
-                        master['model'].addConstr(
-                            master['u'][gathered_ids] >= features @ master['theta'] + errors)
-                        master['model'].optimize()
+                        gathered_data[k] = (g_ids, g_fe[:, :-1], g_fe[:, -1])
+            t_comm = time.perf_counter() - t_comm
 
+            # --- Step 3: All masters solve in parallel (no communication) ---
+            t_master = time.perf_counter()
+            if rank < K and active[rank] and not convergence_flags[rank]:
+                ids, features, errors = gathered_data[rank]
+                master['model'].addConstr(
+                    master['u'][ids] >= features @ master['theta'] + errors)
+                master['model'].optimize()
+            t_master = time.perf_counter() - t_master
+
+            # --- Step 4: Update bookkeeping ---
+            newly_converged = []
+            for k in active_masters:
                 boot_iters[k] += 1
-
-                if no_violations and boot_iters[k] >= cfg.min_iters:
+                if convergence_flags[k] and boot_iters[k] >= cfg.min_iters:
                     newly_converged.append(k)
 
-                if iteration_callback is not None:
-                    iteration_callback(boot_iters[k], self.row_gen)
+            if iteration_callback is not None:
+                iteration_callback(int(boot_iters[active_masters[0]]), self.row_gen)
 
-            # Deactivate converged masters, send theta to root
             for k in newly_converged:
                 active[k] = 0
                 if rank == k:
@@ -227,11 +233,10 @@ class DistributedBootstrapMixin:
                         theta_results[k] = np.empty(n_features, dtype=np.float64)
                         comm.comm.Recv(theta_results[k], source=k, tag=k)
 
-            t_master = time.perf_counter() - t_master
-
             if self.verbose and comm.is_root():
-                logger.info("Round %4d | active %4d | pricing %.1fs | master+comm %.1fs | converged %d",
-                            rg_round, int(active.sum()), t_price, t_master, len(newly_converged))
+                logger.info("Round %4d | active %4d | pricing %.1fs | comm %.1fs | master %.1fs | converged %d",
+                            rg_round, int(active.sum()), t_price, t_comm, t_master,
+                            len(newly_converged))
 
             rg_round += 1
 
