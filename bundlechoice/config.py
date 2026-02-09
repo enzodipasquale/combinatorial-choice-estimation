@@ -49,6 +49,7 @@ class RowGenerationConfig(ConfigMixin):
     theta_bounds: dict = None
     parameters_to_log: list = None
     verbose: bool = True
+    save_master_model_dir: str = None
 
     def theta_bounds_arrays(self, n_features: int):
         if not self.theta_bounds:

@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 import gurobipy as gp
@@ -113,6 +114,11 @@ class RowGenerationManager(BaseEstimationManager):
             logger.info(" " )
             logger.info(" ROW GENERATION")
         result = self.row_generation_loop(iteration_callback)
+        if self.comm_manager.is_root() and self.cfg.save_master_model_dir:
+            dir = self.cfg.save_master_model_dir
+            os.makedirs(dir, exist_ok=True)
+            self.master_model.write(os.path.join(dir, "master.lp"))
+            self.master_model.write(os.path.join(dir, "master.sol"))
         return result
 
     def row_generation_loop(self, callback):
