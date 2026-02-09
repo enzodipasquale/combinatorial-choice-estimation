@@ -190,7 +190,7 @@ class DistributedBootstrapMixin:
                 iteration_callback(int(boot_iters[active_masters[0]]), self.row_gen)
 
             # === Step 1: Broadcast all thetas and u's (2 Allreduces) ===
-            t_price = time.perf_counter()
+            t_comm = time.perf_counter()
 
             all_thetas_buf[:] = 0.0
             all_u_buf[:] = 0.0
@@ -202,6 +202,7 @@ class DistributedBootstrapMixin:
             comm.comm.Allreduce(all_u_buf, all_u, op=MPI.SUM)
 
             # === Step 2: Solve subproblems for each active theta ===
+            t_price_start = time.perf_counter()
             local_viols = {}
             for k in active_masters:
                 theta_k = all_thetas[k]
@@ -210,10 +211,10 @@ class DistributedBootstrapMixin:
                 bundles = self.subproblem_manager.solve_subproblems(theta_k)
                 local_viols[k] = self.row_gen._compute_local_violations(
                     bundles, theta_k, u_local_k, local_weights[:, k])
-            t_price = time.perf_counter() - t_price
+            t_price = time.perf_counter() - t_price_start
 
-            # === Step 3: Batched convergence check (1 Allgather) ===
-            t_comm = time.perf_counter()
+            # === Step 3: Batched convergence check (1 Allgather) + Gatherv violations ===
+            t_comm2 = time.perf_counter()
 
             local_meta_all = np.zeros((K, 2), dtype=np.float64)
             for k in active_masters:
@@ -238,7 +239,7 @@ class DistributedBootstrapMixin:
                 g_ids = comm.Gatherv_by_row(viol_ids, row_counts=viol_counts, root=k)
                 if rank == k:
                     gathered_data[k] = (g_ids, g_fe[:, :-1], g_fe[:, -1])
-            t_comm = time.perf_counter() - t_comm
+            t_comm = (time.perf_counter() - t_comm2) + (t_price_start - t_comm)
 
             # === Step 4: All masters solve in parallel (no communication) ===
             t_master = time.perf_counter()
