@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 import gurobipy as gp
@@ -14,7 +15,8 @@ class DistributedBootstrapMixin:
                                       method='bayesian',
                                       row_gen_iteration_callback=None,
                                       row_gen_initialization_callback=None,
-                                      bootstrap_callback=None):
+                                      bootstrap_callback=None,
+                                      save_model_dir=None):
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
         comm = self.comm_manager
@@ -29,6 +31,17 @@ class DistributedBootstrapMixin:
             iteration_callback=row_gen_iteration_callback,
             initialization_callback=row_gen_initialization_callback,
             verbose=verbose)
+
+        # Save point estimate model if requested
+        save_dir = None
+        if save_model_dir is not None and comm.is_root():
+            save_dir = os.path.join(save_model_dir, "bootstrap_solutions")
+            pt_dir = os.path.join(save_dir, "point_estimate")
+            os.makedirs(pt_dir, exist_ok=True)
+            self.row_gen.master_model.write(os.path.join(pt_dir, "master.lp"))
+            self.row_gen.master_model.write(os.path.join(pt_dir, "master.sol"))
+        # Broadcast save_dir so all ranks know the path
+        save_dir = comm.bcast(save_dir)
 
         # === Phase 2: Extract and broadcast base model data ===
         base_data = self._extract_and_broadcast_base_model()
@@ -52,7 +65,8 @@ class DistributedBootstrapMixin:
         # === Phase 5: Distributed row generation ===
         theta_boots = self._distributed_rg_loop(
             K, local_weights, master,
-            row_gen_iteration_callback, bootstrap_callback)
+            row_gen_iteration_callback, bootstrap_callback,
+            save_dir=save_dir)
 
         # === Phase 6: Statistics ===
         total_time = time.perf_counter() - t0
@@ -131,7 +145,8 @@ class DistributedBootstrapMixin:
     # -------------------------------------------------------------------------
 
     def _distributed_rg_loop(self, K, local_weights, master,
-                             iteration_callback, bootstrap_callback):
+                             iteration_callback, bootstrap_callback,
+                             save_dir=None):
         comm = self.comm_manager
         cfg = self.config.row_generation
         rank = comm.rank
@@ -253,6 +268,12 @@ class DistributedBootstrapMixin:
                         global_max_rc[k],
                         boot_iters[k]
                     ], dtype=np.float64)
+                    # Save master model if requested
+                    if save_dir is not None:
+                        boot_dir = os.path.join(save_dir, f"boot_{k:04d}")
+                        os.makedirs(boot_dir, exist_ok=True)
+                        master['model'].write(os.path.join(boot_dir, "master.lp"))
+                        master['model'].write(os.path.join(boot_dir, "master.sol"))
                 if k == 0:
                     if rank == 0:
                         converged_info[k] = info_k
