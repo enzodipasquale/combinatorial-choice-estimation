@@ -386,15 +386,57 @@ class DistributedBootstrapMixin:
             rg_round += 1
 
         # Collect remaining active masters (hit max_iters)
-        for k in np.where(active)[0]:
+        remaining = np.where(active)[0]
+        remaining_info = {}
+        for k in remaining:
             if rank == k:
                 theta_results[k] = master['theta'].X.copy()
-            if k != 0:
+                info_k = np.array([
+                    master['model'].ObjVal,
+                    master['model'].NumConstrs,
+                    global_max_rc[k],
+                    boot_iters[k]
+                ], dtype=np.float64)
+            if k == 0:
+                if rank == 0:
+                    remaining_info[k] = info_k
+            else:
                 if rank == k:
                     comm.comm.Send(np.ascontiguousarray(theta_results[k]), dest=0, tag=2 * K + k)
+                    comm.comm.Send(info_k, dest=0, tag=3 * K + k)
                 elif rank == 0:
                     theta_results[k] = np.empty(n_features, dtype=np.float64)
                     comm.comm.Recv(theta_results[k], source=k, tag=2 * K + k)
+                    info_k = np.empty(_INFO_LEN, dtype=np.float64)
+                    comm.comm.Recv(info_k, source=k, tag=3 * K + k)
+                    remaining_info[k] = info_k
+
+        if self.verbose and comm.is_root() and len(remaining) > 0:
+            param_indices = cfg.parameters_to_log or list(range(min(5, n_features)))
+            logger.info(" ")
+            logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
+                        len(remaining), cfg.max_iters)
+            param_labels = ' '.join(f"{'θ['+str(i)+']':>10}" for i in param_indices)
+            logger.info(
+                "       %s  %s  %s  %s  %s  %s",
+                'Boot'.rjust(6), '#Constr'.rjust(7),
+                'Reduced Cost'.rjust(14), 'Objective'.rjust(12),
+                'Range θ'.center(15), param_labels)
+            for k in remaining:
+                theta_k = theta_results[k]
+                info = remaining_info.get(k)
+                if info is not None:
+                    obj_val, n_constr, red_cost, n_iters = info
+                    param_vals = ' '.join(
+                        format_number(theta_k[i], width=10, precision=5)
+                        for i in param_indices)
+                    rng = f"[{theta_k.min():.1f}, {theta_k.max():.1f}]"
+                    logger.info(
+                        "       ↳  %4d  %7d  %s  %s  %-15s  %s",
+                        k, int(n_constr),
+                        self._fmt_rc(red_cost),
+                        format_number(obj_val, width=12, precision=5),
+                        rng, param_vals)
 
         return theta_results if rank == 0 else None
 
