@@ -86,13 +86,16 @@ timeout_callback = adaptive_gurobi_timeout(
 #                                                                 row_gen_iteration_callback=timeout_callback,
 #                                                                 method= 'bayesian')
 
+checkpoint_dir = str(BASE_DIR)
 se_result = bc.standard_errors.compute_distributed_bootstrap(
-                                                    num_bootstrap=NUM_BOOTSTRAP,
-                                                    seed=BOOT_SEED,
-                                                    verbose=True,
-                                                    row_gen_iteration_callback=timeout_callback,
-                                                    method='bayesian',
-                                                )
+    num_bootstrap=NUM_BOOTSTRAP,
+    seed=BOOT_SEED,
+    verbose=True,
+    row_gen_iteration_callback=timeout_callback,
+    method='bayesian',
+    save_model_dir=checkpoint_dir,
+    load_model_dir=checkpoint_dir,
+)
 
 
 
