@@ -3,7 +3,7 @@ import sys, os, csv, yaml, json
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
-import datetime
+from datetime import datetime
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
