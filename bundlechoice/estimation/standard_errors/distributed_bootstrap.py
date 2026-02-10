@@ -252,7 +252,7 @@ class DistributedBootstrapMixin:
             all_packed_counts = np.empty(comm.comm_size, dtype=np.int64)
             comm.comm.Allgather(packed_count, all_packed_counts)
 
-            # 2 Gathervs to root 0 (instead of 3K Gathervs to K different roots)
+            # 2 Gathervs to root 0 — ALL ranks must participate in collectives
             g_ids = comm.Gatherv_by_row(packed_ids, row_counts=all_packed_counts, root=0)
             g_fe = comm.Gatherv_by_row(packed_fe, row_counts=all_packed_counts, root=0)
 
@@ -276,8 +276,8 @@ class DistributedBootstrapMixin:
                             comm.comm.Send(k_ids, dest=k, tag=5 * K + k)
                             comm.comm.Send(k_features, dest=k, tag=6 * K + k)
                             comm.comm.Send(k_errors, dest=k, tag=7 * K + k)
-            elif rank < K and active[rank] and not convergence_flags[rank] and rank != 0:
-                # Receive my violations from root 0
+            # Non-root master ranks receive their violations (AFTER collectives)
+            if rank != 0 and rank < K and active[rank] and not convergence_flags[rank]:
                 n_k = np.empty(1, dtype=np.int64)
                 comm.comm.Recv(n_k, source=0, tag=4 * K + rank)
                 if n_k[0] > 0:
