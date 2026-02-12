@@ -48,6 +48,10 @@ benchmark_warmstart.py
 *.err
 *.sbatch
 
+# Gurobi outputs
+*.sol
+*.lp
+
 #Other
 debug_*.py
 my_tests/
