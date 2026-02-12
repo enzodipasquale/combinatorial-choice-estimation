@@ -47,7 +47,6 @@ class DistributedBootstrapMixin:
                                    row_gen_iteration_callback,
                                    row_gen_initialization_callback,
                                    verbose)
-
         save_dir = self._phase_save_point_estimate(save_model_dir)
 
         # === Phase 2: Broadcast base model ===
@@ -169,7 +168,7 @@ class DistributedBootstrapMixin:
             padded[:K] = weights_full.T[:K]
         else:
             padded = None
-        boot_agent_weights = np.empty(self.dim.n_agents, dtype=np.float64)
+        boot_agent_weights = np.zeros(self.dim.n_agents, dtype=np.float64)
         comm.comm.Scatter(padded, boot_agent_weights, root=0)
 
         return local_weights, boot_agent_weights
@@ -301,6 +300,8 @@ class DistributedBootstrapMixin:
 
         master_send = np.zeros((K, nf + n_agents), dtype=np.float64)
         master_all = np.empty_like(master_send)
+        boot_stats_send = np.zeros((K, 2), dtype=np.float64)
+        boot_stats_all = np.empty_like(boot_stats_send)
 
         if self.verbose and self.comm_manager.is_root():
             n_pre = len(pre_converged) if pre_converged else 0
@@ -309,6 +310,8 @@ class DistributedBootstrapMixin:
                         K, P, f", {n_pre} pre-converged" if n_pre else "")
 
         for rg_round in range(int(cfg.max_iters)):
+            t_round = time.perf_counter()
+
             active_k = np.where(active)[0]
             if len(active_k) == 0:
                 break
@@ -326,6 +329,8 @@ class DistributedBootstrapMixin:
             us = master_all[:, nf:]
 
             # --- Step 2: Solve subproblems, compute reduced costs ---
+            t_price = time.perf_counter()
+
             bundles = np.empty((len(active_k), n_local, self.dim.n_items), dtype=bool)
             for i, k in enumerate(active_k):
                 bundles[i] = self.subproblem_manager.solve_subproblems(thetas[k])
@@ -341,11 +346,20 @@ class DistributedBootstrapMixin:
             u_master = us[active_k, local_start:local_start + n_local]
             rc = local_weights[:, active_k].T * (u_sub - u_master)
 
-            # --- Step 3: Convergence check ---
+            t_price = time.perf_counter() - t_price
+
+            # --- Step 3: Convergence check + timing stats ---
             local_max_rc = rc.max(axis=1)
             global_max_rc = np.empty_like(local_max_rc)
             comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
             converged = global_max_rc <= cfg.tolerance
+
+            # Piggyback: max pricing time + total viols (one Allreduce)
+            local_agg = np.array([t_price, float((rc > cfg.tolerance).sum())])
+            global_agg = np.empty(2, dtype=np.float64)
+            comm.Allreduce(local_agg, global_agg, op=MPI.MAX)
+            max_pricing_time = global_agg[0]
+            total_viols = int(global_agg[1])
 
             # --- Step 4: Exchange violations for non-converged boots ---
             viol_mask = rc > cfg.tolerance
@@ -364,6 +378,7 @@ class DistributedBootstrapMixin:
             recvbuf = self._alltoallv_rows(rows_by_dest, P, comm)
 
             # --- Step 5: Add cuts and re-solve ---
+            t_master = time.perf_counter()
             if rank < K and active[rank] and not converged[active_k == rank][0]:
                 if len(recvbuf) > 0:
                     d = recvbuf.reshape(-1, ROW_WIDTH)
@@ -371,8 +386,14 @@ class DistributedBootstrapMixin:
                     master['model'].addConstr(
                         master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
                 master['model'].optimize()
+            t_master = time.perf_counter() - t_master
 
-            # --- Step 6: Retire converged boots ---
+            # --- Step 6: Gather per-boot master stats, retire converged ---
+            boot_stats_send[:] = 0.0
+            if rank < K and active[rank]:
+                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
+
             newly_converged = []
             for i, k in enumerate(active_k):
                 if converged[i] and rg_round >= cfg.min_iters:
@@ -387,9 +408,14 @@ class DistributedBootstrapMixin:
                         master['model'].write(os.path.join(d, "master.sol"))
 
             # --- Logging ---
+            t_total = time.perf_counter() - t_round
+            t_comm = max(0.0, t_total - max_pricing_time - t_master)
+
             if self.verbose and self.comm_manager.is_root():
                 self._log_rg_round(rg_round, len(active_k), global_max_rc,
-                                   newly_converged, theta_results)
+                                   max_pricing_time, t_comm, t_master,
+                                   total_viols, newly_converged,
+                                   theta_results, boot_stats_all)
 
             if bootstrap_callback is not None:
                 bootstrap_callback(rg_round, active, theta_results)
@@ -397,6 +423,11 @@ class DistributedBootstrapMixin:
         # --- Collect remaining non-converged ---
         remaining = np.where(active)[0]
         if len(remaining) > 0:
+            boot_stats_send[:] = 0.0
+            if rank < K and active[rank]:
+                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
+
             buf = np.zeros((K, nf), dtype=np.float64)
             if rank < K and active[rank]:
                 buf[rank] = master['theta'].X
@@ -415,6 +446,8 @@ class DistributedBootstrapMixin:
                 logger.info(" ")
                 logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
                             len(remaining), int(cfg.max_iters))
+                self._log_boot_details(remaining, theta_results,
+                                       global_max_rc, boot_stats_all)
 
         return theta_results if rank == 0 else None
 
@@ -449,22 +482,48 @@ class DistributedBootstrapMixin:
     # Logging
     # -------------------------------------------------------------------------
 
-    def _log_rg_round(self, rg_round, n_active, global_max_rc, newly_converged, theta_results):
+    def _log_rg_round(self, rg_round, n_active, global_max_rc,
+                      t_price, t_comm, t_master,
+                      n_viols, newly_converged,
+                      theta_results, boot_stats_all):
+        if rg_round % 40 == 0:
+            logger.info("-" * 110)
+            logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
+                        "Round", "Act.", "Pricing", "Comm", "Master",
+                        "Max Reduced", "Total")
+            logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
+                        "", "", "(s)", "(s)", "(s)", "Cost", "#Viol")
+            logger.info("-" * 110)
+        logger.info(" %5d  %4d  %8.1fs  %8.1fs  %8.1fs  %14s  %9d",
+                     rg_round, n_active,
+                     t_price, t_comm, t_master,
+                     self._fmt_rc(global_max_rc.max(), width=14),
+                     n_viols)
+        if newly_converged:
+            self._log_boot_details(newly_converged, theta_results,
+                                   global_max_rc, boot_stats_all)
+
+    def _log_boot_details(self, boot_ids, theta_results,
+                          global_max_rc, boot_stats_all):
         param_idx = self.config.row_generation.parameters_to_log \
                     or list(range(min(5, self.dim.n_features)))
-        if rg_round % 80 == 0:
-            h1 = f" {'Round':>5}  {'Active':>6}  {'Max RC':>14}"
-            logger.info("-" * len(h1))
-            logger.info(h1)
-            logger.info("-" * len(h1))
-        logger.info(" %5d  %6d  %s", rg_round, n_active,
-                     self._fmt_rc(global_max_rc.max()))
-        if newly_converged:
-            for k in newly_converged:
-                t = theta_results[k]
-                if t is not None:
-                    vals = ' '.join(format_number(t[i], width=10, precision=5) for i in param_idx)
-                    logger.info("   ↳ boot %d converged: [%s]", k, vals)
+        hdr_params = ''.join(f"{'θ['+str(i)+']':>10}" for i in param_idx)
+        logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
+                    "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
+        for k in boot_ids:
+            t = theta_results[k]
+            if t is None:
+                continue
+            n_constr = int(boot_stats_all[k, 0])
+            obj_val = boot_stats_all[k, 1]
+            rc_k = global_max_rc[k] if k < len(global_max_rc) else 0.0
+            t_range = f"[{t.min():.1f}, {t.max():.1f}]"
+            vals = ''.join(format_number(t[i], width=10, precision=5) for i in param_idx)
+            logger.info("        ↳ %4d  %7d  %14s  %14s  %15s  %s",
+                        k, n_constr,
+                        self._fmt_rc(rc_k, width=14),
+                        format_number(obj_val, width=14, precision=4),
+                        t_range, vals)
 
     @staticmethod
     def _fmt_rc(val, width=14):
