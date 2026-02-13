@@ -60,3 +60,4 @@ applications/firms_export
 bundlechoice/tests
 requirements_HPC.txt
 applications/combinatorial_auction/data/maps/
+applications/combinatorial_auction/se_bayesian_bootstrap/checkpoints
