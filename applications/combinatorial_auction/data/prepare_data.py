@@ -147,7 +147,7 @@ def build_modular_features(elig, pop, assets=None, revenues=None):
     return np.stack(modular_list, axis=2)
 
 
-def main(delta=4, winners_only=False, form175_features=False, continental_only=False):
+def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False):
 
     raw_data = load_raw_data(continental_only)
 
@@ -265,6 +265,10 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
+        "--hq-distance",
+        action="store_true",
+    )
+    parser.add_argument(
         "--continental-only", "-c",
         action="store_true",
     )
@@ -279,5 +283,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only)
+    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance)
 
