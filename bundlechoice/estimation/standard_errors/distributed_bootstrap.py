@@ -2,11 +2,26 @@ import os
 import time
 import numpy as np
 import gurobipy as gp
-from gurobipy import GRB
 from mpi4py import MPI
 from bundlechoice.utils import get_logger, suppress_output, format_number
+from bundlechoice.estimation.result import RowGenerationEstimationResult
 
 logger = get_logger(__name__)
+
+
+def _load_gurobi_model(lp_path, sol_path=None):
+    with suppress_output():
+        model = gp.read(lp_path)
+        if sol_path and os.path.exists(sol_path):
+            model.read(sol_path)
+        model.setParam('OutputFlag', 0)
+        model.optimize()
+    return model
+
+
+def _extract_master_vars(model, n_features, n_agents):
+    vs = model.getVars()
+    return gp.MVar.fromlist(vs[:n_features]), gp.MVar.fromlist(vs[n_features:n_features + n_agents])
 
 
 class DistributedBootstrapMixin:
@@ -24,169 +39,173 @@ class DistributedBootstrapMixin:
         K = num_bootstrap
         t0 = time.perf_counter()
 
-        # Resolve checkpoint paths
-        #   checkpoints/
-        #   ├── point_estimate/    (master.lp, master.sol)
-        #   └── bootstrap/         (boot_0000/, boot_0001/, ...)
-        ckpt_load = comm.bcast(
+        load_dir = comm.bcast(
             os.path.join(load_model_dir, "checkpoints") if load_model_dir else None)
 
-        # === Phase 1: Point estimation (solve or load) ===
-        pt_load = os.path.join(ckpt_load, "point_estimate") if ckpt_load else None
-        if pt_load and os.path.exists(os.path.join(pt_load, "master.lp")):
-            self._load_point_estimate(pt_load)
+        # === Phase 1: Point estimation ===
+        self._phase_point_estimate(load_dir,
+                                   row_gen_iteration_callback,
+                                   row_gen_initialization_callback,
+                                   verbose)
+        save_dir = self._phase_save_point_estimate(save_model_dir)
+
+        # === Phase 2: Broadcast base model ===
+        base_data = self._extract_base_model()
+
+        # === Phase 3: Bootstrap weights ===
+        local_weights, boot_agent_weights = self._phase_bootstrap_weights(K, seed, method)
+
+        # === Phase 4: Build or load master models ===
+        master, pre_converged = self._phase_build_masters(
+            K, base_data, local_weights, boot_agent_weights, load_dir)
+
+        # === Phase 5: Row generation ===
+        boot_save = os.path.join(save_dir, "bootstrap") if save_dir else None
+        theta_boots = self._distributed_rg_loop(
+            K, local_weights, master,
+            iteration_callback=row_gen_iteration_callback,
+            bootstrap_callback=bootstrap_callback,
+            save_dir=boot_save,
+            pre_converged=pre_converged)
+
+        # === Phase 6: Statistics ===
+        total_time = time.perf_counter() - t0
+        return self._compute_and_log_stats(K, theta_boots, total_time)
+
+    # -------------------------------------------------------------------------
+    # Phase 1: Point estimation
+    # -------------------------------------------------------------------------
+
+    def _phase_point_estimate(self, load_dir, iteration_callback, init_callback, verbose):
+        comm = self.comm_manager
+        pt_dir = os.path.join(load_dir, "point_estimate") if load_dir else None
+
+        load_ok = comm.bcast(
+            pt_dir is not None and os.path.exists(os.path.join(pt_dir, "master.lp"))
+            if comm.is_root() else None)
+
+        if load_ok:
+            self._load_point_estimate(pt_dir)
             self.subproblem_manager.initialize_subproblems()
         else:
             self.point_result = self.row_gen.solve(
                 local_obs_weights=np.ones(self.data_manager.num_local_agent),
                 initialize_master=True, initialize_subproblems=True,
-                iteration_callback=row_gen_iteration_callback,
-                initialization_callback=row_gen_initialization_callback,
+                iteration_callback=iteration_callback,
+                initialization_callback=init_callback,
                 verbose=verbose)
 
-        # Save point estimate
-        ckpt_save = None
-        if save_model_dir is not None:
-            ckpt_save = os.path.join(save_model_dir, "checkpoints")
-            if comm.is_root():
-                pt_save = os.path.join(ckpt_save, "point_estimate")
-                os.makedirs(pt_save, exist_ok=True)
-                self.row_gen.master_model.write(os.path.join(pt_save, "master.lp"))
-                self.row_gen.master_model.write(os.path.join(pt_save, "master.sol"))
-        ckpt_save = comm.bcast(ckpt_save)
-
-        # === Phase 2: Extract and broadcast base model ===
-        base_data = self._extract_and_broadcast_base_model()
-
-        # === Phase 3: Generate and distribute bootstrap weights ===
-        gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
-              else self.generate_weights_standard_bootstrap
-        weights = gen(seed, K)
-        local_weights = comm.Scatterv_by_row(
-            weights, row_counts=self.data_manager.agent_counts,
-            dtype=np.float64, shape=(self.dim.n_agents, K))
-        all_weights = comm.bcast(weights if comm.is_root() else None)
-
-        # === Phase 4: Build master models (or load saved boots) ===
-        local_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
-        master = self._setup_all_masters(K, base_data, local_weights, local_features, all_weights)
-        del all_weights
-        boot_load = os.path.join(ckpt_load, "bootstrap") if ckpt_load else None
-        pre_converged = self._load_boot_solutions(K, boot_load, master, comm)
-
-        # === Phase 5: Distributed row generation ===
-        boot_save = os.path.join(ckpt_save, "bootstrap") if ckpt_save else None
-        theta_boots = self._distributed_rg_loop(
-            K, local_weights, master,
-            row_gen_iteration_callback, bootstrap_callback,
-            save_dir=boot_save, pre_converged=pre_converged)
-
-        # === Phase 6: Statistics ===
-        total_time = time.perf_counter() - t0
-        return self._gather_and_compute_stats(K, theta_boots, total_time)
-
-    # -------------------------------------------------------------------------
-    # Loading
-    # -------------------------------------------------------------------------
-
     def _load_point_estimate(self, pt_dir):
-        """Load point estimate model from disk."""
         comm = self.comm_manager
-
         if comm.is_root():
-            with suppress_output():
-                model = gp.read(os.path.join(pt_dir, "master.lp"))
-                model.read(os.path.join(pt_dir, "master.sol"))
-                model.setParam('OutputFlag', 0)
-                model.optimize()
-            nf = self.dim.n_features
-            all_vars = model.getVars()
-            theta = gp.MVar.fromlist(all_vars[:nf])
-            u = gp.MVar.fromlist(all_vars[nf:nf + self.dim.n_agents])
+            model = _load_gurobi_model(
+                os.path.join(pt_dir, "master.lp"),
+                os.path.join(pt_dir, "master.sol"))
+            theta, u = _extract_master_vars(model, self.dim.n_features, self.dim.n_agents)
             self.row_gen.install_master_model(model, (theta, u))
             theta_hat = theta.X.copy()
         else:
             theta_hat = np.empty(self.dim.n_features, dtype=np.float64)
 
         comm.Bcast(theta_hat)
-        from bundlechoice.estimation.result import RowGenerationEstimationResult
         self.point_result = RowGenerationEstimationResult(
             theta_hat=theta_hat, converged=True, num_iterations=0, final_objective=None)
 
         if self.verbose and comm.is_root():
-            idx = self.config.row_generation.parameters_to_log or list(range(min(5, self.dim.n_features)))
+            idx = self.config.row_generation.parameters_to_log \
+                  or list(range(min(5, self.dim.n_features)))
             logger.info(" LOADED point estimate from %s", pt_dir)
             logger.info(" θ = [%s]", ', '.join(f'{theta_hat[i]:.5f}' for i in idx))
 
-    def _load_boot_solutions(self, K, boot_dir, master, comm):
-        """Load previously solved boots. Returns {k: theta_k} for pre-converged boots."""
-        if boot_dir is None:
-            return {}
-
-        rank, nf = comm.rank, self.dim.n_features
-        pre_converged = {}
-
-        if rank < K:
-            lp = os.path.join(boot_dir, f"boot_{rank:04d}", "master.lp")
-            sol = os.path.join(boot_dir, f"boot_{rank:04d}", "master.sol")
-            if os.path.exists(lp) and os.path.exists(sol):
-                with suppress_output():
-                    m = gp.read(lp)
-                    m.read(sol)
-                    m.setParam('OutputFlag', 0)
-                    m.optimize()
-                vs = m.getVars()
-                t = gp.MVar.fromlist(vs[:nf])
-                u = gp.MVar.fromlist(vs[nf:nf + self.dim.n_agents])
-                pre_converged[rank] = t.X.copy()
-                master.update({'model': m, 'theta': t, 'u': u})
-
-        # Share which boots are loaded
-        flag = np.array([1 if rank in pre_converged else 0], dtype=np.int32)
-        all_flags = np.empty(comm.comm_size, dtype=np.int32)
-        comm.comm.Allgather(flag, all_flags)
-
-        if self.verbose and comm.is_root():
-            loaded = np.where(all_flags[:K])[0]
-            if len(loaded):
-                logger.info(" LOADED %d boot solutions from %s",
-                            len(loaded), boot_dir)
-
-        return pre_converged
+    def _phase_save_point_estimate(self, save_model_dir):
+        comm = self.comm_manager
+        save_dir = None
+        if save_model_dir is not None:
+            save_dir = os.path.join(save_model_dir, "checkpoints")
+            if comm.is_root():
+                pt_dir = os.path.join(save_dir, "point_estimate")
+                os.makedirs(pt_dir, exist_ok=True)
+                self.row_gen.master_model.write(os.path.join(pt_dir, "master.lp"))
+                self.row_gen.master_model.write(os.path.join(pt_dir, "master.sol"))
+        return comm.bcast(save_dir)
 
     # -------------------------------------------------------------------------
     # Phase 2: Extract base model
     # -------------------------------------------------------------------------
 
-    def _extract_and_broadcast_base_model(self):
+    def _extract_base_model(self):
         comm = self.comm_manager
         if comm.is_root():
             model = self.row_gen.master_model
             tv, uv = self.row_gen.master_variables
             data = {
-                'A': model.getA(),
+                'A': model.getA().toarray(),
                 'rhs': np.array(model.getAttr('RHS', model.getConstrs())),
                 'sense': np.array([c.Sense for c in model.getConstrs()]),
                 'theta_lb': np.array([tv[i].LB for i in range(self.dim.n_features)]),
                 'theta_ub': np.array([tv[i].UB for i in range(self.dim.n_features)]),
             }
         else:
-            data = None
-        return comm.bcast(data)
+            data = {}
+        return comm.bcast_dict(data)
 
     # -------------------------------------------------------------------------
-    # Phase 4: Build all master models
+    # Phase 3: Bootstrap weights
     # -------------------------------------------------------------------------
 
-    def _setup_all_masters(self, K, base_data, local_weights, local_features, all_weights):
+    def _phase_bootstrap_weights(self, K, seed, method):
         comm = self.comm_manager
+        gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
+              else self.generate_weights_standard_bootstrap
+        weights_full = gen(seed, K)
+
+        local_weights = comm.Scatterv_by_row(
+            weights_full, row_counts=self.data_manager.agent_counts,
+            dtype=np.float64, shape=(self.dim.n_agents, K))
+
+        if comm.is_root():
+            padded = np.zeros((comm.comm_size, self.dim.n_agents), dtype=np.float64)
+            padded[:K] = weights_full.T[:K]
+        else:
+            padded = None
+        boot_agent_weights = np.zeros(self.dim.n_agents, dtype=np.float64)
+        comm.comm.Scatter(padded, boot_agent_weights, root=0)
+
+        return local_weights, boot_agent_weights
+
+    # -------------------------------------------------------------------------
+    # Phase 4: Build or load master models
+    # -------------------------------------------------------------------------
+
+    def _phase_build_masters(self, K, base_data, local_weights, boot_agent_weights, load_dir):
+        comm = self.comm_manager
+        rank = comm.rank
+
+        local_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
         local_theta_obj = -local_weights.T @ local_features
         theta_obj_all = np.empty_like(local_theta_obj)
         comm.comm.Allreduce(local_theta_obj, theta_obj_all, op=MPI.SUM)
 
-        if comm.rank < K:
-            return self._build_master_model(base_data, theta_obj_all[comm.rank], all_weights[:, comm.rank])
-        return None
+        if rank < K:
+            boot_dir = os.path.join(load_dir, "bootstrap", f"boot_{rank:04d}") if load_dir else None
+            if boot_dir and os.path.exists(os.path.join(boot_dir, "master.lp")):
+                master = self._load_boot_master(boot_dir)
+            else:
+                master = self._build_master_model(base_data, theta_obj_all[rank], boot_agent_weights)
+        else:
+            master = None
+
+        pre_converged = self._precheck_convergence(K, master)
+        return master, pre_converged
+
+    def _load_boot_master(self, boot_dir):
+        model = _load_gurobi_model(
+            os.path.join(boot_dir, "master.lp"),
+            os.path.join(boot_dir, "master.sol"))
+        theta, u = _extract_master_vars(model, self.dim.n_features, self.dim.n_agents)
+        if self.verbose:
+            logger.info(" Rank %d: loaded boot from %s", self.comm_manager.rank, boot_dir)
+        return {'model': model, 'theta': theta, 'u': u}
 
     def _build_master_model(self, base_data, theta_obj_coef, u_obj_weights):
         A, rhs, sense = base_data['A'], base_data['rhs'], base_data['sense']
@@ -198,7 +217,8 @@ class DistributedBootstrapMixin:
                 if v is not None:
                     model.setParam(p, v)
             theta = model.addMVar(self.dim.n_features, obj=theta_obj_coef,
-                                  lb=base_data['theta_lb'], ub=base_data['theta_ub'], name='parameter')
+                                  lb=base_data['theta_lb'], ub=base_data['theta_ub'],
+                                  name='parameter')
             u = model.addMVar(self.dim.n_agents, lb=0, obj=u_obj_weights, name='utility')
             model.update()
             all_mvar = gp.MVar.fromlist(model.getVars())
@@ -209,263 +229,301 @@ class DistributedBootstrapMixin:
             model.optimize()
         return {'model': model, 'theta': theta, 'u': u}
 
+    def _precheck_convergence(self, K, master):
+        comm = self.comm_manager
+        rank = comm.rank
+        nf = self.dim.n_features
+        n_local = self.data_manager.num_local_agent
+        local_start = int(self.data_manager.agent_counts[:rank].sum())
+        cfg = self.config.row_generation
+
+        theta_send = np.zeros((K, nf), dtype=np.float64)
+        u_send = np.zeros((K, self.dim.n_agents), dtype=np.float64)
+        if rank < K:
+            theta_send[rank] = master['theta'].X
+            u_send[rank] = master['u'].X
+        theta_all = np.empty_like(theta_send)
+        u_all = np.empty_like(u_send)
+        comm.comm.Allreduce(theta_send, theta_all, op=MPI.SUM)
+        comm.comm.Allreduce(u_send, u_all, op=MPI.SUM)
+
+        local_max_rc = np.full(K, -np.inf, dtype=np.float64)
+        local_ids = self.data_manager.local_agents_arange
+        for k in range(K):
+            bundles = self.subproblem_manager.solve_subproblems(theta_all[k])
+            features = self.oracles_manager.features_oracle(bundles, local_ids)
+            errors = self.oracles_manager.error_oracle(bundles, local_ids)
+            u_sub = features @ theta_all[k] + errors
+            u_master = u_all[k, local_start:local_start + n_local]
+            local_max_rc[k] = (u_sub - u_master).max()
+
+        global_max_rc = np.empty_like(local_max_rc)
+        comm.comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
+
+        converged_mask = global_max_rc <= cfg.tolerance
+        pre_converged = {}
+        for k in range(K):
+            if converged_mask[k]:
+                pre_converged[k] = theta_all[k].copy()
+
+        if self.verbose and self.comm_manager.is_root() and pre_converged:
+            logger.info(" Pre-check: %d boots already converged", len(pre_converged))
+
+        return pre_converged
+
     # -------------------------------------------------------------------------
-    # Phase 5: Distributed row generation loop
+    # Phase 5: Row generation loop
     # -------------------------------------------------------------------------
 
     def _distributed_rg_loop(self, K, local_weights, master,
-                             iteration_callback, bootstrap_callback,
+                             iteration_callback=None, bootstrap_callback=None,
                              save_dir=None, pre_converged=None):
-        comm = self.comm_manager
+        rank = self.comm_manager.rank
+        comm = self.comm_manager.comm
         cfg = self.config.row_generation
-        rank, P = comm.rank, comm.comm_size
-        n_features, n_agents = self.dim.n_features, self.dim.n_agents
-        agent_counts = self.data_manager.agent_counts
+        P = self.comm_manager.comm_size
+        nf = self.dim.n_features
+        n_agents = self.dim.n_agents
         n_local = self.data_manager.num_local_agent
-        local_agent_start = int(agent_counts[:rank].sum())
-        ROW_WIDTH = n_features + 2
+        local_start = int(self.data_manager.agent_counts[:rank].sum())
+        local_ids = self.data_manager.local_agents_arange
+        agent_ids = self.data_manager.agent_ids
+        ROW_WIDTH = nf + 2
 
         active = np.ones(K, dtype=np.int32)
-        boot_iters = np.zeros(K, dtype=np.int32)
         theta_results = [None] * K
 
-        # Install pre-converged boots
-        pre_converged = pre_converged or {}
-        for k in pre_converged:
-            active[k] = 0
-            theta_results[k] = pre_converged[k]
-        # Sync active flags across all ranks
-        pre_flags = np.zeros(K, dtype=np.int32)
-        for k in pre_converged:
-            pre_flags[k] = 1
-        all_pre_flags = np.empty_like(pre_flags)
-        comm.comm.Allreduce(pre_flags, all_pre_flags, op=MPI.SUM)
-        for k in range(K):
-            if all_pre_flags[k]:
+        if pre_converged:
+            for k, theta_k in pre_converged.items():
                 active[k] = 0
-        # Send pre-converged thetas to root
-        for k in np.where(all_pre_flags)[0]:
-            if theta_results[k] is None:
-                if rank == 0 and k != 0:
-                    theta_results[k] = np.empty(n_features, dtype=np.float64)
-                    comm.comm.Recv(theta_results[k], source=k, tag=k)
-            elif rank == k and k != 0:
-                comm.comm.Send(np.ascontiguousarray(theta_results[k]), dest=0, tag=k)
+                theta_results[k] = theta_k
 
-        # Pre-allocate buffers
-        thetas_send = np.zeros((K, n_features), dtype=np.float64)
-        u_send = np.zeros((K, n_agents), dtype=np.float64)
-        thetas_all = np.empty_like(thetas_send)
-        u_all = np.empty_like(u_send)
-        send_counts = np.zeros(P, dtype=np.int64)
-        recv_counts = np.empty(P, dtype=np.int64)
-        sdispls = np.empty(P, dtype=np.int64)
-        rdispls = np.empty(P, dtype=np.int64)
+        master_send = np.zeros((K, nf + n_agents), dtype=np.float64)
+        master_all = np.empty_like(master_send)
+        boot_stats_send = np.zeros((K, 2), dtype=np.float64)
+        boot_stats_all = np.empty_like(boot_stats_send)
 
-        global_max_rc = np.zeros(K, dtype=np.float64)
-
-        n_pre = int(all_pre_flags.sum())
-        if self.verbose and comm.is_root():
+        if self.verbose and self.comm_manager.is_root():
+            n_pre = len(pre_converged) if pre_converged else 0
             logger.info(" ")
             logger.info(" DISTRIBUTED BOOTSTRAP (%d samples, %d ranks%s)",
-                        K, P, f", {n_pre} pre-loaded" if n_pre else "")
+                        K, P, f", {n_pre} pre-converged" if n_pre else "")
 
         for rg_round in range(int(cfg.max_iters)):
-            n_active = int(active.sum())
-            if n_active == 0:
-                break
+            t_round = time.perf_counter()
+
             active_k = np.where(active)[0]
+            if len(active_k) == 0:
+                break
 
             if iteration_callback is not None:
-                iteration_callback(int(boot_iters[active_k[0]]), self.row_gen)
+                iteration_callback(rg_round, self.row_gen)
 
-            # ------ Step 1: Allreduce thetas and u's (COMM) ------
-            t_comm_start = time.perf_counter()
-
-            thetas_send[:] = 0.0
-            u_send[:] = 0.0
+            # --- Step 1: Broadcast all (theta, u) pairs ---
+            master_send[:] = 0.0
             if rank < K and active[rank]:
-                thetas_send[rank] = master['theta'].X
-                u_send[rank] = master['u'].X
-            comm.comm.Allreduce(thetas_send, thetas_all, op=MPI.SUM)
-            comm.comm.Allreduce(u_send, u_all, op=MPI.SUM)
+                master_send[rank, :nf] = master['theta'].X
+                master_send[rank, nf:] = master['u'].X
+            comm.Allreduce(master_send, master_all, op=MPI.SUM)
+            thetas = master_all[:, :nf]
+            us = master_all[:, nf:]
 
-            t_step1 = time.perf_counter() - t_comm_start
+            # --- Step 2: Solve subproblems, compute reduced costs ---
+            t_price = time.perf_counter()
 
-            # ------ Step 2: Price subproblems (PRICING) ------
-            t_price_start = time.perf_counter()
+            bundles = np.empty((len(active_k), n_local, self.dim.n_items), dtype=bool)
+            for i, k in enumerate(active_k):
+                bundles[i] = self.subproblem_manager.solve_subproblems(thetas[k])
 
-            local_viols = {}
-            for k in active_k:
-                u_local_k = u_all[k, local_agent_start:local_agent_start + n_local]
-                bundles = self.subproblem_manager.solve_subproblems(thetas_all[k])
-                local_viols[k] = self.row_gen._compute_local_violations(
-                    bundles, thetas_all[k], u_local_k, local_weights[:, k])
+            flat = bundles.reshape(-1, self.dim.n_items)
+            flat_ids = np.tile(local_ids, len(active_k))
+            features = self.oracles_manager.features_oracle(flat, flat_ids) \
+                           .reshape(len(active_k), n_local, nf)
+            errors = self.oracles_manager.error_oracle(flat, flat_ids) \
+                         .reshape(len(active_k), n_local)
 
-            t_price = time.perf_counter() - t_price_start
+            u_sub = np.einsum('ijk,ik->ij', features, thetas[active_k]) + errors
+            u_master = us[active_k, local_start:local_start + n_local]
+            rc = local_weights[:, active_k].T * (u_sub - u_master)
 
-            # ------ Step 3: Convergence check + Alltoallv (COMM) ------
-            t_comm2_start = time.perf_counter()
+            t_price = time.perf_counter() - t_price
 
-            local_meta = np.zeros((K, 2), dtype=np.float64)
-            for k in active_k:
-                local_meta[k] = [local_viols[k][0], local_viols[k][1]]
-
-            all_meta = comm.Allgather(local_meta.ravel()).reshape(P, K, 2)
-            global_max_rc = all_meta[:, :, 0].max(axis=0)
-            global_n_viol = all_meta[:, :, 1].sum(axis=0).astype(np.int64)
+            # --- Step 3: Convergence check + timing stats ---
+            local_max_rc = rc.max(axis=1)
+            global_max_rc = np.empty_like(local_max_rc)
+            comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
             converged = global_max_rc <= cfg.tolerance
-            nc_set = set(k for k in active_k if not converged[k])
 
-            send_counts[:] = 0
-            chunks = {}
-            for k in nc_set:
-                _, n_viol_k, viol_ids, _, viol_fe = local_viols[k]
-                if n_viol_k > 0:
-                    row = np.empty((n_viol_k, ROW_WIDTH), dtype=np.float64)
-                    row[:, 0] = viol_ids
-                    row[:, 1:] = viol_fe
-                    chunks[k] = row.ravel()
-                    send_counts[k] = n_viol_k * ROW_WIDTH
+            # Piggyback: max pricing time + total viols (one Allreduce)
+            local_agg = np.array([t_price, float((rc > cfg.tolerance).sum())])
+            global_agg = np.empty(2, dtype=np.float64)
+            comm.Allreduce(local_agg, global_agg, op=MPI.MAX)
+            max_pricing_time = global_agg[0]
+            total_viols = int(global_agg[1])
 
-            sendbuf = np.concatenate([chunks[r] for r in sorted(chunks)]) \
-                      if chunks else np.empty(0, dtype=np.float64)
+            # --- Step 4: Exchange violations for non-converged boots ---
+            viol_mask = rc > cfg.tolerance
+            rows_by_dest = {}
+            for i, k in enumerate(active_k):
+                if converged[i]:
+                    continue
+                v = np.where(viol_mask[i])[0]
+                if len(v) > 0:
+                    block = np.empty((len(v), ROW_WIDTH), dtype=np.float64)
+                    block[:, 0] = agent_ids[v]
+                    block[:, 1:-1] = features[i, v]
+                    block[:, -1] = errors[i, v]
+                    rows_by_dest[k] = block.ravel()
 
-            comm.comm.Alltoall(send_counts, recv_counts)
-            sdispls[0] = rdispls[0] = 0
-            np.cumsum(send_counts[:-1], out=sdispls[1:])
-            np.cumsum(recv_counts[:-1], out=rdispls[1:])
-            recvbuf = np.empty(int(recv_counts.sum()), dtype=np.float64)
+            recvbuf = self._alltoallv_rows(rows_by_dest, P, comm)
 
-            comm.comm.Alltoallv(
-                [sendbuf, send_counts, sdispls, MPI.DOUBLE],
-                [recvbuf, recv_counts, rdispls, MPI.DOUBLE])
-
-            gathered_data = {}
-            if rank < K and rank in nc_set:
-                n_rows = int(recv_counts.sum()) // ROW_WIDTH
-                if n_rows > 0:
-                    d = recvbuf.reshape(n_rows, ROW_WIDTH)
-                    gathered_data[rank] = (d[:, 0].astype(np.int64),
-                                           np.ascontiguousarray(d[:, 1:-1]),
-                                           np.ascontiguousarray(d[:, -1]))
-
-            t_comm = t_step1 + (time.perf_counter() - t_comm2_start)
-
-            # ------ Step 4: Master solves (NO COMM) ------
-            t_master_start = time.perf_counter()
-
-            if rank < K and active[rank] and not converged[rank]:
-                if rank in gathered_data:
-                    ids, feats, errs = gathered_data[rank]
-                    if len(ids) > 0:
-                        master['model'].addConstr(
-                            master['u'][ids] >= feats @ master['theta'] + errs)
+            # --- Step 5: Add cuts and re-solve ---
+            t_master = time.perf_counter()
+            if rank < K and active[rank] and not converged[active_k == rank][0]:
+                if len(recvbuf) > 0:
+                    d = recvbuf.reshape(-1, ROW_WIDTH)
+                    ids = d[:, 0].astype(np.int64)
+                    master['model'].addConstr(
+                        master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
                 master['model'].optimize()
+            t_master = time.perf_counter() - t_master
 
-            t_master = time.perf_counter() - t_master_start
+            # --- Step 6: Gather per-boot master stats, retire converged ---
+            boot_stats_send[:] = 0.0
+            if rank < K and active[rank]:
+                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
 
-            # ------ Step 5: Bookkeeping ------
             newly_converged = []
-            for k in active_k:
-                boot_iters[k] += 1
-                if converged[k] and boot_iters[k] >= cfg.min_iters:
+            for i, k in enumerate(active_k):
+                if converged[i] and rg_round >= cfg.min_iters:
+                    active[k] = 0
                     newly_converged.append(k)
+                    if rank == 0:
+                        theta_results[k] = thetas[k].copy()
+                    if rank == k and save_dir is not None:
+                        d = os.path.join(save_dir, f"boot_{k:04d}")
+                        os.makedirs(d, exist_ok=True)
+                        master['model'].write(os.path.join(d, "master.lp"))
+                        master['model'].write(os.path.join(d, "master.sol"))
 
-            converged_info = self._collect_boots(
-                newly_converged, theta_results, master, global_max_rc,
-                boot_iters, K, rank, comm, save_dir, tag_offset=0)
-            for k in newly_converged:
-                active[k] = 0
+            # --- Logging ---
+            t_total = time.perf_counter() - t_round
+            t_comm = max(0.0, t_total - max_pricing_time - t_master)
 
-            # ------ Logging ------
-            if self.verbose and comm.is_root():
-                param_idx = cfg.parameters_to_log or list(range(min(5, n_features)))
-                self._log_rg_round_header(rg_round, param_idx)
-                logger.info(
-                    " %5d  %4d  %8.1fs  %8.1fs  %8.1fs  %s  %11d",
-                    rg_round, n_active, t_price, t_comm, t_master,
-                    self._fmt_rc(global_max_rc[active_k].max()),
-                    int(global_n_viol[active_k].sum()))
-                if newly_converged:
-                    self._log_boots(newly_converged, theta_results, converged_info, param_idx)
+            if self.verbose and self.comm_manager.is_root():
+                self._log_rg_round(rg_round, len(active_k), global_max_rc,
+                                   max_pricing_time, t_comm, t_master,
+                                   total_viols, newly_converged,
+                                   theta_results, boot_stats_all)
 
-        # ------ Collect non-converged boots ------
+            if bootstrap_callback is not None:
+                bootstrap_callback(rg_round, active, theta_results)
+
+        # --- Collect remaining non-converged ---
         remaining = np.where(active)[0]
-        remaining_info = self._collect_boots(
-            remaining, theta_results, master, global_max_rc,
-            boot_iters, K, rank, comm, save_dir=None, tag_offset=2)
-        if self.verbose and comm.is_root() and len(remaining) > 0:
-            param_idx = cfg.parameters_to_log or list(range(min(5, n_features)))
-            logger.info(" ")
-            logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
-                        len(remaining), int(cfg.max_iters))
-            self._log_boots(remaining, theta_results, remaining_info, param_idx)
+        if len(remaining) > 0:
+            boot_stats_send[:] = 0.0
+            if rank < K and active[rank]:
+                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
 
-        return theta_results if rank == 0 else None
-
-    def _collect_boots(self, boots, theta_results, master, global_max_rc,
-                       boot_iters, K, rank, comm, save_dir=None, tag_offset=0):
-        """Collect theta + info from master ranks to root via Send/Recv."""
-        nf = self.dim.n_features
-        info = {}
-        for k in boots:
-            if rank == k:
-                theta_results[k] = master['theta'].X.copy()
-                info_k = np.array([master['model'].ObjVal, master['model'].NumConstrs,
-                                   global_max_rc[k], boot_iters[k]], dtype=np.float64)
+            buf = np.zeros((K, nf), dtype=np.float64)
+            if rank < K and active[rank]:
+                buf[rank] = master['theta'].X
                 if save_dir is not None:
-                    d = os.path.join(save_dir, f"boot_{k:04d}")
+                    d = os.path.join(save_dir, f"boot_{rank:04d}")
                     os.makedirs(d, exist_ok=True)
                     master['model'].write(os.path.join(d, "master.lp"))
                     master['model'].write(os.path.join(d, "master.sol"))
-            if k == 0:
-                if rank == 0:
-                    info[k] = info_k
-            else:
-                if rank == k:
-                    comm.comm.Send(np.ascontiguousarray(theta_results[k]),
-                                   dest=0, tag=tag_offset * K + k)
-                    comm.comm.Send(info_k, dest=0, tag=(tag_offset + 1) * K + k)
-                elif rank == 0:
-                    theta_results[k] = np.empty(nf, dtype=np.float64)
-                    comm.comm.Recv(theta_results[k], source=k, tag=tag_offset * K + k)
-                    info_k = np.empty(4, dtype=np.float64)
-                    comm.comm.Recv(info_k, source=k, tag=(tag_offset + 1) * K + k)
-                    info[k] = info_k
-        return info
+            recv = np.empty_like(buf) if rank == 0 else None
+            comm.Reduce(buf, recv, op=MPI.SUM, root=0)
+            if rank == 0:
+                for k in remaining:
+                    theta_results[k] = recv[k]
+
+            if self.verbose and self.comm_manager.is_root():
+                logger.info(" ")
+                logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
+                            len(remaining), int(cfg.max_iters))
+                self._log_boot_details(remaining, theta_results,
+                                       global_max_rc, boot_stats_all)
+
+        return theta_results if rank == 0 else None
+
+    # -------------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _alltoallv_rows(rows_by_dest, P, comm):
+        send_counts = np.zeros(P, dtype=np.int64)
+        for dest, data in rows_by_dest.items():
+            send_counts[dest] = len(data)
+
+        recv_counts = np.empty(P, dtype=np.int64)
+        comm.Alltoall(send_counts, recv_counts)
+
+        sdispls = np.zeros(P, dtype=np.int64)
+        rdispls = np.zeros(P, dtype=np.int64)
+        np.cumsum(send_counts[:-1], out=sdispls[1:])
+        np.cumsum(recv_counts[:-1], out=rdispls[1:])
+
+        sendbuf = np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)]) \
+                  if rows_by_dest else np.empty(0, dtype=np.float64)
+        recvbuf = np.empty(int(recv_counts.sum()), dtype=np.float64)
+
+        comm.Alltoallv(
+            [sendbuf, send_counts, sdispls, MPI.DOUBLE],
+            [recvbuf, recv_counts, rdispls, MPI.DOUBLE])
+        return recvbuf
 
     # -------------------------------------------------------------------------
     # Logging
     # -------------------------------------------------------------------------
 
-    def _log_rg_round_header(self, rg_round, param_indices):
-        if rg_round % 80 != 0:
-            return
-        h1 = f" {'Round':>5}  {'Act.':>4}  {'Pricing':>9}  {'Comm':>9}  {'Master':>9}  {'Max Reduced':>14}  {'Total':>11}"
-        h2 = f" {'':>5}  {'':>4}  {'(s)':>9}  {'(s)':>9}  {'(s)':>9}  {'Cost':>14}  {'#Viol':>11}"
-        sep = "-" * len(h1)
-        logger.info(sep)
-        logger.info(h1)
-        logger.info(h2)
-        logger.info(sep)
+    def _log_rg_round(self, rg_round, n_active, global_max_rc,
+                      t_price, t_comm, t_master,
+                      n_viols, newly_converged,
+                      theta_results, boot_stats_all):
+        if rg_round % 40 == 0:
+            logger.info("-" * 110)
+            logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
+                        "Round", "Act.", "Pricing", "Comm", "Master",
+                        "Max Reduced", "Total")
+            logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
+                        "", "", "(s)", "(s)", "(s)", "Cost", "#Viol")
+            logger.info("-" * 110)
+        logger.info(" %5d  %4d  %8.1fs  %8.1fs  %8.1fs  %14s  %9d",
+                     rg_round, n_active,
+                     t_price, t_comm, t_master,
+                     self._fmt_rc(global_max_rc.max(), width=14),
+                     n_viols)
+        if newly_converged:
+            self._log_boot_details(newly_converged, theta_results,
+                                   global_max_rc, boot_stats_all)
 
-    def _log_boots(self, boots, theta_results, info_dict, param_idx):
-        param_labels = ' '.join(f"{'θ['+str(i)+']':>10}" for i in param_idx)
-        logger.info("       %s  %s  %s  %s  %s  %s",
-                     'Boot'.rjust(6), '#Constr'.rjust(7), 'Reduced Cost'.rjust(14),
-                     'Objective'.rjust(12), 'Range θ'.center(15), param_labels)
-        for k in boots:
-            theta_k = theta_results[k]
-            inf = info_dict.get(k)
-            if inf is None or theta_k is None:
+    def _log_boot_details(self, boot_ids, theta_results,
+                          global_max_rc, boot_stats_all):
+        param_idx = self.config.row_generation.parameters_to_log \
+                    or list(range(min(5, self.dim.n_features)))
+        hdr_params = ''.join(f"{'θ['+str(i)+']':>10}" for i in param_idx)
+        logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
+                    "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
+        for k in boot_ids:
+            t = theta_results[k]
+            if t is None:
                 continue
-            obj_val, n_constr, red_cost, _ = inf
-            vals = ' '.join(format_number(theta_k[i], width=10, precision=5) for i in param_idx)
-            rng = f"[{theta_k.min():.1f}, {theta_k.max():.1f}]"
-            logger.info("       ↳  %4d  %7d  %s  %s  %-15s  %s",
-                         k, int(n_constr), self._fmt_rc(red_cost),
-                         format_number(obj_val, width=12, precision=5), rng, vals)
+            n_constr = int(boot_stats_all[k, 0])
+            obj_val = boot_stats_all[k, 1]
+            rc_k = global_max_rc[k] if k < len(global_max_rc) else 0.0
+            t_range = f"[{t.min():.1f}, {t.max():.1f}]"
+            vals = ''.join(format_number(t[i], width=10, precision=5) for i in param_idx)
+            logger.info("        ↳ %4d  %7d  %14s  %14s  %15s  %s",
+                        k, n_constr,
+                        self._fmt_rc(rc_k, width=14),
+                        format_number(obj_val, width=14, precision=4),
+                        t_range, vals)
 
     @staticmethod
     def _fmt_rc(val, width=14):
@@ -477,26 +535,22 @@ class DistributedBootstrapMixin:
     # Phase 6: Statistics
     # -------------------------------------------------------------------------
 
-    def _gather_and_compute_stats(self, K, theta_boots, total_time):
+    def _compute_and_log_stats(self, K, theta_boots, total_time):
         if not self.comm_manager.is_root():
             return None
         stats = self.compute_bootstrap_stats(theta_boots, theta_hat=self.point_result.theta_hat)
         if self.verbose:
-            self._log_distributed_bootstrap_summary(K, total_time, stats)
+            theta_hat = self.point_result.theta_hat
+            idx = self.config.row_generation.parameters_to_log \
+                  or list(range(min(5, self.dim.n_features)))
+            logger.info(" ")
+            logger.info("-" * 70)
+            logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs", K, total_time)
+            logger.info("-" * 70)
+            logger.info(f"{'Param':>8} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
+            logger.info("-" * 70)
+            for i in idx:
+                logger.info(f"  θ[{i:>3}] | {theta_hat[i]:>12.5f} | {stats.mean[i]:>12.5f} | "
+                            f"{stats.se[i]:>12.5f} | {stats.t_stats[i]:>10.2f}")
+            logger.info("-" * 70)
         return stats
-
-    def _log_distributed_bootstrap_summary(self, n_bootstrap, total_time, result):
-        if not self.comm_manager.is_root():
-            return
-        theta_hat = self.point_result.theta_hat
-        idx = self.config.row_generation.parameters_to_log or list(range(min(5, self.dim.n_features)))
-        logger.info(" ")
-        logger.info("-" * 70)
-        logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs", n_bootstrap, total_time)
-        logger.info("-" * 70)
-        logger.info(f"{'Param':>8} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
-        logger.info("-" * 70)
-        for i in idx:
-            logger.info(f"  θ[{i:>3}] | {theta_hat[i]:>12.5f} | {result.mean[i]:>12.5f} | "
-                        f"{result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
-        logger.info("-" * 70)
