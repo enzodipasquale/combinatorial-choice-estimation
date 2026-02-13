@@ -345,7 +345,8 @@ class DistributedBootstrapMixin:
             u_sub = np.einsum('ijk,ik->ij', features, thetas[active_k]) + errors
             u_master = us[active_k, local_start:local_start + n_local]
             rc = local_weights[:, active_k].T * (u_sub - u_master)
-
+        
+            comm.Barrier()
             t_price = time.perf_counter() - t_price
 
             # --- Step 3: Convergence check + timing stats ---
@@ -355,11 +356,10 @@ class DistributedBootstrapMixin:
             converged = global_max_rc <= cfg.tolerance
 
             # Piggyback: max pricing time + total viols (one Allreduce)
-            local_agg = np.array([t_price, float((rc > cfg.tolerance).sum())])
-            global_agg = np.empty(2, dtype=np.float64)
-            comm.Allreduce(local_agg, global_agg, op=MPI.MAX)
-            max_pricing_time = global_agg[0]
-            total_viols = int(global_agg[1])
+            local_viols = float((rc > cfg.tolerance).sum())
+            total_viols_arr = np.array([local_viols])
+            comm.Allreduce(MPI.IN_PLACE, total_viols_arr, op=MPI.SUM)
+            total_viols = int(total_viols_arr[0])
 
             # --- Step 4: Exchange violations for non-converged boots ---
             viol_mask = rc > cfg.tolerance
@@ -386,6 +386,8 @@ class DistributedBootstrapMixin:
                     master['model'].addConstr(
                         master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
                 master['model'].optimize()
+
+            comm.Barrier()
             t_master = time.perf_counter() - t_master
 
             # --- Step 6: Gather per-boot master stats, retire converged ---
@@ -409,11 +411,11 @@ class DistributedBootstrapMixin:
 
             # --- Logging ---
             t_total = time.perf_counter() - t_round
-            t_comm = max(0.0, t_total - max_pricing_time - t_master)
+            t_comm = max(0.0, t_total - t_price - t_master)
 
             if self.verbose and self.comm_manager.is_root():
                 self._log_rg_round(rg_round, len(active_k), global_max_rc,
-                                   max_pricing_time, t_comm, t_master,
+                                   t_price, t_comm, t_master,
                                    total_viols, newly_converged,
                                    theta_results, boot_stats_all)
 

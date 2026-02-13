@@ -30,9 +30,11 @@ def load_raw_data(continental_only):
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
     form175 = pd.read_csv(DATA_DIR / "fccform175nomiss.csv", header=None)
 
-
     bidder_data.loc[bidder_data["bidder_num_fox"] == 67, "pops_eligible"] = form175.loc[form175[0] == 67, 3].item()
     bidder_data = bidder_data[bidder_data["bidder_num"] != 9999]
+
+    form175 = form175.rename(columns={0: "bidder_num_fox", 1: "assets", 2: "revenues", 3: "eligibility_form175" })
+    bidder_data = bidder_data.merge(form175, on="bidder_num_fox")
 
     # DCR/DCC: swap bidder_num_fox so winner 190 gets 89M, winner 234 gets 11M
     mask_190 = bidder_data["bidder_num_fox"] == 190
@@ -81,12 +83,13 @@ def process_weight_capacity(bidder_data, bta_data):
     weight = np.round(pop // WEIGHT_ROUNDING_TICK).astype(int)
     capacity = np.round(elig // WEIGHT_ROUNDING_TICK).astype(int)
     
-    
     pop_sum = pop.sum()
     pop = pop/pop_sum
     elig = elig/pop_sum
+    assets = bidder_data['assets'].to_numpy() / bidder_data['assets'].max()
+    revenues = bidder_data['revenues'].to_numpy() / bidder_data['revenues'].max()
 
-    return weight, capacity, pop, elig 
+    return weight, capacity, pop, elig, assets, revenues
 
 def generate_matching_matrix(bidder_data, bta_data):
     n_items = len(bta_data)
@@ -135,22 +138,20 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     return quadratic_features
 
 
-def build_modular_features(elig, pop, home_bta_i=None, geo_distance=None, include_hq_distance=False):
-    modular_list = []
-    
-    elig_times_pop = elig[:, None] * pop[None, :] 
-    modular_list.append(elig_times_pop)
-    modular_features = np.stack(modular_list, axis=2)
-    
-    return modular_features
+def build_modular_features(elig, pop, assets=None, revenues=None):
+    modular_list = [elig[:, None] * pop[None, :]]
+    if assets is not None:
+        modular_list.append(assets[:, None] * pop[None, :])
+    if revenues is not None:
+        modular_list.append(revenues[:, None] * pop[None, :])
+    return np.stack(modular_list, axis=2)
 
 
-def main(delta=4, winners_only=False, hq_distance=False, continental_only = False):
+def main(delta=4, winners_only=False, form175_features=False, continental_only=False):
 
     raw_data = load_raw_data(continental_only)
-    home_bta_i = None
 
-    weight, capacity, pop, elig,  = process_weight_capacity(
+    weight, capacity, pop, elig, assets, revenues = process_weight_capacity(
         raw_data["bidder_data"],
         raw_data["bta_data"]
     )
@@ -161,11 +162,9 @@ def main(delta=4, winners_only=False, hq_distance=False, continental_only = Fals
     )
     
     modular_features = build_modular_features(
-        elig, 
-        pop,
-        home_bta_i=home_bta_i,
-        geo_distance=raw_data["geo_distance"],
-        include_hq_distance=hq_distance,
+        elig, pop,
+        assets=assets if form175_features else None,
+        revenues=revenues if form175_features else None,
     )
     quadratic_features = build_quadratic_features(
         pop,
@@ -262,10 +261,9 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--hq-distance",
+        "--form175-features", "-f",
         action="store_true",
     )
-
     parser.add_argument(
         "--continental-only", "-c",
         action="store_true",
@@ -281,5 +279,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, hq_distance=args.hq_distance, continental_only =args.continental_only )
+    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only)
 
