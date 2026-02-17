@@ -103,6 +103,7 @@ class OraclesManager:
         return self._error_oracle
 
     def build_quadratic_features_from_data(self):
+        self.data_manager._validate_quadratic_data_dimensions()
         qinfo = self.data_manager.quadratic_data_info
         def quadratic_features_oracle(bundles, ids, data):
             feats = []
