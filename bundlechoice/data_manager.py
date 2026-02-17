@@ -143,6 +143,27 @@ class DataManager:
     def quadratic_data_info(self):
         return self._quadratic_data_info(self._local_data_version)
 
+    def _validate_quadratic_data_dimensions(self):
+        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
+        dim = lambda d, k: d[k].shape[-1] if k in d else 0
+        modular_agent_dim = dim(agent_data, "modular")
+        modular_item_dim = dim(item_data, "modular")
+        quadratic_agent_dim = dim(agent_data, "quadratic")
+        quadratic_item_dim = dim(item_data, "quadratic")
+        n_items = self.dimensions_cfg.n_items
+        
+        if modular_agent_dim:
+            assert agent_data['modular'].shape == (self.num_local_agent, n_items, modular_agent_dim)
+        if modular_item_dim:
+            assert item_data['modular'].shape == (n_items, modular_item_dim)
+        if quadratic_agent_dim:
+            assert agent_data['quadratic'].shape == (self.num_local_agent, n_items, n_items, quadratic_agent_dim)
+        if quadratic_item_dim:
+            assert item_data['quadratic'].shape == (n_items, n_items, quadratic_item_dim)
+        
+        total_features = modular_agent_dim + modular_item_dim + quadratic_agent_dim + quadratic_item_dim
+        assert total_features == self.dimensions_cfg.n_features
+
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):
         agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
