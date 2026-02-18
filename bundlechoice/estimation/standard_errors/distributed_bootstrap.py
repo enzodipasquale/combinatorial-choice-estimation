@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
@@ -56,7 +57,7 @@ class DistributedBootstrapMixin:
         local_weights, boot_agent_weights = self._phase_bootstrap_weights(K, seed, method)
 
         # === Phase 4: Build or load master models ===
-        master, pre_converged = self._phase_build_masters(
+        master, is_converged = self._phase_build_masters(
             K, base_data, local_weights, boot_agent_weights, load_dir)
 
         # === Phase 5: Row generation ===
@@ -66,7 +67,7 @@ class DistributedBootstrapMixin:
             iteration_callback=row_gen_iteration_callback,
             bootstrap_callback=bootstrap_callback,
             save_dir=boot_save,
-            pre_converged=pre_converged)
+            is_converged=is_converged)
 
         # === Phase 6: Statistics ===
         total_time = time.perf_counter() - t0
@@ -186,26 +187,40 @@ class DistributedBootstrapMixin:
         theta_obj_all = np.empty_like(local_theta_obj)
         comm.comm.Allreduce(local_theta_obj, theta_obj_all, op=MPI.SUM)
 
+        master = None
+        is_converged = False
+        
         if rank < K:
             boot_dir = os.path.join(load_dir, "bootstrap", f"boot_{rank:04d}") if load_dir else None
             if boot_dir and os.path.exists(os.path.join(boot_dir, "master.lp")):
-                master = self._load_boot_master(boot_dir)
+                master, is_converged = self._load_boot_master(boot_dir)
             else:
                 master = self._build_master_model(base_data, theta_obj_all[rank], boot_agent_weights)
-        else:
-            master = None
+                is_converged = False
 
-        pre_converged = self._precheck_convergence(K, master)
-        return master, pre_converged
+        return master, is_converged
 
     def _load_boot_master(self, boot_dir):
+        """Load bootstrap master model and convergence status."""
         model = _load_gurobi_model(
             os.path.join(boot_dir, "master.lp"),
             os.path.join(boot_dir, "master.sol"))
         theta, u = _extract_master_vars(model, self.dim.n_features, self.dim.n_agents)
+        
+        # Load convergence flag
+        meta_path = os.path.join(boot_dir, "meta.json")
+        is_converged = False
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r') as f:
+                meta = json.load(f)
+                is_converged = meta.get('converged', False)
+        
         if self.verbose:
-            logger.info(" Rank %d: loaded boot from %s", self.comm_manager.rank, boot_dir)
-        return {'model': model, 'theta': theta, 'u': u}
+            status = "converged" if is_converged else "not converged"
+            logger.info(" Rank %d: loaded boot from %s (%s)", 
+                       self.comm_manager.rank, boot_dir, status)
+        
+        return {'model': model, 'theta': theta, 'u': u}, is_converged
 
     def _build_master_model(self, base_data, theta_obj_coef, u_obj_weights):
         A, rhs, sense = base_data['A'], base_data['rhs'], base_data['sense']
@@ -229,55 +244,13 @@ class DistributedBootstrapMixin:
             model.optimize()
         return {'model': model, 'theta': theta, 'u': u}
 
-    def _precheck_convergence(self, K, master):
-        comm = self.comm_manager
-        rank = comm.rank
-        nf = self.dim.n_features
-        n_local = self.data_manager.num_local_agent
-        local_start = int(self.data_manager.agent_counts[:rank].sum())
-        cfg = self.config.row_generation
-
-        theta_send = np.zeros((K, nf), dtype=np.float64)
-        u_send = np.zeros((K, self.dim.n_agents), dtype=np.float64)
-        if rank < K:
-            theta_send[rank] = master['theta'].X
-            u_send[rank] = master['u'].X
-        theta_all = np.empty_like(theta_send)
-        u_all = np.empty_like(u_send)
-        comm.comm.Allreduce(theta_send, theta_all, op=MPI.SUM)
-        comm.comm.Allreduce(u_send, u_all, op=MPI.SUM)
-
-        local_max_rc = np.full(K, -np.inf, dtype=np.float64)
-        local_ids = self.data_manager.local_agents_arange
-        for k in range(K):
-            bundles = self.subproblem_manager.solve_subproblems(theta_all[k])
-            features = self.oracles_manager.features_oracle(bundles, local_ids)
-            errors = self.oracles_manager.error_oracle(bundles, local_ids)
-            u_sub = features @ theta_all[k] + errors
-            u_master = u_all[k, local_start:local_start + n_local]
-            local_max_rc[k] = (u_sub - u_master).max()
-
-        global_max_rc = np.empty_like(local_max_rc)
-        comm.comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
-
-        converged_mask = global_max_rc <= cfg.tolerance
-        pre_converged = {}
-        for k in range(K):
-            if converged_mask[k]:
-                pre_converged[k] = theta_all[k].copy()
-
-        if self.verbose and self.comm_manager.is_root() and pre_converged:
-            logger.info(" Pre-check: %d boots already converged", len(pre_converged))
-
-        return pre_converged
-
     # -------------------------------------------------------------------------
     # Phase 5: Row generation loop
     # -------------------------------------------------------------------------
 
     def _distributed_rg_loop(self, K, local_weights, master,
                              iteration_callback=None, bootstrap_callback=None,
-                             save_dir=None, pre_converged=None):
+                             save_dir=None, is_converged=False):
         rank = self.comm_manager.rank
         comm = self.comm_manager.comm
         cfg = self.config.row_generation
@@ -290,13 +263,33 @@ class DistributedBootstrapMixin:
         agent_ids = self.data_manager.agent_ids
         ROW_WIDTH = nf + 2
 
-        active = np.ones(K, dtype=np.int32)
+        # Gather convergence flags from all ranks
+        converged_send = np.zeros(K, dtype=np.int32)
+        if rank < K and is_converged:
+            converged_send[rank] = 1
+        converged_all = np.empty_like(converged_send)
+        comm.Allreduce(converged_send, converged_all, op=MPI.SUM)
+        
+        # Initialize active array (inverse of converged)
+        active = 1 - converged_all
         theta_results = [None] * K
 
-        if pre_converged:
-            for k, theta_k in pre_converged.items():
-                active[k] = 0
-                theta_results[k] = theta_k
+        # For pre-converged bootstraps, extract theta immediately
+        if rank < K and is_converged:
+            theta_results[rank] = master['theta'].X.copy()
+        
+        # Gather initial theta values for pre-converged bootstraps
+        theta_send = np.zeros((K, nf), dtype=np.float64)
+        if rank < K and is_converged:
+            theta_send[rank] = master['theta'].X
+        theta_all = np.empty_like(theta_send)
+        comm.Allreduce(theta_send, theta_all, op=MPI.SUM)
+        
+        # Store pre-converged results on rank 0
+        if rank == 0:
+            for k in range(K):
+                if converged_all[k]:
+                    theta_results[k] = theta_all[k].copy()
 
         master_send = np.zeros((K, nf + n_agents), dtype=np.float64)
         master_all = np.empty_like(master_send)
@@ -304,7 +297,7 @@ class DistributedBootstrapMixin:
         boot_stats_all = np.empty_like(boot_stats_send)
 
         if self.verbose and self.comm_manager.is_root():
-            n_pre = len(pre_converged) if pre_converged else 0
+            n_pre = int(converged_all.sum())
             logger.info(" ")
             logger.info(" DISTRIBUTED BOOTSTRAP (%d samples, %d ranks%s)",
                         K, P, f", {n_pre} pre-converged" if n_pre else "")
@@ -404,10 +397,7 @@ class DistributedBootstrapMixin:
                     if rank == 0:
                         theta_results[k] = thetas[k].copy()
                     if rank == k and save_dir is not None:
-                        d = os.path.join(save_dir, f"boot_{k:04d}")
-                        os.makedirs(d, exist_ok=True)
-                        master['model'].write(os.path.join(d, "master.lp"))
-                        master['model'].write(os.path.join(d, "master.sol"))
+                        self._save_bootstrap(save_dir, k, master, converged=True)
 
             # --- Logging ---
             t_total = time.perf_counter() - t_round
@@ -434,10 +424,7 @@ class DistributedBootstrapMixin:
             if rank < K and active[rank]:
                 buf[rank] = master['theta'].X
                 if save_dir is not None:
-                    d = os.path.join(save_dir, f"boot_{rank:04d}")
-                    os.makedirs(d, exist_ok=True)
-                    master['model'].write(os.path.join(d, "master.lp"))
-                    master['model'].write(os.path.join(d, "master.sol"))
+                    self._save_bootstrap(save_dir, rank, master, converged=False)
             recv = np.empty_like(buf) if rank == 0 else None
             comm.Reduce(buf, recv, op=MPI.SUM, root=0)
             if rank == 0:
@@ -452,6 +439,18 @@ class DistributedBootstrapMixin:
                                        global_max_rc, boot_stats_all)
 
         return theta_results if rank == 0 else None
+
+    def _save_bootstrap(self, save_dir, boot_id, master, converged):
+        """Save bootstrap model with convergence metadata."""
+        d = os.path.join(save_dir, f"boot_{boot_id:04d}")
+        os.makedirs(d, exist_ok=True)
+        master['model'].write(os.path.join(d, "master.lp"))
+        master['model'].write(os.path.join(d, "master.sol"))
+        
+        # Save metadata with convergence flag
+        meta = {'converged': converged}
+        with open(os.path.join(d, "meta.json"), 'w') as f:
+            json.dump(meta, f)
 
     # -------------------------------------------------------------------------
     # Helpers
