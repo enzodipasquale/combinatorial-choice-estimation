@@ -1,3 +1,8 @@
+# Editor settings
+.vscode/
+.cursor/
+.cursorrules
+
 # Virtual environments
 .bundle/
 
@@ -17,11 +22,6 @@ Makefile
 run_with_timeout.sh
 .DS_Store
 
-# Editor settings
-.vscode/
-.cursor/
-.cursorrules
-
 # Logs and solver output files
 *.log
 *.mif
@@ -30,38 +30,38 @@ run_with_timeout.sh
 *.bas
 *.err
 
-# Images (generated/plot outputs)
-*.png
-
-# Project-specific directories
-bundlechoice/_legacy/
-bundlechoice/scenarios/
-/applications/firms_export/
-experiments/
-paper/
-debug_se/
-debug/
-benchmark_warmstart.py
+# Gurobi outputs
+*.sol
+*.lp
 
 # Batch job scripts
 *.out
 *.err
 *.sbatch
 
-# Gurobi outputs
-*.sol
-*.lp
+# Images (generated/plot outputs)
+*.png
+
+# Project-specific directories
+/applications/firms_export/
+bundlechoice/_legacy/
+bundlechoice/_deprecated/
+bundlechoice/scenarios/
+bundlechoice/tests
+debug/
+debug_se/
+experiments/
+paper/
+benchmark_warmstart.py
 
 #Other
-debug_*.py
 my_tests/
-bundlechoice/_deprecated/
-bundled_choice_estimation.pdf
 *.bash
+debug_*.py
+bundled_choice_estimation.pdf
+requirements_HPC.txt
 applications/**/config.yaml
 applications/**/config_local.yaml
 applications/firms_export
-bundlechoice/tests
-requirements_HPC.txt
 applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/se_bayesian_bootstrap/checkpoints
