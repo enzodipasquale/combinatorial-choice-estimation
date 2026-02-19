@@ -8,26 +8,17 @@ except ImportError:
     MPI = None
 
 
-class MPIRankFilter(logging.Filter):
-    def filter(self, record):
-        if MPI is None:
-            return True
-        return MPI.COMM_WORLD.Get_rank() == 0
-
 def get_logger(name=__name__):
     logger = logging.getLogger(name)
-    if not any((isinstance(f, MPIRankFilter) for f in logger.filters)):
-        logger.addFilter(MPIRankFilter())
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+        rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
+        formatter = logging.Formatter(
+            f'%(asctime)s [rank {rank}] - %(message)s', datefmt='%H:%M:%S')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
-        root_logger = logging.getLogger()
-        if root_logger.level > logging.INFO:
-            root_logger.setLevel(logging.INFO)
     return logger
 
 @contextmanager

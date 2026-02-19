@@ -488,13 +488,13 @@ class DistributedBootstrapMixin:
                       n_viols, newly_converged,
                       theta_results, boot_stats_all):
         if rg_round % 40 == 0:
-            logger.info("-" * 110)
+            logger.info("-" * 75)
             logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
                         "Round", "Act.", "Pricing", "Comm", "Master",
                         "Max Reduced", "Total")
             logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
                         "", "", "(s)", "(s)", "(s)", "Cost", "#Viol")
-            logger.info("-" * 110)
+            logger.info("-" * 75)
         logger.info(" %5d  %4d  %8.1fs  %8.1fs  %8.1fs  %14s  %9d",
                      rg_round, n_active,
                      t_price, t_comm, t_master,
@@ -508,7 +508,7 @@ class DistributedBootstrapMixin:
                           global_max_rc, boot_stats_all):
         param_idx = self.config.row_generation.parameters_to_log \
                     or list(range(min(5, self.dim.n_features)))
-        hdr_params = ''.join(f"{'θ['+str(i)+']':>10}" for i in param_idx)
+        hdr_params = ''.join(f"{'θ['+str(i)+']':>12}" for i in param_idx)
         logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
                     "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
         for k in boot_ids:
@@ -519,7 +519,7 @@ class DistributedBootstrapMixin:
             obj_val = boot_stats_all[k, 1]
             rc_k = global_max_rc[k] if k < len(global_max_rc) else 0.0
             t_range = f"[{t.min():.1f}, {t.max():.1f}]"
-            vals = ''.join(format_number(t[i], width=10, precision=5) for i in param_idx)
+            vals = ''.join(format_number(t[i], width=12, precision=5) for i in param_idx)
             logger.info("        ↳ %4d  %7d  %14s  %14s  %15s  %s",
                         k, n_constr,
                         self._fmt_rc(rc_k, width=14),

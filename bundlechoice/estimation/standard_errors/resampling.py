@@ -55,18 +55,18 @@ class ResamplingMixin:
         self.row_gen.local_obs_weights = local_weights[:, 0]
         self.row_gen._initialize_master_problem() 
         
-        if self.verbose:
+        if self.verbose and self.comm_manager.is_root():
             self.row_gen._log_instance_summary()
             logger.info(" " )
             logger.info(" BAYESIAN BOOTSTRAP")
-        
+
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
             if bootstrap_callback is not None:
                 bootstrap_callback(b, self)
-            self.result = self.row_gen.solve(local_obs_weights= local_weights[:, b], 
-                                        verbose= False, 
-                                        initialize_subproblems= False, 
+            self.result = self.row_gen.solve(local_obs_weights= local_weights[:, b],
+                                        verbose= False,
+                                        initialize_subproblems= False,
                                         initialize_master= False,
                                         iteration_callback= row_gen_iteration_callback,
                                         initialization_callback= row_gen_initialization_callback)
@@ -125,7 +125,7 @@ class ResamplingMixin:
             weights, row_counts=self.data_manager.agent_counts,
             dtype=np.float64, shape=(self.dim.n_agents, num_bootstrap))
 
-        if self.verbose:
+        if self.verbose and self.comm_manager.is_root():
             self.row_gen._log_instance_summary()
             logger.info(" ")
             logger.info(" BAYESIAN BOOTSTRAP")

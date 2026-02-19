@@ -69,6 +69,8 @@ class BaseEstimationManager:
 
 
     def log_parameter(self):
+        if not self.comm_manager.is_root():
+            return
         cfg = self.config.row_generation
         if self.theta_iter is None:
             return
