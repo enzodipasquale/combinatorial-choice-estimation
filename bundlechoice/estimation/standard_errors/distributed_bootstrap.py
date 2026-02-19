@@ -37,7 +37,6 @@ class DistributedBootstrapMixin:
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
         comm = self.comm_manager
-        K = num_bootstrap
         t0 = time.perf_counter()
 
         load_dir = comm.bcast(
@@ -54,16 +53,16 @@ class DistributedBootstrapMixin:
         base_data = self._extract_base_model()
 
         # === Phase 3: Bootstrap weights ===
-        local_weights, boot_agent_weights = self._phase_bootstrap_weights(K, seed, method)
+        local_weights, boot_agent_weights = self._phase_bootstrap_weights(num_bootstrap, seed, method)
 
         # === Phase 4: Build or load master models ===
         master, is_converged = self._phase_build_masters(
-            K, base_data, local_weights, boot_agent_weights, load_dir)
+            num_bootstrap, base_data, local_weights, boot_agent_weights, load_dir)
 
         # === Phase 5: Row generation ===
         boot_save = os.path.join(save_dir, "bootstrap") if save_dir else None
         theta_boots = self._distributed_rg_loop(
-            K, local_weights, master,
+            num_bootstrap, local_weights, master,
             iteration_callback=row_gen_iteration_callback,
             bootstrap_callback=bootstrap_callback,
             save_dir=boot_save,
@@ -71,7 +70,7 @@ class DistributedBootstrapMixin:
 
         # === Phase 6: Statistics ===
         total_time = time.perf_counter() - t0
-        return self._compute_and_log_stats(K, theta_boots, total_time)
+        return self._compute_and_log_stats(num_bootstrap, theta_boots, total_time)
 
     # -------------------------------------------------------------------------
     # Phase 1: Point estimation
@@ -154,19 +153,19 @@ class DistributedBootstrapMixin:
     # Phase 3: Bootstrap weights
     # -------------------------------------------------------------------------
 
-    def _phase_bootstrap_weights(self, K, seed, method):
+    def _phase_bootstrap_weights(self, num_bootstrap, seed, method):
         comm = self.comm_manager
         gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
               else self.generate_weights_standard_bootstrap
-        weights_full = gen(seed, K)
+        weights_full = gen(seed, num_bootstrap)
 
         local_weights = comm.Scatterv_by_row(
             weights_full, row_counts=self.data_manager.agent_counts,
-            dtype=np.float64, shape=(self.dim.n_agents, K))
+            dtype=np.float64, shape=(self.dim.n_agents, num_bootstrap))
 
         if comm.is_root():
             padded = np.zeros((self.comm_manager.comm_size, self.dim.n_agents), dtype=np.float64)
-            padded[:K] = weights_full.T[:K]
+            padded[:num_bootstrap] = weights_full.T[:num_bootstrap]
         else:
             padded = None
         boot_agent_weights = np.zeros(self.dim.n_agents, dtype=np.float64)
@@ -178,7 +177,7 @@ class DistributedBootstrapMixin:
     # Phase 4: Build or load master models
     # -------------------------------------------------------------------------
 
-    def _phase_build_masters(self, K, base_data, local_weights, boot_agent_weights, load_dir):
+    def _phase_build_masters(self, num_bootstrap, base_data, local_weights, boot_agent_weights, load_dir):
         comm = self.comm_manager
         rank = comm.rank
 
@@ -190,7 +189,7 @@ class DistributedBootstrapMixin:
         master = None
         is_converged = False
         
-        if rank < K:
+        if rank < num_bootstrap:
             boot_dir = os.path.join(load_dir, "bootstrap", f"boot_{rank:04d}") if load_dir else None
             if boot_dir and os.path.exists(os.path.join(boot_dir, "master.lp")):
                 master, is_converged = self._load_boot_master(boot_dir)
@@ -201,7 +200,6 @@ class DistributedBootstrapMixin:
         return master, is_converged
 
     def _load_boot_master(self, boot_dir):
-        """Load bootstrap master model and convergence status."""
         model = _load_gurobi_model(
             os.path.join(boot_dir, "master.lp"),
             os.path.join(boot_dir, "master.sol"))
@@ -248,7 +246,7 @@ class DistributedBootstrapMixin:
     # Phase 5: Row generation loop
     # -------------------------------------------------------------------------
 
-    def _distributed_rg_loop(self, K, local_weights, master,
+    def _distributed_rg_loop(self, num_bootstrap, local_weights, master,
                              iteration_callback=None, bootstrap_callback=None,
                              save_dir=None, is_converged=False):
         rank = self.comm_manager.rank
@@ -257,46 +255,47 @@ class DistributedBootstrapMixin:
         n_agents = self.dim.n_agents
         local_start = int(self.data_manager.agent_counts[:rank].sum())
         agent_ids = self.data_manager.agent_ids
-        ROW_WIDTH = nf + 2
+
+        vars_sendbuff = np.zeros((num_bootstrap, nf + n_agents), dtype=np.float64)
+        vars_rcvbuff = np.zeros_like(vars_sendbuff)
+
+        boot_stats_sendbuff = np.zeros((num_bootstrap, 2), dtype=np.float64)
+        boot_stats_rcvbuff = np.zeros_like(boot_stats_sendbuff)
 
         # Gather convergence flags from all ranks
-        converged_send = np.zeros(K, dtype=np.int32)
-        if rank < K and is_converged:
+        converged_send = np.zeros(num_bootstrap, dtype=np.int32)
+        if rank < num_bootstrap and is_converged:
             converged_send[rank] = 1
         converged_all = np.zeros_like(converged_send)
         comm.Allreduce(converged_send, converged_all, op=MPI.SUM)
         
         # Initialize active array (inverse of converged)
         active = 1 - converged_all
-        theta_results = [None] * K
+        theta_results = [None] * num_bootstrap
 
         # For pre-converged bootstraps, extract theta immediately
-        if rank < K and is_converged:
+        if rank < num_bootstrap and is_converged:
             theta_results[rank] = master['theta'].X.copy()
         
-        # Gather initial theta values for pre-converged bootstraps
-        theta_send = np.zeros((K, nf), dtype=np.float64)
-        if rank < K and is_converged:
-            theta_send[rank] = master['theta'].X
-        theta_all = np.zeros_like(theta_send)
-        comm.Allreduce(theta_send, theta_all, op=MPI.SUM)
-        
+        vars_sendbuff[:] = 0.0
+        if rank < num_bootstrap and active[rank]:
+            vars_sendbuff[rank, :nf] = master['theta'].X
+            vars_sendbuff[rank, nf:] = master['u'].X
+        comm.Allreduce(vars_sendbuff, vars_rcvbuff, op=MPI.SUM)
+        thetas = vars_rcvbuff[:, :nf]
+        us = vars_rcvbuff[:, nf:]
+
         # Store pre-converged results on rank 0
         if rank == 0:
-            for k in range(K):
+            for k in range(num_bootstrap):
                 if converged_all[k]:
-                    theta_results[k] = theta_all[k].copy()
-
-        master_send = np.zeros((K, nf + n_agents), dtype=np.float64)
-        master_all = np.zeros_like(master_send)
-        boot_stats_send = np.zeros((K, 2), dtype=np.float64)
-        boot_stats_all = np.zeros_like(boot_stats_send)
+                    theta_results[k] = thetas[k].copy()
 
         if self.verbose and self.comm_manager.is_root():
             n_pre = int(converged_all.sum())
             logger.info(" ")
             logger.info(" DISTRIBUTED BOOTSTRAP (%d samples, %d ranks%s)",
-                        K, self.comm_manager.comm_size, f", {n_pre} pre-converged" if n_pre else "")
+                        num_bootstrap, self.comm_manager.comm_size, f", {n_pre} pre-converged" if n_pre else "")
 
         for rg_round in range(int(self.config.row_generation.max_iters)):
             t_round = time.perf_counter()
@@ -309,13 +308,13 @@ class DistributedBootstrapMixin:
                 iteration_callback(rg_round, self.row_gen)
 
             # --- Step 1: Broadcast all (theta, u) pairs ---
-            master_send[:] = 0.0
-            if rank < K and active[rank]:
-                master_send[rank, :nf] = master['theta'].X
-                master_send[rank, nf:] = master['u'].X
-            comm.Allreduce(master_send, master_all, op=MPI.SUM)
-            thetas = master_all[:, :nf]
-            us = master_all[:, nf:]
+            vars_sendbuff[:] = 0.0
+            if rank < num_bootstrap and active[rank]:
+                vars_sendbuff[rank, :nf] = master['theta'].X
+                vars_sendbuff[rank, nf:] = master['u'].X
+            comm.Allreduce(vars_sendbuff, vars_rcvbuff, op=MPI.SUM)
+            thetas = vars_rcvbuff[:, :nf]
+            us = vars_rcvbuff[:, nf:]
 
             # --- Step 2: Solve subproblems, compute reduced costs ---
             t_price = time.perf_counter()
@@ -338,7 +337,7 @@ class DistributedBootstrapMixin:
 
             # --- Step 3: Convergence check  ---
             local_max_rc = reduced_costs.max(axis=1)
-            global_max_rc = np.zeros_like(local_max_rc)
+            global_max_rc = np.zeros(len(active_k))
             comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
             converged = global_max_rc <= self.config.row_generation.tolerance
 
@@ -354,7 +353,7 @@ class DistributedBootstrapMixin:
                     continue
                 v = np.where(viol_mask[i])[0]
                 if len(v) > 0:
-                    block = np.zeros((len(v), ROW_WIDTH), dtype=np.float64)
+                    block = np.zeros((len(v), nf + 2), dtype=np.float64)
                     block[:, 0] = agent_ids[v]
                     block[:, 1:-1] = features[i, v]
                     block[:, -1] = errors[i, v]
@@ -364,9 +363,9 @@ class DistributedBootstrapMixin:
 
             # --- Step 5: Add cuts and re-solve ---
             t_master = time.perf_counter()
-            if rank < K and active[rank] and not converged[active_k == rank][0]:
+            if rank < num_bootstrap and active[rank] and not converged[active_k == rank][0]:
                 if len(recvbuf) > 0:
-                    d = recvbuf.reshape(-1, ROW_WIDTH)
+                    d = recvbuf.reshape(-1, nf + 2)
                     ids = d[:, 0].astype(np.int64)
                     master['model'].addConstr(master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
                 master['model'].optimize()
@@ -375,10 +374,10 @@ class DistributedBootstrapMixin:
             t_master = time.perf_counter() - t_master
 
             # --- Step 6: Gather per-boot master stats, retire converged ---
-            boot_stats_send[:] = 0.0
-            if rank < K and active[rank]:
-                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
-            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
+            boot_stats_sendbuff[:] = 0.0
+            if rank < num_bootstrap and active[rank]:
+                boot_stats_sendbuff[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_sendbuff, boot_stats_rcvbuff, op=MPI.SUM)
 
             newly_converged = []
             for i, k in enumerate(active_k):
@@ -398,7 +397,7 @@ class DistributedBootstrapMixin:
                 self._log_rg_round(rg_round, len(active_k), global_max_rc,
                                    t_price, t_comm, t_master,
                                    total_viols, newly_converged,
-                                   theta_results, boot_stats_all)
+                                   theta_results, boot_stats_rcvbuff)
 
             if bootstrap_callback is not None:
                 bootstrap_callback(rg_round, active, theta_results)
@@ -406,33 +405,32 @@ class DistributedBootstrapMixin:
         # --- Collect remaining non-converged ---
         remaining = np.where(active)[0]
         if len(remaining) > 0:
-            boot_stats_send[:] = 0.0
-            if rank < K and active[rank]:
-                boot_stats_send[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
-            comm.Allreduce(boot_stats_send, boot_stats_all, op=MPI.SUM)
+            boot_stats_sendbuff[:] = 0.0
+            if rank < num_bootstrap and active[rank]:
+                boot_stats_sendbuff[rank] = [master['model'].NumConstrs, master['model'].ObjVal]
+            comm.Allreduce(boot_stats_sendbuff, boot_stats_rcvbuff, op=MPI.SUM)
 
-            buf = np.zeros((K, nf), dtype=np.float64)
-            if rank < K and active[rank]:
-                buf[rank] = master['theta'].X
+            vars_sendbuff[:] = 0.0
+            if rank < num_bootstrap and active[rank]:
                 if save_dir is not None:
                     self._save_bootstrap(save_dir, rank, master, converged=False)
-            recv = np.zeros_like(buf) if rank == 0 else None
-            comm.Reduce(buf, recv, op=MPI.SUM, root=0)
-            if rank == 0:
+                vars_sendbuff[rank, :nf] = master['theta'].X
+                vars_sendbuff[rank, nf:] = master['u'].X
+            comm.Reduce(vars_sendbuff, vars_rcvbuff, op=MPI.SUM, root = 0)
+
+            if self.comm_manager.is_root():
+                thetas = vars_rcvbuff[:, :nf]
+                print(remaining)
                 for k in remaining:
-                    theta_results[k] = recv[k]
+                    theta_results[k] = thetas[k]
+                if self.verbose:
+                    logger.info(" ")
+                    logger.info(" WARNING: %d boots did not converge (max_iters=%d)", len(remaining), int(self.config.row_generation.max_iters))
+                    self._log_boot_details(remaining, theta_results, global_max_rc, boot_stats_rcvbuff)
 
-            if self.verbose and self.comm_manager.is_root():
-                logger.info(" ")
-                logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
-                            len(remaining), int(self.config.row_generation.max_iters))
-                self._log_boot_details(remaining, theta_results,
-                                       global_max_rc, boot_stats_all)
-
-        return theta_results if rank == 0 else None
+        return np.array(theta_results) if rank == 0 else None
 
     def _save_bootstrap(self, save_dir, boot_id, master, converged):
-        """Save bootstrap model with convergence metadata."""
         d = os.path.join(save_dir, f"boot_{boot_id:04d}")
         os.makedirs(d, exist_ok=True)
         master['model'].write(os.path.join(d, "master.lp"))
@@ -450,7 +448,7 @@ class DistributedBootstrapMixin:
     def _log_rg_round(self, rg_round, n_active, global_max_rc,
                       t_price, t_comm, t_master,
                       n_viols, newly_converged,
-                      theta_results, boot_stats_all):
+                      theta_results, boot_stats_rcvbuff):
         if rg_round % 40 == 0:
             logger.info("-" * 75)
             logger.info(" %5s  %4s  %9s  %9s  %9s  %14s  %9s",
@@ -466,10 +464,10 @@ class DistributedBootstrapMixin:
                      n_viols)
         if newly_converged:
             self._log_boot_details(newly_converged, theta_results,
-                                   global_max_rc, boot_stats_all)
+                                   global_max_rc, boot_stats_rcvbuff)
 
     def _log_boot_details(self, boot_ids, theta_results,
-                          global_max_rc, boot_stats_all):
+                          global_max_rc, boot_stats_rcvbuff):
         param_idx = self.config.row_generation.parameters_to_log \
                     or list(range(min(5, self.dim.n_features)))
         hdr_params = ''.join(f"{'θ['+str(i)+']':>12}" for i in param_idx)
@@ -479,8 +477,8 @@ class DistributedBootstrapMixin:
             t = theta_results[k]
             if t is None:
                 continue
-            n_constr = int(boot_stats_all[k, 0])
-            obj_val = boot_stats_all[k, 1]
+            n_constr = int(boot_stats_rcvbuff[k, 0])
+            obj_val = boot_stats_rcvbuff[k, 1]
             rc_k = global_max_rc[k] if k < len(global_max_rc) else 0.0
             t_range = f"[{t.min():.1f}, {t.max():.1f}]"
             vals = ''.join(format_number(t[i], width=12, precision=5) for i in param_idx)
@@ -500,7 +498,7 @@ class DistributedBootstrapMixin:
     # Phase 6: Statistics
     # -------------------------------------------------------------------------
 
-    def _compute_and_log_stats(self, K, theta_boots, total_time):
+    def _compute_and_log_stats(self, num_bootstrap, theta_boots, total_time):
         if not self.comm_manager.is_root():
             return None
         stats = self.compute_bootstrap_stats(theta_boots, theta_hat=self.point_result.theta_hat)
@@ -510,7 +508,7 @@ class DistributedBootstrapMixin:
                   or list(range(min(5, self.dim.n_features)))
             logger.info(" ")
             logger.info("-" * 70)
-            logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs", K, total_time)
+            logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs", num_bootstrap, total_time)
             logger.info("-" * 70)
             logger.info(f"{'Param':>8} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
             logger.info("-" * 70)
