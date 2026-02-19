@@ -56,8 +56,8 @@ class RowGenerationManager(BaseEstimationManager):
             theta_iter = theta.X
             u_iter = u.X
         else:
-            theta_iter = np.empty(self.dim.n_features, dtype=np.float64)
-            u_iter = np.empty(self.dim.n_agents, dtype=np.float64)
+            theta_iter = np.zeros(self.dim.n_features, dtype=np.float64)
+            u_iter = np.zeros(self.dim.n_agents, dtype=np.float64)
         self.theta_iter = self.comm_manager.Bcast(theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
                                                               row_counts=self.data_manager.agent_counts,

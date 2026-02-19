@@ -41,7 +41,7 @@ class SerialSubproblemBase(BaseSubproblem, ABC):
         self._pre_solve_batched_computations(theta)
         n_agents = len(self.local_problems)
         n_items = self.dimensions_cfg.n_items
-        results = np.empty((n_agents, n_items), dtype=bool)
+        results = np.zeros((n_agents, n_items), dtype=bool)
         for i, pb in enumerate(self.local_problems):
             results[i] = self.solve_single_pb(i, theta, pb)
         return results
