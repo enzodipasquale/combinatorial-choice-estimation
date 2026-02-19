@@ -33,21 +33,28 @@ if rank == 0:
         delta=DELTA,
         winners_only=app.get("winners_only", False),
         hq_distance=app.get("hq_distance", False),
-        continental_only=app.get("continental_only")
+        form175_features=app.get("form175_features", False),
+        continental_only=app.get("continental_only"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
     n_id_mod = input_data["id_data"]["modular"].shape[-1]
     n_item_mod = input_data["item_data"]["modular"].shape[-1]
     n_features = n_item_quad + n_id_mod + n_item_mod
-
-    dim_cfg = {"n_obs":n_obs, "n_items":n_items, "n_features":n_features}
+    
+    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
+    id_mod_indices = list(range(n_id_mod))
+    quad_indices = list(range(n_features - n_item_quad, n_features))
+    config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
 else:
     input_data = None
     dim_cfg = None
 
-dim_cfg = comm.bcast(dim_cfg, root = 0)
+dim_cfg = comm.bcast(dim_cfg, root=0)
 config["dimensions"].update(dim_cfg)
+params_to_log = comm.bcast(config["row_generation"].get("parameters_to_log"), root=0)
+if rank != 0:
+    config["row_generation"]["parameters_to_log"] = params_to_log
 
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
@@ -107,6 +114,7 @@ if rank == 0 and se_result is not None and app.get("save_results", True):
         "delta": DELTA,
         "winners_only": app.get("winners_only"),
         "hq_distance": app.get("hq_distance"),
+        "form175_features": app.get("form175_features"),
         "error_seed": ERROR_SEED,
         "n_obs": bc.n_obs,
         "n_items": bc.n_items,
