@@ -110,7 +110,7 @@ class RowGenerationManager(BaseEstimationManager):
 
         self._Bcast_theta_and_Scatterv_u_vals()
 
-        if self.verbose:
+        if self.verbose and self.comm_manager.is_root():
             logger.info(" " )
             logger.info(" ROW GENERATION")
         result = self.row_generation_loop(iteration_callback)
