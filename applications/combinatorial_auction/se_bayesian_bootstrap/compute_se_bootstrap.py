@@ -46,15 +46,16 @@ if rank == 0:
     id_mod_indices = list(range(n_id_mod))
     quad_indices = list(range(n_features - n_item_quad, n_features))
     config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
+    config["dimensions"].update(dim_cfg)
+    bounds = config["row_generation"]["theta_bounds"]
+    for k in id_mod_indices[1:]:
+        bounds['lbs'][k] = -3000
+        bounds['ubs'][k] = 3000
+
 else:
     input_data = None
-    dim_cfg = None
 
-dim_cfg = comm.bcast(dim_cfg, root=0)
-config["dimensions"].update(dim_cfg)
-params_to_log = comm.bcast(config["row_generation"].get("parameters_to_log"), root=0)
-if rank != 0:
-    config["row_generation"]["parameters_to_log"] = params_to_log
+config = comm.bcast(config, root=0)
 
 bc = BundleChoice()
 bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
@@ -86,12 +87,6 @@ timeout_callback = adaptive_gurobi_timeout(
     transition_iterations=adaptive_cfg.get("transition_iterations"),
     strategy=adaptive_cfg.get("strategy", "step")
 )
-# se_result = bc.standard_errors.compute_bootstrap(num_bootstrap=NUM_BOOTSTRAP, 
-#                                                                 seed=BOOT_SEED, 
-#                                                                 verbose=True,
-#                                                                 bootstrap_callback=boot_callback,
-#                                                                 row_gen_iteration_callback=timeout_callback,
-#                                                                 method= 'bayesian')
 
 checkpoint_dir = str(BASE_DIR)
 se_result = bc.standard_errors.compute_distributed_bootstrap(
