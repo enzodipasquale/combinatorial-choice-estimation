@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
 
 # Data paths
 BASE_DIR = Path(__file__).parent  # data/
@@ -21,6 +19,19 @@ NON_CONTINENTAL_MARKETS = (
     "San Juan", "Mayaguez",                       # Puerto Rico
     "Guam", "US Virgi", "American", "Northern",  # territories
 )
+
+def build_hq_distance(bidder_data, bta_data, geo_distance):
+    n_bid = len(bidder_data)
+    n_bta = len(bta_data)
+    hq_distance = np.zeros((n_bid, n_bta ))
+    for i in range(n_bid):
+        bta_i = bidder_data.loc[i,'bta']
+        distance = geo_distance[bta_i]
+        hq_distance[i] = distance / 1000000
+
+    return hq_distance
+
+
 
 def load_raw_data(continental_only):
     
@@ -60,6 +71,7 @@ def load_raw_data(continental_only):
     travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None).values.astype(float)
     air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None).values.astype(float)
     
+    hq_distance = build_hq_distance(bidder_data, bta_data, geo_distance)
 
     if continental_only:
         continental_ids = np.where(~bta_data['market'].isin(NON_CONTINENTAL_MARKETS))[0]
@@ -68,11 +80,14 @@ def load_raw_data(continental_only):
         bidders_to_keep = np.where((matching_full.sum(1) - matching_full[:, non_continental_ids].sum(1) > 0)
                                     | (matching_full.sum(1) == 0))[0]
         bidder_data = bidder_data.iloc[bidders_to_keep].reset_index(drop=True)
+        hq_distance = hq_distance[bidders_to_keep]
+
         bta_data = bta_data.iloc[continental_ids].reset_index(drop=True)
         bta_adjacency = bta_adjacency[continental_ids][:, continental_ids]
         geo_distance = geo_distance[continental_ids][:, continental_ids]
         travel_survey = travel_survey[continental_ids][:, continental_ids]
         air_travel = air_travel[continental_ids][:, continental_ids]
+        hq_distance = hq_distance[:, continental_ids]
 
     
     return {
@@ -82,6 +97,7 @@ def load_raw_data(continental_only):
         "geo_distance": geo_distance,
         "travel_survey": travel_survey,
         "air_travel": air_travel,
+        "hq_distance": hq_distance
     }
 
 def process_pd_to_np(bidder_data, bta_data):
@@ -97,7 +113,9 @@ def process_pd_to_np(bidder_data, bta_data):
     assets = bidder_data['assets'].to_numpy() / bidder_data['assets'].max()
     revenues = bidder_data['revenues'].to_numpy() / bidder_data['revenues'].max()
 
-    return weight, capacity, pop, elig, assets, revenues
+    is_rural = bidder_data['Applicant_Status'].str.contains("Rural Telephone Company").values
+
+    return weight, capacity, pop, elig, assets, revenues, is_rural
 
 def generate_matching_matrix(bidder_data, bta_data):
     n_items = len(bta_data)
@@ -147,22 +165,30 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     return quadratic_features
 
 
-def build_modular_features(elig, pop, assets=None, revenues=None, hq_distance = None):
-    modular_list = [elig[:, None] * pop[None, :]]
+def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None):
+    modular_list = []
+    elig_times_pop = elig[:, None] * pop[None, :]
+    modular_list.append(elig_times_pop)
     if assets is not None:
         modular_list.append(assets[:, None] * pop[None, :])
     if revenues is not None:
         modular_list.append(revenues[:, None] * pop[None, :])
+    if is_rural is not None:
+        modular_list.append(elig_times_pop * is_rural[:,None])
     if hq_distance is not None:
         modular_list.append(hq_distance)
+        modular_list.append(hq_distance ** 2)
+
+    
     return np.stack(modular_list, axis=2)
+
 
 
 def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False):
 
     raw_data = load_raw_data(continental_only)
 
-    weight, capacity, pop, elig, assets, revenues = process_pd_to_np(
+    weight, capacity, pop, elig, assets, revenues, is_rural = process_pd_to_np(
         raw_data["bidder_data"],
         raw_data["bta_data"]
     )
@@ -176,6 +202,8 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         elig, pop,
         assets=assets if form175_features else None,
         revenues=revenues if form175_features else None,
+        is_rural = is_rural if form175_features else None,
+        hq_distance = raw_data["hq_distance"] if hq_distance else None
     )
     quadratic_features = build_quadratic_features(
         pop,
@@ -233,8 +261,8 @@ def print_descriptive_stats(raw_data, modular_features, matching, quadratic_feat
     print("Modular")
     print(f"  {'pop mean':<20} {mean_pop}")
     print(f"  {'pop std':<20} {std_pop}")
-    print(f"  {'mod mean':<20} {modular_stats.mean()}")
-    print(f"  {'mod std':<20} {modular_stats.std()}")
+    print(f"  {'mod mean':<20} {modular_stats.mean(0)}")
+    print(f"  {'mod std':<20} {modular_stats.std(0)}")
 
     quad_stats = np.einsum('ij,jlk,il->ik',m , quadratic_features , m)
     print("Quadratic")
@@ -273,7 +301,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--hq-distance",
+        "--hq-distance", "-hq",
         action="store_true",
     )
     parser.add_argument(
