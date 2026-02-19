@@ -1,5 +1,14 @@
 import numpy as np
+from dataclasses import dataclass
 from mpi4py import MPI
+
+
+@dataclass
+class NodeSpreadAssignment:
+    task_to_rank: np.ndarray   # (num_tasks,) rank responsible for each task
+    my_tasks: np.ndarray       # task indices owned by this rank
+    has_tasks: bool             # whether this rank owns any task
+
 
 class CommManager:
 
@@ -9,11 +18,49 @@ class CommManager:
         self.comm_size = comm.Get_size()
         self.root = 0
 
+        # Node topology via shared-memory splitting (portable, no rank-ordering assumptions)
+        self.node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        self.node_rank = self.node_comm.Get_rank()
+        self.node_size = self.node_comm.Get_size()
+
+        # Assign a consistent node_id across all ranks:
+        # each node's local root (node_rank==0) gets a unique color via the inter-node comm
+        inter_comm = comm.Split(0 if self.node_rank == 0 else MPI.UNDEFINED)
+        if self.node_rank == 0:
+            self.node_id = inter_comm.Get_rank()
+            self.num_nodes = inter_comm.Get_size()
+            inter_comm.Free()
+        else:
+            self.node_id = None
+            self.num_nodes = None
+        self.node_id = self.node_comm.bcast(self.node_id, root=0)
+        self.num_nodes = self.node_comm.bcast(self.num_nodes, root=0)
+
     def is_root(self):
         return self.rank == self.root
 
     def _barrier(self):
         self.comm.Barrier()
+
+    def spread_tasks_across_nodes(self, num_tasks):
+        base, remainder = divmod(num_tasks, self.num_nodes)
+        per_node = np.array([base + (1 if n < remainder else 0) for n in range(self.num_nodes)], dtype=np.int64)
+        offset = np.zeros(self.num_nodes + 1, dtype=np.int64)
+        np.cumsum(per_node, out=offset[1:])
+
+        lo, hi = int(offset[self.node_id]), int(offset[self.node_id + 1])
+        my_tasks = np.array([k for k in range(lo, hi)
+                             if (k - lo) % self.node_size == self.node_rank],
+                            dtype=np.int64)
+
+        local_map = np.full(num_tasks, -1, dtype=np.int64)
+        local_map[my_tasks] = self.rank
+        task_to_rank = np.empty(num_tasks, dtype=np.int64)
+        self.comm.Allreduce(local_map, task_to_rank, op=MPI.MAX)
+
+        return NodeSpreadAssignment(task_to_rank=task_to_rank,
+                                    my_tasks=my_tasks,
+                                    has_tasks=len(my_tasks) > 0)
 
     def scatter(self, data):
         return self.comm.scatter(data, root=self.root)
@@ -64,10 +111,11 @@ class CommManager:
         self.comm.Allgather(sendbuf, recvbuf)
         return recvbuf    
 
-    def Reduce(self, array, op = MPI.SUM):
+    def Reduce(self, array, op = MPI.SUM, root = None):
         sendbuf = np.ascontiguousarray(array)
-        recvbuf = np.empty_like(sendbuf)
-        self.comm.Reduce(sendbuf, recvbuf, op=op, root=self.root)
+        recvbuf = np.zeros_like(sendbuf)
+        root = self.root if root is None else root
+        self.comm.Reduce(sendbuf, recvbuf, op=op, root=root)
         recvbuf = None if not self.is_root() else recvbuf
         return recvbuf
 
@@ -115,3 +163,28 @@ class CommManager:
         if return_metadata:
             return out, meta
         return out
+
+
+    def alltoallv_rows(self, rows_by_dest):
+        send_counts = np.zeros(self.comm_size, dtype=np.int64)
+        for dest, data in rows_by_dest.items():
+            send_counts[dest] = len(data)
+
+        recv_counts = np.empty(self.comm_size, dtype=np.int64)
+        self.comm.Alltoall(send_counts, recv_counts)
+
+        sdispls = np.zeros(self.comm_size, dtype=np.int64)
+        rdispls = np.zeros(self.comm_size, dtype=np.int64)
+        np.cumsum(send_counts[:-1], out=sdispls[1:])
+        np.cumsum(recv_counts[:-1], out=rdispls[1:])
+
+        sendbuf = np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)]) \
+                  if rows_by_dest else np.empty(0, dtype=np.float64)
+        recvbuf = np.empty(int(recv_counts.sum()), dtype=np.float64)
+
+        self.comm.Alltoallv(
+            [sendbuf, send_counts, sdispls, MPI.DOUBLE],
+            [recvbuf, recv_counts, rdispls, MPI.DOUBLE])
+        return recvbuf
+        
+

@@ -165,7 +165,7 @@ class DistributedBootstrapMixin:
             dtype=np.float64, shape=(self.dim.n_agents, K))
 
         if comm.is_root():
-            padded = np.zeros((comm.comm_size, self.dim.n_agents), dtype=np.float64)
+            padded = np.zeros((self.comm_manager.comm_size, self.dim.n_agents), dtype=np.float64)
             padded[:K] = weights_full.T[:K]
         else:
             padded = None
@@ -253,13 +253,9 @@ class DistributedBootstrapMixin:
                              save_dir=None, is_converged=False):
         rank = self.comm_manager.rank
         comm = self.comm_manager.comm
-        cfg = self.config.row_generation
-        P = self.comm_manager.comm_size
         nf = self.dim.n_features
         n_agents = self.dim.n_agents
-        n_local = self.data_manager.num_local_agent
         local_start = int(self.data_manager.agent_counts[:rank].sum())
-        local_ids = self.data_manager.local_agents_arange
         agent_ids = self.data_manager.agent_ids
         ROW_WIDTH = nf + 2
 
@@ -300,9 +296,9 @@ class DistributedBootstrapMixin:
             n_pre = int(converged_all.sum())
             logger.info(" ")
             logger.info(" DISTRIBUTED BOOTSTRAP (%d samples, %d ranks%s)",
-                        K, P, f", {n_pre} pre-converged" if n_pre else "")
+                        K, self.comm_manager.comm_size, f", {n_pre} pre-converged" if n_pre else "")
 
-        for rg_round in range(int(cfg.max_iters)):
+        for rg_round in range(int(self.config.row_generation.max_iters)):
             t_round = time.perf_counter()
 
             active_k = np.where(active)[0]
@@ -324,38 +320,34 @@ class DistributedBootstrapMixin:
             # --- Step 2: Solve subproblems, compute reduced costs ---
             t_price = time.perf_counter()
 
-            bundles = np.empty((len(active_k), n_local, self.dim.n_items), dtype=bool)
+            bundles = np.empty((len(active_k), self.data_manager.num_local_agent, self.dim.n_items), dtype=bool)
             for i, k in enumerate(active_k):
                 bundles[i] = self.subproblem_manager.solve_subproblems(thetas[k])
 
-            flat = bundles.reshape(-1, self.dim.n_items)
-            flat_ids = np.tile(local_ids, len(active_k))
-            features = self.oracles_manager.features_oracle(flat, flat_ids) \
-                           .reshape(len(active_k), n_local, nf)
-            errors = self.oracles_manager.error_oracle(flat, flat_ids) \
-                         .reshape(len(active_k), n_local)
+            flat_bundles = bundles.reshape(-1, self.dim.n_items)
+            flat_ids = np.tile(self.data_manager.local_agents_arange, len(active_k))
+            features = self.oracles_manager.features_oracle(flat_bundles, flat_ids).reshape(len(active_k), self.data_manager.num_local_agent, nf)
+            errors = self.oracles_manager.error_oracle(flat_bundles, flat_ids).reshape(len(active_k), self.data_manager.num_local_agent)
 
-            u_sub = np.einsum('ijk,ik->ij', features, thetas[active_k]) + errors
-            u_master = us[active_k, local_start:local_start + n_local]
-            rc = local_weights[:, active_k].T * (u_sub - u_master)
+            u_sub = np.einsum('rik,rk->ri', features, thetas[active_k]) + errors
+            u_master = us[active_k, local_start:local_start + self.data_manager.num_local_agent]
+            reduced_costs = local_weights[:, active_k].T * (u_sub - u_master)
         
             comm.Barrier()
             t_price = time.perf_counter() - t_price
 
-            # --- Step 3: Convergence check + timing stats ---
-            local_max_rc = rc.max(axis=1)
+            # --- Step 3: Convergence check  ---
+            local_max_rc = reduced_costs.max(axis=1)
             global_max_rc = np.empty_like(local_max_rc)
             comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
-            converged = global_max_rc <= cfg.tolerance
+            converged = global_max_rc <= self.config.row_generation.tolerance
 
-            # Piggyback: max pricing time + total viols (one Allreduce)
-            local_viols = float((rc > cfg.tolerance).sum())
-            total_viols_arr = np.array([local_viols])
+            total_viols_arr = np.array([(reduced_costs > self.config.row_generation.tolerance).sum()])
             comm.Allreduce(MPI.IN_PLACE, total_viols_arr, op=MPI.SUM)
             total_viols = int(total_viols_arr[0])
 
             # --- Step 4: Exchange violations for non-converged boots ---
-            viol_mask = rc > cfg.tolerance
+            viol_mask = reduced_costs > self.config.row_generation.tolerance
             rows_by_dest = {}
             for i, k in enumerate(active_k):
                 if converged[i]:
@@ -366,9 +358,9 @@ class DistributedBootstrapMixin:
                     block[:, 0] = agent_ids[v]
                     block[:, 1:-1] = features[i, v]
                     block[:, -1] = errors[i, v]
-                    rows_by_dest[k] = block.ravel()
+                    rows_by_dest[k] = block.flatten()
 
-            recvbuf = self._alltoallv_rows(rows_by_dest, P, comm)
+            recvbuf = self.comm_manager.alltoallv_rows(rows_by_dest)
 
             # --- Step 5: Add cuts and re-solve ---
             t_master = time.perf_counter()
@@ -376,8 +368,7 @@ class DistributedBootstrapMixin:
                 if len(recvbuf) > 0:
                     d = recvbuf.reshape(-1, ROW_WIDTH)
                     ids = d[:, 0].astype(np.int64)
-                    master['model'].addConstr(
-                        master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
+                    master['model'].addConstr(master['u'][ids] >= d[:, 1:-1] @ master['theta'] + d[:, -1])
                 master['model'].optimize()
 
             comm.Barrier()
@@ -391,7 +382,7 @@ class DistributedBootstrapMixin:
 
             newly_converged = []
             for i, k in enumerate(active_k):
-                if converged[i] and rg_round >= cfg.min_iters:
+                if converged[i] and rg_round >= self.config.row_generation.min_iters:
                     active[k] = 0
                     newly_converged.append(k)
                     if rank == 0:
@@ -434,7 +425,7 @@ class DistributedBootstrapMixin:
             if self.verbose and self.comm_manager.is_root():
                 logger.info(" ")
                 logger.info(" WARNING: %d boots did not converge (max_iters=%d)",
-                            len(remaining), int(cfg.max_iters))
+                            len(remaining), int(self.config.row_generation.max_iters))
                 self._log_boot_details(remaining, theta_results,
                                        global_max_rc, boot_stats_all)
 
@@ -451,33 +442,6 @@ class DistributedBootstrapMixin:
         meta = {'converged': converged}
         with open(os.path.join(d, "meta.json"), 'w') as f:
             json.dump(meta, f)
-
-    # -------------------------------------------------------------------------
-    # Helpers
-    # -------------------------------------------------------------------------
-
-    @staticmethod
-    def _alltoallv_rows(rows_by_dest, P, comm):
-        send_counts = np.zeros(P, dtype=np.int64)
-        for dest, data in rows_by_dest.items():
-            send_counts[dest] = len(data)
-
-        recv_counts = np.empty(P, dtype=np.int64)
-        comm.Alltoall(send_counts, recv_counts)
-
-        sdispls = np.zeros(P, dtype=np.int64)
-        rdispls = np.zeros(P, dtype=np.int64)
-        np.cumsum(send_counts[:-1], out=sdispls[1:])
-        np.cumsum(recv_counts[:-1], out=rdispls[1:])
-
-        sendbuf = np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)]) \
-                  if rows_by_dest else np.empty(0, dtype=np.float64)
-        recvbuf = np.empty(int(recv_counts.sum()), dtype=np.float64)
-
-        comm.Alltoallv(
-            [sendbuf, send_counts, sdispls, MPI.DOUBLE],
-            [recvbuf, recv_counts, rdispls, MPI.DOUBLE])
-        return recvbuf
 
     # -------------------------------------------------------------------------
     # Logging
