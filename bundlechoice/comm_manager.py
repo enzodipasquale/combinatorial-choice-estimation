@@ -55,7 +55,7 @@ class CommManager:
 
         local_map = np.full(num_tasks, -1, dtype=np.int64)
         local_map[my_tasks] = self.rank
-        task_to_rank = np.empty(num_tasks, dtype=np.int64)
+        task_to_rank = np.zeros(num_tasks, dtype=np.int64)
         self.comm.Allreduce(local_map, task_to_rank, op=MPI.MAX)
 
         return NodeSpreadAssignment(task_to_rank=task_to_rank,
@@ -82,7 +82,7 @@ class CommManager:
             sendbuf = (send_array, counts)
         else:
             sendbuf = None
-        recvbuf = np.empty(int(counts[self.rank]), dtype=dtype)
+        recvbuf = np.zeros(int(counts[self.rank]), dtype=dtype)
         self.comm.Scatterv(sendbuf, recvbuf, root=root)
         if len(tail_shape):
             recvbuf = recvbuf.reshape((int(row_counts[self.rank]),) + tail_shape)
@@ -92,12 +92,12 @@ class CommManager:
         local_flat = np.ascontiguousarray(local_array).ravel()
         if row_counts is None:
             local_size = np.array([local_flat.size], dtype=np.int64)
-            counts = np.empty(self.comm_size, dtype=np.int64) if self.rank == root else None
+            counts = np.zeros(self.comm_size, dtype=np.int64) if self.rank == root else None
             self.comm.Gather(local_size, counts, root=root)
         else:
             counts = row_counts * int(np.prod(local_array.shape[1:]))
         if self.rank == root:
-            recvbuf = np.empty(int(counts.sum()), dtype=local_array.dtype)
+            recvbuf = np.zeros(int(counts.sum()), dtype=local_array.dtype)
             self.comm.Gatherv(local_flat, (recvbuf, counts), root=root)
             if local_array.ndim > 1:
                 return recvbuf.reshape((-1,) + local_array.shape[1:])
@@ -107,7 +107,7 @@ class CommManager:
             return None
     def Allgather(self, array):
         sendbuf = np.ascontiguousarray(array)
-        recvbuf = np.empty(self.comm_size * sendbuf.size, dtype=sendbuf.dtype)
+        recvbuf = np.zeros(self.comm_size * sendbuf.size, dtype=sendbuf.dtype)
         self.comm.Allgather(sendbuf, recvbuf)
         return recvbuf    
 
@@ -155,7 +155,7 @@ class CommManager:
         out = {}
         for k, (kind, shape, dtype) in meta.items():
             if kind == 'arr':
-                arr = data_dict[k] if self.is_root() else np.empty(shape, dtype=dtype)
+                arr = data_dict[k] if self.is_root() else np.zeros(shape, dtype=dtype)
                 self.Bcast(arr)
                 out[k] = arr
             else:
@@ -170,7 +170,7 @@ class CommManager:
         for dest, data in rows_by_dest.items():
             send_counts[dest] = len(data)
 
-        recv_counts = np.empty(self.comm_size, dtype=np.int64)
+        recv_counts = np.zeros(self.comm_size, dtype=np.int64)
         self.comm.Alltoall(send_counts, recv_counts)
 
         sdispls = np.zeros(self.comm_size, dtype=np.int64)
@@ -179,8 +179,8 @@ class CommManager:
         np.cumsum(recv_counts[:-1], out=rdispls[1:])
 
         sendbuf = np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)]) \
-                  if rows_by_dest else np.empty(0, dtype=np.float64)
-        recvbuf = np.empty(int(recv_counts.sum()), dtype=np.float64)
+                  if rows_by_dest else np.zeros(0, dtype=np.float64)
+        recvbuf = np.zeros(int(recv_counts.sum()), dtype=np.float64)
 
         self.comm.Alltoallv(
             [sendbuf, send_counts, sdispls, MPI.DOUBLE],

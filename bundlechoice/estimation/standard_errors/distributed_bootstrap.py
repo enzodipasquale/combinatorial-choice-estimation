@@ -106,7 +106,7 @@ class DistributedBootstrapMixin:
             self.row_gen.install_master_model(model, (theta, u))
             theta_hat = theta.X.copy()
         else:
-            theta_hat = np.empty(self.dim.n_features, dtype=np.float64)
+            theta_hat = np.zeros(self.dim.n_features, dtype=np.float64)
 
         comm.Bcast(theta_hat)
         self.point_result = RowGenerationEstimationResult(
@@ -184,7 +184,7 @@ class DistributedBootstrapMixin:
 
         local_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
         local_theta_obj = -local_weights.T @ local_features
-        theta_obj_all = np.empty_like(local_theta_obj)
+        theta_obj_all = np.zeros_like(local_theta_obj)
         comm.comm.Allreduce(local_theta_obj, theta_obj_all, op=MPI.SUM)
 
         master = None
@@ -263,7 +263,7 @@ class DistributedBootstrapMixin:
         converged_send = np.zeros(K, dtype=np.int32)
         if rank < K and is_converged:
             converged_send[rank] = 1
-        converged_all = np.empty_like(converged_send)
+        converged_all = np.zeros_like(converged_send)
         comm.Allreduce(converged_send, converged_all, op=MPI.SUM)
         
         # Initialize active array (inverse of converged)
@@ -278,7 +278,7 @@ class DistributedBootstrapMixin:
         theta_send = np.zeros((K, nf), dtype=np.float64)
         if rank < K and is_converged:
             theta_send[rank] = master['theta'].X
-        theta_all = np.empty_like(theta_send)
+        theta_all = np.zeros_like(theta_send)
         comm.Allreduce(theta_send, theta_all, op=MPI.SUM)
         
         # Store pre-converged results on rank 0
@@ -288,9 +288,9 @@ class DistributedBootstrapMixin:
                     theta_results[k] = theta_all[k].copy()
 
         master_send = np.zeros((K, nf + n_agents), dtype=np.float64)
-        master_all = np.empty_like(master_send)
+        master_all = np.zeros_like(master_send)
         boot_stats_send = np.zeros((K, 2), dtype=np.float64)
-        boot_stats_all = np.empty_like(boot_stats_send)
+        boot_stats_all = np.zeros_like(boot_stats_send)
 
         if self.verbose and self.comm_manager.is_root():
             n_pre = int(converged_all.sum())
@@ -320,7 +320,7 @@ class DistributedBootstrapMixin:
             # --- Step 2: Solve subproblems, compute reduced costs ---
             t_price = time.perf_counter()
 
-            bundles = np.empty((len(active_k), self.data_manager.num_local_agent, self.dim.n_items), dtype=bool)
+            bundles = np.zeros((len(active_k), self.data_manager.num_local_agent, self.dim.n_items), dtype=bool)
             for i, k in enumerate(active_k):
                 bundles[i] = self.subproblem_manager.solve_subproblems(thetas[k])
 
@@ -338,7 +338,7 @@ class DistributedBootstrapMixin:
 
             # --- Step 3: Convergence check  ---
             local_max_rc = reduced_costs.max(axis=1)
-            global_max_rc = np.empty_like(local_max_rc)
+            global_max_rc = np.zeros_like(local_max_rc)
             comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
             converged = global_max_rc <= self.config.row_generation.tolerance
 
@@ -354,7 +354,7 @@ class DistributedBootstrapMixin:
                     continue
                 v = np.where(viol_mask[i])[0]
                 if len(v) > 0:
-                    block = np.empty((len(v), ROW_WIDTH), dtype=np.float64)
+                    block = np.zeros((len(v), ROW_WIDTH), dtype=np.float64)
                     block[:, 0] = agent_ids[v]
                     block[:, 1:-1] = features[i, v]
                     block[:, -1] = errors[i, v]
@@ -416,7 +416,7 @@ class DistributedBootstrapMixin:
                 buf[rank] = master['theta'].X
                 if save_dir is not None:
                     self._save_bootstrap(save_dir, rank, master, converged=False)
-            recv = np.empty_like(buf) if rank == 0 else None
+            recv = np.zeros_like(buf) if rank == 0 else None
             comm.Reduce(buf, recv, op=MPI.SUM, root=0)
             if rank == 0:
                 for k in remaining:
