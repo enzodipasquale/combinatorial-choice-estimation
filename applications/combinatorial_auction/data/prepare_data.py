@@ -145,7 +145,7 @@ def normalize_interaction_matrix(matrix, pop):
     np.fill_diagonal(matrix, 0)
     return matrix
 
-def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4, adjacency = None):
+def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4, adjacency = None, rescale_features=False):
     quadratic_list = []
 
     if adjacency is not None:
@@ -167,11 +167,12 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     
 
     quadratic_features = np.stack(quadratic_list, axis=2)
-    
+    if rescale_features:
+        quadratic_features = quadratic_features / quadratic_features.std((0, 1))[None, None, :]
     return quadratic_features
 
 
-def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None, rescale_modular=False):
+def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None, rescale_features=False):
     modular_list = []
     elig_times_pop = elig[:, None] * pop[None, :]
     modular_list.append(elig_times_pop)
@@ -188,13 +189,13 @@ def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = Non
 
 
     modular_feat = np.stack(modular_list, axis=2)
-    if rescale_modular:
+    if rescale_features:
         modular_feat = modular_feat / modular_feat.std((0, 1))[None, None, :]
     return modular_feat
 
 
 
-def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False, rescale_modular=False):
+def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False, rescale_features=False):
 
     raw_data = load_raw_data(continental_only)
 
@@ -214,7 +215,7 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         revenues=revenues if form175_features else None,
         is_rural = is_rural if form175_features else None,
         hq_distance = raw_data["hq_distance"] if hq_distance else None,
-        rescale_modular=rescale_modular,
+        rescale_features=rescale_features,
     )
     quadratic_features = build_quadratic_features(
         pop,
@@ -222,7 +223,8 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         raw_data["travel_survey"],
         raw_data["air_travel"],
         delta=delta,
-        adjacency = raw_data["bta_adjacency"] if adjacency else None
+        adjacency = raw_data["bta_adjacency"] if adjacency else None,
+        rescale_features=rescale_features,
     )
     
 
@@ -327,7 +329,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--rescale-modular",
+        "--rescale-features",
         action="store_true",
     )
 
@@ -341,5 +343,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency, rescale_modular=args.rescale_modular)
+    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency, rescale_features=args.rescale_features)
 

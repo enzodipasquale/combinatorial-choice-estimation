@@ -32,7 +32,7 @@ if rank == 0:
         form175_features=app.get("form175_features", False),
         continental_only=app.get("continental_only"),
         adjacency=app.get("adjacency"),
-        rescale_modular=app.get("rescale_modular"),
+        rescale_features=app.get("rescale_features"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
@@ -45,9 +45,19 @@ if rank == 0:
     quad_indices = list(range(n_features - n_item_quad, n_features))
     config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
     config["dimensions"].update(dim_cfg)
+    mod_b = app.get('mod_bounds', {})
+    quad_b = app.get('quad_bounds', {})
     bounds = config["row_generation"]["theta_bounds"]
-    bounds["lbs"].update({k: app.get('lbs') for k in id_mod_indices[1:]})
-    bounds["ubs"].update({k: app.get('ubs') for k in id_mod_indices[1:]})
+    for k in id_mod_indices[1:]:
+        if mod_b.get('lb') is not None:
+            bounds["lbs"][k] = mod_b['lb']
+        if mod_b.get('ub') is not None:
+            bounds["ubs"][k] = mod_b['ub']
+    for k in quad_indices[:-3]:
+        if quad_b.get('lb') is not None:
+            bounds["lbs"][k] = quad_b['lb']
+        if quad_b.get('ub') is not None:
+            bounds["ubs"][k] = quad_b['ub']
 else:
     input_data = None
 
