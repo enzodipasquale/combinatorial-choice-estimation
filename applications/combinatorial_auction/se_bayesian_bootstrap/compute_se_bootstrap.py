@@ -50,8 +50,8 @@ if rank == 0:
     config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
     config["dimensions"].update(dim_cfg)
     updates = {
-        'lbs': {k: -3000 for k in id_mod_indices[1:]},
-        'ubs': {k: 3000 for k in id_mod_indices[1:]}
+        'lbs': {k: app.get('lbs') for k in id_mod_indices[1:]},
+        'ubs': {k: app.get('lbs') for k in id_mod_indices[1:]}
     }
     for bounds in [config["row_generation"]["theta_bounds"], config["standard_errors"]["theta_bounds"]]:
         bounds["lbs"].update(updates['lbs'])
