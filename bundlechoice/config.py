@@ -37,6 +37,23 @@ class SubproblemConfig(ConfigMixin):
     name: str = None
     GRB_Params: dict = field(default_factory=dict)
 
+def theta_bounds_arrays(theta_bounds, n_features, default_lb=0, default_ub=10000):
+    if not theta_bounds:
+        return default_lb, default_ub
+
+    lb = theta_bounds.get("lb", default_lb)
+    ub = theta_bounds.get("ub", default_ub)
+
+    theta_lbs = np.full(n_features, float(lb))
+    theta_ubs = np.full(n_features, float(ub))
+
+    for k, v in (theta_bounds.get("lbs") or {}).items():
+        theta_lbs[int(k)] = float(v)
+    for k, v in (theta_bounds.get("ubs") or {}).items():
+        theta_ubs[int(k)] = float(v)
+
+    return theta_lbs, theta_ubs
+
 @dataclass
 class RowGenerationConfig(ConfigMixin):
     max_slack_counter: float = float('inf')
@@ -52,21 +69,7 @@ class RowGenerationConfig(ConfigMixin):
     save_master_model_dir: str = None
 
     def theta_bounds_arrays(self, n_features: int):
-        if not self.theta_bounds:
-            return self.theta_lbs, self.theta_ubs
-
-        lb = self.theta_bounds.get("lb", self.theta_lbs)
-        ub = self.theta_bounds.get("ub", self.theta_ubs)
-
-        theta_lbs = np.full(n_features, float(lb))
-        theta_ubs = np.full(n_features, float(ub))
-
-        for k, v in (self.theta_bounds.get("lbs") or {}).items():
-            theta_lbs[int(k)] = float(v)
-        for k, v in (self.theta_bounds.get("ubs") or {}).items():
-            theta_ubs[int(k)] = float(v)
-
-        return theta_lbs, theta_ubs
+        return theta_bounds_arrays(self.theta_bounds, n_features, self.theta_lbs, self.theta_ubs)
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):
@@ -83,6 +86,15 @@ class StandardErrorsConfig(ConfigMixin):
     seed: int = None
     beta_indices: list = None
     error_sigma: float = 1.0
+    rowgen_tol: float = 1e-6
+    rowgen_max_iters: int = 1000
+    rowgen_min_iters: int = 0
+    master_GRB_Params: dict = field(default_factory=dict)
+    parameters_to_log: list = None
+    theta_bounds: dict = None
+
+    def theta_bounds_arrays(self, n_features: int):
+        return theta_bounds_arrays(self.theta_bounds, n_features)
 
 @dataclass
 class BundleChoiceConfig(ConfigMixin):

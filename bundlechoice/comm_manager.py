@@ -178,8 +178,9 @@ class CommManager:
         np.cumsum(send_counts[:-1], out=sdispls[1:])
         np.cumsum(recv_counts[:-1], out=rdispls[1:])
 
-        sendbuf = np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)]) \
-                  if rows_by_dest else np.zeros(0, dtype=np.float64)
+        sendbuf = np.ascontiguousarray(
+            np.concatenate([rows_by_dest[k] for k in sorted(rows_by_dest)])
+        ) if rows_by_dest else np.zeros(0, dtype=np.float64)
         recvbuf = np.zeros(int(recv_counts.sum()), dtype=np.float64)
 
         self.comm.Alltoallv(

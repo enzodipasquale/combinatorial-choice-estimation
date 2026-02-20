@@ -12,17 +12,17 @@ class SubproblemManager:
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
         self.subproblem = None
-
         self._subproblems_are_initialized = False
+
     def load_subproblem(self, subproblem=None):
         subproblem = subproblem or self.config.subproblem.name
-        
+
         if isinstance(subproblem, type):
             cls = subproblem
         elif callable(subproblem) and not isinstance(subproblem, str):
-            self.subproblem = subproblem(self.data_manager, 
-                                         self.oracles_manager, 
-                                         self.config.subproblem, 
+            self.subproblem = subproblem(self.data_manager,
+                                         self.oracles_manager,
+                                         self.config.subproblem,
                                          self.config.dimensions)
             return self.subproblem
         else:
@@ -30,12 +30,12 @@ class SubproblemManager:
             if cls is None:
                 raise ValueError(f"Unknown subproblem: '{subproblem}'. "
                                f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
-        
-        self.subproblem = cls(self.data_manager, 
-                             self.oracles_manager, 
-                             self.config.subproblem, 
+
+        self.subproblem = cls(self.data_manager,
+                             self.oracles_manager,
+                             self.config.subproblem,
                              self.config.dimensions)
-        
+
         return self.subproblem
 
     def initialize_subproblems(self):
@@ -57,20 +57,11 @@ class SubproblemManager:
 
     def generate_obs_bundles(self, theta):
         local_bundles = self.initialize_and_solve_subproblems(theta)
-        # XXXX
         self.data_manager.local_data["id_data"]["obs_bundles"] = local_bundles.astype(bool)
         obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.data_manager.agent_counts)
         return obs_bundles
 
-
     def update_gurobi_settings(self, settings_dict):
         self.config.subproblem.GRB_Params.update(settings_dict)
-        
-        if self.subproblem is None:
-            return
-        
-        if hasattr(self.subproblem, 'local_problems') and self.subproblem.local_problems is not None:
-            for model in self.subproblem.local_problems:
-                if model is not None:
-                    for param, value in settings_dict.items():
-                        model.setParam(param, value)
+        if self.subproblem is not None:
+            self.subproblem.update_solver_settings(settings_dict)

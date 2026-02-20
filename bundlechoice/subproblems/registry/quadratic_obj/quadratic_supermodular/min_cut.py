@@ -1,27 +1,39 @@
 import numpy as np
 import networkx as nx
-from ....subproblem_base import SerialSubproblemBase
+from ....subproblem_base import SubproblemSolver
 from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 
-class QuadraticSupermodularMinCut(SupermodularQuadraticObjectiveMixin, SerialSubproblemBase):
+class QuadraticSupermodularMinCutSolver(SupermodularQuadraticObjectiveMixin, SubproblemSolver):
 
-    def initialize_single_pb(self, local_id):
-        return self._qinfo.constraint_mask[local_id] if self._qinfo.constraint_mask is not None else None
+    def initialize(self):
+        mask = self._qinfo.constraint_mask
+        self._solvers = [MinCutSolver(mask[i] if mask is not None else None,
+                                      self.dimensions_cfg.n_items)
+                         for i in range(self.data_manager.num_local_agent)]
 
-    def solve_single_pb(self, local_id, theta, constraint_mask):
-        linear, quadratic = self._build_linear_coeff_single(local_id, theta), self._build_quadratic_coeff_single(local_id, theta)
-        return MinCutSolver(-linear, -quadratic, constraint_mask).solve()
+    def solve(self, theta):
+        L_all = self._build_linear_coeff_batch(theta)
+        Q_all = self._build_quadratic_coeff_batch(theta)
+        n_agents = len(self._solvers)
+        results = np.zeros((n_agents, self.dimensions_cfg.n_items), dtype=bool)
+        for i, solver in enumerate(self._solvers):
+            results[i] = solver.solve(-L_all[i], -Q_all[i])
+        return results
 
 class MinCutSolver:
 
-    def __init__(self, linear_coeff, quadratic_coeff, constraint_mask=None):
-        self.linear_coeff, self.quadratic_coeff = linear_coeff, quadratic_coeff
-        self.n = quadratic_coeff.shape[0]
-        self.nodes = np.where(constraint_mask)[0].tolist() if constraint_mask is not None and constraint_mask.dtype == bool else list(range(self.n)) if constraint_mask is None else list(constraint_mask)
+    def __init__(self, constraint_mask, n_items):
+        self.n = n_items
+        if constraint_mask is None:
+            self.nodes = list(range(n_items))
+        elif constraint_mask.dtype == bool:
+            self.nodes = np.where(constraint_mask)[0].tolist()
+        else:
+            self.nodes = list(constraint_mask)
 
-    def solve(self):
-        posiform_quadratic_coeff = -self.quadratic_coeff
-        posiform_linear_coeff = self.linear_coeff - posiform_quadratic_coeff.sum(axis=1)
+    def solve(self, linear_coeff, quadratic_coeff):
+        posiform_quadratic_coeff = -quadratic_coeff
+        posiform_linear_coeff = linear_coeff - posiform_quadratic_coeff.sum(axis=1)
         G = self._build_graph(posiform_quadratic_coeff, posiform_linear_coeff)
         _, partition = nx.minimum_cut(G, 's', 't', flow_func=nx.algorithms.flow.preflow_push)
         bundle = np.zeros(self.n, dtype=bool)

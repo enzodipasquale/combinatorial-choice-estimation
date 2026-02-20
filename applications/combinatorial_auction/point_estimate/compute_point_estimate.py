@@ -64,17 +64,15 @@ callbacks = config.get("callbacks")
 if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
 
-adaptive_cfg = callbacks.get("adaptive_timeout")
-timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=adaptive_cfg.get("initial"),
-    final_timeout=adaptive_cfg.get("final"),
-    transition_iterations=adaptive_cfg.get("transition_iterations"),
-    strategy=adaptive_cfg.get("strategy", "step")
+row_gen_cfg = callbacks.get("row_gen")
+pt_timeout_cb, _ = adaptive_gurobi_timeout(
+    schedule=row_gen_cfg['schedule'],
+    final_timeout=row_gen_cfg['final_timeout'],
 )
 
 # Pass it to solve
 result = bc.row_generation.solve(
-    iteration_callback=timeout_callback,
+    iteration_callback=pt_timeout_cb,
     verbose=True
 )
 

@@ -68,7 +68,12 @@ class OraclesManager:
 
     def utility_oracle(self, bundles, theta, ids = None):
         return self.features_oracle(bundles, ids) @ theta + self.error_oracle(bundles, ids)
- 
+
+    def features_and_errors_oracle(self, bundles, ids = None):
+        features = self.features_oracle(bundles, ids)
+        error = self.error_oracle(bundles, ids)
+        return features, error
+
     def features_oracle_individual(self, bundle, id):
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         if self._features_oracle_vectorized:

@@ -1,13 +1,13 @@
 import importlib
 
 REGISTRY = {
-    'LinearKnapsackGRB': ('.registry.quadratic_obj.linear_knapsack', 'LinearKnapsackGRBSubproblem'),
-    'Greedy': ('.registry.greedy', 'GreedySubproblem'),
-    'QuadraticKnapsackGRB': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackGRBSubproblem'),
-    'QuadraticSupermodularMinCut': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCut'),
-    'QuadraticSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularLovasz'),
-    'PlainSingleItem': ('.registry.quadratic_obj.plain_single_item', 'PlainSingleItemSubproblem'),
-    'BruteForce': ('.registry.brute_force', 'BruteForceSubproblem'),
+    'LinearKnapsackGRB': ('.registry.quadratic_obj.linear_knapsack', 'LinearKnapsackGRBSolver'),
+    'Greedy': ('.registry.greedy', 'GreedySolver'),
+    'QuadraticKnapsackGRB': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackGRBSolver'),
+    'QuadraticSupermodularMinCut': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCutSolver'),
+    'QuadraticSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularLovaszSolver'),
+    'PlainSingleItem': ('.registry.quadratic_obj.plain_single_item', 'PlainSingleItemSolver'),
+    'BruteForce': ('.registry.brute_force', 'BruteForceSolver'),
 }
 _cache = {}
 
