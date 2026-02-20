@@ -63,7 +63,7 @@ else:
 config = comm.bcast(config, root=0)
 
 bc = BundleChoice()
-bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation", "standard_errors"]})
+bc.load_config(config)
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
@@ -80,11 +80,8 @@ callbacks = config.get("callbacks")
 #         boot.row_gen.master_model.update()
 
 
-boot_cfg = callbacks.get("boot")
-pt_timeout_cb, dist_timeout_cb = adaptive_gurobi_timeout(
-    schedule=boot_cfg['schedule'],
-    final_timeout=boot_cfg['final_timeout'],
-)
+pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
+_, dist_timeout_cb = adaptive_gurobi_timeout(callbacks['boot'])
 
 checkpoint_dir = str(BASE_DIR)
 se_result = bc.standard_errors.compute_distributed_bootstrap(

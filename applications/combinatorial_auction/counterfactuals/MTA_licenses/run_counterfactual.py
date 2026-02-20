@@ -80,8 +80,8 @@ def fix_theta(row_gen):
         theta[i].LB = theta[i].UB = theta_init[i]
     row_gen.master_model.update()
 
-pt_timeout_cb, _ = adaptive_gurobi_timeout(
-    schedule=[{'iters': 30, 'timeout': 1.0}],
-    final_timeout=10.0,
-)
+pt_timeout_cb, _ = adaptive_gurobi_timeout([
+    {'iters': 30, 'timeout': 1.0},
+    {'timeout': 10.0},
+])
 bc.row_generation.solve(initialization_callback=fix_theta, iteration_callback=pt_timeout_cb, verbose=True)
