@@ -169,7 +169,7 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     return quadratic_features
 
 
-def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None):
+def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None, rescale_modular=False):
     modular_list = []
     elig_times_pop = elig[:, None] * pop[None, :]
     modular_list.append(elig_times_pop)
@@ -185,13 +185,14 @@ def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = Non
         modular_list.append(np.log(hq_distance * 1000 +1))
 
 
+    modular_feat = np.stack(modular_list, axis=2)
+    if rescale_modular:
+        modular_feat = modular_feat / modular_feat.std((0, 1))[None, None, :]
+    return modular_feat
 
-    
-    return np.stack(modular_list, axis=2)
 
 
-
-def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False):
+def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False, rescale_modular=False):
 
     raw_data = load_raw_data(continental_only)
 
@@ -210,7 +211,8 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         assets=assets if form175_features else None,
         revenues=revenues if form175_features else None,
         is_rural = is_rural if form175_features else None,
-        hq_distance = raw_data["hq_distance"] if hq_distance else None
+        hq_distance = raw_data["hq_distance"] if hq_distance else None,
+        rescale_modular=rescale_modular,
     )
     quadratic_features = build_quadratic_features(
         pop,
@@ -322,6 +324,11 @@ def parse_args():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--rescale-modular",
+        action="store_true",
+    )
+
     args = parser.parse_args()
     
     if args.delta is None:
@@ -332,5 +339,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency)
+    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency, rescale_modular=args.rescale_modular)
 

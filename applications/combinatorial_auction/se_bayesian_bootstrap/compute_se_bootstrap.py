@@ -36,6 +36,7 @@ if rank == 0:
         form175_features=app.get("form175_features", False),
         continental_only=app.get("continental_only"),
         adjacency=app.get("adjacency"),
+        rescale_modular=app.get("rescale_modular"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
