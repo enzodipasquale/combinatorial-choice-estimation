@@ -182,6 +182,9 @@ def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = Non
     if hq_distance is not None:
         modular_list.append(hq_distance)
         modular_list.append(hq_distance ** 2)
+        modular_list.append(np.log(hq_distance * 1000 +1))
+
+
 
     
     return np.stack(modular_list, axis=2)
