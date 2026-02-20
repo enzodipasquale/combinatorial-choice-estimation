@@ -35,6 +35,7 @@ if rank == 0:
         hq_distance=app.get("hq_distance", False),
         form175_features=app.get("form175_features", False),
         continental_only=app.get("continental_only"),
+        adjacency=app.get("adjacency"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
@@ -45,7 +46,7 @@ if rank == 0:
     dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
     id_mod_indices = list(range(n_id_mod))
     quad_indices = list(range(n_features - n_item_quad, n_features))
-    config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
+    config["standard_errors"]["parameters_to_log"] = id_mod_indices + quad_indices
     config["dimensions"].update(dim_cfg)
     bounds = config["row_generation"]["theta_bounds"]
     for k in id_mod_indices[1:]:
@@ -68,24 +69,17 @@ if rank == 0:
     print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
 callbacks = config.get("callbacks")
-def boot_callback(iter, boot):
-    if boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
-        theta, _ = boot.row_gen.master_variables
-        boot.row_gen.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
-        boot.row_gen.master_model.update()
-    if iter > 0:
-        strip_cfg = callbacks.get("strip")
-        percentile = strip_cfg.get("percentile")
-        hard_threshold = strip_cfg.get("hard_threshold")
-        boot.row_gen.strip_slack_constraints(percentile=percentile, hard_threshold=hard_threshold)
+# def boot_callback(iter, boot):
+#     if boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
+#         theta, _ = boot.row_gen.master_variables
+#         boot.row_gen.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
+#         boot.row_gen.master_model.update()
 
 
-adaptive_cfg = callbacks.get("adaptive_timeout")
-timeout_callback = adaptive_gurobi_timeout(
-    initial_timeout=adaptive_cfg.get("initial"),
-    final_timeout=adaptive_cfg.get("final"),
-    transition_iterations=adaptive_cfg.get("transition_iterations"),
-    strategy=adaptive_cfg.get("strategy", "step")
+boot_cfg = callbacks.get("boot")
+pt_timeout_cb, dist_timeout_cb = adaptive_gurobi_timeout(
+    schedule=boot_cfg['schedule'],
+    final_timeout=boot_cfg['final_timeout'],
 )
 
 checkpoint_dir = str(BASE_DIR)
@@ -93,7 +87,8 @@ se_result = bc.standard_errors.compute_distributed_bootstrap(
     num_bootstrap=NUM_BOOTSTRAP,
     seed=BOOT_SEED,
     verbose=True,
-    row_gen_iteration_callback=timeout_callback,
+    pt_estimate_callbacks=(None, pt_timeout_cb),
+    bootstrap_callback=dist_timeout_cb,
     method='bayesian',
     save_model_dir=checkpoint_dir,
     load_model_dir=checkpoint_dir,

@@ -145,7 +145,7 @@ def normalize_interaction_matrix(matrix, pop):
     np.fill_diagonal(matrix, 0)
     return matrix
 
-def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4):
+def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4, adjacency = None):
     quadratic_list = []
     
     pop_centroid = build_pop_centroid_features(pop, geo_distance, delta=delta)
@@ -159,7 +159,11 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     air_travel = np.where(air_travel == 0, LB_QUADRATICS, air_travel)
     quadratic_air = normalize_interaction_matrix(air_travel, pop)
     quadratic_list.append(quadratic_air)
-    
+
+    if adjacency is not None:
+        quadratic_adj = normalize_interaction_matrix(adjacency, pop)
+        quadratic_list.append(quadratic_adj)
+
     quadratic_features = np.stack(quadratic_list, axis=2)
     
     return quadratic_features
@@ -184,7 +188,7 @@ def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = Non
 
 
 
-def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False):
+def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False):
 
     raw_data = load_raw_data(continental_only)
 
@@ -211,6 +215,7 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         raw_data["travel_survey"],
         raw_data["air_travel"],
         delta=delta,
+        adjacency = raw_data["bta_adjacency"] if adjacency else None
     )
     
 
@@ -309,6 +314,11 @@ def parse_args():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--adjacency", "-a",
+        action="store_true",
+    )
+
     args = parser.parse_args()
     
     if args.delta is None:
@@ -319,5 +329,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance)
+    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency)
 

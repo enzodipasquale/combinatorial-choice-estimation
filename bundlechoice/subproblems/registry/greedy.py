@@ -1,16 +1,19 @@
 import numpy as np
-from ..subproblem_base import SerialSubproblemBase
+from ..subproblem_base import SubproblemSolver
 
-class GreedySubproblem(SerialSubproblemBase):
+class GreedySolver(SubproblemSolver):
     find_best_item = None
 
-    def initialize_single_pb(self, local_id):
-        return None
-
-    def solve_single_pb(self, local_id, theta, pb=None):
-        if self.find_best_item is not None:
-            return self._greedy_with_find_best_item(local_id, theta)
-        return self._naive_greedy_solve(local_id, theta)
+    def solve(self, theta):
+        n_agents = self.data_manager.num_local_agent
+        n_items = self.dimensions_cfg.n_items
+        results = np.zeros((n_agents, n_items), dtype=bool)
+        for i in range(n_agents):
+            if self.find_best_item is not None:
+                results[i] = self._greedy_with_find_best_item(i, theta)
+            else:
+                results[i] = self._naive_greedy_solve(i, theta)
+        return results
 
     def _naive_greedy_solve(self, local_id, theta):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
@@ -43,5 +46,5 @@ class GreedySubproblem(SerialSubproblemBase):
                 break
             bundle[best_item] = True
             items_left[best_item] = False
-            best_val = val 
+            best_val = val
         return bundle

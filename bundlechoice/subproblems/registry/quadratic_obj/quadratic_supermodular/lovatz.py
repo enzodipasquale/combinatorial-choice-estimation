@@ -1,8 +1,8 @@
 import numpy as np
-from ....subproblem_base import BatchSubproblemBase
+from ....subproblem_base import SubproblemSolver
 from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 
-class QuadraticSupermodularLovasz(SupermodularQuadraticObjectiveMixin, BatchSubproblemBase):
+class QuadraticSupermodularLovaszSolver(SupermodularQuadraticObjectiveMixin, SubproblemSolver):
 
     def solve(self, theta):
         linear, quadratic = self.build_linear_and_quadratic_coef(theta)

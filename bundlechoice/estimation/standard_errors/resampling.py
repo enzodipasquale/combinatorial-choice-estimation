@@ -30,13 +30,13 @@ class ResamplingMixin:
         return weights
 
 
-    def compute_bootstrap_(self, num_bootstrap=100, 
-                                            seed=None, 
-                                            verbose=False, 
-                                            row_gen_iteration_callback = None,
-                                            row_gen_initialization_callback = None, 
+    def compute_bootstrap_(self, num_bootstrap=100,
+                                            seed=None,
+                                            verbose=False,
+                                            pt_estimate_callbacks=(None, None),
                                             bootstrap_callback = None,
                                             method = 'bayesian'):
+        initialization_callback, iteration_callback = pt_estimate_callbacks
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
@@ -68,8 +68,8 @@ class ResamplingMixin:
                                         verbose= False,
                                         initialize_subproblems= False,
                                         initialize_master= False,
-                                        iteration_callback= row_gen_iteration_callback,
-                                        initialization_callback= row_gen_initialization_callback)
+                                        iteration_callback= iteration_callback,
+                                        initialization_callback= initialization_callback)
             self.boot_time = time.perf_counter() - t_boot
             
             if self.comm_manager.is_root():
@@ -89,12 +89,12 @@ class ResamplingMixin:
 
 
 
-    def compute_bootstrap(self, num_bootstrap=100, 
-                        seed=None, verbose=False, 
-                        row_gen_iteration_callback=None,
-                        row_gen_initialization_callback=None, 
+    def compute_bootstrap(self, num_bootstrap=100,
+                        seed=None, verbose=False,
+                        pt_estimate_callbacks=(None, None),
                         bootstrap_callback=None,
                         method='bayesian'):
+        initialization_callback, iteration_callback = pt_estimate_callbacks
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
@@ -107,8 +107,8 @@ class ResamplingMixin:
             local_obs_weights=uniform_weights,
             initialize_master=True,
             initialize_subproblems=True,
-            iteration_callback=row_gen_iteration_callback,
-            initialization_callback=row_gen_initialization_callback,
+            iteration_callback=iteration_callback,
+            initialization_callback=initialization_callback,
             verbose=verbose
         )
 
@@ -152,8 +152,8 @@ class ResamplingMixin:
                 verbose=False,
                 initialize_subproblems=False,
                 initialize_master=False,
-                iteration_callback=row_gen_iteration_callback,
-                initialization_callback=row_gen_initialization_callback)
+                iteration_callback=iteration_callback,
+                initialization_callback=initialization_callback)
 
             self.boot_time = time.perf_counter() - t_boot
 
@@ -197,8 +197,8 @@ class ResamplingMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.bootstrap_history[bootstrap_iter]    
-        if self.config.row_generation.parameters_to_log is not None:
-            param_indices = self.config.row_generation.parameters_to_log
+        if self.config.standard_errors.parameters_to_log is not None:
+            param_indices = self.config.standard_errors.parameters_to_log
         else:
             param_indices = list(range(min(5, self.dim.n_features)))
         
@@ -231,8 +231,8 @@ class ResamplingMixin:
         if not self.comm_manager.is_root():
             return
         
-        if self.config.row_generation.parameters_to_log is not None:
-            param_indices = self.config.row_generation.parameters_to_log
+        if self.config.standard_errors.parameters_to_log is not None:
+            param_indices = self.config.standard_errors.parameters_to_log
         else:
             param_indices = list(range(min(5, self.dim.n_features)))
         

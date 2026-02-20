@@ -1,47 +1,54 @@
-from bundlechoice.utils import get_logger
-logger = get_logger(__name__)
+import numpy as np
 
-def adaptive_gurobi_timeout(initial_timeout=1.0, final_timeout=90.0, transition_iterations=10, strategy='linear'):
-    def callback(iteration, row_gen_manager):
-        if iteration == 0:
-            row_gen_manager.cfg.min_iters = max(row_gen_manager.cfg.min_iters, transition_iterations +1)
 
-        if iteration < transition_iterations:
-            if strategy == 'linear':
-                progress = iteration / transition_iterations
-                timeout = initial_timeout + (final_timeout - initial_timeout) * progress
-            elif strategy == 'exponential':
-                progress = iteration / transition_iterations
-                timeout = initial_timeout * (final_timeout / initial_timeout) ** progress if initial_timeout > 0 else final_timeout
-            elif strategy == 'step':
-                timeout = initial_timeout
-            else:
-                raise ValueError(f"Unknown strategy: {strategy}")
+def adaptive_gurobi_timeout(schedule, final_timeout):
+    """
+    Multi-phase adaptive Gurobi timeout for row generation.
+
+    Returns (pt_callback, dist_callback) tuple:
+      - pt_callback(iteration, row_gen_manager) for point estimation
+      - dist_callback(rg_round, mixin, master) for distributed bootstrap
+
+    Each phase can set 'min_iters' to prevent early convergence during
+    warmup phases. The callback sets mixin.config.standard_errors.rowgen_min_iters
+    accordingly.
+
+    Args:
+        schedule: list of dicts, each with:
+            'iters': int — number of iterations in this phase
+            'timeout': float — Gurobi TimeLimit
+            'min_iters': int (optional) — set rowgen_min_iters for this phase
+        final_timeout: float — TimeLimit after all phases complete
+
+    Example:
+        pt_cb, dist_cb = adaptive_gurobi_timeout(
+            schedule=[
+                {'iters': 5, 'timeout': 1.5, 'min_iters': 5},
+                {'iters': 10, 'timeout': 5.0},
+            ],
+            final_timeout=5.0,
+        )
+    """
+    boundaries = np.cumsum([p['iters'] for p in schedule])
+
+    def _get_settings(iteration):
+        idx = np.searchsorted(boundaries, iteration, side='right')
+        if idx < len(schedule):
+            timeout = schedule[idx]['timeout']
         else:
             timeout = final_timeout
-        settings = {'TimeLimit': timeout}
-        if iteration == 0:
-            settings['MIPFocus'] = 1
-        else:
-            settings['MIPFocus'] = 0
+        settings = {'TimeLimit': timeout,
+                    'MIPFocus': 1 if iteration == 0 else 0}
+        return settings, idx
+
+    def pt_callback(iteration, row_gen_manager):
+        settings, _ = _get_settings(iteration)
         row_gen_manager.subproblem_manager.update_gurobi_settings(settings)
 
+    def dist_callback(rg_round, mixin, master):
+        settings, phase_idx = _get_settings(rg_round)
+        mixin.subproblem_manager.update_gurobi_settings(settings)
+        if phase_idx < len(schedule) and 'min_iters' in schedule[phase_idx]:
+            mixin.config.standard_errors.rowgen_min_iters = schedule[phase_idx]['min_iters']
 
-    return callback
-
-def enforce_slack_counter():
-    def callback(iteration, row_gen_manager):
-        max_slack_counter = row_gen_manager.cfg.max_slack_counter
-        to_remove = []
-        for constr in row_gen_manager.master_model.getConstrs():
-            if constr.CBasis == 0:
-                row_gen_manager.slack_counter.pop(constr, None)
-            else:
-                row_gen_manager.slack_counter[constr] = row_gen_manager.slack_counter.get(constr, 0) + 1
-                if row_gen_manager.slack_counter[constr] >= max_slack_counter:
-                    to_remove.append(constr)
-        for constr in to_remove:
-            row_gen_manager.master_model.remove(constr)
-            row_gen_manager.slack_counter.pop(constr, None)
-    return callback
-
+    return pt_callback, dist_callback

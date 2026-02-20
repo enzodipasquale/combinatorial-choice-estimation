@@ -86,6 +86,15 @@ class DataManager:
         return len(self.agent_ids)
 
     @property
+    def local_agent_start(self):
+        return int(self.agent_counts[:self.comm_manager.rank].sum())
+
+    @property
+    def local_agent_slice(self):
+        s = self.local_agent_start
+        return slice(s, s + self.num_local_agent)
+
+    @property
     def obs_ids(self):
         return self.agent_ids % self.dimensions_cfg.n_obs
 
