@@ -65,3 +65,4 @@ applications/**/config_local.yaml
 applications/firms_export
 applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/se_bayesian_bootstrap/checkpoints
+applications/combinatorial_auction/se_bayesian_bootstrap/_past_checkpoints
