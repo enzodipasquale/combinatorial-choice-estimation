@@ -29,7 +29,10 @@ if rank == 0:
         delta=DELTA,
         winners_only=app.get("winners_only", False),
         hq_distance=app.get("hq_distance", False),
-        continental_only=app.get("continental_only")
+        form175_features=app.get("form175_features", False),
+        continental_only=app.get("continental_only"),
+        adjacency=app.get("adjacency"),
+        rescale_modular=app.get("rescale_modular"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
@@ -38,15 +41,20 @@ if rank == 0:
     n_features = n_item_quad + n_id_mod + n_item_mod
 
     dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
+    id_mod_indices = list(range(n_id_mod))
+    quad_indices = list(range(n_features - n_item_quad, n_features))
+    config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
+    config["dimensions"].update(dim_cfg)
+    bounds = config["row_generation"]["theta_bounds"]
+    bounds["lbs"].update({k: app.get('lbs') for k in id_mod_indices[1:]})
+    bounds["ubs"].update({k: app.get('ubs') for k in id_mod_indices[1:]})
 else:
     input_data = None
-    dim_cfg = None
 
-dim_cfg = comm.bcast(dim_cfg, root=0)
-config["dimensions"].update(dim_cfg)
+config = comm.bcast(config, root=0)
 
 bc = BundleChoice()
-bc.load_config({k: v for k, v in config.items() if k in ["dimensions", "subproblem", "row_generation"]})
+bc.load_config(config)
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
@@ -84,6 +92,7 @@ if rank == 0 and result is not None and app.get("save_results", True):
         "delta": DELTA,
         "winners_only": app.get("winners_only"),
         "hq_distance": app.get("hq_distance"),
+        "form175_features": app.get("form175_features"),
         "error_seed": ERROR_SEED,
         "n_obs": bc.n_obs,
         "n_items": bc.n_items,
