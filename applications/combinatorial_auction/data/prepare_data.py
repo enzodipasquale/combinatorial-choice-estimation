@@ -147,6 +147,10 @@ def normalize_interaction_matrix(matrix, pop):
 
 def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4, adjacency = None):
     quadratic_list = []
+
+    if adjacency is not None:
+        quadratic_adj = normalize_interaction_matrix(adjacency, pop)
+        quadratic_list.append(quadratic_adj)
     
     pop_centroid = build_pop_centroid_features(pop, geo_distance, delta=delta)
     pop_centroid = normalize_interaction_matrix(pop_centroid, pop)
@@ -160,9 +164,7 @@ def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta
     quadratic_air = normalize_interaction_matrix(air_travel, pop)
     quadratic_list.append(quadratic_air)
 
-    if adjacency is not None:
-        quadratic_adj = normalize_interaction_matrix(adjacency, pop)
-        quadratic_list.append(quadratic_adj)
+    
 
     quadratic_features = np.stack(quadratic_list, axis=2)
     
