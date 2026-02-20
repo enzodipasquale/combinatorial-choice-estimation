@@ -45,8 +45,14 @@ def adaptive_gurobi_timeout(schedule):
         return settings, idx
 
     def pt_callback(iteration, row_gen_manager):
-        settings, _ = _get_settings(iteration)
+        settings, phase_idx = _get_settings(iteration)
         row_gen_manager.subproblem_manager.update_gurobi_settings(settings)
+        if phase_idx < len(phases):
+            allow = phases[phase_idx].get('retire', False)
+            row_gen_manager.cfg.min_iters = 0 if allow else int(boundaries[phase_idx])
+        else:
+            allow = final.get('retire', False)
+            row_gen_manager.cfg.min_iters = 0 if allow else float('inf')
 
     def dist_callback(rg_round, mixin, master):
         settings, phase_idx = _get_settings(rg_round)
