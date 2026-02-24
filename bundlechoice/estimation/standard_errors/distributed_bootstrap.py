@@ -84,6 +84,35 @@ class BootstrapMaster:
         self.model.addConstr(self.u[ids] >= rows[:, 1:-1] @ self.theta + rows[:, -1])
 
 
+    def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
+        constrs = self.model.getConstrs()
+        if not constrs:
+            return 0
+        slacks = np.array([c.Slack for c in constrs], dtype=float)
+        threshold = np.percentile(slacks, 100.0 - percentile)
+        below_threshold = slacks < threshold
+        n_below = below_threshold.sum()
+        if n_below < len(slacks) - hard_threshold:
+            return self.strip_constraints_hard_threshold(hard_threshold)
+        to_remove_id = np.where(below_threshold)[0]
+        to_remove = [constrs[i] for i in to_remove_id]
+        self.model.remove(to_remove)
+        return len(to_remove_id)
+
+    def strip_constraints_hard_threshold(self, n_constraints = float('inf')):
+        if self.model.NumConstrs < n_constraints:
+            return 0
+        constrs = self.model.getConstrs()
+        if not constrs:
+            return 0
+        slacks = np.array([c.Slack for c in constrs], dtype=float)
+        sorted_indices = np.argsort(slacks)
+        to_remove_id = sorted_indices[:-int(n_constraints)]
+        to_remove = [constrs[i] for i in to_remove_id]
+        self.model.remove(to_remove)
+        return len(to_remove_id)
+
+
 # =========================================================================
 # BootstrapState: distributed K-sample state
 # =========================================================================
@@ -102,6 +131,8 @@ class BootstrapState:
         self.theta_vals = np.zeros((num_bootstrap, nf), dtype=np.float64)
         self.u_vals = np.zeros((num_bootstrap, na), dtype=np.float64)
         self.stats = np.zeros((num_bootstrap, 2), dtype=np.float64)
+        self.max_rc = np.zeros(num_bootstrap, dtype=np.float64)
+        self.converged = np.zeros(num_bootstrap, dtype=bool)
         self._vars_buf = np.zeros((num_bootstrap, nf + na), dtype=np.float64)
         self._stats_buf = np.zeros((num_bootstrap, 2), dtype=np.float64)
         self._comm = comm_manager.comm
@@ -436,6 +467,7 @@ class DistributedBootstrapMixin:
             local_max_rc = reduced_costs.max(axis=1)
             global_max_rc = np.zeros(state.num_active)
             self.comm_manager.comm.Allreduce(local_max_rc, global_max_rc, op=MPI.MAX)
+            state.max_rc[state.active_indices] = global_max_rc
 
             converged_mask = np.zeros(state.num_bootstrap, dtype=bool)
             converged_mask[state.active_indices] = global_max_rc <= tol
@@ -482,6 +514,7 @@ class DistributedBootstrapMixin:
 
         # --- Collect remaining non-converged ---
         remaining = state.active_indices
+        state.converged = (state.active == 0)
         if len(remaining) > 0:
             state.sync_stats(master)
             state.sync_vars(master)
@@ -520,15 +553,17 @@ class DistributedBootstrapMixin:
     def _log_boot_details(self, boot_ids, state):
         param_idx = self.config.standard_errors.parameters_to_log \
                     or list(range(min(5, self.dim.n_features)))
+        range_idx = [i for i in range(self.dim.n_features) if i not in param_idx]
         hdr_params = ''.join(f"{'θ['+str(i)+']':>12}" for i in param_idx)
-        logger.info("        %4s  %7s  %14s  %15s  %s",
-                    "Boot", "#Constr", "Objective", "Range θ", hdr_params)
+        logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
+                    "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
         for k in boot_ids:
             t = state.theta_vals[k]
-            t_range = f"[{t.min():.1f}, {t.max():.1f}]"
+            t_range = f"[{t[range_idx].min():.1f}, {t[range_idx].max():.1f}]" if range_idx else f"[{t.min():.1f}, {t.max():.1f}]"
             vals = ''.join(format_number(t[i], width=12, precision=5) for i in param_idx)
-            logger.info("        ↳ %4d  %7d  %14s  %15s  %s",
+            logger.info("        ↳ %4d  %7d  %14s  %14s  %15s  %s",
                         k, int(state.stats[k, 0]),
+                        self._fmt_rc(state.max_rc[k]),
                         format_number(state.stats[k, 1], width=14, precision=4),
                         t_range, vals)
 
@@ -545,13 +580,22 @@ class DistributedBootstrapMixin:
     def _compute_and_log_stats(self, state, total_time):
         if not self.comm_manager.is_root():
             return None
-        stats = self.compute_bootstrap_stats(state.theta_vals,
+        theta_vals = state.theta_vals
+        converged_mask = state.converged
+        n_converged = int(converged_mask.sum())
+        n_non_converged =  state.num_bootstrap - n_converged
+        theta_for_stats = theta_vals if n_converged == 0 else theta_vals[converged_mask]
+        
+        stats = self.compute_bootstrap_stats(theta_for_stats,
                                              theta_hat=self.point_result.theta_hat)
         if self.verbose:
             theta_hat = self.point_result.theta_hat
             idx = self.config.standard_errors.parameters_to_log \
                   or list(range(min(5, self.dim.n_features)))
             logger.info(" ")
+            if n_non_converged > 0:
+                logger.info(" WARNING: %d of %d bootstrap samples did not converge",
+                            n_non_converged, state.num_bootstrap)
             logger.info("-" * 70)
             logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs",
                         state.num_bootstrap, total_time)
