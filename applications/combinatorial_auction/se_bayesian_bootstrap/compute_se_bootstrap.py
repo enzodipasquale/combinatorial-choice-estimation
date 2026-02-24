@@ -90,6 +90,12 @@ callbacks = config.get("callbacks")
 pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
 _, dist_timeout_cb = adaptive_gurobi_timeout(callbacks['boot'])
 
+
+def boot_callback(iter, boot, master):
+    dist_timeout_cb(iter, boot, master)
+    if master is not None and iter == 0:
+        master.strip_slack_constraints(percentile=callbacks['boot_strip']["percentile"], hard_threshold = callbacks['boot_strip']["hard_threshold"])
+
 checkpoint_dir = str(BASE_DIR)
 se_result = bc.standard_errors.compute_distributed_bootstrap(
     num_bootstrap=NUM_BOOTSTRAP,
