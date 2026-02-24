@@ -58,8 +58,8 @@ def _assets_pop(ctx):
 def _revenues_pop(ctx):
     return ctx["revenues"][:, None] * ctx["pop"][None, :]
 
-@modular("is_rural")
-def _is_rural(ctx):
+@modular("rural_elig_pop")
+def _rural_elig_pop(ctx):
     return ctx["elig"][:, None] * ctx["pop"][None, :] * ctx["is_rural"][:, None]
 
 @modular("hq_distance")
