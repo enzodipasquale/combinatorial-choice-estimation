@@ -20,40 +20,47 @@ rank = comm.Get_rank()
 config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 
 app = config.get("application")
-DELTA = app.get("delta")
 ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
 
 if rank == 0:
     input_data = prepare_data_main(
-        delta=DELTA,
         winners_only=app.get("winners_only", False),
-        hq_distance=app.get("hq_distance", False),
-        form175_features=app.get("form175_features", False),
         continental_only=app.get("continental_only"),
-        adjacency=app.get("adjacency"),
         rescale_features=app.get("rescale_features"),
+        modular_regressors=app.get("modular_regressors"),
+        quadratic_regressors=app.get("quadratic_regressors"),
+        quadratic_id_regressors=app.get("quadratic_id_regressors"),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
-    n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
     n_id_mod = input_data["id_data"]["modular"].shape[-1]
     n_item_mod = input_data["item_data"]["modular"].shape[-1]
-    n_features = n_item_quad + n_id_mod + n_item_mod
+    n_id_quad = input_data["id_data"]["quadratic"].shape[-1] if "quadratic" in input_data["id_data"] else 0
+    n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
+    n_features = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
     dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
     id_mod_indices = list(range(n_id_mod))
-    quad_indices = list(range(n_features - n_item_quad, n_features))
-    config["row_generation"]["parameters_to_log"] = id_mod_indices + quad_indices
+    id_quad_offset = n_id_mod + n_item_mod
+    id_quad_indices = list(range(id_quad_offset, id_quad_offset + n_id_quad))
+    item_quad_indices = list(range(n_features - n_item_quad, n_features))
+    config["row_generation"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
     config["dimensions"].update(dim_cfg)
     mod_b = app.get('mod_bounds', {})
     quad_b = app.get('quad_bounds', {})
+    quad_id_b = app.get('quad_id_bounds', {})
     bounds = config["row_generation"]["theta_bounds"]
     for k in id_mod_indices[1:]:
         if mod_b.get('lb') is not None:
             bounds["lbs"][k] = mod_b['lb']
         if mod_b.get('ub') is not None:
             bounds["ubs"][k] = mod_b['ub']
-    for k in quad_indices[:-3]:
+    for k in id_quad_indices:
+        if quad_id_b.get('lb') is not None:
+            bounds["lbs"][k] = quad_id_b['lb']
+        if quad_id_b.get('ub') is not None:
+            bounds["ubs"][k] = quad_id_b['ub']
+    for k in item_quad_indices[:-3]:
         if quad_b.get('lb') is not None:
             bounds["lbs"][k] = quad_b['lb']
         if quad_b.get('ub') is not None:
@@ -80,7 +87,7 @@ if config.get("constraints", {}).get("pop_dominates_travel"):
 callbacks = config.get("callbacks")
 
 if rank == 0:
-    print(f"delta={DELTA}, agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
+    print(f"agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
 
 pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
 
@@ -99,10 +106,9 @@ if rank == 0 and result is not None and app.get("save_results", True):
     row = {
         "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
-        "delta": DELTA,
         "winners_only": app.get("winners_only"),
-        "hq_distance": app.get("hq_distance"),
-        "form175_features": app.get("form175_features"),
+        "modular_regressors": json.dumps(app.get("modular_regressors", [])),
+        "quadratic_regressors": json.dumps(app.get("quadratic_regressors", [])),
         "error_seed": ERROR_SEED,
         "n_obs": bc.n_obs,
         "n_items": bc.n_items,

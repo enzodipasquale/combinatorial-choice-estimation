@@ -20,6 +20,109 @@ NON_CONTINENTAL_MARKETS = (
     "Guam", "US Virgi", "American", "Northern",  # territories
 )
 
+# ── Regressor registries ─────────────────────────────────────────────
+
+MODULAR = {}
+QUADRATIC = {}
+QUADRATIC_ID = {}
+
+def modular(name):
+    def dec(fn):
+        MODULAR[name] = fn
+        return fn
+    return dec
+
+def quadratic(name):
+    def dec(fn):
+        QUADRATIC[name] = fn
+        return fn
+    return dec
+
+def quadratic_id(name):
+    def dec(fn):
+        QUADRATIC_ID[name] = fn
+        return fn
+    return dec
+
+# ── Modular regressors (each takes ctx, returns n_bidders × n_items) ─
+
+@modular("elig_pop")
+def _elig_pop(ctx):
+    return ctx["elig"][:, None] * ctx["pop"][None, :]
+
+@modular("assets_pop")
+def _assets_pop(ctx):
+    return ctx["assets"][:, None] * ctx["pop"][None, :]
+
+@modular("revenues_pop")
+def _revenues_pop(ctx):
+    return ctx["revenues"][:, None] * ctx["pop"][None, :]
+
+@modular("is_rural")
+def _is_rural(ctx):
+    return ctx["elig"][:, None] * ctx["pop"][None, :] * ctx["is_rural"][:, None]
+
+@modular("hq_distance")
+def _hq_distance(ctx):
+    return ctx["hq_distance"]
+
+@modular("hq_distance_sq")
+def _hq_distance_sq(ctx):
+    return ctx["hq_distance"] ** 2
+
+@modular("log_hq_distance")
+def _log_hq_distance(ctx):
+    return np.log(ctx["hq_distance"] * 1000 + 1)
+
+# ── Quadratic regressors (each takes ctx, returns n_items × n_items) ─
+
+@quadratic("adjacency")
+def _adjacency(ctx):
+    return normalize_interaction_matrix(ctx["bta_adjacency"], ctx["pop"])
+
+def _pop_centroid(ctx, delta):
+    pc = build_pop_centroid_features(ctx["pop"], ctx["geo_distance"], delta=delta)
+    pc = normalize_interaction_matrix(pc, ctx["pop"])
+    percentile_val = np.percentile(pc, POP_CENTROID_PERCENTILE)
+    return np.where(pc > percentile_val, pc, 0)
+
+@quadratic("pop_centroid_delta2")
+def _pop_centroid_delta2(ctx):
+    return _pop_centroid(ctx, delta=2)
+
+@quadratic("pop_centroid_delta4")
+def _pop_centroid_delta4(ctx):
+    return _pop_centroid(ctx, delta=4)
+
+@quadratic("travel_survey")
+def _travel_survey(ctx):
+    ts = np.where(ctx["travel_survey"] == 0, LB_QUADRATICS, ctx["travel_survey"])
+    return normalize_interaction_matrix(ts, ctx["pop"])
+
+@quadratic("air_travel")
+def _air_travel(ctx):
+    at = np.where(ctx["air_travel"] == 0, LB_QUADRATICS, ctx["air_travel"])
+    return normalize_interaction_matrix(at, ctx["pop"])
+
+# ── Quadratic-ID regressors (each takes ctx, returns n_obs × n_items × n_items) ─
+
+@quadratic_id("elig_adjacency")
+def _elig_adjacency(ctx):
+    adj = QUADRATIC["adjacency"](ctx)
+    return ctx["elig"][:, None, None] * adj[None, :, :]
+
+@quadratic_id("elig_pop_centroid_delta2")
+def _elig_pop_centroid_delta2(ctx):
+    pc = _pop_centroid(ctx, delta=2)
+    return ctx["elig"][:, None, None] * pc[None, :, :]
+
+@quadratic_id("elig_pop_centroid_delta4")
+def _elig_pop_centroid_delta4(ctx):
+    pc = _pop_centroid(ctx, delta=4)
+    return ctx["elig"][:, None, None] * pc[None, :, :]
+
+# ── Data loading  ─────────────────────────────────────────
+
 def build_hq_distance(bidder_data, bta_data, geo_distance):
     n_bid = len(bidder_data)
     n_bta = len(bta_data)
@@ -32,12 +135,11 @@ def build_hq_distance(bidder_data, bta_data, geo_distance):
     return hq_distance
 
 
-
 def load_raw_data(continental_only):
-    
+
     # BTA data (items/markets)
     bta_data = pd.read_csv(DATA_DIR / "btadata_2004_03_12_1.csv")
-   
+
     # Bidder data (agents)
     bidder_data = pd.read_csv(DATA_DIR / "biddercblk_03_28_2004_pln.csv")
     form175 = pd.read_csv(DATA_DIR / "fccform175nomiss.csv", header=None)
@@ -70,7 +172,7 @@ def load_raw_data(continental_only):
     geo_distance = geo_distance.drop(geo_distance.columns[-1], axis=1).values.astype(float)
     travel_survey = pd.read_csv(DATA_DIR / "american-travel-survey-1995-zero.csv", header=None).values.astype(float)
     air_travel = pd.read_csv(DATA_DIR / "air-travel-passengers-bta-year-1994.csv", header=None).values.astype(float)
-    
+
     hq_distance = build_hq_distance(bidder_data, bta_data, geo_distance)
 
     if continental_only:
@@ -89,7 +191,7 @@ def load_raw_data(continental_only):
         air_travel = air_travel[continental_ids][:, continental_ids]
         hq_distance = hq_distance[:, continental_ids]
 
-    
+
     return {
         "bta_data": bta_data,
         "bidder_data": bidder_data,
@@ -103,10 +205,10 @@ def load_raw_data(continental_only):
 def process_pd_to_np(bidder_data, bta_data):
     elig = bidder_data['pops_eligible'].to_numpy()
     pop = bta_data['pop90'].to_numpy()
-    
+
     weight = np.round(pop // WEIGHT_ROUNDING_TICK).astype(int)
     capacity = np.round(elig // WEIGHT_ROUNDING_TICK).astype(int)
-    
+
     pop_sum = pop.sum()
     pop = pop/pop_sum
     elig = elig/pop_sum
@@ -127,6 +229,8 @@ def generate_matching_matrix(bidder_data, bta_data):
         matching[winned_id, j] = True
     return matching
 
+# ── Helpers (registry functions) ─────────────────────────────
+
 def build_pop_centroid_features(pop, geo_distance, delta=4):
     pop_centroid = (pop[:, None] * pop[None, :]).astype(float)
     np.fill_diagonal(pop_centroid, 0)
@@ -136,98 +240,78 @@ def build_pop_centroid_features(pop, geo_distance, delta=4):
 
 
 def normalize_interaction_matrix(matrix, pop):
-    matrix = matrix.copy() 
+    matrix = matrix.copy()
     np.fill_diagonal(matrix, 0)
     outflow = matrix.sum(1)
     mask = outflow > 0
     matrix[mask] /= outflow[mask][:, None]
-    matrix *= pop[:, None] 
+    matrix *= pop[:, None]
     np.fill_diagonal(matrix, 0)
     return matrix
 
-def build_quadratic_features(pop, geo_distance, travel_survey, air_travel, delta=4, adjacency = None, rescale_features=False):
-    quadratic_list = []
+# ── Phase 2: context builder ────────────────────────────────────────
 
-    if adjacency is not None:
-        quadratic_adj = normalize_interaction_matrix(adjacency, pop)
-        quadratic_list.append(quadratic_adj)
-    
-    pop_centroid = build_pop_centroid_features(pop, geo_distance, delta=delta)
-    pop_centroid = normalize_interaction_matrix(pop_centroid, pop)
-    percentile_val = np.percentile(pop_centroid, POP_CENTROID_PERCENTILE)
-    truncated_pop_centroid = np.where(pop_centroid > percentile_val, pop_centroid, 0)
-    quadratic_list.append(truncated_pop_centroid)
-    travel_survey = np.where(travel_survey == 0, LB_QUADRATICS, travel_survey)
-    quadratic_travel = normalize_interaction_matrix(travel_survey, pop)
-    quadratic_list.append(quadratic_travel )
-    air_travel = np.where(air_travel == 0, LB_QUADRATICS, air_travel)
-    quadratic_air = normalize_interaction_matrix(air_travel, pop)
-    quadratic_list.append(quadratic_air)
+def build_context(raw_data):
+    """Bridge between data loading and feature building.
+    Returns a flat dict of all available numpy arrays."""
+    weight, capacity, pop, elig, assets, revenues, is_rural = process_pd_to_np(
+        raw_data["bidder_data"], raw_data["bta_data"]
+    )
+    matching = generate_matching_matrix(raw_data["bidder_data"], raw_data["bta_data"])
+    return {
+        "weight": weight,
+        "capacity": capacity,
+        "pop": pop,
+        "elig": elig,
+        "assets": assets,
+        "revenues": revenues,
+        "is_rural": is_rural,
+        "matching": matching,
+        "hq_distance": raw_data["hq_distance"],
+        "geo_distance": raw_data["geo_distance"],
+        "bta_adjacency": raw_data["bta_adjacency"],
+        "travel_survey": raw_data["travel_survey"],
+        "air_travel": raw_data["air_travel"],
+    }
 
-    
+# ── Phase 3: feature builder ────────────────────────────────────────
 
-    quadratic_features = np.stack(quadratic_list, axis=2)
-    if rescale_features:
-        quadratic_features = quadratic_features / quadratic_features.std((0, 1))[None, None, :]
-    return quadratic_features
+def build_features(registry, names, ctx, rescale=False):
+    layers = [registry[name](ctx) for name in names]
+    features = np.stack(layers, axis=-1)
+    if rescale:
+        spatial_axes = tuple(range(features.ndim - 1))
+        features = features / features.std(spatial_axes, keepdims=True)
+    return features
 
+# ── Main ─────────────────────────────────────────────────────────────
 
-def build_modular_features(elig, pop, assets=None, revenues=None, is_rural = None, hq_distance = None, rescale_features=False):
-    modular_list = []
-    elig_times_pop = elig[:, None] * pop[None, :]
-    modular_list.append(elig_times_pop)
-    if assets is not None:
-        modular_list.append(assets[:, None] * pop[None, :])
-    if revenues is not None:
-        modular_list.append(revenues[:, None] * pop[None, :])
-    if is_rural is not None:
-        modular_list.append(elig_times_pop * is_rural[:,None])
-    if hq_distance is not None:
-        modular_list.append(hq_distance)
-        modular_list.append(hq_distance ** 2)
-        modular_list.append(np.log(hq_distance * 1000 +1))
+def main(winners_only=False, continental_only=False, rescale_features=False,
+         modular_regressors=None, quadratic_regressors=None, quadratic_id_regressors=None):
 
-
-    modular_feat = np.stack(modular_list, axis=2)
-    if rescale_features:
-        modular_feat = modular_feat / modular_feat.std((0, 1))[None, None, :]
-    return modular_feat
-
-
-
-def main(delta=4, winners_only=False, form175_features=False, continental_only=False, hq_distance=False, adjacency = False, rescale_features=False):
-
+    # Phase 1: load & filter
     raw_data = load_raw_data(continental_only)
 
-    weight, capacity, pop, elig, assets, revenues, is_rural = process_pd_to_np(
-        raw_data["bidder_data"],
-        raw_data["bta_data"]
-    )
-    
-    matching = generate_matching_matrix(
-        raw_data["bidder_data"],
-        raw_data["bta_data"],
-    )
-    
-    modular_features = build_modular_features(
-        elig, pop,
-        assets=assets if form175_features else None,
-        revenues=revenues if form175_features else None,
-        is_rural = is_rural if form175_features else None,
-        hq_distance = raw_data["hq_distance"] if hq_distance else None,
-        rescale_features=rescale_features,
-    )
-    quadratic_features = build_quadratic_features(
-        pop,
-        raw_data["geo_distance"],
-        raw_data["travel_survey"],
-        raw_data["air_travel"],
-        delta=delta,
-        adjacency = raw_data["bta_adjacency"] if adjacency else None,
-        rescale_features=rescale_features,
-    )
-    
+    # Phase 2: build context
+    ctx = build_context(raw_data)
 
+    # Phase 3: build selected features
+    if modular_regressors is None:
+        modular_regressors = list(MODULAR.keys())
+    if quadratic_regressors is None:
+        quadratic_regressors = list(QUADRATIC.keys())
+    if quadratic_id_regressors is None:
+        quadratic_id_regressors = []
+
+    modular_features = build_features(MODULAR, modular_regressors, ctx, rescale_features)
+    quadratic_features = build_features(QUADRATIC, quadratic_regressors, ctx, rescale_features)
+    quadratic_id_features = build_features(QUADRATIC_ID, quadratic_id_regressors, ctx, rescale_features) if quadratic_id_regressors else None
+
+    matching = ctx["matching"]
+    capacity = ctx["capacity"]
+    weight = ctx["weight"]
+    elig = ctx["elig"]
+    pop = ctx["pop"]
 
     if winners_only:
         winner_indices = np.where(matching.sum(axis=1) > 0)[0]
@@ -235,21 +319,25 @@ def main(delta=4, winners_only=False, form175_features=False, continental_only=F
         elig = elig[winner_indices]
         matching = matching[winner_indices, :]
         modular_features = modular_features[winner_indices, :, :]
+        if quadratic_id_features is not None:
+            quadratic_id_features = quadratic_id_features[winner_indices, :, :, :]
 
     n_items = weight.shape[0]
     input_data = {
         "id_data": {
-            "modular": modular_features,  
+            "modular": modular_features,
             "capacity": capacity,
             "obs_bundles": matching,
         },
         "item_data": {
-            "modular": -np.eye(n_items), 
-            "quadratic": quadratic_features,  
+            "modular": -np.eye(n_items),
+            "quadratic": quadratic_features,
             "weight": weight,
         }
     }
-   
+    if quadratic_id_features is not None:
+        input_data["id_data"]["quadratic"] = quadratic_id_features
+
     print_descriptive_stats(raw_data, modular_features, matching, quadratic_features, capacity, elig, weight, pop)
     return input_data
 
@@ -292,7 +380,7 @@ def print_descriptive_stats(raw_data, modular_features, matching, quadratic_feat
     viold_id = np.where(violations>0)
     print(f"  {'viol_ids':<20} {viold_id}")
     print(f"  {'violations':<20} {violations[viold_id]}")
-    
+
 
 
 def parse_args():
@@ -300,48 +388,31 @@ def parse_args():
         description="Prepare data for combinatorial auction estimation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--winners-only", "-w", action="store_true")
+    parser.add_argument("--continental-only", "-c", action="store_true")
+    parser.add_argument("--rescale-features", action="store_true")
     parser.add_argument(
-        "--delta", "-d",
-        type=int,
-        choices=[2, 4],
-        default=None,
+        "--modular", nargs="*", default=None,
+        help=f"Modular regressors (available: {', '.join(MODULAR)})",
     )
     parser.add_argument(
-        "--winners-only", "-w",
-        action="store_true",
+        "--quadratic", nargs="*", default=None,
+        help=f"Quadratic regressors (available: {', '.join(QUADRATIC)})",
     )
     parser.add_argument(
-        "--form175-features", "-f",
-        action="store_true",
+        "--quadratic-id", nargs="*", default=None,
+        help=f"Quadratic-ID regressors (available: {', '.join(QUADRATIC_ID)})",
     )
-    parser.add_argument(
-        "--hq-distance", "-hq",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--continental-only", "-c",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--adjacency", "-a",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--rescale-features",
-        action="store_true",
-    )
-
-    args = parser.parse_args()
-    
-    if args.delta is None:
-        args.delta = 4
-    
-    return args
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main(delta=args.delta, winners_only=args.winners_only, form175_features=args.form175_features, continental_only=args.continental_only, hq_distance=args.hq_distance, adjacency = args.adjacency, rescale_features=args.rescale_features)
-
+    main(
+        winners_only=args.winners_only,
+        continental_only=args.continental_only,
+        rescale_features=args.rescale_features,
+        modular_regressors=args.modular,
+        quadratic_regressors=args.quadratic,
+        quadratic_id_regressors=args.quadratic_id,
+    )

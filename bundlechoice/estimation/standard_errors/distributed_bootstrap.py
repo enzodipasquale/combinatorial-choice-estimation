@@ -25,13 +25,28 @@ def _extract_master_vars(model, n_features, n_agents):
     return gp.MVar.fromlist(vs[:n_features]), gp.MVar.fromlist(vs[n_features:n_features + n_agents])
 
 
+def _parse_theta_from_sol(sol_path):
+    vals = {}
+    with open(sol_path) as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) == 2 and parts[0].startswith('parameter['):
+                vals[int(parts[0].split('[')[1][:-1])] = float(parts[1])
+    theta = np.zeros(max(vals) + 1, dtype=np.float64)
+    for i, v in vals.items():
+        theta[i] = v
+    return theta
+
+
 # =========================================================================
 # BootstrapMaster: Gurobi model lifecycle for one bootstrap sample
 # =========================================================================
 
 class BootstrapMaster:
     def __init__(self, model, theta, u):
-        self.model, self.theta, self.u = model, theta, u
+        self.model = model
+        self.theta = theta
+        self.u = u
 
     @classmethod
     def build(cls, base_data, theta_obj, u_weights, grb_params=None):
@@ -77,7 +92,6 @@ class BootstrapMaster:
             json.dump({'converged': converged}, f)
 
     def add_cuts(self, rows):
-        """Add violation rows packed as (agent_id, features..., error) per row."""
         if len(rows) == 0:
             return
         ids = rows[:, 0].astype(np.int64)
@@ -607,3 +621,37 @@ class DistributedBootstrapMixin:
                             f"{stats.se[i]:>12.5f} | {stats.t_stats[i]:>10.2f}")
             logger.info("-" * 70)
         return stats
+
+    def compute_bootstrap_stats_from_checkpoints(self, checkpoints_dir):
+        if not self.comm_manager.is_root():
+            return None
+
+        pt_sol = os.path.join(checkpoints_dir, "point_estimate", "master.sol")
+        if not os.path.exists(pt_sol):
+            return logger.info("No point_estimate found in %s", checkpoints_dir)
+
+        boot_root = os.path.join(checkpoints_dir, "bootstrap")
+        boot_dirs = sorted(
+            os.path.join(boot_root, d) for d in os.listdir(boot_root)
+            if d.startswith("boot_")
+        ) if os.path.isdir(boot_root) else []
+        if not boot_dirs:
+            return logger.info("No bootstrap checkpoints in %s", checkpoints_dir)
+
+        theta_list, converged = [], []
+        for bd in boot_dirs:
+            sol = os.path.join(bd, "master.sol")
+            meta = os.path.join(bd, "meta.json")
+            if not os.path.exists(sol):
+                continue
+            theta_list.append(_parse_theta_from_sol(sol))
+            converged.append(
+                json.load(open(meta)).get('converged', False) if os.path.exists(meta) else False)
+
+        converged = np.asarray(converged, dtype=bool)
+        theta_boots = np.asarray(theta_list)
+        nc = int(converged.sum())
+        logger.info("Loaded %d boots (%d converged)", len(theta_list), nc)
+
+        return self.compute_bootstrap_stats(
+            theta_boots[converged] if converged.any() else theta_boots)
