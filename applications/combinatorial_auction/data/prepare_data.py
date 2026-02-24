@@ -74,6 +74,14 @@ def _hq_distance_sq(ctx):
 def _log_hq_distance(ctx):
     return np.log(ctx["hq_distance"] * 1000 + 1)
 
+@modular("elig_hq_distance")
+def _elig_hq_distance(ctx):
+    return ctx["elig"][:, None] * ctx["hq_distance"]
+
+@modular("elig_log_hq_distance")
+def _elig_log_hq_distance(ctx):
+    return ctx["elig"][:, None] * np.log(ctx["hq_distance"] * 1000 + 1)
+
 # ── Quadratic regressors (each takes ctx, returns n_items × n_items) ─
 
 @quadratic("adjacency")
@@ -120,6 +128,21 @@ def _elig_pop_centroid_delta2(ctx):
 def _elig_pop_centroid_delta4(ctx):
     pc = _pop_centroid(ctx, delta=4)
     return ctx["elig"][:, None, None] * pc[None, :, :]
+
+@quadratic_id("assets_adjacency")
+def _assets_adjacency(ctx):
+    adj = QUADRATIC["adjacency"](ctx)
+    return ctx["assets"][:, None, None] * adj[None, :, :]
+
+@quadratic_id("assets_pop_centroid_delta2")
+def _assets_pop_centroid_delta2(ctx):
+    pc = _pop_centroid(ctx, delta=2)
+    return ctx["assets"][:, None, None] * pc[None, :, :]
+
+@quadratic_id("assets_pop_centroid_delta4")
+def _assets_pop_centroid_delta4(ctx):
+    pc = _pop_centroid(ctx, delta=4)
+    return ctx["assets"][:, None, None] * pc[None, :, :]
 
 # ── Data loading  ─────────────────────────────────────────
 
