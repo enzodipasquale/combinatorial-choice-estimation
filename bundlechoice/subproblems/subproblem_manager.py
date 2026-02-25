@@ -14,22 +14,22 @@ class SubproblemManager:
         self.subproblem_solver = None
         self._solver_is_initialized = False
 
-    def load_solver(self, solver=None):
-        solver = solver or self.config.subproblem.name
+    def load_solver(self, solver_spec=None):
+        solver_spec = solver_spec or self.config.subproblem.name
 
-        if isinstance(solver, type):
-            cls = solver
-        elif callable(solver) and not isinstance(solver, str):
-            self.subproblem_solver = solver(self.comm_manager,
+        if isinstance(solver_spec, type):
+            cls = solver_spec
+        elif callable(solver_spec) and not isinstance(solver_spec, str):
+            self.subproblem_solver = solver_spec(self.comm_manager,
                                  self.data_manager,
                                  self.oracles_manager,
                                  self.config.subproblem,
                                  self.config.dimensions)
             return self.subproblem_solver
         else:
-            cls = SOLVER_REGISTRY.get(solver)
+            cls = SOLVER_REGISTRY.get(solver_spec)
             if cls is None:
-                raise ValueError(f"Unknown solver: '{solver}'. "
+                raise ValueError(f"Unknown solver: '{solver_spec}'. "
                                f"Available: {', '.join(SOLVER_REGISTRY.keys())}")
 
         self.subproblem_solver = cls(self.comm_manager,
