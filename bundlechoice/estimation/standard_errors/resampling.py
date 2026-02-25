@@ -49,7 +49,7 @@ class ResamplingMixin:
             weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
 
         local_weights = self.comm_manager.Scatterv_by_row(weights, 
-                                                            row_counts=self.data_manager.agent_counts,
+                                                            row_counts=self.comm_manager.agent_counts,
                                                             dtype = np.float64,
                                                             shape = (self.dim.n_agents, num_bootstrap))
         self.row_gen.local_obs_weights = local_weights[:, 0]
@@ -102,7 +102,7 @@ class ResamplingMixin:
         t0 = time.perf_counter()
 
         # === 1. Point estimation with uniform weights ===
-        uniform_weights = np.ones(self.data_manager.num_local_agent)
+        uniform_weights = np.ones(self.comm_manager.num_local_agent)
         self.point_result = self.row_gen.solve(
             local_obs_weights=uniform_weights,
             initialize_master=True,
@@ -122,7 +122,7 @@ class ResamplingMixin:
             weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
 
         local_weights = self.comm_manager.Scatterv_by_row(
-            weights, row_counts=self.data_manager.agent_counts,
+            weights, row_counts=self.comm_manager.agent_counts,
             dtype=np.float64, shape=(self.dim.n_agents, num_bootstrap))
 
         if self.verbose and self.comm_manager.is_root():

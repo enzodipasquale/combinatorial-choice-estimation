@@ -3,7 +3,8 @@ from abc import ABC, abstractmethod
 
 class SubproblemSolver(ABC):
 
-    def __init__(self, data_manager, oracles_manager, subproblem_cfg, dimensions_cfg):
+    def __init__(self, comm_manager, data_manager, oracles_manager, subproblem_cfg, dimensions_cfg):
+        self.comm_manager = comm_manager
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
         self.subproblem_cfg = subproblem_cfg

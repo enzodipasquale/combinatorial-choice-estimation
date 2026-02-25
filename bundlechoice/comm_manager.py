@@ -1,13 +1,5 @@
 import numpy as np
-from dataclasses import dataclass
 from mpi4py import MPI
-
-
-@dataclass
-class NodeSpreadAssignment:
-    task_to_rank: np.ndarray   # (num_tasks,) rank responsible for each task
-    my_tasks: np.ndarray       # task indices owned by this rank
-    has_tasks: bool             # whether this rank owns any task
 
 
 class CommManager:
@@ -18,13 +10,10 @@ class CommManager:
         self.comm_size = comm.Get_size()
         self.root = 0
 
-        # Node topology via shared-memory splitting (portable, no rank-ordering assumptions)
         self.node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
         self.node_rank = self.node_comm.Get_rank()
         self.node_size = self.node_comm.Get_size()
 
-        # Assign a consistent node_id across all ranks:
-        # each node's local root (node_rank==0) gets a unique color via the inter-node comm
         inter_comm = comm.Split(0 if self.node_rank == 0 else MPI.UNDEFINED)
         if self.node_rank == 0:
             self.node_id = inter_comm.Get_rank()
@@ -42,25 +31,27 @@ class CommManager:
     def _barrier(self):
         self.comm.Barrier()
 
-    def spread_tasks_across_nodes(self, num_tasks):
-        base, remainder = divmod(num_tasks, self.num_nodes)
-        per_node = np.array([base + (1 if n < remainder else 0) for n in range(self.num_nodes)], dtype=np.int64)
-        offset = np.zeros(self.num_nodes + 1, dtype=np.int64)
-        np.cumsum(per_node, out=offset[1:])
+    def init_assignment(self, dimensions_cfg):
+        self.dimensions_cfg = dimensions_cfg
+        splits = np.array_split(np.arange(dimensions_cfg.n_agents), self.comm_size)
+        self.agent_ids = splits[self.rank]
+        self.agent_counts = np.array([len(s) for s in splits], dtype=np.int64)
+        self.num_local_agent = len(self.agent_ids)
+        local_agent_start = int(self.agent_counts[:self.rank].sum())
+        self.local_agent_slice = slice(local_agent_start, local_agent_start + self.num_local_agent)
+        self.obs_ids = self.agent_ids % dimensions_cfg.n_obs
+        self.local_agents_arange = np.arange(self.num_local_agent, dtype=np.int64)
 
-        lo, hi = int(offset[self.node_id]), int(offset[self.node_id + 1])
-        my_tasks = np.array([k for k in range(lo, hi)
-                             if (k - lo) % self.node_size == self.node_rank],
-                            dtype=np.int64)
+    def spread_tasks_across_nodes(self, num_tasks):
+        node_tasks = np.array_split(np.arange(num_tasks), self.num_nodes)[self.node_id]
+        my_tasks = node_tasks[self.node_rank::self.node_size]
 
         local_map = np.full(num_tasks, -1, dtype=np.int64)
         local_map[my_tasks] = self.rank
         task_to_rank = np.zeros(num_tasks, dtype=np.int64)
         self.comm.Allreduce(local_map, task_to_rank, op=MPI.MAX)
 
-        return NodeSpreadAssignment(task_to_rank=task_to_rank,
-                                    my_tasks=my_tasks,
-                                    has_tasks=len(my_tasks) > 0)
+        return task_to_rank, my_tasks
 
     def scatter(self, data):
         return self.comm.scatter(data, root=self.root)

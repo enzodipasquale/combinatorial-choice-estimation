@@ -46,7 +46,7 @@ class QuadraticObjectiveMixin:
 
     def _build_quadratic_coeff_batch(self, theta):
         n = self.dimensions_cfg.n_items
-        Q = np.zeros((self.data_manager.num_local_agent, n, n))
+        Q = np.zeros((self.comm_manager.num_local_agent, n, n))
         if 'quadratic_agent' in self._slices:
             Q += (self.data_manager.local_data["id_data"]['quadratic'] 
                     @ theta[self._slices['quadratic_agent']])

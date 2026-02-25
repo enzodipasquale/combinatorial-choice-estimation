@@ -18,13 +18,11 @@ class BundleChoice:
         self.comm_manager = comm = CommManager(MPI.COMM_WORLD)
         self.data_manager = data = DataManager(cfg.dimensions, comm)
         self.oracles_manager = oracles = OraclesManager(cfg.dimensions, comm, data)
-        
+
         base = (comm, cfg, data, oracles)
         self.subproblem_manager = subpb = SubproblemManager(*base)
         base_est = (*base, subpb)
         self.row_generation_manager = row_gen = RowGenerationManager(*base_est)
-        # self.column_generation_manager = ColumnGenerationManager(*base_est)
-        # self.ellipsoid_manager = EllipsoidManager(*base_est)
         self.standard_errors_manager = StandardErrorsManager(*base_est, row_gen)
 
     @property
@@ -42,14 +40,6 @@ class BundleChoice:
     @property
     def row_generation(self) -> 'RowGenerationManager':
         return self.row_generation_manager
-
-    # @property
-    # def ellipsoid(self) -> 'EllipsoidManager':
-    #     return self.ellipsoid_manager
-
-    # @property
-    # def column_generation(self) -> 'ColumnGenerationManager':
-    #     return self.column_generation_manager
 
     @property
     def standard_errors(self) -> 'StandardErrorsManager':
@@ -78,7 +68,6 @@ class BundleChoice:
     def is_root(self) -> bool:
         return self.comm_manager.is_root()
 
-
     def load_config(self, cfg):
         if isinstance(cfg, (str, Path)):
             cfg = BundleChoiceConfig.from_yaml(cfg)
@@ -86,10 +75,4 @@ class BundleChoice:
             cfg = BundleChoiceConfig.from_dict(cfg)
         cfg = self.comm_manager.bcast(cfg)
         self.config.update_in_place(cfg)
-
-
-
-        
-
-
-   
+        self.comm_manager.init_assignment(self.config.dimensions)
