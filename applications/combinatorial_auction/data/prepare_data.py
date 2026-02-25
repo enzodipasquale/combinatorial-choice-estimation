@@ -82,6 +82,22 @@ def _elig_hq_distance(ctx):
 def _elig_log_hq_distance(ctx):
     return ctx["elig"][:, None] * np.log(ctx["hq_distance"] * 1000 + 1)
 
+@modular("elig_percapin")
+def _elig_percapin(ctx):
+    return ctx["elig"][:, None] * ctx["percapin"][None, :]
+
+@modular("elig_hhinc35k")
+def _elig_hhinc35k(ctx):
+    return ctx["elig"][:, None] * ctx["hhinc35k"][None, :]
+
+@modular("elig_density")
+def _elig_density(ctx):
+    return ctx["elig"][:, None] * ctx["density"][None, :]
+
+@modular("elig_imwl")
+def _elig_imwl(ctx):
+    return ctx["elig"][:, None] * ctx["imwl"][None, :]
+
 # ── Quadratic regressors (each takes ctx, returns n_items × n_items) ─
 
 @quadratic("adjacency")
@@ -275,12 +291,15 @@ def normalize_interaction_matrix(matrix, pop):
 # ── Phase 2: context builder ────────────────────────────────────────
 
 def build_context(raw_data):
-    """Bridge between data loading and feature building.
-    Returns a flat dict of all available numpy arrays."""
     weight, capacity, pop, elig, assets, revenues, is_rural = process_pd_to_np(
         raw_data["bidder_data"], raw_data["bta_data"]
     )
     matching = generate_matching_matrix(raw_data["bidder_data"], raw_data["bta_data"])
+    bta = raw_data["bta_data"]
+    percapin = bta["percapin"].to_numpy().astype(float) / bta["percapin"].max()
+    hhinc35k = bta["hhinc35k"].to_numpy().astype(float)
+    density = bta["density"].to_numpy().astype(float) / bta["density"].max()
+    imwl = bta["imwl"].to_numpy().astype(float) / bta["imwl"].max()
     return {
         "weight": weight,
         "capacity": capacity,
@@ -295,6 +314,10 @@ def build_context(raw_data):
         "bta_adjacency": raw_data["bta_adjacency"],
         "travel_survey": raw_data["travel_survey"],
         "air_travel": raw_data["air_travel"],
+        "percapin": percapin,
+        "hhinc35k": hhinc35k,
+        "density": density,
+        "imwl": imwl,
     }
 
 # ── Phase 3: feature builder ────────────────────────────────────────

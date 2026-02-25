@@ -29,4 +29,4 @@ class LazyRegistry:
     def __contains__(self, name):
         return name in REGISTRY
 
-SUBPROBLEM_REGISTRY = LazyRegistry()
+SOLVER_REGISTRY = LazyRegistry()

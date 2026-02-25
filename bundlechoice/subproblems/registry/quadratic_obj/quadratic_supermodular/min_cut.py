@@ -1,6 +1,6 @@
 import numpy as np
 import networkx as nx
-from ....subproblem_base import SubproblemSolver
+from ....solver_base import SubproblemSolver
 from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 
 class QuadraticSupermodularMinCutSolver(SupermodularQuadraticObjectiveMixin, SubproblemSolver):

@@ -41,7 +41,7 @@ class ResamplingMixin:
         self.bootstrap_history = {}
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
-        self.row_gen.subproblem_manager.initialize_subproblems() 
+        self.row_gen.subproblem_manager.initialize_solver()
         t0 = time.perf_counter()
         if method == 'bayesian':
             weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
@@ -66,7 +66,7 @@ class ResamplingMixin:
                 bootstrap_callback(b, self)
             self.result = self.row_gen.solve(local_obs_weights= local_weights[:, b],
                                         verbose= False,
-                                        initialize_subproblems= False,
+                                        initialize_solver= False,
                                         initialize_master= False,
                                         iteration_callback= iteration_callback,
                                         initialization_callback= initialization_callback)
@@ -106,7 +106,7 @@ class ResamplingMixin:
         self.point_result = self.row_gen.solve(
             local_obs_weights=uniform_weights,
             initialize_master=True,
-            initialize_subproblems=True,
+            initialize_solver=True,
             iteration_callback=iteration_callback,
             initialization_callback=initialization_callback,
             verbose=verbose
@@ -150,7 +150,7 @@ class ResamplingMixin:
             self.result = self.row_gen.solve(
                 local_obs_weights=local_weights[:, b],
                 verbose=False,
-                initialize_subproblems=False,
+                initialize_solver=False,
                 initialize_master=False,
                 iteration_callback=iteration_callback,
                 initialization_callback=initialization_callback)

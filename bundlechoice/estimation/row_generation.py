@@ -82,7 +82,7 @@ class RowGenerationManager(BaseEstimationManager):
    
     def solve(self, local_obs_weights=None,
                     initialize_master = True,
-                    initialize_subproblems = True,
+                    initialize_solver = True,
                     iteration_callback=None,
                     initialization_callback=None,
                     verbose = False):
@@ -91,8 +91,8 @@ class RowGenerationManager(BaseEstimationManager):
         self.verbose = verbose if verbose is not None else True
         if self.verbose:
             self._log_instance_summary()
-        if initialize_subproblems:
-            self.subproblem_manager.initialize_subproblems() 
+        if initialize_solver:
+            self.subproblem_manager.initialize_solver() 
         if local_obs_weights is None:
             self.local_obs_weights = np.ones(self.comm_manager.num_local_agent)
         else:
@@ -138,7 +138,7 @@ class RowGenerationManager(BaseEstimationManager):
 
     def _row_generation_iteration(self, iteration):
         t0 = time.perf_counter()
-        pricing_results = self.subproblem_manager.solve_subproblems(self.theta_iter)
+        pricing_results = self.subproblem_manager.solve(self.theta_iter)
         stop, reduced_cost, n_violations, times = self._master_iteration(pricing_results)
         t1, t2 = times
         pricing_time = t1 - t0

@@ -1,5 +1,5 @@
 import numpy as np
-from ..subproblem_base import SubproblemSolver
+from ..solver_base import SubproblemSolver
 
 class GreedySolver(SubproblemSolver):
     find_best_item = None

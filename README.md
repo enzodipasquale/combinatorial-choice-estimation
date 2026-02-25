@@ -35,7 +35,7 @@ bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=42)
 
-bc.subproblems.load_subproblem('QuadraticKnapsackGRB')
+bc.subproblems.load_solver('QuadraticKnapsackGRB')
 bc.subproblems.generate_obs_bundles(theta_star)
 
 result = bc.row_generation.solve()
@@ -53,7 +53,7 @@ bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=42)
 
-bc.subproblems.load_subproblem('QuadraticKnapsackGRB')
+bc.subproblems.load_solver('QuadraticKnapsackGRB')
 bc.subproblems.generate_obs_bundles(theta_star)
 
 result = bc.row_generation.solve()

@@ -1,6 +1,6 @@
 import numpy as np
 import gurobipy as gp
-from ...subproblem_base import SubproblemSolver
+from ...solver_base import SubproblemSolver
 from .quadratic_obj_base import QuadraticObjectiveMixin
 from bundlechoice.utils import suppress_output
 

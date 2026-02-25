@@ -277,13 +277,13 @@ class DistributedBootstrapMixin:
         init_master = not load_ok
         if load_ok:
             converged = self._load_point_estimate(pt_dir)
-            self.subproblem_manager.initialize_subproblems()
+            self.subproblem_manager.initialize_solver()
             if converged:
                 return
 
         self.point_result = self.row_generation_manager.solve(
             local_obs_weights=np.ones(self.comm_manager.num_local_agent),
-            initialize_master=init_master, initialize_subproblems=init_master,
+            initialize_master=init_master, initialize_solver=init_master,
             iteration_callback=iteration_callback,
             initialization_callback=initialization_callback,
             verbose=self.verbose)
@@ -428,7 +428,7 @@ class DistributedBootstrapMixin:
 
         bundles = np.empty((n_active, n_local, state.dim.n_items), dtype=bool)
         for b, boot in enumerate(active):
-            bundles[b] = self.subproblem_manager.solve_subproblems(state.theta_vals[boot])
+            bundles[b] = self.subproblem_manager.solve(state.theta_vals[boot])
 
         features, errors = self.oracles_manager.features_and_errors_oracle(
             bundles.reshape(-1, state.dim.n_items), state.tile_local_ids())

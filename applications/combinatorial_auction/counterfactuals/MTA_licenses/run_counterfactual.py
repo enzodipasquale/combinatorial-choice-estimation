@@ -67,7 +67,7 @@ bc.load_config(cfg)
 bc.data.load_and_distribute_input_data(mta_data if rank == 0 else None)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=est["error_seed"])
-bc.subproblems.load_subproblem()
+bc.subproblems.load_solver()
 
 def fix_theta(row_gen):
     if rank != 0 or row_gen.master_model is None:

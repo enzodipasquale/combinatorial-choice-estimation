@@ -32,10 +32,10 @@ class BaseEstimationManager:
 
     def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     
-        bundles = self.subproblem_manager.solve_subproblems(theta)
+        bundles = self.subproblem_manager.solve(theta)
         features = self.oracles_manager.features_oracle(bundles)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
-        
+
         features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
         theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
@@ -48,7 +48,7 @@ class BaseEstimationManager:
             return None, None
 
     def compute_obj(self, theta, local_obs_weights = None):
-        bundles = self.subproblem_manager.solve_subproblems(theta)
+        bundles = self.subproblem_manager.solve(theta)
         utility = self.oracles_manager.utility_oracle(bundles, theta)
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
         theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
@@ -58,7 +58,7 @@ class BaseEstimationManager:
             return None
     
     def compute_grad(self, theta, local_obs_weights = None):
-        bundles = self.subproblem_manager.solve_subproblems(theta)
+        bundles = self.subproblem_manager.solve(theta)
         features = self.oracles_manager.features_oracle(bundles)
         theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
         features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
