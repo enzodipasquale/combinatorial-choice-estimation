@@ -1,3 +1,3 @@
 from .subproblem_manager import SubproblemManager
-from .subproblem_registry import SUBPROBLEM_REGISTRY
-from .subproblem_base import SubproblemSolver
+from .solver_registry import SOLVER_REGISTRY
+from .solver_base import SubproblemSolver

@@ -1,4 +1,4 @@
-from .subproblem_registry import SUBPROBLEM_REGISTRY
+from .solver_registry import SOLVER_REGISTRY
 import numpy as np
 from bundlechoice.utils import get_logger
 
@@ -11,59 +11,59 @@ class SubproblemManager:
         self.comm_manager = comm_manager
         self.data_manager = data_manager
         self.oracles_manager = oracles_manager
-        self.subproblem = None
-        self._subproblems_are_initialized = False
+        self.subproblem_solver = None
+        self._solver_is_initialized = False
 
-    def load_subproblem(self, subproblem=None):
-        subproblem = subproblem or self.config.subproblem.name
+    def load_solver(self, solver=None):
+        solver = solver or self.config.subproblem.name
 
-        if isinstance(subproblem, type):
-            cls = subproblem
-        elif callable(subproblem) and not isinstance(subproblem, str):
-            self.subproblem = subproblem(self.comm_manager,
-                                         self.data_manager,
-                                         self.oracles_manager,
-                                         self.config.subproblem,
-                                         self.config.dimensions)
-            return self.subproblem
+        if isinstance(solver, type):
+            cls = solver
+        elif callable(solver) and not isinstance(solver, str):
+            self.subproblem_solver = solver(self.comm_manager,
+                                 self.data_manager,
+                                 self.oracles_manager,
+                                 self.config.subproblem,
+                                 self.config.dimensions)
+            return self.subproblem_solver
         else:
-            cls = SUBPROBLEM_REGISTRY.get(subproblem)
+            cls = SOLVER_REGISTRY.get(solver)
             if cls is None:
-                raise ValueError(f"Unknown subproblem: '{subproblem}'. "
-                               f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
+                raise ValueError(f"Unknown solver: '{solver}'. "
+                               f"Available: {', '.join(SOLVER_REGISTRY.keys())}")
 
-        self.subproblem = cls(self.comm_manager,
-                             self.data_manager,
-                             self.oracles_manager,
-                             self.config.subproblem,
-                             self.config.dimensions)
+        self.subproblem_solver = cls(self.comm_manager,
+                         self.data_manager,
+                         self.oracles_manager,
+                         self.config.subproblem,
+                         self.config.dimensions)
 
-        return self.subproblem
+        return self.subproblem_solver
 
-    def initialize_subproblems(self):
-        if self.subproblem is None:
-            self.load_subproblem()
-        self.subproblem.initialize()
-        self._subproblems_are_initialized = True
+    def initialize_solver(self):
+        if self.subproblem_solver is None:
+            self.load_solver()
+        self.subproblem_solver.initialize()
+        self._solver_is_initialized = True
 
-    def initialize_and_solve_subproblems(self, theta):
+    def initialize_and_solve(self, theta):
         theta = self.comm_manager.Bcast(theta)
-        self.initialize_subproblems()
-        local_bundles = self.subproblem.solve(theta)
+        self.initialize_solver()
+        local_bundles = self.subproblem_solver.solve(theta)
         return local_bundles
 
-    def solve_subproblems(self, theta):
-        if self.subproblem is None:
-            raise ValueError("Subproblem not initialized")
-        return self.subproblem.solve(theta)
+    def solve(self, theta):
+        if self.subproblem_solver is None:
+            raise ValueError("Solver not initialized")
+        return self.subproblem_solver.solve(theta)
 
     def generate_obs_bundles(self, theta):
-        local_bundles = self.initialize_and_solve_subproblems(theta)
+        local_bundles = self.initialize_and_solve(theta)
         self.data_manager.local_data["id_data"]["obs_bundles"] = local_bundles.astype(bool)
         obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.comm_manager.agent_counts)
         return obs_bundles
 
     def update_gurobi_settings(self, settings_dict):
         self.config.subproblem.GRB_Params.update(settings_dict)
-        if self.subproblem is not None:
-            self.subproblem.update_solver_settings(settings_dict)
+        if self.subproblem_solver is not None:
+            self.subproblem_solver.update_solver_settings(settings_dict)

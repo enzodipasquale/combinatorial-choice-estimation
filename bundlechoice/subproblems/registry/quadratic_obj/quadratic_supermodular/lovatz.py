@@ -1,5 +1,5 @@
 import numpy as np
-from ....subproblem_base import SubproblemSolver
+from ....solver_base import SubproblemSolver
 from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 
 class QuadraticSupermodularLovaszSolver(SupermodularQuadraticObjectiveMixin, SubproblemSolver):

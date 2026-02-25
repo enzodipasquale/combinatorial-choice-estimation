@@ -1,6 +1,6 @@
 import numpy as np
 from itertools import product
-from ..subproblem_base import SubproblemSolver
+from ..solver_base import SubproblemSolver
 
 class BruteForceSolver(SubproblemSolver):
 

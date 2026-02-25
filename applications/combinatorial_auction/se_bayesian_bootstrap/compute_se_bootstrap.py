@@ -78,7 +78,7 @@ bc.load_config(config)
 bc.data.load_and_distribute_input_data(input_data)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
-bc.subproblems.load_subproblem()
+bc.subproblems.load_solver()
 
 if rank == 0:
     print(f"agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
