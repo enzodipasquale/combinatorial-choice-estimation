@@ -104,42 +104,23 @@ class DataManager:
             if preserve_global_data:
                 update_dict_recursive(self.input_data, input_data)
             else:
-                self.input_data = input_data    
-        
-        tiled_id_data_for_simulations = self._tile_arrays_in_dict(self.input_data["id_data"])
-        self.distribute_data(tiled_id_data_for_simulations, self.input_data["item_data"])
+                self.input_data = input_data
+
+        root_data = self.input_data if self.comm_manager.is_root() else {"id_data": {}, "item_data": {}}
+        id_data_full, id_meta = self.comm_manager.bcast_dict(root_data["id_data"], return_metadata=True)
+        local_id = {k: v[self.obs_ids] if isinstance(v, np.ndarray) else v for k, v in id_data_full.items()}
+        del id_data_full
+
+        item_data, item_meta = self.comm_manager.bcast_dict(root_data["item_data"], return_metadata=True)
+
+        self.local_data["id_data"].update(local_id)
+        self.local_data["item_data"].update(item_data)
+        self.input_data_dictionary_metadata["id_data"].update(id_meta)
+        self.input_data_dictionary_metadata["item_data"].update(item_meta)
         self._local_data_version = getattr(self, "_local_data_version", 0) + 1
 
         if not preserve_global_data and self.comm_manager.is_root():
-            self.input_data = {"id_data": {}, "item_data": {}} 
-
-
-    def _tile_id_array_for_simulations(self, id_array):
-        reps = (self.dimensions_cfg.n_simulations,) + (1,) * (id_array.ndim - 1)
-        return np.tile(id_array, reps)
-
-    def _tile_arrays_in_dict(self, dict):
-        if not self.comm_manager.is_root():
-            return None
-        dict_of_tiled_arrays = {}
-        for k, v in dict.items():
-            if isinstance(v, np.ndarray):
-                dict_of_tiled_arrays[k] = self._tile_id_array_for_simulations(v)
-            elif isinstance(v, dict):
-                dict_of_tiled_arrays[k] = self._tile_arrays_in_dict(v)
-        return dict_of_tiled_arrays
-
-    def distribute_data(self, to_scatter, to_broadcast):
-        local_agent_data, agent_data_metadata = self.comm_manager.scatter_dict(to_scatter, 
-                                                                                agent_counts=self.agent_counts, 
-                                                                                return_metadata=True)
-        item_data, item_data_metadata = self.comm_manager.bcast_dict(to_broadcast, 
-                                                                    return_metadata=True)
-        
-        self.local_data["id_data"].update(local_agent_data)
-        self.local_data["item_data"].update(item_data)
-        self.input_data_dictionary_metadata["id_data"].update(agent_data_metadata)
-        self.input_data_dictionary_metadata["item_data"].update(item_data_metadata)
+            self.input_data = {"id_data": {}, "item_data": {}}
 
     def erase_input_data(self):
         self.input_data = {"id_data": {}, "item_data": {}}
