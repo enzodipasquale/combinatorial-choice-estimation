@@ -60,7 +60,7 @@ class RowGenerationManager(BaseEstimationManager):
             u_iter = np.zeros(self.dim.n_agents, dtype=np.float64)
         self.theta_iter = self.comm_manager.Bcast(theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
-                                                              row_counts=self.data_manager.agent_counts,
+                                                              row_counts=self.comm_manager.agent_counts,
                                                               dtype=np.float64,
                                                               shape=(self.dim.n_agents,))
 
@@ -94,7 +94,7 @@ class RowGenerationManager(BaseEstimationManager):
         if initialize_subproblems:
             self.subproblem_manager.initialize_subproblems() 
         if local_obs_weights is None:
-            self.local_obs_weights = np.ones(self.data_manager.num_local_agent)
+            self.local_obs_weights = np.ones(self.comm_manager.num_local_agent)
         else:
             self.local_obs_weights= local_obs_weights
 
@@ -160,7 +160,7 @@ class RowGenerationManager(BaseEstimationManager):
 
         local_max_rc = weighted_reduced_costs.max()
         local_violations = np.where(weighted_reduced_costs > self.cfg.tolerance)[0]
-        local_violations_id = self.data_manager.agent_ids[local_violations]
+        local_violations_id = self.comm_manager.agent_ids[local_violations]
         features_and_errors_local = np.column_stack([
                                                         features_local[local_violations], 
                                                         errors_local[local_violations]

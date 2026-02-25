@@ -22,13 +22,13 @@ class OraclesManager:
 
     def _check_vectorized_oracle_support(self, oracle):
         try:
-            test_bundles = np.zeros((self.data_manager.num_local_agent, self.dimensions_cfg.n_items), dtype=bool)
-            ids = np.arange(self.data_manager.num_local_agent)
+            test_bundles = np.zeros((self.comm_manager.num_local_agent, self.dimensions_cfg.n_items), dtype=bool)
+            ids = np.arange(self.comm_manager.num_local_agent)
             if oracle.__code__.co_argcount == 2:
                 test_features = oracle(test_bundles, ids)
             else:
                 test_features = oracle(test_bundles, ids, self.data_manager.local_data)
-            assert test_features.shape == (self.data_manager.num_local_agent, self.dimensions_cfg.n_features)
+            assert test_features.shape == (self.comm_manager.num_local_agent, self.dimensions_cfg.n_features)
             return True
         except (ValueError, IndexError, AssertionError) as e:
             logger.debug(f"Vectorized oracle not supported: {e}")
@@ -51,7 +51,7 @@ class OraclesManager:
         self._error_oracle_takes_data = self._check_oracle_takes_data(_error_oracle)
     
     def features_oracle(self, bundles, ids=None):
-        ids = self.data_manager.local_agents_arange if ids is None else ids
+        ids = self.comm_manager.local_agents_arange if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
         if self._features_oracle_vectorized:
             return self._features_oracle(bundles, ids, *data_arg)
@@ -59,7 +59,7 @@ class OraclesManager:
             return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in ids])
 
     def error_oracle(self, bundles, ids=None):
-        ids = self.data_manager.local_agents_arange if ids is None else ids
+        ids = self.comm_manager.local_agents_arange if ids is None else ids
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         if self._error_oracle_vectorized:
             return self._error_oracle(bundles, ids, *data_arg)
@@ -93,10 +93,10 @@ class OraclesManager:
 
 
     def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None, sigma = 1):
-        n_local = self.data_manager.num_local_agent
+        n_local = self.comm_manager.num_local_agent
         n_items = self.dimensions_cfg.n_items
         self._local_modular_errors = np.zeros((n_local, n_items))
-        for i, global_id in enumerate(self.data_manager.agent_ids):
+        for i, global_id in enumerate(self.comm_manager.agent_ids):
             np.random.seed((np.abs(seed)+1) * (global_id + 1))
             self._local_modular_errors[i] = np.random.normal(0, sigma, n_items)
         if items_correlation_matrix is not None:

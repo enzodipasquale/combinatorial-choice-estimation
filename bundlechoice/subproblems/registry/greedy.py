@@ -5,7 +5,7 @@ class GreedySolver(SubproblemSolver):
     find_best_item = None
 
     def solve(self, theta):
-        n_agents = self.data_manager.num_local_agent
+        n_agents = self.comm_manager.num_local_agent
         n_items = self.dimensions_cfg.n_items
         results = np.zeros((n_agents, n_items), dtype=bool)
         for i in range(n_agents):

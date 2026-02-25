@@ -10,7 +10,7 @@ class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
         weights = self.data_manager.local_data["item_data"]['weight']
         capacities = self.data_manager.local_data["id_data"]['capacity']
         self.local_problems = []
-        for local_id in range(self.data_manager.num_local_agent):
+        for local_id in range(self.comm_manager.num_local_agent):
             with suppress_output():
                 model = gp.Model()
                 model.setParam('OutputFlag', 0)

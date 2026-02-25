@@ -20,7 +20,8 @@ class SubproblemManager:
         if isinstance(subproblem, type):
             cls = subproblem
         elif callable(subproblem) and not isinstance(subproblem, str):
-            self.subproblem = subproblem(self.data_manager,
+            self.subproblem = subproblem(self.comm_manager,
+                                         self.data_manager,
                                          self.oracles_manager,
                                          self.config.subproblem,
                                          self.config.dimensions)
@@ -31,7 +32,8 @@ class SubproblemManager:
                 raise ValueError(f"Unknown subproblem: '{subproblem}'. "
                                f"Available: {', '.join(SUBPROBLEM_REGISTRY.keys())}")
 
-        self.subproblem = cls(self.data_manager,
+        self.subproblem = cls(self.comm_manager,
+                             self.data_manager,
                              self.oracles_manager,
                              self.config.subproblem,
                              self.config.dimensions)
@@ -58,7 +60,7 @@ class SubproblemManager:
     def generate_obs_bundles(self, theta):
         local_bundles = self.initialize_and_solve_subproblems(theta)
         self.data_manager.local_data["id_data"]["obs_bundles"] = local_bundles.astype(bool)
-        obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.data_manager.agent_counts)
+        obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.comm_manager.agent_counts)
         return obs_bundles
 
     def update_gurobi_settings(self, settings_dict):

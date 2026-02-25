@@ -132,13 +132,12 @@ class BootstrapMaster:
 # =========================================================================
 
 class BootstrapState:
-    def __init__(self, num_bootstrap, dim, data_manager, comm_manager):
-        assignment = comm_manager.spread_tasks_across_nodes(num_bootstrap)
-        self.boot_id = int(assignment.my_tasks[0]) if assignment.has_tasks else None
-        self.task_to_rank = assignment.task_to_rank
+    def __init__(self, num_bootstrap, dim, comm_manager):
+        self.task_to_rank, my_tasks = comm_manager.spread_tasks_across_nodes(num_bootstrap)
+        self.boot_id = int(my_tasks[0]) if len(my_tasks) > 0 else None
         self.num_bootstrap = num_bootstrap
         self.dim = dim
-        self.data_manager = data_manager
+        self.comm_manager = comm_manager
 
         nf, na = dim.n_features, dim.n_agents
         self.active = np.ones(num_bootstrap, dtype=np.int32)
@@ -164,10 +163,10 @@ class BootstrapState:
         return self.boot_id is not None and self.active[self.boot_id]
 
     def tile_local_ids(self):
-        return np.tile(self.data_manager.local_agents_arange, self.num_active)
+        return np.tile(self.comm_manager.local_agents_arange, self.num_active)
 
     def local_u_master(self):
-        return self.u_vals[self.active_indices, self.data_manager.local_agent_slice]
+        return self.u_vals[self.active_indices, self.comm_manager.local_agent_slice]
 
     def allreduce_by_boot(self, buf, data=None, op=MPI.SUM):
         buf[:] = 0.0
@@ -237,8 +236,7 @@ class DistributedBootstrapMixin:
         self.verbose = verbose
         t0 = time.perf_counter()
 
-        state = BootstrapState(num_bootstrap, self.dim,
-                               self.data_manager, self.comm_manager)
+        state = BootstrapState(num_bootstrap, self.dim, self.comm_manager)
 
         load_dir = self.comm_manager.bcast(
             os.path.join(load_model_dir, "checkpoints") if load_model_dir else None)
@@ -284,7 +282,7 @@ class DistributedBootstrapMixin:
                 return
 
         self.point_result = self.row_generation_manager.solve(
-            local_obs_weights=np.ones(self.data_manager.num_local_agent),
+            local_obs_weights=np.ones(self.comm_manager.num_local_agent),
             initialize_master=init_master, initialize_subproblems=init_master,
             iteration_callback=iteration_callback,
             initialization_callback=initialization_callback,
@@ -372,7 +370,7 @@ class DistributedBootstrapMixin:
         weights_full = gen(seed, num_bootstrap)
 
         local_weights = self.comm_manager.Scatterv_by_row(
-            weights_full, row_counts=self.data_manager.agent_counts,
+            weights_full, row_counts=self.comm_manager.agent_counts,
             dtype=np.float64, shape=(self.dim.n_agents, num_bootstrap))
 
         boot_agent_weights = np.zeros(self.dim.n_agents, dtype=np.float64)
@@ -426,7 +424,7 @@ class DistributedBootstrapMixin:
     def _pricing(self, state):
         active = state.active_indices
         n_active = len(active)
-        n_local = state.data_manager.num_local_agent
+        n_local = state.comm_manager.num_local_agent
 
         bundles = np.empty((n_active, n_local, state.dim.n_items), dtype=bool)
         for b, boot in enumerate(active):
@@ -441,7 +439,7 @@ class DistributedBootstrapMixin:
         reduced_costs = self._local_weights[:, active].T * (u_cuts - state.local_u_master())
 
         cut_rows = np.concatenate([
-            np.tile(state.data_manager.agent_ids, (n_active, 1))[:, :, None],
+            np.tile(state.comm_manager.agent_ids, (n_active, 1))[:, :, None],
             features, errors[:, :, None]], axis=-1)
 
         return cut_rows, reduced_costs

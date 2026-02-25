@@ -9,7 +9,7 @@ class QuadraticSupermodularMinCutSolver(SupermodularQuadraticObjectiveMixin, Sub
         mask = self._qinfo.constraint_mask
         self._solvers = [MinCutSolver(mask[i] if mask is not None else None,
                                       self.dimensions_cfg.n_items)
-                         for i in range(self.data_manager.num_local_agent)]
+                         for i in range(self.comm_manager.num_local_agent)]
 
     def solve(self, theta):
         L_all = self._build_linear_coeff_batch(theta)
