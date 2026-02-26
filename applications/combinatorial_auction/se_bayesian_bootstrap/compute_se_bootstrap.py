@@ -19,9 +19,20 @@ rank = comm.Get_rank()
 
 config = yaml.safe_load(open(BASE_DIR /  "config.yaml"))
 
-app = config.get("application")
-boot = config.get("bootstrap")
-NUM_BOOTSTRAP = boot.get("num_samples")
+def _get_int_env(name, default):
+    val = os.environ.get(name)
+    return int(val) if val is not None else int(default)
+
+
+app = config.get("application", {})
+boot = config.get("bootstrap", {})
+dims = config.get("dimensions", {})
+
+NUM_BOOTSTRAP = _get_int_env("NUM_SAMPLES", boot.get("num_samples"))
+N_SIMULATIONS = _get_int_env("N_SIMULATIONS", dims.get("n_simulations"))
+
+config.setdefault("dimensions", {})["n_simulations"] = N_SIMULATIONS
+
 BOOT_SEED = boot.get("seed")
 ERROR_SEED = app.get("error_seed")
 OUTPUT_DIR = APP_DIR / "estimation_results"
