@@ -78,6 +78,14 @@ def _log_hq_distance(ctx):
 def _elig_hq_distance(ctx):
     return ctx["elig"][:, None] * ctx["hq_distance"]
 
+@modular("elig_hq_distance_sq")
+def _elig_hq_distance_sq(ctx):
+    return ctx["elig"][:, None] * (ctx["hq_distance"] **2)
+
+@modular("elig_hq_distance_cb")
+def _elig_hq_distance_cb(ctx):
+    return ctx["elig"][:, None] * (ctx["hq_distance"] **3)
+
 @modular("elig_log_hq_distance")
 def _elig_log_hq_distance(ctx):
     return ctx["elig"][:, None] * np.log(ctx["hq_distance"] * 1000 + 1)
@@ -135,6 +143,11 @@ def _elig_adjacency(ctx):
     adj = QUADRATIC["adjacency"](ctx)
     return ctx["elig"][:, None, None] * adj[None, :, :]
 
+@quadratic_id("rural_adjacency")
+def _rural_adjacency(ctx):
+    adj = QUADRATIC["adjacency"](ctx)
+    return ctx["is_rural"][:, None, None] * adj[None, :, :]
+
 @quadratic_id("elig_pop_centroid_delta2")
 def _elig_pop_centroid_delta2(ctx):
     pc = _pop_centroid(ctx, delta=2)
@@ -144,6 +157,11 @@ def _elig_pop_centroid_delta2(ctx):
 def _elig_pop_centroid_delta4(ctx):
     pc = _pop_centroid(ctx, delta=4)
     return ctx["elig"][:, None, None] * pc[None, :, :]
+
+@quadratic_id("rural_pop_centroid_delta4")
+def _rural_pop_centroid_delta4(ctx):
+    pc = _pop_centroid(ctx, delta=4)
+    return ctx["is_rural"][:, None, None] * pc[None, :, :]
 
 @quadratic_id("assets_adjacency")
 def _assets_adjacency(ctx):
