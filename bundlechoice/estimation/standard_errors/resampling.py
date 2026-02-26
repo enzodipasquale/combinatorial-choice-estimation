@@ -258,7 +258,7 @@ class ResamplingMixin:
         mean = theta_boots.mean(axis=0)
         se = theta_boots.std(axis=0, ddof=1)
         point_est = theta_hat if theta_hat is not None else mean
-        t_stats = np.where(se > 1e-16, point_est / se, np.nan)
+        t_stats = np.where(se > 1e-16, mean / se, np.nan)
         alpha = 1 - confidence
         ci_lower = np.percentile(theta_boots, 100 * alpha / 2, axis=0)
         ci_upper = np.percentile(theta_boots, 100 * (1 - alpha / 2), axis=0)
