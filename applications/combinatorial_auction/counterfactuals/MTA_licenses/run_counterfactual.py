@@ -1,87 +1,190 @@
 #!/usr/bin/env python3
-import json
-import sys
-from pathlib import Path
+# MTA-level counterfactual allocation. Parameters rescaled by 1/α₁ into $.
+# MTA item FE solved by row generation = MTA-level prices.
 
+import sys, json, yaml
+from pathlib import Path
 import numpy as np
 from mpi4py import MPI
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent.parent
-sys.path.insert(0, str(APP_DIR.parent.parent))
+PROJECT_ROOT = APP_DIR.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
-from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import main as prepare_mta
+from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
+    main as prepare_mta,
+)
+from applications.combinatorial_auction.results import load_result, save_counterfactual, OUTPUT_DIR
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-ESTIMATION_DIR = APP_DIR / "estimation_results"
-USE_BOOTSTRAP = False  # True: se_bootstrap_runs.csv, False: point_estimate_runs.csv
-source = "se_bootstrap_runs.csv" if USE_BOOTSTRAP else "point_estimate_runs.csv"
+# ── Load configs ─────────────────────────────────────────────────────
 
+cf_config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
+est_cfg = cf_config["estimation"]
 
-def load_estimation_result(source: str, run_idx: int = -1):
-    path = ESTIMATION_DIR / source
-    df = __import__("pandas").read_csv(path)
-    row = df.iloc[run_idx]
-    theta = np.array(json.loads(row["theta_mean"] if "theta_mean" in row else row["theta_hat"]))
-    return {
-        "theta": theta,
-        "delta": int(row["delta"]),
-        "winners_only": bool(row["winners_only"]),
-        "hq_distance": bool(row.get("hq_distance", False)),
-        "n_features": int(row["n_features"]),
-        "error_seed": int(row.get("error_seed", 1996)),
-    }
+# ── Load estimation result from CSV ──────────────────────────────────
 
-est = load_estimation_result(source)
-include_adjacency = est["n_features"] == 498
-n_quad = 4 if include_adjacency else 3
+est = load_result(source=est_cfg["source"], run_idx=est_cfg["run_idx"])
+
+theta_est = est["theta_hat"]
+n_item_quad = len(est["quadratic_regressors"])
+
+# ── Load FE decomposition ────────────────────────────────────────────
+
+fe_path = cf_config.get("fe_decomposition_path",
+                        str(OUTPUT_DIR / "fe_decomposition.json"))
+with open(fe_path) as f:
+    fe_decomp = json.load(f)
+
+alpha_1 = fe_decomp["alpha_1"]
+
+# Rescale all structural parameters into price units
+theta_est_rescaled = theta_est / alpha_1
 
 if rank == 0:
-    mta_data = prepare_mta(delta=est["delta"], winners_only=est["winners_only"], continental_only=True, include_adjacency=include_adjacency)
-    id_data, item_data = mta_data["id_data"], mta_data["item_data"]
+    print(f"Loaded {est_cfg['source']} run (idx={est_cfg['run_idx']}): "
+          f"n_features={est['n_features']}, quad={est['quadratic_regressors']}")
+    print(f"FE decomp: α₁={alpha_1:.2e}")
+    print(f"Rescaled theta[0]={theta_est_rescaled[0]:.4f}, "
+          f"theta[-4:]={theta_est_rescaled[-n_item_quad:].round(4)}")
+
+# ── Prepare MTA data (with ξ̂) ─────────────────────────────────────────
+
+if rank == 0:
+    mta_data = prepare_mta(
+        winners_only=est["winners_only"],
+        continental_only=est["continental_only"],
+        rescale_features=est["rescale_features"],
+        modular_regressors=est["modular_regressors"],
+        quadratic_regressors=est["quadratic_regressors"],
+        fe_decomp=fe_decomp,
+    )
+    id_data = mta_data["id_data"]
+    item_data = mta_data["item_data"]
     n_obs = id_data["obs_bundles"].shape[0]
-    n_mod_agent, n_mod_item = id_data["modular"].shape[-1], item_data["modular"].shape[-1]
+    n_mod_agent = id_data["modular"].shape[-1]
+    n_mod_item = item_data["modular"].shape[-1]      # n_mtas + n_item_quad + 1 (ξ)
 else:
-    mta_data, n_obs, n_mod_agent, n_mod_item = None, 0, 0, 0
+    mta_data = None
+    n_obs, n_mod_agent, n_mod_item = 0, 0, 0
 
 n_obs, n_mod_agent, n_mod_item = comm.bcast((n_obs, n_mod_agent, n_mod_item), root=0)
-n_items = n_mod_item - n_quad
-n_features = n_mod_agent + n_mod_item + n_quad
 
-theta_est = est["theta"]
-theta_init = np.zeros(n_features)
-theta_init[:n_mod_agent] = theta_est[:n_mod_agent]
-theta_init[n_mod_agent + n_items:] = np.tile(theta_est[-n_quad:], 2)
+# MTA theta layout:
+# [n_mod_agent agent | n_mtas FE | n_quad diag | 1 ξ coeff | n_quad offdiag]
+n_extra = 1  # ξ̂ column
+n_mtas = n_mod_item - n_item_quad - n_extra
+n_features_mta = n_mod_agent + n_mod_item + n_item_quad
+
+# ── Map BTA theta → MTA theta ───────────────────────────────────────
+
+theta_init = np.zeros(n_features_mta)
+
+# Agent modular: all rescaled agent modular coefficients from BTA estimation
+theta_init[:n_mod_agent] = theta_est_rescaled[:n_mod_agent]
+
+# BTA theta layout: [n_id_mod | n_items_bta FE | n_quad diag | n_quad offdiag]
+n_items_bta = est["n_items"]
+bta_quad_diag = theta_est_rescaled[n_mod_agent + n_items_bta : n_mod_agent + n_items_bta + n_item_quad]
+bta_quad_offdiag = theta_est_rescaled[-n_item_quad:]
+
+# Quadratic diagonals (from item_modular): rescaled BTA diagonal quad params
+quad_diag_start = n_mod_agent + n_mtas
+theta_init[quad_diag_start : quad_diag_start + n_item_quad] = bta_quad_diag
+
+# ξ̂ coefficient: data stores (ξ̂-α₀)/α₁ per BTA, so coeff = 1.0
+xi_idx = quad_diag_start + n_item_quad
+theta_init[xi_idx] = 1.0
+
+# Quadratic off-diagonals: rescaled BTA off-diagonal quad params
+offdiag_start = xi_idx + 1
+theta_init[offdiag_start:] = bta_quad_offdiag
+
+if rank == 0:
+    print(f"\nMTA: n_mtas={n_mtas}, n_features={n_features_mta}, "
+          f"n_mod_item={n_mod_item}")
+    print(f"theta_init non-zero positions: {np.where(theta_init != 0)[0]}")
+    print(f"theta_init non-zero values: {theta_init[theta_init != 0].round(6)}")
+
+# ── Setup BundleChoice ───────────────────────────────────────────────
 
 bc = BundleChoice()
-cfg = {"dimensions": {"n_obs": n_obs, "n_items": n_items, "n_features": n_features, "n_simulations": 20},
-       "subproblem": {"name": "QuadraticKnapsackGRB", "GRB_Params": {"TimeLimit": 1.0}},
-       "row_generation": {"max_iters": 200, "tolerance": 0.01, "parameters_to_log": [4,5,6,7,8],
-                         "theta_bounds": {"lb": 0, "ub": 10000}}}
+cfg = {
+    "dimensions": {
+        "n_obs": n_obs,
+        "n_items": n_mtas,
+        "n_features": n_features_mta,
+        "n_simulations": cf_config["dimensions"]["n_simulations"],
+    },
+    "subproblem": cf_config["subproblem"],
+    "row_generation": {
+        "max_iters": cf_config["row_generation"]["max_iters"],
+        "tolerance": cf_config["row_generation"]["tolerance"],
+        "parameters_to_log": list(range(n_mod_agent + n_mtas, n_features_mta)),
+        "theta_bounds": cf_config["row_generation"]["theta_bounds"],
+        "master_GRB_Params": cf_config["row_generation"].get("master_GRB_Params"),
+    },
+}
 bc.load_config(cfg)
-
 bc.data.load_and_distribute_input_data(mta_data if rank == 0 else None)
 bc.oracles.build_quadratic_features_from_data()
 bc.oracles.build_local_modular_error_oracle(seed=est["error_seed"])
 bc.subproblems.load_solver()
 
+
 def fix_theta(row_gen):
+    # Warm-start and fix estimated params; MTA item FE are free (= prices)
     if rank != 0 or row_gen.master_model is None:
         return
     theta, _ = row_gen.master_variables
     for i in range(theta.size):
         theta[i].Start = theta_init[i]
-    fixed = list(range(n_mod_agent)) + list(range(n_mod_agent + n_items, n_features))
+    # Fix everything except the n_mtas item FE
+    fixed = (list(range(n_mod_agent))
+             + list(range(n_mod_agent + n_mtas, n_features_mta)))
     for i in fixed:
         theta[i].LB = theta[i].UB = theta_init[i]
     row_gen.master_model.update()
+    row_gen.master_model.optimize()
 
-pt_timeout_cb, _ = adaptive_gurobi_timeout([
-    {'iters': 30, 'timeout': 1.0},
-    {'timeout': 10.0},
-])
-bc.row_generation.solve(initialization_callback=fix_theta, iteration_callback=pt_timeout_cb, verbose=True)
+
+pt_timeout_cb, _ = adaptive_gurobi_timeout(cf_config["callbacks"])
+
+# ── Solve ────────────────────────────────────────────────────────────
+
+result = bc.row_generation.solve(
+    initialization_callback=fix_theta,
+    iteration_callback=pt_timeout_cb,
+    verbose=True,
+)
+
+# ── Save results ─────────────────────────────────────────────────────
+
+if rank == 0 and result is not None:
+    # With -I convention, utility from FE = -θ_FE[m], so θ_FE[m] = price_m
+    mta_fe = result.theta_hat[n_mod_agent : n_mod_agent + n_mtas]
+    mta_prices = mta_fe
+
+    print(f"\nConverged: {result.converged}, iterations: {result.num_iterations}")
+    print(f"MTA prices: min={mta_prices.min():.0f}, max={mta_prices.max():.0f}, "
+          f"total={mta_prices.sum():.0f}")
+
+    # Welfare from master LP u variables (in M$ since theta is rescaled)
+    n_sim = cf_config["dimensions"]["n_simulations"]
+    u_hat = result.u_hat  # (n_obs * n_sim,)
+    u_per_obs = u_hat.reshape(n_sim, n_obs).mean(axis=0)  # avg over sims
+    bidder_surplus = u_per_obs.sum()
+    revenue = mta_prices.sum()
+    total_surplus = bidder_surplus + revenue
+
+    print(f"\nWelfare (M$):")
+    print(f"  Bidder surplus (Σ u_i, avg over sims) = ${bidder_surplus:,.1f}M")
+    print(f"  Revenue (Σ prices)                    = ${revenue:,.1f}M")
+    print(f"  Total surplus                         = ${total_surplus:,.1f}M")
+
+    save_counterfactual(cf_config, est, result, n_mtas)

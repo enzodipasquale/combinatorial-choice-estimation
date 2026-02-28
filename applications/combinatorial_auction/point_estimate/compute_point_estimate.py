@@ -1,9 +1,8 @@
 #!/bin/env python
-import sys, os, csv, yaml, json
+import sys, yaml
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
-import datetime
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
@@ -13,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
+from applications.combinatorial_auction.results import save_point_estimate
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -21,7 +21,6 @@ config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
 
 app = config.get("application")
 ERROR_SEED = app.get("error_seed")
-OUTPUT_DIR = APP_DIR / "estimation_results"
 
 if rank == 0:
     input_data = prepare_data_main(
@@ -102,25 +101,4 @@ if rank == 0:
     print(result.theta_hat[1:-3].max())
 
 if rank == 0 and result is not None and app.get("save_results", True):
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    row = {
-        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
-        "winners_only": app.get("winners_only"),
-        "modular_regressors": json.dumps(app.get("modular_regressors", [])),
-        "quadratic_regressors": json.dumps(app.get("quadratic_regressors", [])),
-        "error_seed": ERROR_SEED,
-        "n_obs": bc.n_obs,
-        "n_items": bc.n_items,
-        "n_features": bc.n_features,
-        "pop_dominates_travel": config.get("constraints", {}).get("pop_dominates_travel"),
-        "theta": json.dumps(result.theta.tolist()),
-    }
-    csv_path = OUTPUT_DIR / "point_estimate_runs.csv"
-    fieldnames = list(row.keys())
-    write_header = not csv_path.exists()
-    with open(csv_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+    save_point_estimate(config, result, bc.n_obs, bc.n_items, bc.n_features)

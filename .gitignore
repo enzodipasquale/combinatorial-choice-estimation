@@ -52,7 +52,9 @@ debug/
 debug_se/
 experiments/
 paper/
+# paper/small_scale/
 benchmark_warmstart.py
+applications/combinatorial_auction/counterfactuals
 
 #Other
 my_tests/
@@ -66,3 +68,4 @@ applications/firms_export
 applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/se_bayesian_bootstrap/checkpoints
 applications/combinatorial_auction/se_bayesian_bootstrap/_past_checkpoints
+applications/combinatorial_auction/estimation_results/
