@@ -106,6 +106,10 @@ def _elig_density(ctx):
 def _elig_imwl(ctx):
     return ctx["elig"][:, None] * ctx["imwl"][None, :]
 
+@modular("elig_price")
+def _elig_price(ctx):
+    return ctx["elig"][:, None] * ctx["price"][None, :]
+
 # ── Quadratic regressors (each takes ctx, returns n_items × n_items) ─
 
 @quadratic("adjacency")
@@ -272,7 +276,7 @@ def process_pd_to_np(bidder_data, bta_data):
     assets = bidder_data['assets'].to_numpy() / bidder_data['assets'].max()
     revenues = bidder_data['revenues'].to_numpy() / bidder_data['revenues'].max()
 
-    is_rural = bidder_data['Applicant_Status'].str.contains("Rural Telephone Company").values
+    is_rural = bidder_data['Applicant_Status'].str.contains("Rural Telephone Company").fillna(False).values
 
     return weight, capacity, pop, elig, assets, revenues, is_rural
 
@@ -318,6 +322,7 @@ def build_context(raw_data):
     hhinc35k = bta["hhinc35k"].to_numpy().astype(float)
     density = bta["density"].to_numpy().astype(float) / bta["density"].max()
     imwl = bta["imwl"].to_numpy().astype(float) / bta["imwl"].max()
+    price = bta["bid"].to_numpy().astype(float) / bta["bid"].max()
     return {
         "weight": weight,
         "capacity": capacity,
@@ -336,13 +341,14 @@ def build_context(raw_data):
         "hhinc35k": hhinc35k,
         "density": density,
         "imwl": imwl,
+        "price": price,
     }
 
 # ── Phase 3: feature builder ────────────────────────────────────────
 
 def build_features(registry, names, ctx, rescale=False):
     layers = [registry[name](ctx) for name in names]
-    features = np.stack(layers, axis=-1)
+    features = np.stack(layers, axis=-1).astype(np.float64)
     if rescale:
         spatial_axes = tuple(range(features.ndim - 1))
         features = features / features.std(spatial_axes, keepdims=True)
