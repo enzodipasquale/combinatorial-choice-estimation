@@ -29,6 +29,8 @@ run_with_timeout.sh
 *.ext3
 *.bas
 *.err
+*.json
+*.slurm
 
 
 # Gurobi outputs
