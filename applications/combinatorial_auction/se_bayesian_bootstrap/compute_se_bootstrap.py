@@ -1,9 +1,8 @@
 #!/bin/env python
-import sys, os, csv, yaml, json
+import sys, os, yaml
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
-from datetime import datetime
 
 BASE_DIR = Path(__file__).parent
 APP_DIR = BASE_DIR.parent
@@ -13,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from bundlechoice import BundleChoice
 from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
+from applications.combinatorial_auction.results import save_bootstrap
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -35,7 +35,6 @@ config.setdefault("dimensions", {})["n_simulations"] = N_SIMULATIONS
 
 BOOT_SEED = boot.get("seed")
 ERROR_SEED = app.get("error_seed")
-OUTPUT_DIR = APP_DIR / "estimation_results"
 
 
 if rank == 0:
@@ -95,13 +94,6 @@ if rank == 0:
     print(f"agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
 callbacks = config.get("callbacks")
-# def boot_callback(iter, boot):
-#     if boot.comm_manager.is_root() and config.get("constraints", {}).get("pop_dominates_travel"):
-#         theta, _ = boot.row_gen.master_variables
-#         boot.row_gen.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
-#         boot.row_gen.master_model.update()
-
-
 pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
 _, dist_timeout_cb = adaptive_gurobi_timeout(callbacks['boot'])
 
@@ -126,35 +118,5 @@ se_result = bc.standard_errors.compute_distributed_bootstrap(
 
 
 if rank == 0 and se_result is not None and app.get("save_results", True):
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    row = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
-        "winners_only": app.get("winners_only"),
-        "modular_regressors": json.dumps(app.get("modular_regressors", [])),
-        "quadratic_regressors": json.dumps(app.get("quadratic_regressors", [])),
-        "error_seed": ERROR_SEED,
-        "n_obs": bc.n_obs,
-        "n_items": bc.n_items,
-        "n_features": bc.n_features,
-        "num_bootstrap": NUM_BOOTSTRAP,
-        "bootstrap_seed": BOOT_SEED,
-        "n_samples": se_result.n_samples,
-        "confidence": se_result.confidence,
-        "pop_dominates_travel": config.get("constraints", {}).get("pop_dominates_travel"),
-        "mean_se": float(np.mean(se_result.se)),
-        "max_se": float(np.max(se_result.se)),
-        "theta_mean": json.dumps(se_result.mean.tolist()),
-        "se": json.dumps(se_result.se.tolist()),
-        "ci_lower": json.dumps(se_result.ci_lower.tolist()),
-        "ci_upper": json.dumps(se_result.ci_upper.tolist()),
-        "t_stats": json.dumps(se_result.t_stats.tolist()),
-    }
-    csv_path = OUTPUT_DIR / "se_bootstrap_runs.csv"
-    fieldnames = list(row.keys())
-    write_header = not csv_path.exists()
-    with open(csv_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+    save_bootstrap(config, se_result, bc.n_obs, bc.n_items, bc.n_features,
+                   NUM_BOOTSTRAP, BOOT_SEED)
