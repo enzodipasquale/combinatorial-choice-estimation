@@ -79,6 +79,13 @@ class DataManager:
         self._local_data_version = 0
 
     @property
+    def local_obs_quantity(self):
+        q = self.local_data["id_data"].get("obs_quantity")
+        if q is not None:
+            return np.asarray(q, dtype=np.float64)
+        return np.ones(self.comm_manager.num_local_agent, dtype=np.float64)
+
+    @property
     def quadratic_data_info(self):
         return self._quadratic_data_info(self._local_data_version)
 
@@ -101,7 +108,7 @@ class DataManager:
             assert item_data['quadratic'].shape == (n_items, n_items, quadratic_item_dim)
 
         total_features = modular_agent_dim + modular_item_dim + quadratic_agent_dim + quadratic_item_dim
-        assert total_features == self.dimensions_cfg.n_features
+        assert total_features == self.dimensions_cfg.n_covariates
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):

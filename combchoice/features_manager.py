@@ -1,21 +1,21 @@
 import numpy as np
 from functools import lru_cache
-from bundlechoice.utils import get_logger
+from combchoice.utils import get_logger
 logger = get_logger(__name__)
 
-class OraclesManager:
+class FeaturesManager:
 
     def __init__(self, dimensions_cfg, comm_manager, data_manager):
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
         self.data_manager = data_manager
 
-        self._features_oracle = None
+        self._covariates_oracle = None
         self._error_oracle = None
 
-        self._features_oracle_vectorized = None
+        self._covariates_oracle_vectorized = None
         self._error_oracle_vectorized = None
-        self._features_oracle_takes_data = True
+        self._covariates_oracle_takes_data = True
         self._error_oracle_takes_data = False
         self._local_modular_errors = None
 
@@ -28,7 +28,7 @@ class OraclesManager:
                 test_features = oracle(test_bundles, ids)
             else:
                 test_features = oracle(test_bundles, ids, self.data_manager.local_data)
-            assert test_features.shape == (self.comm_manager.num_local_agent, self.dimensions_cfg.n_features)
+            assert test_features.shape == (self.comm_manager.num_local_agent, self.dimensions_cfg.n_covariates)
             return True
         except (ValueError, IndexError, AssertionError) as e:
             logger.debug(f"Vectorized oracle not supported: {e}")
@@ -40,23 +40,23 @@ class OraclesManager:
         else:
             return False
 
-    def set_features_oracle(self, _features_oracle):
-        self._features_oracle = _features_oracle
-        self._features_oracle_vectorized = self._check_vectorized_oracle_support(_features_oracle)
-        self._features_oracle_takes_data = self._check_oracle_takes_data(_features_oracle)
+    def set_covariates_oracle(self, _covariates_oracle):
+        self._covariates_oracle = _covariates_oracle
+        self._covariates_oracle_vectorized = self._check_vectorized_oracle_support(_covariates_oracle)
+        self._covariates_oracle_takes_data = self._check_oracle_takes_data(_covariates_oracle)
 
     def set_error_oracle(self, _error_oracle):
         self._error_oracle = _error_oracle
         self._error_oracle_vectorized = self._check_vectorized_oracle_support(_error_oracle)
         self._error_oracle_takes_data = self._check_oracle_takes_data(_error_oracle)
     
-    def features_oracle(self, bundles, ids=None):
+    def covariates_oracle(self, bundles, ids=None):
         ids = self.comm_manager.local_agents_arange if ids is None else ids
-        data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
-        if self._features_oracle_vectorized:
-            return self._features_oracle(bundles, ids, *data_arg)
+        data_arg = (self.data_manager.local_data,) if self._covariates_oracle_takes_data else ()
+        if self._covariates_oracle_vectorized:
+            return self._covariates_oracle(bundles, ids, *data_arg)
         else:
-            return np.stack([self._features_oracle(bundles[id], id, *data_arg) for id in ids])
+            return np.stack([self._covariates_oracle(bundles[id], id, *data_arg) for id in ids])
 
     def error_oracle(self, bundles, ids=None):
         ids = self.comm_manager.local_agents_arange if ids is None else ids
@@ -67,19 +67,19 @@ class OraclesManager:
             return np.stack([self._error_oracle(bundles[id], id, *data_arg) for id in ids])
 
     def utility_oracle(self, bundles, theta, ids = None):
-        return self.features_oracle(bundles, ids) @ theta + self.error_oracle(bundles, ids)
+        return self.covariates_oracle(bundles, ids) @ theta + self.error_oracle(bundles, ids)
 
-    def features_and_errors_oracle(self, bundles, ids = None):
-        features = self.features_oracle(bundles, ids)
+    def covariates_and_errors_oracle(self, bundles, ids = None):
+        features = self.covariates_oracle(bundles, ids)
         error = self.error_oracle(bundles, ids)
         return features, error
 
-    def features_oracle_individual(self, bundle, id):
-        data_arg = (self.data_manager.local_data,) if self._features_oracle_takes_data else ()
-        if self._features_oracle_vectorized:
+    def covariates_oracle_individual(self, bundle, id):
+        data_arg = (self.data_manager.local_data,) if self._covariates_oracle_takes_data else ()
+        if self._covariates_oracle_vectorized:
             bundle, id = bundle[None, :], np.atleast_1d(id)
-        ids_arg = np.atleast_1d(id) if self._features_oracle_vectorized else id
-        return self._features_oracle(bundle, ids_arg, *data_arg)
+        ids_arg = np.atleast_1d(id) if self._covariates_oracle_vectorized else id
+        return self._covariates_oracle(bundle, ids_arg, *data_arg)
 
     def error_oracle_individual(self, bundle, id):
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
@@ -88,7 +88,7 @@ class OraclesManager:
         return self._error_oracle(bundle, ids_arg, *data_arg)
 
     def utility_oracle_individual(self, bundle, theta, id):
-        vals = self.features_oracle_individual(bundle, id) @ theta + self.error_oracle_individual(bundle, id)
+        vals = self.covariates_oracle_individual(bundle, id) @ theta + self.error_oracle_individual(bundle, id)
         return vals.ravel()[0] if np.ndim(id) == 0 else vals
 
 
@@ -107,10 +107,10 @@ class OraclesManager:
         self._error_oracle_takes_data = False
         return self._error_oracle
 
-    def build_quadratic_features_from_data(self):
+    def build_quadratic_covariates_from_data(self):
         self.data_manager._validate_quadratic_data_dimensions()
         qinfo = self.data_manager.quadratic_data_info
-        def quadratic_features_oracle(bundles, ids, data):
+        def quadratic_covariates_oracle(bundles, ids, data):
             feats = []
             if qinfo.modular_agent:
                 modular = data["id_data"]['modular'][ids]
@@ -125,8 +125,8 @@ class OraclesManager:
                 quadratic = data["item_data"]['quadratic']
                 feats.append(np.einsum('jlk,ij,il->ik', quadratic, bundles, bundles))
             return np.concatenate(feats, axis=-1)
-        self._features_oracle = quadratic_features_oracle
-        self._features_oracle_vectorized = True
-        self._features_oracle_takes_data = True
-        return self._features_oracle
+        self._covariates_oracle = quadratic_covariates_oracle
+        self._covariates_oracle_vectorized = True
+        self._covariates_oracle_takes_data = True
+        return self._covariates_oracle
 

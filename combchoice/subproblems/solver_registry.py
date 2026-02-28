@@ -19,7 +19,7 @@ class LazyRegistry:
         if name not in REGISTRY:
             return None
         module_path, class_name = REGISTRY[name]
-        module = importlib.import_module(module_path, package='bundlechoice.subproblems')
+        module = importlib.import_module(module_path, package='combchoice.subproblems')
         _cache[name] = getattr(module, class_name)
         return _cache[name]
 

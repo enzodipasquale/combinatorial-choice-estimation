@@ -4,15 +4,15 @@ import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
 from mpi4py import MPI
-from bundlechoice.utils import get_logger, suppress_output, format_number
+from combchoice.utils import get_logger, suppress_output, format_number
 from .base import BaseEstimationManager
 from .result import RowGenerationEstimationResult
 logger = get_logger(__name__)
 
 class RowGenerationManager(BaseEstimationManager):
 
-    def __init__(self, comm_manager, config, data_manager, oracles_manager, subproblem_manager):
-        super().__init__(comm_manager, config, data_manager, oracles_manager, subproblem_manager)
+    def __init__(self, comm_manager, config, data_manager, features_manager, subproblem_manager):
+        super().__init__(comm_manager, config, data_manager, features_manager, subproblem_manager)
         self.master_model = None
         self.master_variables = None
 
@@ -33,9 +33,9 @@ class RowGenerationManager(BaseEstimationManager):
         theta_obj_coef = self.compute_theta_obj_coef(self.local_obs_weights)
         u_obj_coef = self.compute_u_obj_weights(self.local_obs_weights)
         if self.comm_manager.is_root():
-            self.master_model = self._setup_gurobi_model(self.cfg.master_GRB_Params)
-            lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_features)
-            theta = self.master_model.addMVar(self.dim.n_features, 
+            self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
+            lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates)
+            theta = self.master_model.addMVar(self.dim.n_covariates, 
                                                 obj= theta_obj_coef, 
                                                 lb= lb,
                                                 ub= ub, 
@@ -56,7 +56,7 @@ class RowGenerationManager(BaseEstimationManager):
             theta_iter = theta.X
             u_iter = u.X
         else:
-            theta_iter = np.zeros(self.dim.n_features, dtype=np.float64)
+            theta_iter = np.zeros(self.dim.n_covariates, dtype=np.float64)
             u_iter = np.zeros(self.dim.n_agents, dtype=np.float64)
         self.theta_iter = self.comm_manager.Bcast(theta_iter)
         self.u_iter_local = self.comm_manager.Scatterv_by_row(u_iter, 
@@ -80,23 +80,23 @@ class RowGenerationManager(BaseEstimationManager):
 
 
    
-    def solve(self, local_obs_weights=None,
+    def solve(self, resampling_weights=None,
                     initialize_master = True,
                     initialize_solver = True,
                     iteration_callback=None,
                     initialization_callback=None,
                     verbose = False):
-        
-        
+
+
         self.verbose = verbose if verbose is not None else True
         if self.verbose:
             self._log_instance_summary()
         if initialize_solver:
-            self.subproblem_manager.initialize_solver() 
-        if local_obs_weights is None:
-            self.local_obs_weights = np.ones(self.comm_manager.num_local_agent)
+            self.subproblem_manager.initialize_solver()
+        if resampling_weights is not None:
+            self.local_obs_weights = resampling_weights
         else:
-            self.local_obs_weights= local_obs_weights
+            self.local_obs_weights = self.data_manager.local_obs_quantity
 
         if initialize_master:
             self._initialize_master_problem() 
@@ -153,8 +153,8 @@ class RowGenerationManager(BaseEstimationManager):
 
 
     def _compute_local_violations(self, pricing_results, theta, u_local, weights):
-        features_local = self.oracles_manager.features_oracle(pricing_results)
-        errors_local = self.oracles_manager.error_oracle(pricing_results)
+        features_local = self.features_manager.covariates_oracle(pricing_results)
+        errors_local = self.features_manager.error_oracle(pricing_results)
         u_theta = features_local @ theta + errors_local
         weighted_reduced_costs = weights * (u_theta - u_local)
 
@@ -215,8 +215,8 @@ class RowGenerationManager(BaseEstimationManager):
             self.all_concatenated_constraints = gp.concatenate([self.all_concatenated_constraints, constr])
         return constr
     
-    def _setup_gurobi_model(self, master_GRB_Params=None):
-        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(master_GRB_Params or {})}
+    def _setup_gurobi_model(self, master_gurobi_params=None):
+        params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0, **(master_gurobi_params or {})}
         with suppress_output():
             model = gp.Model()
             for k, v in params.items():
@@ -240,9 +240,9 @@ class RowGenerationManager(BaseEstimationManager):
         
         model = self.master_model.copy()
         all_vars = model.getVars()
-        # Variables were added in order: theta (n_features), then u (n_agents)
-        theta = gp.MVar.fromlist(all_vars[:self.dim.n_features])
-        u = gp.MVar.fromlist(all_vars[self.dim.n_features:self.dim.n_features + self.dim.n_agents])
+        # Variables were added in order: theta (n_covariates), then u (n_agents)
+        theta = gp.MVar.fromlist(all_vars[:self.dim.n_covariates])
+        u = gp.MVar.fromlist(all_vars[self.dim.n_covariates:self.dim.n_covariates + self.dim.n_agents])
         return model, (theta, u)
 
     def install_master_model(self, model, variables):
@@ -323,10 +323,10 @@ class RowGenerationManager(BaseEstimationManager):
         if tol is None:
             tol = max(1e-8, self.master_model.Params.FeasibilityTol)
 
-        hit_lower = [k for k in range(self.config.dimensions.n_features)
+        hit_lower = [k for k in range(self.config.dimensions.n_covariates)
                     if theta[k].LB > -GRB.INFINITY and (theta[k].X - theta[k].LB) <= tol]
 
-        hit_upper = [k for k in range(self.config.dimensions.n_features)
+        hit_upper = [k for k in range(self.config.dimensions.n_covariates)
                     if theta[k].UB <  GRB.INFINITY and (theta[k].UB - theta[k].X) <= tol]
 
         return {'hit_lower': hit_lower, 'hit_upper': hit_upper, 'any_hit': bool(hit_lower or hit_upper)}

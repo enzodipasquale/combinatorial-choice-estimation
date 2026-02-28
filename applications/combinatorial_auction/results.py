@@ -56,9 +56,9 @@ def _append_row(csv_path, row):
 
 # ── Save ──────────────────────────────────────────────────────────────
 
-def save_point_estimate(config, result, n_obs, n_items, n_features):
+def save_point_estimate(config, result, n_obs, n_items, n_covariates):
     row = _config_row(config)
-    row.update(n_obs=n_obs, n_items=n_items, n_features=n_features,
+    row.update(n_obs=n_obs, n_items=n_items, n_covariates=n_covariates,
                theta_hat=json.dumps(result.theta_hat.tolist()),
                converged=result.converged,
                num_iterations=result.num_iterations,
@@ -68,10 +68,10 @@ def save_point_estimate(config, result, n_obs, n_items, n_features):
     _append_row(OUTPUT_DIR / POINT_ESTIMATE_CSV, row)
 
 
-def save_bootstrap(config, se_result, n_obs, n_items, n_features,
+def save_bootstrap(config, se_result, n_obs, n_items, n_covariates,
                    num_bootstrap, boot_seed):
     row = _config_row(config)
-    row.update(n_obs=n_obs, n_items=n_items, n_features=n_features,
+    row.update(n_obs=n_obs, n_items=n_items, n_covariates=n_covariates,
                num_bootstrap=num_bootstrap, bootstrap_seed=boot_seed,
                n_samples=se_result.n_samples, confidence=se_result.confidence,
                mean_se=float(np.mean(se_result.se)),
@@ -128,7 +128,7 @@ def load_result(source="point_estimate", run_idx=-1):
         "quadratic_id_regressors": json.loads(row["quadratic_id_regressors"]),
         "n_obs": int(row["n_obs"]),
         "n_items": int(row["n_items"]),
-        "n_features": int(row["n_features"]),
+        "n_covariates": int(row["n_covariates"]),
         "mod_bounds": json.loads(row["mod_bounds"]),
         "quad_bounds": json.loads(row["quad_bounds"]),
         "quad_id_bounds": json.loads(row["quad_id_bounds"]),

@@ -2,7 +2,7 @@ import numpy as np
 import gurobipy as gp
 from ...solver_base import SubproblemSolver
 from .quadratic_obj_base import QuadraticObjectiveMixin
-from bundlechoice.utils import suppress_output
+from combchoice.utils import suppress_output
 
 class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
@@ -15,7 +15,7 @@ class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
                 model = gp.Model()
                 model.setParam('OutputFlag', 0)
                 model.setParam('Threads', 1)
-                for k, v in self.subproblem_cfg.GRB_Params.items():
+                for k, v in self.subproblem_cfg.gurobi_params.items():
                     if v is not None:
                         model.setParam(k, v)
                 model.setAttr('ModelSense', gp.GRB.MAXIMIZE)

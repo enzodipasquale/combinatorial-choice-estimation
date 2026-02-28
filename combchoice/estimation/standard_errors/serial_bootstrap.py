@@ -1,41 +1,18 @@
 import numpy as np
 import gurobipy as gp
-from .result import BayesianBootstrapResult
-from bundlechoice.utils import get_logger, format_number
-logger = get_logger(__name__)
 import time
+from combchoice.utils import get_logger, format_number
 
-class ResamplingMixin:
+logger = get_logger(__name__)
 
-    def generate_weights_bayesian_bootstrap(self, seed, num_bootstrap):
-        rng = np.random.default_rng(seed)
-        if self.comm_manager.is_root():
-            weights = rng.exponential(1.0, (self.dim.n_obs, num_bootstrap))
-            weights /= weights.mean(axis=0, keepdims=True)
-            weights = weights = np.tile(weights, (self.dim.n_simulations, 1))
-        else:
-            weights = None
-        return weights
 
-    def generate_weights_standard_bootstrap(self, seed, num_bootstrap):
-        rng = np.random.default_rng(seed)
-        if self.comm_manager.is_root():
-            weights = rng.multinomial(self.dim.n_obs, 
-                                        pvals=np.ones(self.dim.n_obs) / self.dim.n_obs,
-                                        size=num_bootstrap
-                                    ).T  
-            weights = np.tile(weights, (self.dim.n_simulations, 1))
-        else:
-            weights = None
-        return weights
-
+class SerialBootstrapMixin:
 
     def compute_bootstrap_(self, num_bootstrap=100,
-                                            seed=None,
-                                            verbose=False,
-                                            pt_estimate_callbacks=(None, None),
-                                            bootstrap_callback = None,
-                                            method = 'bayesian'):
+                           seed=None, verbose=False,
+                           pt_estimate_callbacks=(None, None),
+                           bootstrap_callback=None,
+                           method='bayesian'):
         initialization_callback, iteration_callback = pt_estimate_callbacks
         theta_boots = []
         self.bootstrap_history = {}
@@ -43,57 +20,53 @@ class ResamplingMixin:
         self.row_gen = self.row_generation_manager
         self.row_gen.subproblem_manager.initialize_solver()
         t0 = time.perf_counter()
-        if method == 'bayesian':
-            weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
-        elif method == 'standard':
-            weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
 
-        local_weights = self.comm_manager.Scatterv_by_row(weights, 
-                                                            row_counts=self.comm_manager.agent_counts,
-                                                            dtype = np.float64,
-                                                            shape = (self.dim.n_agents, num_bootstrap))
+        gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
+              else self.generate_weights_standard_bootstrap
+        weights = gen(seed, num_bootstrap)
+
+        local_weights = self.comm_manager.Scatterv_by_row(weights,
+                                                          row_counts=self.comm_manager.agent_counts,
+                                                          dtype=np.float64,
+                                                          shape=(self.dim.n_agents, num_bootstrap))
         self.row_gen.local_obs_weights = local_weights[:, 0]
-        self.row_gen._initialize_master_problem() 
-        
+        self.row_gen._initialize_master_problem()
+
         if self.verbose and self.comm_manager.is_root():
             self.row_gen._log_instance_summary()
-            logger.info(" " )
+            logger.info(" ")
             logger.info(" BAYESIAN BOOTSTRAP")
 
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
             if bootstrap_callback is not None:
                 bootstrap_callback(b, self)
-            self.result = self.row_gen.solve(local_obs_weights= local_weights[:, b],
-                                        verbose= False,
-                                        initialize_solver= False,
-                                        initialize_master= False,
-                                        iteration_callback= iteration_callback,
-                                        initialization_callback= initialization_callback)
+            self.result = self.row_gen.solve(resampling_weights=local_weights[:, b],
+                                            verbose=False,
+                                            initialize_solver=False,
+                                            initialize_master=False,
+                                            iteration_callback=iteration_callback,
+                                            initialization_callback=initialization_callback)
             self.boot_time = time.perf_counter() - t_boot
-            
+
             if self.comm_manager.is_root():
                 theta_boots.append(self.row_gen.master_variables[0].X.copy())
                 self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b)
-            
-        
+
         total_time = time.perf_counter() - t0
         if not self.comm_manager.is_root():
             return None
-        
+
         stats_result = self.compute_bootstrap_stats(theta_boots)
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
-        
         return stats_result
 
-
-
     def compute_bootstrap(self, num_bootstrap=100,
-                        seed=None, verbose=False,
-                        pt_estimate_callbacks=(None, None),
-                        bootstrap_callback=None,
-                        method='bayesian'):
+                          seed=None, verbose=False,
+                          pt_estimate_callbacks=(None, None),
+                          bootstrap_callback=None,
+                          method='bayesian'):
         initialization_callback, iteration_callback = pt_estimate_callbacks
         theta_boots = []
         self.bootstrap_history = {}
@@ -101,10 +74,8 @@ class ResamplingMixin:
         self.row_gen = self.row_generation_manager
         t0 = time.perf_counter()
 
-        # === 1. Point estimation with uniform weights ===
-        uniform_weights = np.ones(self.comm_manager.num_local_agent)
+        # === 1. Point estimation (weights default to obs_quantity) ===
         self.point_result = self.row_gen.solve(
-            local_obs_weights=uniform_weights,
             initialize_master=True,
             initialize_solver=True,
             iteration_callback=iteration_callback,
@@ -116,10 +87,9 @@ class ResamplingMixin:
         base_model, base_vars = self.row_gen.copy_master_model()
 
         # === 3. Generate and scatter bootstrap weights ===
-        if method == 'bayesian':
-            weights = self.generate_weights_bayesian_bootstrap(seed, num_bootstrap)
-        elif method == 'standard':
-            weights = self.generate_weights_standard_bootstrap(seed, num_bootstrap)
+        gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
+              else self.generate_weights_standard_bootstrap
+        weights = gen(seed, num_bootstrap)
 
         local_weights = self.comm_manager.Scatterv_by_row(
             weights, row_counts=self.comm_manager.agent_counts,
@@ -133,22 +103,21 @@ class ResamplingMixin:
         # === 4. Bootstrap loop ===
         for b in range(num_bootstrap):
             t_boot = time.perf_counter()
-            
-            # Copy base model → fresh start each boot
+
+            # Copy base model -> fresh start each boot
             if self.comm_manager.is_root():
                 model_b = base_model.copy()
                 all_vars = model_b.getVars()
-                theta_b = gp.MVar.fromlist(all_vars[:self.dim.n_features])
-                u_b = gp.MVar.fromlist(all_vars[self.dim.n_features:
-                                                self.dim.n_features + self.dim.n_agents])
+                theta_b = gp.MVar.fromlist(all_vars[:self.dim.n_covariates])
+                u_b = gp.MVar.fromlist(all_vars[self.dim.n_covariates:
+                                                self.dim.n_covariates + self.dim.n_agents])
                 self.row_gen.install_master_model(model_b, (theta_b, u_b))
-        
+
             if bootstrap_callback is not None:
                 bootstrap_callback(b, self)
 
-            # solve with initialize_master=False: updates obj, re-optimizes, then row-generates
             self.result = self.row_gen.solve(
-                local_obs_weights=local_weights[:, b],
+                resampling_weights=local_weights[:, b],
                 verbose=False,
                 initialize_solver=False,
                 initialize_master=False,
@@ -171,16 +140,20 @@ class ResamplingMixin:
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         return stats_result
 
+    # ------------------------------------------------------------------
+    # Serial-specific logging
+    # ------------------------------------------------------------------
+
     def _update_bootstrap_info(self, bootstrap_iter):
         if not self.comm_manager.is_root():
             return
         if bootstrap_iter not in self.bootstrap_history:
             self.bootstrap_history[bootstrap_iter] = {}
-        
+
         pricing_times, master_times = self.result.timing if isinstance(self.result.timing, tuple) else ([], [])
         total_pricing_time = sum(pricing_times) if pricing_times else 0.0
         total_master_time = sum(master_times) if master_times else 0.0
-        
+
         self.bootstrap_history[bootstrap_iter].update({
             'time': self.boot_time,
             'iterations': self.result.num_iterations,
@@ -190,18 +163,18 @@ class ResamplingMixin:
             'pricing_time': total_pricing_time,
             'master_time': total_master_time,
             'reduced_cost': self.result.final_reduced_cost,
-            'n_violations': self.result.final_n_violations 
+            'n_violations': self.result.final_n_violations
         })
 
     def _log_bootstrap_iteration(self, bootstrap_iter):
         if not self.comm_manager.is_root() or not self.verbose:
             return
-        info = self.bootstrap_history[bootstrap_iter]    
+        info = self.bootstrap_history[bootstrap_iter]
         if self.config.standard_errors.parameters_to_log is not None:
             param_indices = self.config.standard_errors.parameters_to_log
         else:
-            param_indices = list(range(min(5, self.dim.n_features)))
-        
+            param_indices = list(range(min(5, self.dim.n_covariates)))
+
         if bootstrap_iter % 100 == 0:
             param_width = len(param_indices) * 11 - 1
             header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
@@ -230,46 +203,18 @@ class ResamplingMixin:
     def _log_bootstrap_summary(self, n_bootstrap, total_time, result):
         if not self.comm_manager.is_root():
             return
-        
+
         if self.config.standard_errors.parameters_to_log is not None:
             param_indices = self.config.standard_errors.parameters_to_log
         else:
-            param_indices = list(range(min(5, self.dim.n_features)))
-        
-        logger.info(" " )
+            param_indices = list(range(min(5, self.dim.n_covariates)))
+
+        logger.info(" ")
         logger.info("-"*55)
-        logger.info(f" BAYESIAN BOOTSTRAP SUMMARY: {n_bootstrap} samples in {total_time:.1f}s")
+        logger.info(f" SERIAL BOOTSTRAP SUMMARY: {n_bootstrap} samples in {total_time:.1f}s")
         logger.info("-"*55)
         logger.info(f"{'Param':>6} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
         logger.info("-"*55)
         for i in param_indices:
             logger.info(f"θ[{i:>3}] | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
         logger.info("-"*55)
-
- 
-
-    def compute_bootstrap_stats(self, theta_boots, theta_hat=None, confidence=0.95):
-        if not self.comm_manager.is_root():
-            return None
-        
-        theta_boots = np.asarray(theta_boots)
-        n_samples, _ = theta_boots.shape
-        
-        mean = theta_boots.mean(axis=0)
-        se = theta_boots.std(axis=0, ddof=1)
-        point_est = theta_hat if theta_hat is not None else mean
-        t_stats = np.where(se > 1e-16, mean / se, np.nan)
-        alpha = 1 - confidence
-        ci_lower = np.percentile(theta_boots, 100 * alpha / 2, axis=0)
-        ci_upper = np.percentile(theta_boots, 100 * (1 - alpha / 2), axis=0)
-        return BayesianBootstrapResult(
-            mean=mean,
-            se=se,
-            t_stats=t_stats,
-            n_samples=n_samples,
-            ci_lower=ci_lower,
-            ci_upper=ci_upper,
-            confidence=confidence,
-            samples=theta_boots,
-        )
-

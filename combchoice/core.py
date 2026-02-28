@@ -1,25 +1,25 @@
 from mpi4py import MPI
 from pathlib import Path
-from bundlechoice.config import BundleChoiceConfig
-from bundlechoice.comm_manager import CommManager
-from bundlechoice.data_manager import DataManager
-from bundlechoice.oracles_manager import OraclesManager
-from bundlechoice.subproblems.subproblem_manager import SubproblemManager
-from bundlechoice.estimation import RowGenerationManager
-from bundlechoice.estimation.standard_errors import StandardErrorsManager
-from bundlechoice.utils import get_logger
+from combchoice.config import ModelConfig
+from combchoice.comm_manager import CommManager
+from combchoice.data_manager import DataManager
+from combchoice.features_manager import FeaturesManager
+from combchoice.subproblems.subproblem_manager import SubproblemManager
+from combchoice.estimation import RowGenerationManager
+from combchoice.estimation.standard_errors import StandardErrorsManager
+from combchoice.utils import get_logger
 
 logger = get_logger(__name__)
 
-class BundleChoice:
+class Model:
 
     def __init__(self) -> None:
-        self.config = cfg = BundleChoiceConfig()
+        self.config = cfg = ModelConfig()
         self.comm_manager = comm = CommManager(MPI.COMM_WORLD)
         self.data_manager = data = DataManager(cfg.dimensions, comm)
-        self.oracles_manager = oracles = OraclesManager(cfg.dimensions, comm, data)
+        self.features_manager = features = FeaturesManager(cfg.dimensions, comm, data)
 
-        base = (comm, cfg, data, oracles)
+        base = (comm, cfg, data, features)
         self.subproblem_manager = subpb = SubproblemManager(*base)
         base_est = (*base, subpb)
         self.row_generation_manager = row_gen = RowGenerationManager(*base_est)
@@ -30,8 +30,8 @@ class BundleChoice:
         return self.data_manager
 
     @property
-    def oracles(self) -> 'OraclesManager':
-        return self.oracles_manager
+    def features(self) -> 'FeaturesManager':
+        return self.features_manager
 
     @property
     def subproblems(self) -> 'SubproblemManager':
@@ -54,8 +54,8 @@ class BundleChoice:
         return self.config.dimensions.n_items
 
     @property
-    def n_features(self) -> int:
-        return self.config.dimensions.n_features
+    def n_covariates(self) -> int:
+        return self.config.dimensions.n_covariates
 
     @property
     def n_simulations(self) -> int:
@@ -70,9 +70,9 @@ class BundleChoice:
 
     def load_config(self, cfg):
         if isinstance(cfg, (str, Path)):
-            cfg = BundleChoiceConfig.from_yaml(cfg)
+            cfg = ModelConfig.from_yaml(cfg)
         elif isinstance(cfg, dict):
-            cfg = BundleChoiceConfig.from_dict(cfg)
+            cfg = ModelConfig.from_dict(cfg)
         cfg = self.comm_manager.bcast(cfg)
         self.config.update_in_place(cfg)
         self.comm_manager.init_assignment(self.config.dimensions)

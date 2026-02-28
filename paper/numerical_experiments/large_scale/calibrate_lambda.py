@@ -8,7 +8,7 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
+import combchoice as cc
 from paper.numerical_experiments.large_scale.generate_data import generate_data
 
 
@@ -26,7 +26,7 @@ def bundle_stats(spec, M, alpha=0.1, lambda_val=None, N=25, seed=0, sigma=1.0):
                       "supermodular": "QuadraticSupermodularMinCut",
                       "linear_knapsack": "LinearKnapsackGRB"}[spec]
         dim_cfg = {"n_obs": N, "n_items": M,
-                   "n_features": n_mod_agent + n_mod_item + n_quad_agent + n_quad_item,
+                   "n_covariates": n_mod_agent + n_mod_item + n_quad_agent + n_quad_item,
                    "n_simulations": 1}
     else:
         input_data = theta_star = dim_cfg = subproblem = None
@@ -34,16 +34,16 @@ def bundle_stats(spec, M, alpha=0.1, lambda_val=None, N=25, seed=0, sigma=1.0):
     dim_cfg = comm.bcast(dim_cfg, root=0)
     subproblem = comm.bcast(subproblem, root=0)
 
-    bc = BundleChoice()
-    bc.load_config({"dimensions": dim_cfg, "subproblem": {"name": subproblem},
+    model = cc.Model()
+    model.load_config({"dimensions": dim_cfg, "subproblem": {"name": subproblem},
                      "row_generation": {"theta_bounds": {"lb": -100, "ub": 100}}})
-    bc.data.load_and_distribute_input_data(input_data)
-    bc.oracles.build_quadratic_features_from_data()
-    bc.oracles.build_local_modular_error_oracle(seed=3 * seed + 1, sigma=sigma)
-    bc.subproblems.load_solver()
+    model.data.load_and_distribute_input_data(input_data)
+    model.features.build_quadratic_covariates_from_data()
+    model.features.build_local_modular_error_oracle(seed=3 * seed + 1, sigma=sigma)
+    model.subproblems.load_solver()
 
     theta_star = comm.bcast(theta_star, root=0)
-    obs_bundles = bc.subproblems.generate_obs_bundles(theta_star)
+    obs_bundles = model.subproblems.generate_obs_bundles(theta_star)
 
     if rank != 0:
         return None

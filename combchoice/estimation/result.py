@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import numpy as np
 
-from bundlechoice.utils import get_logger, format_number
+from combchoice.utils import get_logger, format_number
 
 logger = get_logger(__name__)
 

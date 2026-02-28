@@ -9,8 +9,8 @@ APP_DIR = BASE_DIR.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
-from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+import combchoice as cc
+from combchoice.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 from applications.combinatorial_auction.results import save_bootstrap
 
@@ -51,13 +51,13 @@ if rank == 0:
     n_item_mod = input_data["item_data"]["modular"].shape[-1]
     n_id_quad = input_data["id_data"]["quadratic"].shape[-1] if "quadratic" in input_data["id_data"] else 0
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
-    n_features = n_id_mod + n_item_mod + n_id_quad + n_item_quad
+    n_covariates = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
-    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
+    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_covariates": n_covariates}
     id_mod_indices = list(range(n_id_mod))
     id_quad_offset = n_id_mod + n_item_mod
     id_quad_indices = list(range(id_quad_offset, id_quad_offset + n_id_quad))
-    item_quad_indices = list(range(n_features - n_item_quad, n_features))
+    item_quad_indices = list(range(n_covariates - n_item_quad, n_covariates))
     config["standard_errors"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
     config["row_generation"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
     config["dimensions"].update(dim_cfg)
@@ -83,15 +83,15 @@ else:
 
 config = comm.bcast(config, root=0)
 
-bc = BundleChoice()
-bc.load_config(config)
-bc.data.load_and_distribute_input_data(input_data)
-bc.oracles.build_quadratic_features_from_data()
-bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
-bc.subproblems.load_solver()
+auction = cc.Model()
+auction.load_config(config)
+auction.data.load_and_distribute_input_data(input_data)
+auction.features.build_quadratic_covariates_from_data()
+auction.features.build_local_modular_error_oracle(seed=ERROR_SEED)
+auction.subproblems.load_solver()
 
 if rank == 0:
-    print(f"agents={bc.n_obs}, items={bc.n_items}, bootstrap={NUM_BOOTSTRAP}")
+    print(f"agents={auction.n_obs}, items={auction.n_items}, bootstrap={NUM_BOOTSTRAP}")
 
 callbacks = config.get("callbacks")
 pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
@@ -104,7 +104,7 @@ def boot_callback(iter, boot, master):
         master.strip_slack_constraints(percentile=callbacks['boot_strip']["percentile"], hard_threshold = callbacks['boot_strip']["hard_threshold"])
 
 checkpoint_dir = str(BASE_DIR)
-se_result = bc.standard_errors.compute_distributed_bootstrap(
+se_result = auction.standard_errors.compute_distributed_bootstrap(
     num_bootstrap=NUM_BOOTSTRAP,
     seed=BOOT_SEED,
     verbose=True,
@@ -118,5 +118,5 @@ se_result = bc.standard_errors.compute_distributed_bootstrap(
 
 
 if rank == 0 and se_result is not None and app.get("save_results", True):
-    save_bootstrap(config, se_result, bc.n_obs, bc.n_items, bc.n_features,
+    save_bootstrap(config, se_result, auction.n_obs, auction.n_items, auction.n_covariates,
                    NUM_BOOTSTRAP, BOOT_SEED)
