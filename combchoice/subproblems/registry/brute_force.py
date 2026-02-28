@@ -14,7 +14,7 @@ class BruteForceSolver(SubproblemSolver):
         for i in range(n_agents):
             best_value, best_bundle = float('-inf'), None
             for bundle in self._all_bundles:
-                value = self.oracles_manager.utility_oracle_individual(bundle, theta, i)
+                value = self.features_manager.utility_oracle_individual(bundle, theta, i)
                 if value > best_value:
                     best_value, best_bundle = value, bundle.copy()
             results[i] = best_bundle

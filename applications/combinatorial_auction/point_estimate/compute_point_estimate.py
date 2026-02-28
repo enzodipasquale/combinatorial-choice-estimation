@@ -9,8 +9,8 @@ APP_DIR = BASE_DIR.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
-from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+import combchoice as cc
+from combchoice.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 from applications.combinatorial_auction.results import save_point_estimate
 
@@ -36,13 +36,13 @@ if rank == 0:
     n_item_mod = input_data["item_data"]["modular"].shape[-1]
     n_id_quad = input_data["id_data"]["quadratic"].shape[-1] if "quadratic" in input_data["id_data"] else 0
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
-    n_features = n_id_mod + n_item_mod + n_id_quad + n_item_quad
+    n_covariates = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
-    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_features": n_features}
+    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_covariates": n_covariates}
     id_mod_indices = list(range(n_id_mod))
     id_quad_offset = n_id_mod + n_item_mod
     id_quad_indices = list(range(id_quad_offset, id_quad_offset + n_id_quad))
-    item_quad_indices = list(range(n_features - n_item_quad, n_features))
+    item_quad_indices = list(range(n_covariates - n_item_quad, n_covariates))
     config["row_generation"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
     config["dimensions"].update(dim_cfg)
     mod_b = app.get('mod_bounds', {})
@@ -69,29 +69,29 @@ else:
 
 config = comm.bcast(config, root=0)
 
-bc = BundleChoice()
-bc.load_config(config)
-bc.data.load_and_distribute_input_data(input_data)
-bc.oracles.build_quadratic_features_from_data()
-bc.oracles.build_local_modular_error_oracle(seed=ERROR_SEED)
-bc.subproblems.load_solver()
+auction = cc.Model()
+auction.load_config(config)
+auction.data.load_and_distribute_input_data(input_data)
+auction.features.build_quadratic_covariates_from_data()
+auction.features.build_local_modular_error_oracle(seed=ERROR_SEED)
+auction.subproblems.load_solver()
 
 if config.get("constraints", {}).get("pop_dominates_travel"):
     def custom_constraint(row_gen_manager):
         theta, u = row_gen_manager.master_variables
         row_gen_manager.master_model.addConstr(theta[-3] + theta[-2] + theta[-1] >= 0, "pop_dominates_travel")
         row_gen_manager.master_model.update()
-    bc.config.row_generation.initialization_callback = custom_constraint
+    auction.config.row_generation.initialization_callback = custom_constraint
 
 callbacks = config.get("callbacks")
 
 if rank == 0:
-    print(f"agents={bc.n_obs}, items={bc.n_items}, features={bc.n_features}")
+    print(f"agents={auction.n_obs}, items={auction.n_items}, features={auction.n_covariates}")
 
 pt_timeout_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
 
 # Pass it to solve
-result = bc.row_generation.solve(
+result = auction.row_generation.solve(
     iteration_callback=pt_timeout_cb,
     verbose=True
 )
@@ -101,4 +101,4 @@ if rank == 0:
     print(result.theta_hat[1:-3].max())
 
 if rank == 0 and result is not None and app.get("save_results", True):
-    save_point_estimate(config, result, bc.n_obs, bc.n_items, bc.n_features)
+    save_point_estimate(config, result, auction.n_obs, auction.n_items, auction.n_covariates)

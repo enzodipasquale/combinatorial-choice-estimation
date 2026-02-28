@@ -18,13 +18,13 @@ class GreedySolver(SubproblemSolver):
     def _naive_greedy_solve(self, local_id, theta):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
-        base_utility = self.oracles_manager.utility_oracle_individual(bundle, theta, local_id)
+        base_utility = self.features_manager.utility_oracle_individual(bundle, theta, local_id)
 
         while np.any(items_left):
             best_item, best_utility = None, base_utility
             for j in np.where(items_left)[0]:
                 bundle[j] = True
-                utility = self.oracles_manager.utility_oracle_individual(bundle, theta, local_id)
+                utility = self.features_manager.utility_oracle_individual(bundle, theta, local_id)
                 if utility > best_utility:
                     best_item, best_utility = j, utility
                 bundle[j] = False
@@ -36,7 +36,7 @@ class GreedySolver(SubproblemSolver):
         return bundle
 
     def _greedy_with_find_best_item(self, local_id, theta):
-        modular_error = self.oracles_manager._local_modular_errors[local_id]
+        modular_error = self.features_manager._local_modular_errors[local_id]
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0

@@ -21,9 +21,9 @@ class ConfigMixin:
 class DimensionsConfig(ConfigMixin):
     n_obs: int = None
     n_items: int = None
-    n_features: int = None
+    n_covariates: int = None
     n_simulations: int = 1
-    feature_names: list = None
+    covariate_names: list = None
 
     @property
     def n_agents(self):
@@ -35,17 +35,17 @@ class DimensionsConfig(ConfigMixin):
 @dataclass
 class SubproblemConfig(ConfigMixin):
     name: str = None
-    GRB_Params: dict = field(default_factory=dict)
+    gurobi_params: dict = field(default_factory=dict)
 
-def theta_bounds_arrays(theta_bounds, n_features, default_lb=0, default_ub=10000):
+def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=10000):
     if not theta_bounds:
         return default_lb, default_ub
 
     lb = theta_bounds.get("lb", default_lb)
     ub = theta_bounds.get("ub", default_ub)
 
-    theta_lbs = np.full(n_features, float(lb))
-    theta_ubs = np.full(n_features, float(ub))
+    theta_lbs = np.full(n_covariates, float(lb))
+    theta_ubs = np.full(n_covariates, float(ub))
 
     for k, v in (theta_bounds.get("lbs") or {}).items():
         theta_lbs[int(k)] = float(v)
@@ -60,7 +60,7 @@ class RowGenerationConfig(ConfigMixin):
     tolerance: float = 1e-6
     max_iters: float = float('inf')
     min_iters: int = 0
-    master_GRB_Params: dict = field(default_factory=dict)
+    master_gurobi_params: dict = field(default_factory=dict)
     theta_ubs: float = 1000
     theta_lbs: float = 0
     theta_bounds: dict = None
@@ -68,8 +68,8 @@ class RowGenerationConfig(ConfigMixin):
     verbose: bool = True
     save_master_model_dir: str = None
 
-    def theta_bounds_arrays(self, n_features: int):
-        return theta_bounds_arrays(self.theta_bounds, n_features, self.theta_lbs, self.theta_ubs)
+    def theta_bounds_arrays(self, n_covariates: int):
+        return theta_bounds_arrays(self.theta_bounds, n_covariates, self.theta_lbs, self.theta_ubs)
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):
@@ -89,15 +89,15 @@ class StandardErrorsConfig(ConfigMixin):
     rowgen_tol: float = 1e-6
     rowgen_max_iters: int = 1000
     rowgen_min_iters: int = 0
-    master_GRB_Params: dict = field(default_factory=dict)
+    master_gurobi_params: dict = field(default_factory=dict)
     parameters_to_log: list = None
     theta_bounds: dict = None
 
-    def theta_bounds_arrays(self, n_features: int):
-        return theta_bounds_arrays(self.theta_bounds, n_features)
+    def theta_bounds_arrays(self, n_covariates: int):
+        return theta_bounds_arrays(self.theta_bounds, n_covariates)
 
 @dataclass
-class BundleChoiceConfig(ConfigMixin):
+class ModelConfig(ConfigMixin):
     dimensions: DimensionsConfig = field(default_factory=DimensionsConfig)
     subproblem: SubproblemConfig = field(default_factory=SubproblemConfig)
     row_generation: RowGenerationConfig = field(default_factory=RowGenerationConfig)

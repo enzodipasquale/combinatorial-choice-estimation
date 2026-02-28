@@ -1,17 +1,17 @@
 import numpy as np
 from functools import lru_cache
-from bundlechoice.utils import get_logger
+from combchoice.utils import get_logger
 from .result import RowGenerationEstimationResult
 
 logger = get_logger(__name__)
 
 class BaseEstimationManager:
 
-    def __init__(self, comm_manager, config, data_manager, oracles_manager, subproblem_manager):
+    def __init__(self, comm_manager, config, data_manager, features_manager, subproblem_manager):
         self.comm_manager = comm_manager
         self.config = config
         self.data_manager = data_manager
-        self.oracles_manager = oracles_manager
+        self.features_manager = features_manager
         self.subproblem_manager = subproblem_manager
 
         self.theta_iter = None
@@ -20,21 +20,21 @@ class BaseEstimationManager:
 
     def compute_theta_obj_coef(self, local_obs_weights = None):
         if local_obs_weights is None:
-            local_obs_weights = np.ones(self.comm_manager.num_local_agent)
-        local_obs_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
+            local_obs_weights = self.data_manager.local_obs_quantity
+        local_obs_features = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
         return self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_features)
-    
+
     def compute_u_obj_weights(self, local_obs_weights = None):
         if local_obs_weights is None:
-            local_obs_weights = np.ones(self.comm_manager.num_local_agent)
+            local_obs_weights = self.data_manager.local_obs_quantity
         all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.comm_manager.agent_counts)
         return all_weights if self.comm_manager.is_root() else None
 
     def compute_obj_and_grad_at_root(self, theta, local_obs_weights = None):
     
         bundles = self.subproblem_manager.solve(theta)
-        features = self.oracles_manager.features_oracle(bundles)
-        utility = self.oracles_manager.utility_oracle(bundles, theta)
+        features = self.features_manager.covariates_oracle(bundles)
+        utility = self.features_manager.utility_oracle(bundles, theta)
 
         features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
@@ -49,7 +49,7 @@ class BaseEstimationManager:
 
     def compute_obj(self, theta, local_obs_weights = None):
         bundles = self.subproblem_manager.solve(theta)
-        utility = self.oracles_manager.utility_oracle(bundles, theta)
+        utility = self.features_manager.utility_oracle(bundles, theta)
         utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
         theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
         if self.comm_manager.is_root():
@@ -59,7 +59,7 @@ class BaseEstimationManager:
     
     def compute_grad(self, theta, local_obs_weights = None):
         bundles = self.subproblem_manager.solve(theta)
-        features = self.oracles_manager.features_oracle(bundles)
+        features = self.features_manager.covariates_oracle(bundles)
         theta_obj_coef = self.compute_theta_obj_coef(local_obs_weights)
         features_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * features)
         if self.comm_manager.is_root():
@@ -85,15 +85,15 @@ class BaseEstimationManager:
         metadata = {
             'n_obs': dim.n_obs,
             'n_items': dim.n_items,
-            'n_features': dim.n_features,
+            'n_covariates': dim.n_covariates,
             'n_simulations': dim.n_simulations,
             'comm_size': self.comm_manager.comm_size,
             'subproblem': self.config.subproblem.name,
         }
  
-        header = (f"{'n_obs':>6} | {'n_items':>8} | {'n_features':>11} | {'n_simulations':>14} |"
+        header = (f"{'n_obs':>6} | {'n_items':>8} | {'n_covariates':>11} | {'n_simulations':>14} |"
                   +f" {'comm_size':>10} | {'subproblem':>20}")
-        values = (f"{metadata['n_obs']:>6} | {metadata['n_items']:>8} | {metadata['n_features']:>11} |"
+        values = (f"{metadata['n_obs']:>6} | {metadata['n_items']:>8} | {metadata['n_covariates']:>11} |"
                   +f" {metadata['n_simulations']:>14} | {metadata['comm_size']:>10} | {metadata['subproblem'] or 'N/A':>20}")
         logger.info(" PROBLEM METADATA")
         logger.info("-"*90)

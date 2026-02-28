@@ -4,8 +4,8 @@ import json
 import numpy as np
 import gurobipy as gp
 from mpi4py import MPI
-from bundlechoice.utils import get_logger, suppress_output, format_number
-from bundlechoice.estimation.result import RowGenerationEstimationResult
+from combchoice.utils import get_logger, suppress_output, format_number
+from combchoice.estimation.result import RowGenerationEstimationResult
 
 logger = get_logger(__name__)
 
@@ -20,9 +20,9 @@ def _load_gurobi_model(lp_path, sol_path=None):
     return model
 
 
-def _extract_master_vars(model, n_features, n_agents):
+def _extract_master_vars(model, n_covariates, n_agents):
     vs = model.getVars()
-    return gp.MVar.fromlist(vs[:n_features]), gp.MVar.fromlist(vs[n_features:n_features + n_agents])
+    return gp.MVar.fromlist(vs[:n_covariates]), gp.MVar.fromlist(vs[n_covariates:n_covariates + n_agents])
 
 
 def _parse_theta_from_sol(sol_path):
@@ -49,12 +49,12 @@ class BootstrapMaster:
         self.u = u
 
     @classmethod
-    def build(cls, base_data, theta_obj, u_weights, grb_params=None):
+    def build(cls, base_data, theta_obj, u_weights, gurobi_params=None):
         A, rhs, sense = base_data['A'], base_data['rhs'], base_data['sense']
         with suppress_output():
             model = gp.Model()
             params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0}
-            params.update(grb_params or {})
+            params.update(gurobi_params or {})
             for p, v in params.items():
                 if v is not None:
                     model.setParam(p, v)
@@ -73,10 +73,10 @@ class BootstrapMaster:
         return cls(model, theta, u)
 
     @classmethod
-    def load(cls, path, n_features, n_agents):
+    def load(cls, path, n_covariates, n_agents):
         model = _load_gurobi_model(os.path.join(path, "master.lp"),
                                    os.path.join(path, "master.sol"))
-        theta, u = _extract_master_vars(model, n_features, n_agents)
+        theta, u = _extract_master_vars(model, n_covariates, n_agents)
         meta_path = os.path.join(path, "meta.json")
         converged = False
         if os.path.exists(meta_path):
@@ -139,7 +139,7 @@ class BootstrapState:
         self.dim = dim
         self.comm_manager = comm_manager
 
-        nf, na = dim.n_features, dim.n_agents
+        nf, na = dim.n_covariates, dim.n_agents
         self.active = np.ones(num_bootstrap, dtype=np.int32)
         self.theta_vals = np.zeros((num_bootstrap, nf), dtype=np.float64)
         self.u_vals = np.zeros((num_bootstrap, na), dtype=np.float64)
@@ -282,7 +282,6 @@ class DistributedBootstrapMixin:
                 return
 
         self.point_result = self.row_generation_manager.solve(
-            local_obs_weights=np.ones(self.comm_manager.num_local_agent),
             initialize_master=init_master, initialize_solver=init_master,
             iteration_callback=iteration_callback,
             initialization_callback=initialization_callback,
@@ -294,7 +293,7 @@ class DistributedBootstrapMixin:
             model = _load_gurobi_model(
                 os.path.join(pt_dir, "master.lp"),
                 os.path.join(pt_dir, "master.sol"))
-            theta, u = _extract_master_vars(model, self.dim.n_features, self.dim.n_agents)
+            theta, u = _extract_master_vars(model, self.dim.n_covariates, self.dim.n_agents)
             self.row_generation_manager.install_master_model(model, (theta, u))
             theta_hat = theta.X.copy()
             meta_path = os.path.join(pt_dir, "meta.json")
@@ -302,7 +301,7 @@ class DistributedBootstrapMixin:
                 with open(meta_path) as f:
                     converged = json.load(f).get('converged', False)
         else:
-            theta_hat = np.zeros(self.dim.n_features, dtype=np.float64)
+            theta_hat = np.zeros(self.dim.n_covariates, dtype=np.float64)
 
         converged = self.comm_manager.bcast(converged)
         self.comm_manager.Bcast(theta_hat)
@@ -313,7 +312,7 @@ class DistributedBootstrapMixin:
 
         if self.verbose and self.comm_manager.is_root():
             idx = self.config.standard_errors.parameters_to_log \
-                  or list(range(min(5, self.dim.n_features)))
+                  or list(range(min(5, self.dim.n_covariates)))
             logger.info(" LOADED point estimate from %s (%s)",
                         pt_dir, "converged" if converged else "not converged")
             logger.info(" θ = [%s]", ', '.join(f'{theta_hat[i]:.5f}' for i in idx))
@@ -345,8 +344,8 @@ class DistributedBootstrapMixin:
                 'A': model.getA().toarray(),
                 'rhs': np.array(model.getAttr('RHS', model.getConstrs())),
                 'sense': np.array([c.Sense for c in model.getConstrs()]),
-                'theta_lb': np.array([theta[i].LB for i in range(self.dim.n_features)]),
-                'theta_ub': np.array([theta[i].UB for i in range(self.dim.n_features)]),
+                'theta_lb': np.array([theta[i].LB for i in range(self.dim.n_covariates)]),
+                'theta_ub': np.array([theta[i].UB for i in range(self.dim.n_covariates)]),
             }
         else:
             data = {}
@@ -356,7 +355,7 @@ class DistributedBootstrapMixin:
         se_bounds = self.config.standard_errors.theta_bounds
         if se_bounds:
             data['theta_lb'], data['theta_ub'] = self.config.standard_errors.theta_bounds_arrays(
-                self.dim.n_features)
+                self.dim.n_covariates)
 
         return data
 
@@ -392,7 +391,7 @@ class DistributedBootstrapMixin:
     # -------------------------------------------------------------------------
 
     def _phase_build_masters(self, base_data, boot_agent_weights, load_dir, state):
-        local_features = self.oracles_manager.features_oracle(self.data_manager.local_obs_bundles)
+        local_features = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
         local_theta_obj = -self._local_weights.T @ local_features
         theta_obj_all = np.zeros_like(local_theta_obj)
         self.comm_manager.comm.Allreduce(local_theta_obj, theta_obj_all, op=MPI.SUM)
@@ -405,7 +404,7 @@ class DistributedBootstrapMixin:
                         if load_dir else None)
             if boot_dir and os.path.exists(os.path.join(boot_dir, "master.lp")):
                 master, is_converged = BootstrapMaster.load(
-                    boot_dir, self.dim.n_features, self.dim.n_agents)
+                    boot_dir, self.dim.n_covariates, self.dim.n_agents)
                 if self.verbose:
                     logger.info(" Rank %d: loaded boot %d from %s (%s)",
                                 self.comm_manager.rank, state.boot_id, boot_dir,
@@ -413,7 +412,7 @@ class DistributedBootstrapMixin:
             else:
                 master = BootstrapMaster.build(
                     base_data, theta_obj_all[state.boot_id], boot_agent_weights,
-                    self.config.standard_errors.master_GRB_Params)
+                    self.config.standard_errors.master_gurobi_params)
 
         return master, is_converged
 
@@ -430,9 +429,9 @@ class DistributedBootstrapMixin:
         for b, boot in enumerate(active):
             bundles[b] = self.subproblem_manager.solve(state.theta_vals[boot])
 
-        features, errors = self.oracles_manager.features_and_errors_oracle(
+        features, errors = self.features_manager.covariates_and_errors_oracle(
             bundles.reshape(-1, state.dim.n_items), state.tile_local_ids())
-        features = features.reshape(n_active, n_local, state.dim.n_features)
+        features = features.reshape(n_active, n_local, state.dim.n_covariates)
         errors = errors.reshape(n_active, n_local)
 
         u_cuts = np.einsum('bif,bf->bi', features, state.theta_vals[active]) + errors
@@ -502,7 +501,7 @@ class DistributedBootstrapMixin:
             # --- Step 5: Add cuts, re-solve, retire ---
             t_master = time.perf_counter()
             if state.has_active_boot and not converged_mask[state.boot_id]:
-                master.add_cuts(recvbuf.reshape(-1, state.dim.n_features + 2))
+                master.add_cuts(recvbuf.reshape(-1, state.dim.n_covariates + 2))
                 master.model.optimize()
 
             self.comm_manager.comm.Barrier()
@@ -564,8 +563,8 @@ class DistributedBootstrapMixin:
 
     def _log_boot_details(self, boot_ids, state):
         param_idx = self.config.standard_errors.parameters_to_log \
-                    or list(range(min(5, self.dim.n_features)))
-        range_idx = [i for i in range(self.dim.n_features) if i not in param_idx]
+                    or list(range(min(5, self.dim.n_covariates)))
+        range_idx = [i for i in range(self.dim.n_covariates) if i not in param_idx]
         hdr_params = ''.join(f"{'θ['+str(i)+']':>12}" for i in param_idx)
         logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
                     "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
@@ -603,7 +602,7 @@ class DistributedBootstrapMixin:
         if self.verbose:
             theta_hat = self.point_result.theta_hat
             idx = self.config.standard_errors.parameters_to_log \
-                  or list(range(min(5, self.dim.n_features)))
+                  or list(range(min(5, self.dim.n_covariates)))
             logger.info(" ")
             if n_non_converged > 0:
                 logger.info(" WARNING: %d of %d bootstrap samples did not converge",

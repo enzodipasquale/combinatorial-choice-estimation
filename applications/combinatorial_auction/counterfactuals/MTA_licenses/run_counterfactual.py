@@ -12,8 +12,8 @@ APP_DIR = BASE_DIR.parent.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
-from bundlechoice.estimation.callbacks import adaptive_gurobi_timeout
+import combchoice as cc
+from combchoice.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
     main as prepare_mta,
 )
@@ -48,7 +48,7 @@ theta_est_rescaled = theta_est / alpha_1
 
 if rank == 0:
     print(f"Loaded {est_cfg['source']} run (idx={est_cfg['run_idx']}): "
-          f"n_features={est['n_features']}, quad={est['quadratic_regressors']}")
+          f"n_covariates={est['n_covariates']}, quad={est['quadratic_regressors']}")
     print(f"FE decomp: α₁={alpha_1:.2e}")
     print(f"Rescaled theta[0]={theta_est_rescaled[0]:.4f}, "
           f"theta[-4:]={theta_est_rescaled[-n_item_quad:].round(4)}")
@@ -79,11 +79,11 @@ n_obs, n_mod_agent, n_mod_item = comm.bcast((n_obs, n_mod_agent, n_mod_item), ro
 # [n_mod_agent agent | n_mtas FE | n_quad diag | 1 ξ coeff | n_quad offdiag]
 n_extra = 1  # ξ̂ column
 n_mtas = n_mod_item - n_item_quad - n_extra
-n_features_mta = n_mod_agent + n_mod_item + n_item_quad
+n_covariates_mta = n_mod_agent + n_mod_item + n_item_quad
 
 # ── Map BTA theta → MTA theta ───────────────────────────────────────
 
-theta_init = np.zeros(n_features_mta)
+theta_init = np.zeros(n_covariates_mta)
 
 # Agent modular: all rescaled agent modular coefficients from BTA estimation
 theta_init[:n_mod_agent] = theta_est_rescaled[:n_mod_agent]
@@ -106,35 +106,35 @@ offdiag_start = xi_idx + 1
 theta_init[offdiag_start:] = bta_quad_offdiag
 
 if rank == 0:
-    print(f"\nMTA: n_mtas={n_mtas}, n_features={n_features_mta}, "
+    print(f"\nMTA: n_mtas={n_mtas}, n_covariates={n_covariates_mta}, "
           f"n_mod_item={n_mod_item}")
     print(f"theta_init non-zero positions: {np.where(theta_init != 0)[0]}")
     print(f"theta_init non-zero values: {theta_init[theta_init != 0].round(6)}")
 
-# ── Setup BundleChoice ───────────────────────────────────────────────
+# ── Setup Model ───────────────────────────────────────────────
 
-bc = BundleChoice()
+auction = cc.Model()
 cfg = {
     "dimensions": {
         "n_obs": n_obs,
         "n_items": n_mtas,
-        "n_features": n_features_mta,
+        "n_covariates": n_covariates_mta,
         "n_simulations": cf_config["dimensions"]["n_simulations"],
     },
     "subproblem": cf_config["subproblem"],
     "row_generation": {
         "max_iters": cf_config["row_generation"]["max_iters"],
         "tolerance": cf_config["row_generation"]["tolerance"],
-        "parameters_to_log": list(range(n_mod_agent + n_mtas, n_features_mta)),
+        "parameters_to_log": list(range(n_mod_agent + n_mtas, n_covariates_mta)),
         "theta_bounds": cf_config["row_generation"]["theta_bounds"],
-        "master_GRB_Params": cf_config["row_generation"].get("master_GRB_Params"),
+        "master_gurobi_params": cf_config["row_generation"].get("master_gurobi_params"),
     },
 }
-bc.load_config(cfg)
-bc.data.load_and_distribute_input_data(mta_data if rank == 0 else None)
-bc.oracles.build_quadratic_features_from_data()
-bc.oracles.build_local_modular_error_oracle(seed=est["error_seed"])
-bc.subproblems.load_solver()
+auction.load_config(cfg)
+auction.data.load_and_distribute_input_data(mta_data if rank == 0 else None)
+auction.features.build_quadratic_covariates_from_data()
+auction.features.build_local_modular_error_oracle(seed=est["error_seed"])
+auction.subproblems.load_solver()
 
 
 def fix_theta(row_gen):
@@ -146,7 +146,7 @@ def fix_theta(row_gen):
         theta[i].Start = theta_init[i]
     # Fix everything except the n_mtas item FE
     fixed = (list(range(n_mod_agent))
-             + list(range(n_mod_agent + n_mtas, n_features_mta)))
+             + list(range(n_mod_agent + n_mtas, n_covariates_mta)))
     for i in fixed:
         theta[i].LB = theta[i].UB = theta_init[i]
     row_gen.master_model.update()
@@ -157,7 +157,7 @@ pt_timeout_cb, _ = adaptive_gurobi_timeout(cf_config["callbacks"])
 
 # ── Solve ────────────────────────────────────────────────────────────
 
-result = bc.row_generation.solve(
+result = auction.row_generation.solve(
     initialization_callback=fix_theta,
     iteration_callback=pt_timeout_cb,
     verbose=True,

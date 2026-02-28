@@ -2,7 +2,7 @@ import numpy as np
 import gurobipy as gp
 from ...solver_base import SubproblemSolver
 from .quadratic_obj_base import QuadraticObjectiveMixin
-from bundlechoice.utils import suppress_output
+from combchoice.utils import suppress_output
 
 class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
@@ -15,7 +15,7 @@ class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
                 model = gp.Model()
                 model.setParam('OutputFlag', 0)
                 model.setParam('Threads', 1)
-                time_limit = self.subproblem_cfg.GRB_Params.get('TimeLimit')
+                time_limit = self.subproblem_cfg.gurobi_params.get('TimeLimit')
                 if time_limit:
                     model.setParam('TimeLimit', time_limit)
                 model.setAttr('ModelSense', gp.GRB.MAXIMIZE)

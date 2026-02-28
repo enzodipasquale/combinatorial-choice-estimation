@@ -11,7 +11,7 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from bundlechoice import BundleChoice
+import combchoice as cc
 from paper.numerical_experiments.large_scale.generate_data import generate_data
 
 
@@ -39,12 +39,12 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0,
             seed=replication * 1000 + 42)
 
         id_d, item_d = input_data["id_data"], input_data["item_data"]
-        n_features = sum(
+        n_covariates = sum(
             d[k].shape[-1] for d in (id_d, item_d)
             for k in ("modular", "quadratic") if k in d
         )
         subproblem_name = cfg.get("specifications", {}).get(spec, {}).get("subproblem", "Greedy")
-        dim_cfg = {"n_obs": N, "n_items": M, "n_features": n_features, "n_simulations": 1}
+        dim_cfg = {"n_obs": N, "n_items": M, "n_covariates": n_covariates, "n_simulations": 1}
     else:
         input_data = theta_star = dim_cfg = subproblem_name = None
 
@@ -57,24 +57,24 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0,
     subproblem_cfg = {"name": subproblem_name}
     subproblem_cfg.update(cfg.get("subproblem", {}))
 
-    bc = BundleChoice()
-    bc.load_config({
+    model = cc.Model()
+    model.load_config({
         "dimensions": dim_cfg,
         "subproblem": subproblem_cfg,
         "row_generation": cfg.get("row_generation", {}),
         "standard_errors": se_cfg,
     })
-    bc.data.load_and_distribute_input_data(input_data)
-    bc.oracles.build_quadratic_features_from_data()
-    bc.oracles.build_local_modular_error_oracle(seed=3 * replication + 1)
-    bc.subproblems.load_solver()
+    model.data.load_and_distribute_input_data(input_data)
+    model.features.build_quadratic_covariates_from_data()
+    model.features.build_local_modular_error_oracle(seed=3 * replication + 1)
+    model.subproblems.load_solver()
 
     theta_star = comm.bcast(theta_star, root=0)
-    bc.subproblems.generate_obs_bundles(theta_star)
-    bc.oracles.build_local_modular_error_oracle(seed=3 * replication + 2)
+    model.subproblems.generate_obs_bundles(theta_star)
+    model.features.build_local_modular_error_oracle(seed=3 * replication + 2)
 
     t0 = time.perf_counter()
-    se_result = bc.standard_errors.compute_distributed_bootstrap(
+    se_result = model.standard_errors.compute_distributed_bootstrap(
         num_bootstrap=n_bootstrap, seed=replication * 1000 + 12345,
         verbose=False, method=se_method,
     )
@@ -83,7 +83,7 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0,
     if rank != 0:
         return None
 
-    point_result = bc.standard_errors.point_result
+    point_result = model.standard_errors.point_result
     theta_hat = point_result.theta_hat.copy()
     runtime_point = point_result.total_time or 0.0
 

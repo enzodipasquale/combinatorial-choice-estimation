@@ -47,7 +47,7 @@ def aggregate_to_mta(bta_data, continental_btas, n_id_mod=None, xi_hat=None):
         np.fill_diagonal(Q_mta[:, :, k], 0)
 
     # Agent modular: aggregate BTA features to MTA by summing within each MTA
-    # id_mod_bta is (n_obs, n_btas, n_features); we sum over BTAs in each MTA
+    # id_mod_bta is (n_obs, n_btas, n_covariates); we sum over BTAs in each MTA
     id_mod_bta = bta_data["id_data"]["modular"]  # (n_obs, n_btas, n_feat_total)
     if n_id_mod is not None:
         id_mod_bta = id_mod_bta[:, :, :n_id_mod]
