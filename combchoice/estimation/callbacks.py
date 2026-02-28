@@ -2,34 +2,6 @@ import numpy as np
 
 
 def adaptive_gurobi_timeout(schedule):
-    """
-    Multi-phase adaptive Gurobi timeout for row generation.
-
-    Returns (pt_callback, dist_callback) tuple:
-      - pt_callback(iteration, row_gen_manager) for point estimation
-      - dist_callback(rg_round, mixin, master) for distributed bootstrap
-
-    Each phase controls whether bootstrap samples can retire (converge):
-      - retire: True  → allow retirement when tolerance is met
-      - retire: False → block retirement for the duration of this phase
-      - omitted       → block retirement (default False)
-
-    The last entry in the schedule has no 'iters' and serves as the
-    final (open-ended) phase. All preceding entries must have 'iters'.
-
-    Args:
-        schedule: list of dicts, each with:
-            'timeout': float — Gurobi TimeLimit
-            'iters': int (required for all but last) — iterations in this phase
-            'retire': bool (optional, default False) — allow convergence
-
-    Example:
-        pt_cb, dist_cb = adaptive_gurobi_timeout([
-            {'iters': 2, 'timeout': 1.0},
-            {'iters': 3, 'timeout': 1.5, 'retire': True},
-            {'timeout': 5.0, 'retire': True},
-        ])
-    """
     phases = schedule[:-1]
     final = schedule[-1]
     boundaries = np.cumsum([p['iters'] for p in phases])

@@ -22,8 +22,9 @@ class RowGenerationEstimationResult:
     warnings: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
-    def log_summary(self, parameters_to_log=None):
+    def log_summary(self, parameters_to_log=None, covariate_labels=None, label_width=12):
         idx = parameters_to_log if parameters_to_log is not None else range(len(self.theta_hat))
+        w = max(label_width, 12)
         if isinstance(self.timing, tuple) and len(self.timing) >= 2:
             p, m = np.array(self.timing[0]), np.array(self.timing[1])
         else:
@@ -34,16 +35,21 @@ class RowGenerationEstimationResult:
         total_time = self.total_time or 0.0
         n_iters = self.num_iterations
         obj_val = self.final_objective
-        E_eps_B = obj_val / len(self.u_hat)  
+        E_eps_B = obj_val / len(self.u_hat)
+
+        def _label(i):
+            if covariate_labels is not None:
+                return covariate_labels[i]
+            return f"θ[{i}]"
 
         logger.info(" ")
         logger.info(" ROW GENERATION SUMMARY")
-        param_labels = ' | '.join(f'{f"θ[{i}]":>12}' for i in idx)
-        params_row = f"{'Parameters':>12} | {param_labels}"
+        param_labels = ' | '.join(f'{_label(i):>{w}}' for i in idx)
+        params_row = f"{'Parameters':>{w}} | {param_labels}"
         logger.info("-" * len(params_row))
         logger.info(params_row)
-        param_vals = ' | '.join(format_number(self.theta_hat[i], width=12, precision=5) for i in idx)
-        logger.info(f"{'':>12} | {param_vals}")
+        param_vals = ' | '.join(format_number(self.theta_hat[i], width=w, precision=5) for i in idx)
+        logger.info(f"{'':>{w}} | {param_vals}")
         logger.info("-" * 90)
         logger.info(f"{'Master':>12} | {'ObjVal':>12} | {'E[ε_B]':>12} | {'#Consts':>8} | {'#Viols':>6} | {'Reduced Cost':>12} | {'#Iters':>7}")
         logger.info(f"{' ':>12} | "+

@@ -98,17 +98,30 @@ class DataManager:
         quadratic_item_dim = dim(item_data, "quadratic")
         n_items = self.dimensions_cfg.n_items
 
+        n_local = self.comm_manager.num_local_agent
         if modular_agent_dim:
-            assert agent_data['modular'].shape == (self.comm_manager.num_local_agent, n_items, modular_agent_dim)
+            expected = (n_local, n_items, modular_agent_dim)
+            if agent_data['modular'].shape != expected:
+                raise ValueError(f"id_data['modular'] shape {agent_data['modular'].shape} != expected {expected}")
         if modular_item_dim:
-            assert item_data['modular'].shape == (n_items, modular_item_dim)
+            expected = (n_items, modular_item_dim)
+            if item_data['modular'].shape != expected:
+                raise ValueError(f"item_data['modular'] shape {item_data['modular'].shape} != expected {expected}")
         if quadratic_agent_dim:
-            assert agent_data['quadratic'].shape == (self.comm_manager.num_local_agent, n_items, n_items, quadratic_agent_dim)
+            expected = (n_local, n_items, n_items, quadratic_agent_dim)
+            if agent_data['quadratic'].shape != expected:
+                raise ValueError(f"id_data['quadratic'] shape {agent_data['quadratic'].shape} != expected {expected}")
         if quadratic_item_dim:
-            assert item_data['quadratic'].shape == (n_items, n_items, quadratic_item_dim)
+            expected = (n_items, n_items, quadratic_item_dim)
+            if item_data['quadratic'].shape != expected:
+                raise ValueError(f"item_data['quadratic'] shape {item_data['quadratic'].shape} != expected {expected}")
 
-        total_features = modular_agent_dim + modular_item_dim + quadratic_agent_dim + quadratic_item_dim
-        assert total_features == self.dimensions_cfg.n_covariates
+        total_covariates = modular_agent_dim + modular_item_dim + quadratic_agent_dim + quadratic_item_dim
+        if total_covariates != self.dimensions_cfg.n_covariates:
+            raise ValueError(
+                f"Total covariates from data ({total_covariates}) != "
+                f"n_covariates in config ({self.dimensions_cfg.n_covariates})"
+            )
 
     @lru_cache(maxsize=1)
     def _quadratic_data_info(self, _version):

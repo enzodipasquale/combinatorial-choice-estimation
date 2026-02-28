@@ -17,7 +17,7 @@ class FeaturesManager:
         self._error_oracle_vectorized = None
         self._covariates_oracle_takes_data = True
         self._error_oracle_takes_data = False
-        self._local_modular_errors = None
+        self.local_modular_errors = None
 
 
     def _check_vectorized_oracle_support(self, oracle):
@@ -92,17 +92,24 @@ class FeaturesManager:
         return vals.ravel()[0] if np.ndim(id) == 0 else vals
 
 
-    def build_local_modular_error_oracle(self, seed=42, items_correlation_matrix=None, sigma = 1):
+    def build_local_modular_error_oracle(self, seed=42, covariance_matrix=None, sigma = 1):
         n_local = self.comm_manager.num_local_agent
         n_items = self.dimensions_cfg.n_items
-        self._local_modular_errors = np.zeros((n_local, n_items))
+        self.local_modular_errors = np.zeros((n_local, n_items))
         for i, global_id in enumerate(self.comm_manager.agent_ids):
-            np.random.seed((np.abs(seed)+1) * (global_id + 1))
-            self._local_modular_errors[i] = np.random.normal(0, sigma, n_items)
-        if items_correlation_matrix is not None:
-            L = np.linalg.cholesky(items_correlation_matrix)
-            self._local_modular_errors = self._local_modular_errors @ L
-        self._error_oracle = lambda bundles, ids: (self._local_modular_errors[ids] * bundles).sum(-1)
+            rng = np.random.default_rng((seed, global_id))
+            self.local_modular_errors[i] = rng.normal(0, sigma, n_items)
+        if covariance_matrix is not None:
+            if covariance_matrix.ndim == 2:
+                L = np.linalg.cholesky(covariance_matrix)
+                self.local_modular_errors = self.local_modular_errors @ L
+            elif covariance_matrix.ndim == 3:
+                obs_ids = self.comm_manager.obs_ids
+                for obs_idx in np.unique(obs_ids):
+                    mask = obs_ids == obs_idx
+                    L = np.linalg.cholesky(covariance_matrix[obs_idx])
+                    self.local_modular_errors[mask] = self.local_modular_errors[mask] @ L
+        self._error_oracle = lambda bundles, ids: (self.local_modular_errors[ids] * bundles).sum(-1)
         self._error_oracle_vectorized = True
         self._error_oracle_takes_data = False
         return self._error_oracle

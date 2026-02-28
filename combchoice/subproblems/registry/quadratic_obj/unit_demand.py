@@ -2,7 +2,7 @@ import numpy as np
 from ...solver_base import SubproblemSolver
 from .quadratic_obj_base import QuadraticObjectiveMixin
 
-class PlainSingleItemSolver(QuadraticObjectiveMixin, SubproblemSolver):
+class UnitDemandSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
     def solve(self, theta):
         U = self._build_linear_coeff_batch(theta)

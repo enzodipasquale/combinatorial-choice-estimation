@@ -133,7 +133,8 @@ class RowGenerationManager(BaseEstimationManager):
         elapsed = time.perf_counter() - t0
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
-            result.log_summary(self.cfg.parameters_to_log)
+            param_indices = self.cfg.parameters_to_log or self.dim.named_covariate_indices
+            result.log_summary(param_indices, self.dim.covariate_labels, self.dim.covariate_label_width)
         return result
 
     def _row_generation_iteration(self, iteration):
@@ -285,27 +286,26 @@ class RowGenerationManager(BaseEstimationManager):
     def _log_iteration(self, iteration):
         if not self.comm_manager.is_root() or not self.verbose:
             return
-        info = self.iteration_history[iteration]   
-        
-        if self.cfg.parameters_to_log is not None:
-            param_indices = self.cfg.parameters_to_log
-        else:
-            param_indices = list(range(min(5, len(self.theta_iter))))
-        
+        info = self.iteration_history[iteration]
+
+        param_indices = self.cfg.parameters_to_log or self.dim.named_covariate_indices \
+                        or list(range(min(5, len(self.theta_iter))))
+        w = max(self.dim.covariate_label_width, 10)
+
         if iteration % 80 == 0:
-            param_width = len(param_indices) * 11 - 1
+            param_width = len(param_indices) * (w + 1) - 1
             header1 = (f"{'Iter':>4} | {'Reduced':^12} | {'#Viol':^5} | {'Pricing':^11} | "
                       f"{'Master':^10} | {'Objective':^13} | "
                       f"{'Constr':>6} | {f'Parameters':^{param_width}}")
-            param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
+            param_label_row = ' '.join(f'{self.dim.covariate_labels[i]:>{w}}' for i in param_indices)
             header2 = (f"{'':>4} | {'Cost':^12} | {'':^5} | {'(s)':^11} | "
                       f"{'(s)':^10} | {'Value':^13} | "
                       f"{'':>6} | {param_label_row}")
             logger.info(header1)
             logger.info(header2)
             logger.info("-" * len(header1))
-        
-        param_vals = ' '.join(format_number(self.theta_iter[i], width=10, precision=5) for i in param_indices)
+
+        param_vals = ' '.join(format_number(self.theta_iter[i], width=w, precision=5) for i in param_indices)
         row = (f"{iteration:>4} | {format_number(info['reduced_cost'], width=12, precision=6)} | "
                f"{info['n_violations']:>5} | "
                f"{format_number(info['pricing_time'], width=10, precision=3)}s | "
