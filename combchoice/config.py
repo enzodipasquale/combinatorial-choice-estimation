@@ -23,7 +23,25 @@ class DimensionsConfig(ConfigMixin):
     n_items: int = None
     n_covariates: int = None
     n_simulations: int = 1
-    covariate_names: list = None
+    covariate_names: dict = None
+
+    def __post_init__(self):
+        self._build_labels()
+
+    def update_in_place(self, other):
+        super().update_in_place(other)
+        self._build_labels()
+
+    def _build_labels(self):
+        if self.n_covariates is not None:
+            names = self.covariate_names or {}
+            self.covariate_labels = [names.get(i, f"θ[{i}]") for i in range(self.n_covariates)]
+            self.named_covariate_indices = list(names.keys())
+            self.covariate_label_width = max((len(l) for l in self.covariate_labels), default=5)
+        else:
+            self.covariate_labels = None
+            self.named_covariate_indices = None
+            self.covariate_label_width = 5
 
     @property
     def n_agents(self):

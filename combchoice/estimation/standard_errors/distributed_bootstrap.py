@@ -312,10 +312,12 @@ class DistributedBootstrapMixin:
 
         if self.verbose and self.comm_manager.is_root():
             idx = self.config.standard_errors.parameters_to_log \
+                  or self.dim.named_covariate_indices \
                   or list(range(min(5, self.dim.n_covariates)))
             logger.info(" LOADED point estimate from %s (%s)",
                         pt_dir, "converged" if converged else "not converged")
-            logger.info(" θ = [%s]", ', '.join(f'{theta_hat[i]:.5f}' for i in idx))
+            logger.info(" θ = [%s]", ', '.join(
+                f'{self.dim.covariate_labels[i]}={theta_hat[i]:.5f}' for i in idx))
 
         return converged
 
@@ -563,15 +565,17 @@ class DistributedBootstrapMixin:
 
     def _log_boot_details(self, boot_ids, state):
         param_idx = self.config.standard_errors.parameters_to_log \
+                    or self.dim.named_covariate_indices \
                     or list(range(min(5, self.dim.n_covariates)))
+        w = max(self.dim.covariate_label_width, 12)
         range_idx = [i for i in range(self.dim.n_covariates) if i not in param_idx]
-        hdr_params = ''.join(f"{'θ['+str(i)+']':>12}" for i in param_idx)
+        hdr_params = ''.join(f"{self.dim.covariate_labels[i]:>{w}}" for i in param_idx)
         logger.info("        %4s  %7s  %14s  %14s  %15s  %s",
                     "Boot", "#Constr", "Reduced Cost", "Objective", "Range θ", hdr_params)
         for k in boot_ids:
             t = state.theta_vals[k]
             t_range = f"[{t[range_idx].min():.1f}, {t[range_idx].max():.1f}]" if range_idx else f"[{t.min():.1f}, {t.max():.1f}]"
-            vals = ''.join(format_number(t[i], width=12, precision=5) for i in param_idx)
+            vals = ''.join(format_number(t[i], width=w, precision=5) for i in param_idx)
             logger.info("        ↳ %4d  %7d  %14s  %14s  %15s  %s",
                         k, int(state.stats[k, 0]),
                         self._fmt_rc(state.max_rc[k]),
@@ -602,21 +606,24 @@ class DistributedBootstrapMixin:
         if self.verbose:
             theta_hat = self.point_result.theta_hat
             idx = self.config.standard_errors.parameters_to_log \
+                  or self.dim.named_covariate_indices \
                   or list(range(min(5, self.dim.n_covariates)))
+            w = max(self.dim.covariate_label_width, 8)
             logger.info(" ")
             if n_non_converged > 0:
                 logger.info(" WARNING: %d of %d bootstrap samples did not converge",
                             n_non_converged, state.num_bootstrap)
-            logger.info("-" * 70)
+            sep_width = w + 4 + 12 + 3 + 12 + 3 + 12 + 3 + 10
+            logger.info("-" * sep_width)
             logger.info(" DISTRIBUTED BOOTSTRAP: %d samples in %.1fs",
                         state.num_bootstrap, total_time)
-            logger.info("-" * 70)
-            logger.info(f"{'Param':>8} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
-            logger.info("-" * 70)
+            logger.info("-" * sep_width)
+            logger.info(f"{'Param':>{w}} | {'Point Est':>12} | {'Boot Mean':>12} | {'SE':>12} | {'t-stat':>10}")
+            logger.info("-" * sep_width)
             for i in idx:
-                logger.info(f"  θ[{i:>3}] | {theta_hat[i]:>12.5f} | {stats.mean[i]:>12.5f} | "
+                logger.info(f"{self.dim.covariate_labels[i]:>{w}} | {theta_hat[i]:>12.5f} | {stats.mean[i]:>12.5f} | "
                             f"{stats.se[i]:>12.5f} | {stats.t_stats[i]:>10.2f}")
-            logger.info("-" * 70)
+            logger.info("-" * sep_width)
         return stats
 
     def compute_bootstrap_stats_from_checkpoints(self, checkpoints_dir):

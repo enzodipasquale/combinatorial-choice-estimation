@@ -6,7 +6,7 @@ REGISTRY = {
     'QuadraticKnapsackGRB': ('.registry.quadratic_obj.quadratic_knapsack', 'QuadraticKnapsackGRBSolver'),
     'QuadraticSupermodularMinCut': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularMinCutSolver'),
     'QuadraticSupermodularLovasz': ('.registry.quadratic_obj.quadratic_supermodular', 'QuadraticSupermodularLovaszSolver'),
-    'PlainSingleItem': ('.registry.quadratic_obj.plain_single_item', 'PlainSingleItemSolver'),
+    'UnitDemand': ('.registry.quadratic_obj.unit_demand', 'UnitDemandSolver'),
     'BruteForce': ('.registry.brute_force', 'BruteForceSolver'),
 }
 _cache = {}

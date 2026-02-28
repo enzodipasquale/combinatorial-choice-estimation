@@ -38,28 +38,39 @@ if rank == 0:
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
     n_covariates = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
-    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_covariates": n_covariates}
-    id_mod_indices = list(range(n_id_mod))
+    modular_regressors = app.get("modular_regressors", [])
+    quadratic_id_regressors = app.get("quadratic_id_regressors", [])
+    quadratic_regressors = app.get("quadratic_regressors", [])
+    covariate_names = {}
+    for i, name in enumerate(modular_regressors):
+        covariate_names[i] = name
     id_quad_offset = n_id_mod + n_item_mod
-    id_quad_indices = list(range(id_quad_offset, id_quad_offset + n_id_quad))
-    item_quad_indices = list(range(n_covariates - n_item_quad, n_covariates))
-    config["row_generation"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
-    config["dimensions"].update(dim_cfg)
+    for i, name in enumerate(quadratic_id_regressors):
+        covariate_names[id_quad_offset + i] = name
+    item_quad_offset = id_quad_offset + n_id_quad
+    for i, name in enumerate(quadratic_regressors):
+        covariate_names[item_quad_offset + i] = name
+
+    config["dimensions"].update({
+        "n_obs": n_obs, "n_items": n_items,
+        "n_covariates": n_covariates, "covariate_names": covariate_names,
+    })
+
     mod_b = app.get('mod_bounds', {})
     quad_b = app.get('quad_bounds', {})
     quad_id_b = app.get('quad_id_bounds', {})
     bounds = config["row_generation"]["theta_bounds"]
-    for k in id_mod_indices[1:]:
+    for k in range(1, n_id_mod):
         if mod_b.get('lb') is not None:
             bounds["lbs"][k] = mod_b['lb']
         if mod_b.get('ub') is not None:
             bounds["ubs"][k] = mod_b['ub']
-    for k in id_quad_indices:
+    for k in range(id_quad_offset, id_quad_offset + n_id_quad):
         if quad_id_b.get('lb') is not None:
             bounds["lbs"][k] = quad_id_b['lb']
         if quad_id_b.get('ub') is not None:
             bounds["ubs"][k] = quad_id_b['ub']
-    for k in item_quad_indices[:-3]:
+    for k in range(item_quad_offset, n_covariates - 3):
         if quad_b.get('lb') is not None:
             bounds["lbs"][k] = quad_b['lb']
         if quad_b.get('ub') is not None:

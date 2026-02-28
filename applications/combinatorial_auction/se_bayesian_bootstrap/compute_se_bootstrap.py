@@ -53,23 +53,33 @@ if rank == 0:
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
     n_covariates = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
-    dim_cfg = {"n_obs": n_obs, "n_items": n_items, "n_covariates": n_covariates}
-    id_mod_indices = list(range(n_id_mod))
+    modular_regressors = app.get("modular_regressors", [])
+    quadratic_id_regressors = app.get("quadratic_id_regressors", [])
+    quadratic_regressors = app.get("quadratic_regressors", [])
+    covariate_names = {}
+    for i, name in enumerate(modular_regressors):
+        covariate_names[i] = name
     id_quad_offset = n_id_mod + n_item_mod
-    id_quad_indices = list(range(id_quad_offset, id_quad_offset + n_id_quad))
-    item_quad_indices = list(range(n_covariates - n_item_quad, n_covariates))
-    config["standard_errors"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
-    config["row_generation"]["parameters_to_log"] = id_mod_indices + id_quad_indices + item_quad_indices
-    config["dimensions"].update(dim_cfg)
+    for i, name in enumerate(quadratic_id_regressors):
+        covariate_names[id_quad_offset + i] = name
+    item_quad_offset = id_quad_offset + n_id_quad
+    for i, name in enumerate(quadratic_regressors):
+        covariate_names[item_quad_offset + i] = name
+
+    config["dimensions"].update({
+        "n_obs": n_obs, "n_items": n_items,
+        "n_covariates": n_covariates, "covariate_names": covariate_names,
+    })
+
     mod_b = app.get('mod_bounds', {})
     quad_b = app.get('quad_bounds', {})
     quad_id_b = app.get('quad_id_bounds', {})
     updates = {}
-    for k in id_mod_indices[1:]:
+    for k in range(1, n_id_mod):
         updates[k] = (mod_b.get('lb'), mod_b.get('ub'))
-    for k in id_quad_indices:
+    for k in range(id_quad_offset, id_quad_offset + n_id_quad):
         updates[k] = (quad_id_b.get('lb'), quad_id_b.get('ub'))
-    for k in item_quad_indices[:-3]:
+    for k in range(item_quad_offset, n_covariates - 3):
         updates[k] = (quad_b.get('lb'), quad_b.get('ub'))
     for bounds in [config["row_generation"]["theta_bounds"], config["standard_errors"]["theta_bounds"]]:
         for k, (lb, ub) in updates.items():

@@ -8,60 +8,6 @@ logger = get_logger(__name__)
 
 class SerialBootstrapMixin:
 
-    def compute_bootstrap_(self, num_bootstrap=100,
-                           seed=None, verbose=False,
-                           pt_estimate_callbacks=(None, None),
-                           bootstrap_callback=None,
-                           method='bayesian'):
-        initialization_callback, iteration_callback = pt_estimate_callbacks
-        theta_boots = []
-        self.bootstrap_history = {}
-        self.verbose = verbose
-        self.row_gen = self.row_generation_manager
-        self.row_gen.subproblem_manager.initialize_solver()
-        t0 = time.perf_counter()
-
-        gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
-              else self.generate_weights_standard_bootstrap
-        weights = gen(seed, num_bootstrap)
-
-        local_weights = self.comm_manager.Scatterv_by_row(weights,
-                                                          row_counts=self.comm_manager.agent_counts,
-                                                          dtype=np.float64,
-                                                          shape=(self.dim.n_agents, num_bootstrap))
-        self.row_gen.local_obs_weights = local_weights[:, 0]
-        self.row_gen._initialize_master_problem()
-
-        if self.verbose and self.comm_manager.is_root():
-            self.row_gen._log_instance_summary()
-            logger.info(" ")
-            logger.info(" BAYESIAN BOOTSTRAP")
-
-        for b in range(num_bootstrap):
-            t_boot = time.perf_counter()
-            if bootstrap_callback is not None:
-                bootstrap_callback(b, self)
-            self.result = self.row_gen.solve(resampling_weights=local_weights[:, b],
-                                            verbose=False,
-                                            initialize_solver=False,
-                                            initialize_master=False,
-                                            iteration_callback=iteration_callback,
-                                            initialization_callback=initialization_callback)
-            self.boot_time = time.perf_counter() - t_boot
-
-            if self.comm_manager.is_root():
-                theta_boots.append(self.row_gen.master_variables[0].X.copy())
-                self._update_bootstrap_info(b)
-            self._log_bootstrap_iteration(b)
-
-        total_time = time.perf_counter() - t0
-        if not self.comm_manager.is_root():
-            return None
-
-        stats_result = self.compute_bootstrap_stats(theta_boots)
-        self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
-        return stats_result
-
     def compute_bootstrap(self, num_bootstrap=100,
                           seed=None, verbose=False,
                           pt_estimate_callbacks=(None, None),
@@ -170,16 +116,16 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.bootstrap_history[bootstrap_iter]
-        if self.config.standard_errors.parameters_to_log is not None:
-            param_indices = self.config.standard_errors.parameters_to_log
-        else:
-            param_indices = list(range(min(5, self.dim.n_covariates)))
+        param_indices = self.config.standard_errors.parameters_to_log \
+                        or self.dim.named_covariate_indices \
+                        or list(range(min(5, self.dim.n_covariates)))
+        w = max(self.dim.covariate_label_width, 10)
 
         if bootstrap_iter % 100 == 0:
-            param_width = len(param_indices) * 11 - 1
+            param_width = len(param_indices) * (w + 1) - 1
             header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
                       f"{'#Constr':>7} | {'Reduced':^12} | {'#Viol':^5} | {'Objective':^12} | {f'Parameters':^{param_width}}")
-            param_label_row = ' '.join(f'{f"θ[{i}]":>10}' for i in param_indices)
+            param_label_row = ' '.join(f'{self.dim.covariate_labels[i]:>{w}}' for i in param_indices)
             header2 = (f"{'':>5} | {'(s)':^9} | {'(s)':^9} | {'(s)':^9} | {'Iters':^5} | "
                       f"{'':>7} | {'Cost':^12} | {'':^5} | {'Value':^12} | {param_label_row}")
             logger.info("-" * len(header1))
@@ -187,7 +133,7 @@ class SerialBootstrapMixin:
             logger.info(header2)
             logger.info("-" * len(header1))
         theta = self.result.theta_hat
-        param_vals = ' '.join(format_number(theta[i], width=10, precision=5) for i in param_indices)
+        param_vals = ' '.join(format_number(theta[i], width=w, precision=5) for i in param_indices)
         time_str = f"{info['time']:>9.3f}"
         pricing_time_str = f"{info.get('pricing_time', 0.0):>9.3f}"
         master_time_str = f"{info.get('master_time', 0.0):>9.3f}"
@@ -201,20 +147,21 @@ class SerialBootstrapMixin:
         logger.info(row)
 
     def _log_bootstrap_summary(self, n_bootstrap, total_time, result):
-        if not self.comm_manager.is_root():
+        if not self.comm_manager.is_root() or not self.verbose:
             return
 
-        if self.config.standard_errors.parameters_to_log is not None:
-            param_indices = self.config.standard_errors.parameters_to_log
-        else:
-            param_indices = list(range(min(5, self.dim.n_covariates)))
+        param_indices = self.config.standard_errors.parameters_to_log \
+                        or self.dim.named_covariate_indices \
+                        or list(range(min(5, self.dim.n_covariates)))
+        w = max(self.dim.covariate_label_width, 8)
 
+        sep_width = w + 4 + 12 + 3 + 12 + 3 + 10
         logger.info(" ")
-        logger.info("-"*55)
+        logger.info("-" * sep_width)
         logger.info(f" SERIAL BOOTSTRAP SUMMARY: {n_bootstrap} samples in {total_time:.1f}s")
-        logger.info("-"*55)
-        logger.info(f"{'Param':>6} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
-        logger.info("-"*55)
+        logger.info("-" * sep_width)
+        logger.info(f"{'Param':>{w}} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
+        logger.info("-" * sep_width)
         for i in param_indices:
-            logger.info(f"θ[{i:>3}] | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
-        logger.info("-"*55)
+            logger.info(f"{self.dim.covariate_labels[i]:>{w}} | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
+        logger.info("-" * sep_width)

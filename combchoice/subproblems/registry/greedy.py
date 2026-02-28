@@ -36,7 +36,7 @@ class GreedySolver(SubproblemSolver):
         return bundle
 
     def _greedy_with_find_best_item(self, local_id, theta):
-        modular_error = self.features_manager._local_modular_errors[local_id]
+        modular_error = self.features_manager.local_modular_errors[local_id]
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0
