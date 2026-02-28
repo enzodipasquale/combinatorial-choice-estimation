@@ -30,6 +30,7 @@ run_with_timeout.sh
 *.bas
 *.err
 
+
 # Gurobi outputs
 *.sol
 *.lp
@@ -51,10 +52,13 @@ bundlechoice/tests
 debug/
 debug_se/
 experiments/
-paper/
-# paper/small_scale/
+paper/small_scale/
 benchmark_warmstart.py
 applications/combinatorial_auction/counterfactuals
+paper/numerical_experiments/large_scale/results
+paper/numerical_experiments/large_scale/calibration_output.log
+paper/numerical_experiments/large_scale/test_small.py
+
 
 #Other
 my_tests/
