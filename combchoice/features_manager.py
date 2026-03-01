@@ -78,14 +78,13 @@ class FeaturesManager:
         data_arg = (self.data_manager.local_data,) if self._covariates_oracle_takes_data else ()
         if self._covariates_oracle_vectorized:
             bundle, id = bundle[None, :], np.atleast_1d(id)
-        ids_arg = np.atleast_1d(id) if self._covariates_oracle_vectorized else id
-        return self._covariates_oracle(bundle, ids_arg, *data_arg)
+        return self._covariates_oracle(bundle, id, *data_arg)
 
     def error_oracle_individual(self, bundle, id):
         data_arg = (self.data_manager.local_data,) if self._error_oracle_takes_data else ()
         if self._error_oracle_vectorized:
-            bundle, ids_arg = bundle[None, :], np.atleast_1d(id)            
-        return self._error_oracle(bundle, ids_arg, *data_arg)
+            bundle, id = bundle[None, :], np.atleast_1d(id)
+        return self._error_oracle(bundle, id, *data_arg)
 
     def utility_oracle_individual(self, bundle, theta, id):
         vals = self.covariates_oracle_individual(bundle, id) @ theta + self.error_oracle_individual(bundle, id)

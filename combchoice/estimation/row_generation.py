@@ -133,7 +133,8 @@ class RowGenerationManager(BaseEstimationManager):
         elapsed = time.perf_counter() - t0
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
-            param_indices = self.cfg.parameters_to_log or self.dim.named_covariate_indices
+            param_indices = self.cfg.parameters_to_log or self.dim.named_covariate_indices \
+                            or list(range(min(5, len(self.theta_iter))))
             result.log_summary(param_indices, self.dim.covariate_labels, self.dim.covariate_label_width)
         return result
 

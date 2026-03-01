@@ -42,6 +42,18 @@ def load_market_data(product_data, bundle_dict=None, availability_data=None, cov
         for m in np.unique(market_ids):
             available_items[market_ids == m] = obs_bundles[market_ids == m].any(axis=0)
 
+    # outside option: one obs per market with bundle = ∅
+    n_markets = int(market_ids.max()) + 1
+    _, first_idx = np.unique(market_ids, return_index=True)
+    outside_qty = (obs["market_size"].values.astype(np.float64)[first_idx]
+                   - np.bincount(market_ids, weights=obs_quantity, minlength=n_markets))
+
+    obs_bundles = np.vstack([obs_bundles, np.zeros((n_markets, n_items), dtype=bool)])
+    obs_quantity = np.concatenate([obs_quantity, outside_qty])
+    available_items = np.vstack([available_items, available_items[first_idx]])
+    market_ids = np.concatenate([market_ids, np.arange(n_markets, dtype=np.int64)])
+    n_obs += n_markets
+
     raw_cols = list(covariates) if covariates is not None else [
         c for c in obs.columns if c not in {"market_id", id_col, "share", "market_size"}]
 
@@ -50,9 +62,10 @@ def load_market_data(product_data, bundle_dict=None, availability_data=None, cov
 
     if raw_cols:
         df_cols = [c for c in raw_cols if c != "constant"]
-        data = obs[df_cols].values.astype(np.float64) if df_cols else np.empty((n_obs, 0))
+        data = obs[df_cols].values.astype(np.float64) if df_cols else np.empty((len(obs), 0))
         if "constant" in raw_cols:
             data = np.insert(data, raw_cols.index("constant"), 1.0, axis=1)
+        data = np.vstack([data, np.zeros((n_markets, data.shape[1]))])
         id_data["data"] = data
         id_data["col_names"] = raw_cols
 
