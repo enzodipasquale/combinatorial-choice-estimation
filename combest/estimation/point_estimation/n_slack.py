@@ -93,7 +93,7 @@ class NSlackSolver(RowGenerationSolver):
         u_theta = covariates_local @ theta + errors_local
         weighted_reduced_costs = weights * (u_theta - u_local)
 
-        local_max_rc = weighted_reduced_costs.max()
+        local_max_rc = weighted_reduced_costs.max() if weighted_reduced_costs.size > 0 else -np.inf
         local_violations = np.where(weighted_reduced_costs > self.cfg.tolerance)[0]
         local_violations_id = self.comm_manager.agent_ids[local_violations]
         covariates_and_errors_local = np.column_stack([
