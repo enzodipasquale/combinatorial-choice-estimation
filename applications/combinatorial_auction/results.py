@@ -128,7 +128,7 @@ def load_result(source="point_estimate", run_idx=-1):
         "quadratic_id_regressors": json.loads(row["quadratic_id_regressors"]),
         "n_obs": int(row["n_obs"]),
         "n_items": int(row["n_items"]),
-        "n_covariates": int(row["n_covariates"]),
+        "n_covariates": int(row.get("n_covariates", row.get("n_features", 0))),
         "mod_bounds": json.loads(row["mod_bounds"]),
         "quad_bounds": json.loads(row["quad_bounds"]),
         "quad_id_bounds": json.loads(row["quad_id_bounds"]),

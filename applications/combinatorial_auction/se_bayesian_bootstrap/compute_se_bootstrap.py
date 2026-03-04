@@ -9,8 +9,8 @@ APP_DIR = BASE_DIR.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import combchoice as cc
-from combchoice.estimation.callbacks import adaptive_gurobi_timeout
+import combest as ce
+from combest.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 from applications.combinatorial_auction.results import save_bootstrap
 
@@ -93,7 +93,7 @@ else:
 
 config = comm.bcast(config, root=0)
 
-auction = cc.Model()
+auction = ce.Model()
 auction.load_config(config)
 auction.data.load_and_distribute_input_data(input_data)
 auction.features.build_quadratic_covariates_from_data()

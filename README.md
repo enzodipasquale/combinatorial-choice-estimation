@@ -1,4 +1,4 @@
-# combchoice
+# combest
 
 MPI-parallel estimation for combinatorial discrete choice models via row generation.
 
@@ -13,7 +13,7 @@ Requires MPI. Gurobi optional but needed for row generation.
 ## Quick Start
 
 ```python
-import combchoice as cc
+import combest as ce
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -29,7 +29,7 @@ else:
     cfg = None
     input_data = None
 
-model = combchoice.Model()
+model = ce.Model()
 model.load_config(cfg)
 model.data.load_and_distribute_input_data(input_data)
 model.features.build_quadratic_covariates_from_data()
@@ -54,5 +54,5 @@ se_result = model.standard_errors.compute_bootstrap(num_bootstrap=50, seed=123)
 ## Tests
 
 ```bash
-mpirun -n 10 pytest combchoice/tests/
+mpirun -n 10 pytest combest/tests/
 ```

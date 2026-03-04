@@ -12,8 +12,8 @@ APP_DIR = BASE_DIR.parent.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import combchoice as cc
-from combchoice.estimation.callbacks import adaptive_gurobi_timeout
+import combest as ce
+from combest.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
     main as prepare_mta,
 )
@@ -113,7 +113,7 @@ if rank == 0:
 
 # ── Setup Model ───────────────────────────────────────────────
 
-auction = cc.Model()
+auction = ce.Model()
 cfg = {
     "dimensions": {
         "n_obs": n_obs,

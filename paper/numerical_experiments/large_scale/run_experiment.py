@@ -11,7 +11,7 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import combchoice as cc
+import combest as ce
 from paper.numerical_experiments.large_scale.generate_data import generate_data
 
 
@@ -57,7 +57,7 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0,
     subproblem_cfg = {"name": subproblem_name}
     subproblem_cfg.update(cfg.get("subproblem", {}))
 
-    model = cc.Model()
+    model = ce.Model()
     model.load_config({
         "dimensions": dim_cfg,
         "subproblem": subproblem_cfg,
