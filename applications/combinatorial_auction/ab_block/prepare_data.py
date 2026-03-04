@@ -50,7 +50,7 @@ def _normalize_acct(acct):
 
 
 def main(modular_regressors=None, quadratic_regressors=None,
-         quadratic_id_regressors=None, rescale_features=True):
+         quadratic_id_regressors=None):
 
     modular_regressors = modular_regressors or AB_MODULAR
     quadratic_regressors = quadratic_regressors or AB_QUADRATIC
@@ -124,7 +124,7 @@ def main(modular_regressors=None, quadratic_regressors=None,
     # ── MTA prices (average of A/B block winning bids, normalized) ──
     mta_avg_price = winners.groupby("mta_num")["price"].mean()
     price_mta = np.array([mta_avg_price.get(m, 0) for m in continental_mta_nums])
-    price_mta_norm = price_mta / price_mta.max()
+    price_mta_norm = price_mta / 1e9
 
     # ── Build modular regressors (n_bidders × n_items × n_features) ──
     elig_norm = ab_elig / pop_sum
@@ -142,7 +142,7 @@ def main(modular_regressors=None, quadratic_regressors=None,
     modular_features = np.stack(mod_layers, axis=-1).astype(np.float64)
 
     # ── Build quadratic regressors (n_mtas × n_mtas × n_features) ────
-    bta_quad = build_features(QUADRATIC, quadratic_regressors, ctx, rescale=False)
+    bta_quad = build_features(QUADRATIC, quadratic_regressors, ctx)
     # aggregate: Q_mta[m, m'] = sum_{j in m, j' in m'} Q_bta[j, j']
     n_qfeat = bta_quad.shape[-1]
     Q_mta = np.stack([A @ bta_quad[:, :, k] @ A.T for k in range(n_qfeat)], axis=-1)
@@ -165,25 +165,6 @@ def main(modular_regressors=None, quadratic_regressors=None,
             q_slice = Q_mta[:, :, k]
             qid_layers.append(elig_norm[:, None, None] * q_slice[None, :, :])
         quad_id_features = np.stack(qid_layers, axis=-1).astype(np.float64)
-
-    # ── Rescale ───────────────────────────────────────────────────────
-    if rescale_features:
-        for arr in [modular_features, Q_mta]:
-            if arr.size > 0:
-                spatial_axes = tuple(range(arr.ndim - 1))
-                stds = arr.std(spatial_axes, keepdims=True)
-                stds[stds == 0] = 1.0
-                arr /= stds
-        if quad_id_features is not None and quad_id_features.size > 0:
-            spatial_axes = tuple(range(quad_id_features.ndim - 1))
-            stds = quad_id_features.std(spatial_axes, keepdims=True)
-            stds[stds == 0] = 1.0
-            quad_id_features /= stds
-        # rescale diag_quad with same factor as Q_mta per feature
-        if diag_quad.size > 0:
-            q_stds = Q_mta.std(axis=(0, 1))
-            q_stds[q_stds == 0] = 1.0
-            diag_quad /= q_stds
 
     # ── Item modular: MTA FE + quadratic diagonals ───────────────────
     item_modular = np.hstack([-np.eye(n_items), diag_quad])

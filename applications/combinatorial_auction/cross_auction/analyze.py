@@ -93,7 +93,7 @@ def run(include_diag_quad=False, quadratic_regressors=None):
     if include_diag_quad:
         quad_names = quadratic_regressors or ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]
         ctx = build_context(raw)
-        bta_quad = build_features(QUADRATIC, quad_names, ctx, rescale=False)
+        bta_quad = build_features(QUADRATIC, quad_names, ctx)
         n_qfeat = bta_quad.shape[-1]
         Q_mta = np.stack([A @ bta_quad[:, :, k] @ A.T for k in range(n_qfeat)], axis=-1)
         diag_quad = np.array([np.diag(Q_mta[:, :, k]) for k in range(n_qfeat)]).T

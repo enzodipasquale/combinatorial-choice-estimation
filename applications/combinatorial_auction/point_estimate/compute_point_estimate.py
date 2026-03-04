@@ -26,7 +26,6 @@ if rank == 0:
     input_data = prepare_data_main(
         winners_only=app.get("winners_only", False),
         continental_only=app.get("continental_only"),
-        rescale_features=app.get("rescale_features"),
         modular_regressors=app.get("modular_regressors"),
         quadratic_regressors=app.get("quadratic_regressors"),
         quadratic_id_regressors=app.get("quadratic_id_regressors"),

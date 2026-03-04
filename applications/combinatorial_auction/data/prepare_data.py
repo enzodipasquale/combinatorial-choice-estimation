@@ -322,7 +322,7 @@ def build_context(raw_data):
     hhinc35k = bta["hhinc35k"].to_numpy().astype(float)
     density = bta["density"].to_numpy().astype(float) / bta["density"].max()
     imwl = bta["imwl"].to_numpy().astype(float) / bta["imwl"].max()
-    price = bta["bid"].to_numpy().astype(float) / bta["bid"].max()
+    price = bta["bid"].to_numpy().astype(float) / 1e9
     return {
         "weight": weight,
         "capacity": capacity,
@@ -346,17 +346,13 @@ def build_context(raw_data):
 
 # ── Phase 3: feature builder ────────────────────────────────────────
 
-def build_features(registry, names, ctx, rescale=False):
+def build_features(registry, names, ctx):
     layers = [registry[name](ctx) for name in names]
-    features = np.stack(layers, axis=-1).astype(np.float64)
-    if rescale:
-        spatial_axes = tuple(range(features.ndim - 1))
-        features = features / features.std(spatial_axes, keepdims=True)
-    return features
+    return np.stack(layers, axis=-1).astype(np.float64)
 
 # ── Main ─────────────────────────────────────────────────────────────
 
-def main(winners_only=False, continental_only=False, rescale_features=False,
+def main(winners_only=False, continental_only=False,
          modular_regressors=None, quadratic_regressors=None, quadratic_id_regressors=None):
 
     # Phase 1: load & filter
@@ -373,9 +369,9 @@ def main(winners_only=False, continental_only=False, rescale_features=False,
     if quadratic_id_regressors is None:
         quadratic_id_regressors = []
 
-    modular_features = build_features(MODULAR, modular_regressors, ctx, rescale_features)
-    quadratic_features = build_features(QUADRATIC, quadratic_regressors, ctx, rescale_features)
-    quadratic_id_features = build_features(QUADRATIC_ID, quadratic_id_regressors, ctx, rescale_features) if quadratic_id_regressors else None
+    modular_features = build_features(MODULAR, modular_regressors, ctx)
+    quadratic_features = build_features(QUADRATIC, quadratic_regressors, ctx)
+    quadratic_id_features = build_features(QUADRATIC_ID, quadratic_id_regressors, ctx) if quadratic_id_regressors else None
 
     matching = ctx["matching"]
     capacity = ctx["capacity"]
@@ -460,7 +456,6 @@ def parse_args():
     )
     parser.add_argument("--winners-only", "-w", action="store_true")
     parser.add_argument("--continental-only", "-c", action="store_true")
-    parser.add_argument("--rescale-features", action="store_true")
     parser.add_argument(
         "--modular", nargs="*", default=None,
         help=f"Modular regressors (available: {', '.join(MODULAR)})",
@@ -481,7 +476,6 @@ if __name__ == "__main__":
     main(
         winners_only=args.winners_only,
         continental_only=args.continental_only,
-        rescale_features=args.rescale_features,
         modular_regressors=args.modular,
         quadratic_regressors=args.quadratic,
         quadratic_id_regressors=args.quadratic_id,
