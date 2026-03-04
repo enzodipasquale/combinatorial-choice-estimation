@@ -47,10 +47,10 @@ run_with_timeout.sh
 
 # Project-specific directories
 /applications/firms_export/
-combchoice/_legacy/
-combchoice/_deprecated/
-combchoice/scenarios/
-combchoice/tests
+combest/_legacy/
+combest/_deprecated/
+combest/scenarios/
+combest/tests
 debug/
 debug_se/
 experiments/

@@ -8,7 +8,7 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import combchoice as cc
+import combest as ce
 from paper.numerical_experiments.large_scale.generate_data import generate_data
 
 
@@ -34,7 +34,7 @@ def bundle_stats(spec, M, alpha=0.1, lambda_val=None, N=25, seed=0, sigma=1.0):
     dim_cfg = comm.bcast(dim_cfg, root=0)
     subproblem = comm.bcast(subproblem, root=0)
 
-    model = cc.Model()
+    model = ce.Model()
     model.load_config({"dimensions": dim_cfg, "subproblem": {"name": subproblem},
                      "row_generation": {"theta_bounds": {"lb": -100, "ub": 100}}})
     model.data.load_and_distribute_input_data(input_data)

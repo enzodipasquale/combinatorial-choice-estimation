@@ -1,5 +1,5 @@
 #!/bin/env python
-import sys, yaml
+import json, sys, yaml
 import numpy as np
 from pathlib import Path
 from mpi4py import MPI
@@ -9,8 +9,8 @@ APP_DIR = BASE_DIR.parent
 PROJECT_ROOT = APP_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import combchoice as cc
-from combchoice.estimation.callbacks import adaptive_gurobi_timeout
+import combest as ce
+from combest.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
 from applications.combinatorial_auction.results import save_point_estimate
 
@@ -80,7 +80,7 @@ else:
 
 config = comm.bcast(config, root=0)
 
-auction = cc.Model()
+auction = ce.Model()
 auction.load_config(config)
 auction.data.load_and_distribute_input_data(input_data)
 auction.features.build_quadratic_covariates_from_data()
@@ -113,3 +113,22 @@ if rank == 0:
 
 if rank == 0 and result is not None and app.get("save_results", True):
     save_point_estimate(config, result, auction.n_obs, auction.n_items, auction.n_covariates)
+
+if rank == 0 and result is not None:
+    out = {
+        "theta_hat": result.theta_hat.tolist(),
+        "n_items": n_items, "n_obs": n_obs, "n_covariates": n_covariates,
+        "n_id_mod": n_id_mod, "n_item_mod": n_item_mod,
+        "n_id_quad": n_id_quad, "n_item_quad": n_item_quad,
+        "specification": {
+            "modular": modular_regressors,
+            "quadratic": quadratic_regressors,
+            "quadratic_id": quadratic_id_regressors,
+        },
+        "converged": bool(result.converged),
+        "objective": float(result.final_objective),
+        "iterations": int(result.num_iterations),
+    }
+    with open(BASE_DIR / "bta_estimation_result.json", "w") as f:
+        json.dump(out, f, indent=2)
+    print(f"\nSaved → {BASE_DIR / 'bta_estimation_result.json'}")
