@@ -44,7 +44,6 @@ if rank == 0:
         modular_regressors=app.get("modular_regressors"),
         quadratic_regressors=app.get("quadratic_regressors"),
         quadratic_id_regressors=app.get("quadratic_id_regressors"),
-        rescale_features=app.get("rescale_features", True),
     )
 
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
