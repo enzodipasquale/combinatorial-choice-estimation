@@ -37,6 +37,7 @@ if rank == 0:
         modular_regressors=app.get("modular_regressors"),
         quadratic_regressors=app.get("quadratic_regressors"),
         quadratic_id_regressors=app.get("quadratic_id_regressors"),
+        ab_elig_bandwidth=app.get("ab_elig_bandwidth", 1.0),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
     n_id_mod = input_data["id_data"]["modular"].shape[-1]
