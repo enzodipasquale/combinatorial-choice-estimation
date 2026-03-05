@@ -243,7 +243,7 @@ def main():
 
         result = model.row_generation.solve(
             iteration_callback=pt_cb, initialization_callback=init_cb, verbose=True)
-        theta = result.theta_hat
+        theta = comm.bcast(result.theta_hat if model.is_root() else None)
 
         if warmstart:
             n_kept, n_total = filter_by_slack(model, stored, args.ws_keep_pct)
