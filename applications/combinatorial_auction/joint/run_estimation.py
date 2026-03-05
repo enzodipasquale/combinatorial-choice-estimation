@@ -36,7 +36,7 @@ if rank == 0:
     input_data, meta = prepare_joint_data(
         modular_regressors=app.get("modular_regressors"),
         quadratic_regressors=app.get("quadratic_regressors"),
-        quadratic_id_regressors=app.get("quadratic_id_regressors"),
+        quadratic_id_regressors=app.get("quadratic_id_regressors", []),
         ab_elig_bandwidth=app.get("ab_elig_bandwidth", 30.0),
     )
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
