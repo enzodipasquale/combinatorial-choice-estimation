@@ -11,6 +11,19 @@ FEATURE_KEYS = [
     ("consec_1d", "item_data"),
 ]
 
+COVARIATE_NAMES = {
+    "modular_3d": ["revenue"],
+    "modular_1d": ["oper×dist"],
+    "entry_1d":   ["entry"],
+    "quadratic_2d": ["proximity", "prox×dist"],
+    "consec_1d":  ["consec×dist"],
+}
+
+COVARIATE_LBS = {
+    "quadratic_2d": -1.0,
+    "consec_1d": 0.0,
+}
+
 
 class DiscountedJointQuadKnapsackSolver(SubproblemSolver):
 
