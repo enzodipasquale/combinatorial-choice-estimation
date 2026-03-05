@@ -90,9 +90,12 @@ def main(modular_regressors=None, quadratic_regressors=None, quadratic_id_regres
     zero.  E.g. ``elig_pop_c`` in the config gives a separate θ that is
     identified only from C-block, alongside the shared ``elig_pop``.
     """
-    modular_regressors = modular_regressors or ["elig_pop"]
-    quadratic_regressors = quadratic_regressors or ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]
-    quadratic_id_regressors = quadratic_id_regressors or ["elig_adjacency", "elig_pop_centroid_delta4"]
+    if modular_regressors is None:
+        modular_regressors = ["elig_pop"]
+    if quadratic_regressors is None:
+        quadratic_regressors = ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]
+    if quadratic_id_regressors is None:
+        quadratic_id_regressors = ["elig_adjacency", "elig_pop_centroid_delta4"]
 
     # ── C-block BTA data ─────────────────────────────────────────────
     raw = load_raw_data(continental_only=True)
