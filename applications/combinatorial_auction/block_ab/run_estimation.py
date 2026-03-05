@@ -53,23 +53,21 @@ if rank == 0:
     n_item_quad = input_data["item_data"]["quadratic"].shape[-1]
     n_covariates = n_id_mod + n_item_mod + n_id_quad + n_item_quad
 
-    config["dimensions"].update({
-        "n_obs": n_obs, "n_items": n_items, "n_covariates": n_covariates,
-    })
-
-    # bounds for id modular (all except first)
-    bounds = config["row_generation"]["theta_bounds"]
-    for k in range(1, n_id_mod):
-        bounds.setdefault("lbs", {})[k] = -1000
-        bounds.setdefault("ubs", {})[k] = 1000
-    # bounds for id quadratic
+    # Named covariates
     id_quad_offset = n_id_mod + n_item_mod
-    for k in range(id_quad_offset, id_quad_offset + n_id_quad):
-        bounds.setdefault("lbs", {})[k] = -1000
-        bounds.setdefault("ubs", {})[k] = 1000
-    # bounds for item quadratic
     item_quad_offset = id_quad_offset + n_id_quad
-    for k in range(item_quad_offset, item_quad_offset + n_item_quad):
+    covariate_names = {i: name for i, name in enumerate(app.get("modular_regressors", []))}
+    for i, name in enumerate(app.get("quadratic_id_regressors", [])):
+        covariate_names[id_quad_offset + i] = name
+    for i, name in enumerate(app.get("quadratic_regressors", [])):
+        covariate_names[item_quad_offset + i] = name
+
+    config["dimensions"].update(n_obs=n_obs, n_items=n_items, n_covariates=n_covariates,
+                                covariate_names=covariate_names)
+
+    # Widen bounds for non-FE parameters
+    bounds = config["row_generation"]["theta_bounds"]
+    for k in list(range(1, n_id_mod)) + list(range(id_quad_offset, id_quad_offset + n_id_quad)) + list(range(item_quad_offset, item_quad_offset + n_item_quad)):
         bounds.setdefault("lbs", {})[k] = -1000
         bounds.setdefault("ubs", {})[k] = 1000
 

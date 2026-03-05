@@ -48,13 +48,21 @@ if rank == 0:
     n_obs_c, n_obs_ab = meta["n_obs_c"], meta["n_obs_ab"]
     A = meta["A"]
 
-    config["dimensions"].update(n_obs=n_obs, n_items=n_items, n_covariates=n_covariates)
+    # Named covariates (structural params only; FEs unnamed → default θ[i])
+    id_quad_off = n_id_mod + n_item_mod
+    item_quad_off = id_quad_off + n_id_quad
+    covariate_names = {i: name for i, name in enumerate(app.get("modular_regressors", []))}
+    for i, name in enumerate(app.get("quadratic_id_regressors", [])):
+        covariate_names[id_quad_off + i] = name
+    for i, name in enumerate(app.get("quadratic_regressors", [])):
+        covariate_names[item_quad_off + i] = name
+
+    config["dimensions"].update(n_obs=n_obs, n_items=n_items, n_covariates=n_covariates,
+                                covariate_names=covariate_names)
     config["application"]["n_obs_c"] = n_obs_c
 
     # Widen bounds for non-FE parameters
     bounds = config["row_generation"]["theta_bounds"]
-    id_quad_off = n_id_mod + n_item_mod
-    item_quad_off = id_quad_off + n_id_quad
     for k in list(range(1, n_id_mod)) + list(range(id_quad_off, id_quad_off + n_id_quad)) + list(range(item_quad_off, item_quad_off + n_item_quad)):
         bounds.setdefault("lbs", {})[k] = -1000
         bounds.setdefault("ubs", {})[k] = 1000

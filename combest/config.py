@@ -17,6 +17,8 @@ class ConfigMixin:
                     else:
                         setattr(self, f.name, other_value)
 
+MAX_LABEL_WIDTH = 14
+
 @dataclass
 class DimensionsConfig(ConfigMixin):
     n_obs: int = None
@@ -35,7 +37,8 @@ class DimensionsConfig(ConfigMixin):
     def _build_labels(self):
         if self.n_covariates is not None:
             names = self.covariate_names or {}
-            self.covariate_labels = [names.get(i, f"θ[{i}]") for i in range(self.n_covariates)]
+            self.covariate_labels = [names.get(i, f"θ[{i}]")[:MAX_LABEL_WIDTH]
+                                     for i in range(self.n_covariates)]
             self.named_covariate_indices = list(names.keys())
             self.covariate_label_width = max((len(l) for l in self.covariate_labels), default=5)
         else:

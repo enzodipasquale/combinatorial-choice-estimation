@@ -1,74 +1,39 @@
 #!/bin/env python
-"""
-Search over rho for error correlation estimation via moment matching.
-
-  eps_{i,t,j} = sqrt(alpha) * eps_{i,j} + sqrt(1-alpha) * nu_{i,t,j}
-  eps_{i,j}   = sqrt(rho) * (A @ x_i)_j + sqrt(1-rho) * z_{i,j}
-
-Usage:
-  python search_rho.py --n_rho 5 --n_sample 100 --keep_top 20
-  mpirun -n 4 python search_rho.py --n_rho 21 --alpha 0.5
-"""
-import os
-import sys
-import json
-import time
-import argparse
+import os, sys, json, time, argparse
 from pathlib import Path
 from datetime import datetime
 import numpy as np
+import yaml
 import combest as ce
 from combest.estimation.callbacks import adaptive_gurobi_timeout
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "data"))
+BASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR / "data"))
 from prepare_data import main as load_data, build_input_data
 from solver import (DiscountedJointQuadKnapsackSolver, discounted_covariates_oracle,
-                    count_covariates, FEATURE_KEYS)
-from run_estimation import TIMEOUT_SCHEDULE, COVARIATE_NAMES, COVARIATE_LBS
+                    count_covariates)
+from run_estimation import build_covariate_meta
+
+config = yaml.safe_load(open(BASE_DIR / "config.yaml"))
+app = config["application"]
 
 
-def build_model(country, keep_top, discount_factor, n_simulations, n_sample):
+def build_model(n_sample=None):
     model = ce.Model()
 
     if model.is_root():
-        ctx = load_data(country, keep_top, discount_factor, n_sample=n_sample)
+        ctx = load_data(app["country"], app["keep_top"], app["discount"], n_sample=n_sample)
         input_data = build_input_data(ctx)
-        n_cov = count_covariates(input_data)
+        covariate_names, lbs = build_covariate_meta(input_data)
 
-        covariate_names, lbs = {}, {}
-        off = 0
-        for key, src in FEATURE_KEYS:
-            arr = input_data[src].get(key)
-            if arr is None:
-                continue
-            ncols = arr.shape[-1]
-            names = COVARIATE_NAMES.get(key, [f"{key}[{c}]" for c in range(ncols)])
-            for c in range(ncols):
-                covariate_names[off + c] = names[c] if c < len(names) else f"{key}[{c}]"
-                if key in COVARIATE_LBS:
-                    lbs[off + c] = COVARIATE_LBS[key]
-            off += ncols
-
-        config = {
-            "dimensions": {
-                "n_obs": ctx["n_obs"],
-                "n_items": ctx["n_items"],
-                "n_covariates": n_cov,
-                "n_simulations": n_simulations,
-                "covariate_names": covariate_names,
-            },
-            "subproblem": {
-                "gurobi_params": {"TimeLimit": 10},
-            },
-            "row_generation": {
-                "max_iters": 200,
-                "tolerance": 0.01,
-                "theta_bounds": {"lb": -10000, "ub": 10000, "lbs": lbs},
-            },
-        }
+        config["dimensions"].update(
+            n_obs=ctx["n_obs"], n_items=ctx["n_items"],
+            n_covariates=count_covariates(input_data),
+            covariate_names=covariate_names)
+        config["row_generation"]["theta_bounds"]["lbs"] = lbs
         n_dest, n_years = ctx["n_dest"], ctx["n_years"]
     else:
-        input_data, config, n_dest, n_years = None, {}, None, None
+        input_data, n_dest, n_years = None, None, None
 
     n_dest = model.comm_manager.bcast(n_dest)
     n_years = model.comm_manager.bcast(n_years)
@@ -76,7 +41,7 @@ def build_model(country, keep_top, discount_factor, n_simulations, n_sample):
     model.data.load_and_distribute_input_data(input_data)
 
     model.features.set_covariates_oracle(discounted_covariates_oracle)
-    model.features.build_local_modular_error_oracle(seed=42)
+    model.features.build_local_modular_error_oracle(seed=app["seed"])
     model.subproblems.load_solver(DiscountedJointQuadKnapsackSolver)
     model.subproblems.initialize_solver()
 
@@ -121,11 +86,9 @@ def make_warmstart_callback(stored, all_errors):
 def install_constraint_store(model, stored):
     solver = model.row_generation
     original = solver.add_master_constraints
-
     def storing(indices, bundles, covariates, errors):
         stored.append((indices.copy(), bundles.copy(), covariates.copy()))
         return original(indices, bundles, covariates, errors)
-
     if model.is_root():
         solver.add_master_constraints = storing
 
@@ -136,11 +99,9 @@ def filter_by_slack(model, stored, keep_pct):
     cc = model.row_generation.all_concatenated_constraints
     if cc is None:
         return 0, 0
-
     slacks = cc.Slack
     total = len(slacks)
     threshold = np.percentile(slacks, keep_pct)
-
     offset, filtered = 0, []
     for idx, bun, cov in stored:
         n = len(idx)
@@ -148,7 +109,6 @@ def filter_by_slack(model, stored, keep_pct):
         if keep.any():
             filtered.append((idx[keep], bun[keep], cov[keep]))
         offset += n
-
     n_kept = sum(len(f[0]) for f in filtered)
     stored.clear()
     stored.extend(filtered)
@@ -159,20 +119,18 @@ def compute_moments(bundles, n_dest, n_years, comm=None, n_total=None):
     B = bundles.reshape(-1, n_years, n_dest).astype(float)
     pair = np.einsum('itj,itl->jl', B, B)
     pers = np.einsum('itj,itj->j', B[:, 1:], B[:, :-1])
-
     if comm is not None:
         pair = comm.Reduce(pair)
         pers = comm.Reduce(pers)
         if not comm.is_root():
             return None
-
     n = n_total if n_total is not None else bundles.shape[0]
     return np.concatenate([pair[np.triu_indices(n_dest, k=1)] / (n * n_years),
                            pers / (n * (n_years - 1))])
 
 
 def save_results(args, results, comm):
-    base = Path(__file__).resolve().parent / args.output_dir
+    base = BASE_DIR / args.output_dir
     slurm_id = os.environ.get("SLURM_JOB_ID")
     tag = slurm_id if slurm_id else datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = base / tag
@@ -226,11 +184,8 @@ def parse_args():
     p.add_argument("--rho_max", type=float, default=1.0)
     p.add_argument("--n_rho", type=int, default=21)
     p.add_argument("--alpha", type=float, default=0.5)
-    p.add_argument("--country", type=str, default="MEX")
-    p.add_argument("--keep_top", type=int, default=30)
     p.add_argument("--n_sample", type=int, default=None)
-    p.add_argument("--n_simulations", type=int, default=5)
-    p.add_argument("--discount", type=float, default=0.95)
+    p.add_argument("--n_simulations", type=int, default=None)
     p.add_argument("--seed", type=int, default=999)
     p.add_argument("--no_warmstart", action="store_true")
     p.add_argument("--ws_keep_pct", type=float, default=30)
@@ -240,23 +195,25 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.n_simulations is not None:
+        config["dimensions"]["n_simulations"] = args.n_simulations
+
+    model, input_data, n_dest, n_years = build_model(n_sample=args.n_sample)
+
     rho_values = np.linspace(args.rho_min, args.rho_max, args.n_rho)
-    warmstart = not args.no_warmstart
-
-    model, input_data, n_dest, n_years = build_model(
-        args.country, args.keep_top, args.discount, args.n_simulations, args.n_sample)
-
     n_items = model.config.dimensions.n_items
     n_agents = model.config.dimensions.n_agents
+    n_sims = model.config.dimensions.n_simulations
     agent_counts = model.comm_manager.agent_counts
     comm = model.comm_manager
+    warmstart = not args.no_warmstart
 
     if model.is_root():
         obs_moments = compute_moments(input_data["id_data"]["obs_bundles"], n_dest, n_years)
         A = build_correlation_matrix(input_data)
         base_x, base_z, base_nu = generate_base_draws(n_agents, n_dest, n_items, args.seed)
         base_Ax = np.nan_to_num(base_x @ A.T)
-        dw = np.tile(input_data["id_data"]["discount_weights"], (args.n_simulations, 1))
+        dw = np.tile(input_data["id_data"]["discount_weights"], (n_sims, 1))
     else:
         obs_moments = None
         base_Ax, base_z, base_nu, dw = None, None, None, None
@@ -265,7 +222,7 @@ def main():
     if warmstart:
         install_constraint_store(model, stored)
 
-    pt_cb, _ = adaptive_gurobi_timeout(TIMEOUT_SCHEDULE)
+    pt_cb, _ = adaptive_gurobi_timeout(config["callbacks"]["row_gen"])
 
     results = []
     for i, rho in enumerate(rho_values):
@@ -277,8 +234,7 @@ def main():
             all_errors = build_errors(rho, args.alpha, base_Ax, base_z, base_nu, dw, n_dest)
         else:
             all_errors = None
-        model.features.local_modular_errors = \
-            model.comm_manager.Scatterv_by_row(all_errors, agent_counts)
+        model.features.local_modular_errors = comm.Scatterv_by_row(all_errors, agent_counts)
 
         init_cb = None
         if warmstart and i > 0 and stored:
