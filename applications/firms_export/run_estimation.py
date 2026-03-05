@@ -68,6 +68,6 @@ def build_model(n_sample=None, **overrides):
 
 
 if __name__ == "__main__":
-    model = build_model(n_sample=200)
+    model = build_model(n_sample=app.get("n_sample"))
     pt_cb, _ = adaptive_gurobi_timeout(config["callbacks"]["row_gen"])
     model.row_generation.solve(iteration_callback=pt_cb, verbose=True)

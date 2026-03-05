@@ -184,7 +184,7 @@ def parse_args():
     p.add_argument("--rho_max", type=float, default=1.0)
     p.add_argument("--n_rho", type=int, default=21)
     p.add_argument("--alpha", type=float, default=0.5)
-    p.add_argument("--n_sample", type=int, default=None)
+    p.add_argument("--n_sample", type=int, default=app.get("n_sample"))
     p.add_argument("--n_simulations", type=int, default=None)
     p.add_argument("--seed", type=int, default=999)
     p.add_argument("--no_warmstart", action="store_true")
