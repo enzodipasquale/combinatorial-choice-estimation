@@ -1,0 +1,294 @@
+#!/bin/env python
+"""
+Search over rho for error correlation estimation via moment matching.
+
+  eps_{i,t,j} = sqrt(alpha) * eps_{i,j} + sqrt(1-alpha) * nu_{i,t,j}
+  eps_{i,j}   = sqrt(rho) * (A @ x_i)_j + sqrt(1-rho) * z_{i,j}
+
+Usage:
+  python search_rho.py --n_rho 5 --n_sample 100 --keep_top 20
+  mpirun -n 4 python search_rho.py --n_rho 21 --alpha 0.5
+"""
+import sys
+import time
+import argparse
+from pathlib import Path
+import numpy as np
+import combest as ce
+from combest.estimation.callbacks import adaptive_gurobi_timeout
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "data"))
+from prepare_data import main as load_data, build_input_data
+from solver import (DiscountedJointQuadKnapsackSolver, discounted_covariates_oracle,
+                    count_covariates, FEATURE_KEYS)
+from run_estimation import TIMEOUT_SCHEDULE, COVARIATE_NAMES, COVARIATE_LBS
+
+
+def build_model(country, keep_top, discount_factor, n_simulations, n_sample):
+    model = ce.Model()
+
+    if model.is_root():
+        ctx = load_data(country, keep_top, discount_factor, n_sample=n_sample)
+        input_data = build_input_data(ctx)
+        n_cov = count_covariates(input_data)
+
+        covariate_names, lbs = {}, {}
+        off = 0
+        for key, src in FEATURE_KEYS:
+            arr = input_data[src].get(key)
+            if arr is None:
+                continue
+            ncols = arr.shape[-1]
+            names = COVARIATE_NAMES.get(key, [f"{key}[{c}]" for c in range(ncols)])
+            for c in range(ncols):
+                covariate_names[off + c] = names[c] if c < len(names) else f"{key}[{c}]"
+                if key in COVARIATE_LBS:
+                    lbs[off + c] = COVARIATE_LBS[key]
+            off += ncols
+
+        config = {
+            "dimensions": {
+                "n_obs": ctx["n_obs"],
+                "n_items": ctx["n_items"],
+                "n_covariates": n_cov,
+                "n_simulations": n_simulations,
+                "covariate_names": covariate_names,
+            },
+            "subproblem": {
+                "gurobi_params": {"TimeLimit": 10},
+            },
+            "row_generation": {
+                "max_iters": 200,
+                "tolerance": 0.01,
+                "theta_bounds": {"lb": -10000, "ub": 10000, "lbs": lbs},
+            },
+        }
+        n_dest, n_years = ctx["n_dest"], ctx["n_years"]
+    else:
+        input_data, config, n_dest, n_years = None, {}, None, None
+
+    n_dest = model.comm_manager.bcast(n_dest)
+    n_years = model.comm_manager.bcast(n_years)
+    model.load_config(config)
+    model.data.load_and_distribute_input_data(input_data)
+
+    model.features.set_covariates_oracle(discounted_covariates_oracle)
+    model.features.build_local_modular_error_oracle(seed=42)
+    model.subproblems.load_solver(DiscountedJointQuadKnapsackSolver)
+    model.subproblems.initialize_solver()
+
+    return model, input_data, n_dest, n_years
+
+
+def build_correlation_matrix(input_data):
+    A = input_data["item_data"]["quadratic_2d"][:, :, 0].copy()
+    norms = np.linalg.norm(A, axis=1, keepdims=True)
+    return A / np.where(norms > 1e-10, norms, 1.0)
+
+
+def generate_base_draws(n_agents, n_dest, n_items, seed=999):
+    x = np.zeros((n_agents, n_dest))
+    z = np.zeros((n_agents, n_dest))
+    nu = np.zeros((n_agents, n_items))
+    for i in range(n_agents):
+        rng = np.random.default_rng((seed, i))
+        x[i] = rng.normal(0, 1, n_dest)
+        z[i] = rng.normal(0, 1, n_dest)
+        nu[i] = rng.normal(0, 1, n_items)
+    return x, z, nu
+
+
+def build_errors(rho, alpha, base_Ax, base_z, base_nu, dw, n_dest):
+    n_years = dw.shape[1]
+    eps = np.sqrt(rho) * base_Ax + np.sqrt(1 - rho) * base_z
+    eps = np.tile(eps[:, None, :], (1, n_years, 1)).reshape(eps.shape[0], -1)
+    total = np.sqrt(alpha) * eps + np.sqrt(1 - alpha) * base_nu
+    total *= np.repeat(dw, n_dest, axis=1)
+    return total
+
+
+def make_warmstart_callback(stored, all_errors):
+    def cb(rg):
+        for idx, bun, cov in stored:
+            err = (all_errors[idx] * bun).sum(-1)
+            rg.add_master_constraints(idx, bun, cov, err)
+    return cb
+
+
+def install_constraint_store(model, stored):
+    solver = model.row_generation
+    original = solver.add_master_constraints
+
+    def storing(indices, bundles, covariates, errors):
+        stored.append((indices.copy(), bundles.copy(), covariates.copy()))
+        return original(indices, bundles, covariates, errors)
+
+    if model.is_root():
+        solver.add_master_constraints = storing
+
+
+def filter_by_slack(model, stored, keep_pct):
+    if not model.is_root() or not stored:
+        return 0, 0
+    cc = model.row_generation.all_concatenated_constraints
+    if cc is None:
+        return 0, 0
+
+    slacks = cc.Slack
+    total = len(slacks)
+    threshold = np.percentile(slacks, keep_pct)
+
+    offset, filtered = 0, []
+    for idx, bun, cov in stored:
+        n = len(idx)
+        keep = slacks[offset:offset + n] <= threshold
+        if keep.any():
+            filtered.append((idx[keep], bun[keep], cov[keep]))
+        offset += n
+
+    n_kept = sum(len(f[0]) for f in filtered)
+    stored.clear()
+    stored.extend(filtered)
+    return n_kept, total
+
+
+def compute_moments(bundles, n_dest, n_years, comm=None, n_total=None):
+    B = bundles.reshape(-1, n_years, n_dest).astype(float)
+    pair = np.einsum('itj,itl->jl', B, B)
+    pers = np.einsum('itj,itj->j', B[:, 1:], B[:, :-1])
+
+    if comm is not None:
+        pair = comm.Reduce(pair)
+        pers = comm.Reduce(pers)
+        if not comm.is_root():
+            return None
+
+    n = n_total if n_total is not None else bundles.shape[0]
+    return np.concatenate([pair[np.triu_indices(n_dest, k=1)] / (n * n_years),
+                           pers / (n * (n_years - 1))])
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--rho_min", type=float, default=0.0)
+    p.add_argument("--rho_max", type=float, default=1.0)
+    p.add_argument("--n_rho", type=int, default=21)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--country", type=str, default="MEX")
+    p.add_argument("--keep_top", type=int, default=30)
+    p.add_argument("--n_sample", type=int, default=None)
+    p.add_argument("--n_simulations", type=int, default=5)
+    p.add_argument("--discount", type=float, default=0.95)
+    p.add_argument("--seed", type=int, default=999)
+    p.add_argument("--no_warmstart", action="store_true")
+    p.add_argument("--ws_keep_pct", type=float, default=30)
+    p.add_argument("--output", type=str, default="rho_search_results")
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    rho_values = np.linspace(args.rho_min, args.rho_max, args.n_rho)
+    warmstart = not args.no_warmstart
+
+    model, input_data, n_dest, n_years = build_model(
+        args.country, args.keep_top, args.discount, args.n_simulations, args.n_sample)
+
+    n_items = model.config.dimensions.n_items
+    n_agents = model.config.dimensions.n_agents
+    agent_counts = model.comm_manager.agent_counts
+    comm = model.comm_manager
+
+    if model.is_root():
+        obs_moments = compute_moments(input_data["id_data"]["obs_bundles"], n_dest, n_years)
+        A = build_correlation_matrix(input_data)
+        base_x, base_z, base_nu = generate_base_draws(n_agents, n_dest, n_items, args.seed)
+        base_Ax = np.nan_to_num(base_x @ A.T)
+        dw = np.tile(input_data["id_data"]["discount_weights"], (args.n_simulations, 1))
+    else:
+        obs_moments = None
+        base_Ax, base_z, base_nu, dw = None, None, None, None
+
+    stored = []
+    if warmstart:
+        install_constraint_store(model, stored)
+
+    pt_cb, _ = adaptive_gurobi_timeout(TIMEOUT_SCHEDULE)
+
+    results = []
+    for i, rho in enumerate(rho_values):
+        if model.is_root():
+            print(f"\n{'='*80}\nRHO = {rho:.4f}  [{i+1}/{len(rho_values)}]\n{'='*80}")
+        t0 = time.time()
+
+        if model.is_root():
+            all_errors = build_errors(rho, args.alpha, base_Ax, base_z, base_nu, dw, n_dest)
+        else:
+            all_errors = None
+        model.features.local_modular_errors = \
+            model.comm_manager.Scatterv_by_row(all_errors, agent_counts)
+
+        init_cb = None
+        if warmstart and i > 0 and stored:
+            init_cb = make_warmstart_callback(list(stored), all_errors)
+        stored.clear()
+
+        result = model.row_generation.solve(
+            iteration_callback=pt_cb, initialization_callback=init_cb, verbose=True)
+        theta = result.theta_hat
+
+        if warmstart:
+            n_kept, n_total = filter_by_slack(model, stored, args.ws_keep_pct)
+            if model.is_root() and n_total > 0:
+                print(f"Warm-start: keeping {n_kept}/{n_total} constraints "
+                      f"(tightest {args.ws_keep_pct:.0f}%)")
+
+        sim_bundles = model.subproblems.solve(theta)
+        sim_moments = compute_moments(sim_bundles, n_dest, n_years, comm=comm, n_total=n_agents)
+        elapsed = time.time() - t0
+
+        if model.is_root():
+            l2 = float(np.linalg.norm(sim_moments - obs_moments))
+            results.append({"rho": rho, "theta": theta.copy(), "l2": l2, "time": elapsed})
+            print(f"Moment L2 distance: {l2:.6f}  ({elapsed:.0f}s)")
+
+    if model.is_root():
+        print(f"\n{'='*80}\nSUMMARY\n{'='*80}")
+        print(f"{'rho':>6} | {'L2':>12} | {'time':>6} | theta")
+        print("-" * 80)
+        for r in results:
+            theta_str = "  ".join(f"{v:8.4f}" for v in r["theta"])
+            print(f"{r['rho']:6.3f} | {r['l2']:12.6f} | {r['time']:5.0f}s | {theta_str}")
+
+        out_dir = Path(__file__).resolve().parent
+        np.savez(out_dir / f"{args.output}.npz",
+                 rhos=np.array([r["rho"] for r in results]),
+                 l2=np.array([r["l2"] for r in results]),
+                 thetas=np.array([r["theta"] for r in results]),
+                 times=np.array([r["time"] for r in results]),
+                 alpha=args.alpha)
+
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            rhos = [r["rho"] for r in results]
+            dists = [r["l2"] for r in results]
+            fig, ax = plt.subplots(figsize=(7, 5))
+            ax.plot(rhos, dists, "o-", linewidth=2, markersize=8)
+            imin = int(np.argmin(dists))
+            ax.plot(rhos[imin], dists[imin], "r*", markersize=18,
+                    label=f"min at ρ={rhos[imin]:.2f}")
+            ax.set_xlabel("ρ (error correlation)")
+            ax.set_ylabel("L2 moment distance")
+            ax.set_title("Moment distance vs ρ")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(out_dir / f"{args.output}.png", dpi=150)
+        except ImportError:
+            pass
+
+
+if __name__ == "__main__":
+    main()
