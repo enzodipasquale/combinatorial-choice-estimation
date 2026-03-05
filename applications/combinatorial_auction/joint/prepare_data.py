@@ -72,7 +72,7 @@ def _strip_c(name):
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main(modular_regressors=None, quadratic_regressors=None, quadratic_id_regressors=None,
-         ab_elig_bandwidth=1.0):
+         ab_elig_bandwidth=30.0):
     """Prepare stacked joint data.
 
     Parameters
