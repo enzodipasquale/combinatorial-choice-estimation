@@ -87,33 +87,25 @@ class DataManager:
         return self._quadratic_data_info(self._local_data_version)
 
     def _validate_quadratic_data_dimensions(self):
+        qinfo = self.quadratic_data_info
         agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
-        dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        modular_agent_dim = dim(agent_data, "modular")
-        modular_item_dim = dim(item_data, "modular")
-        quadratic_agent_dim = dim(agent_data, "quadratic")
-        quadratic_item_dim = dim(item_data, "quadratic")
         n_items = self.dimensions_cfg.n_items
-
         n_local = self.comm_manager.num_local_agent
-        if modular_agent_dim:
-            expected = (n_local, n_items, modular_agent_dim)
-            if agent_data['modular'].shape != expected:
-                raise ValueError(f"id_data['modular'] shape {agent_data['modular'].shape} != expected {expected}")
-        if modular_item_dim:
-            expected = (n_items, modular_item_dim)
-            if item_data['modular'].shape != expected:
-                raise ValueError(f"item_data['modular'] shape {item_data['modular'].shape} != expected {expected}")
-        if quadratic_agent_dim:
-            expected = (n_local, n_items, n_items, quadratic_agent_dim)
-            if agent_data['quadratic'].shape != expected:
-                raise ValueError(f"id_data['quadratic'] shape {agent_data['quadratic'].shape} != expected {expected}")
-        if quadratic_item_dim:
-            expected = (n_items, n_items, quadratic_item_dim)
-            if item_data['quadratic'].shape != expected:
-                raise ValueError(f"item_data['quadratic'] shape {item_data['quadratic'].shape} != expected {expected}")
 
-        total_covariates = modular_agent_dim + modular_item_dim + quadratic_agent_dim + quadratic_item_dim
+        expected_shapes = {
+            ('id_data', 'modular', qinfo.modular_agent): (n_local, n_items, qinfo.modular_agent),
+            ('item_data', 'modular', qinfo.modular_item): (n_items, qinfo.modular_item),
+            ('id_data', 'quadratic', qinfo.quadratic_agent): (n_local, n_items, n_items, qinfo.quadratic_agent),
+            ('item_data', 'quadratic', qinfo.quadratic_item): (n_items, n_items, qinfo.quadratic_item),
+        }
+        for (src, key, dim), expected in expected_shapes.items():
+            if not dim:
+                continue
+            data = agent_data if src == 'id_data' else item_data
+            if data[key].shape != expected:
+                raise ValueError(f"{src}['{key}'] shape {data[key].shape} != expected {expected}")
+
+        total_covariates = qinfo.modular_agent + qinfo.modular_item + qinfo.quadratic_agent + qinfo.quadratic_item
         if total_covariates != self.dimensions_cfg.n_covariates:
             raise ValueError(
                 f"Total covariates from data ({total_covariates}) != "

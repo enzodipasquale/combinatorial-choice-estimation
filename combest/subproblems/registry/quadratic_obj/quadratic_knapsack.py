@@ -1,27 +1,21 @@
 import numpy as np
 import gurobipy as gp
-from ...solver_base import SubproblemSolver
+from ...solver_base import SubproblemSolver, GurobiMixin
 from .quadratic_obj_base import QuadraticObjectiveMixin
-from combest.utils import suppress_output
 
-class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
+class QuadraticKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
         weights = self.data_manager.local_data["item_data"]['weight']
         capacities = self.data_manager.local_data["id_data"]['capacity']
+        masks = self.data_manager.local_data["id_data"].get("item_mask")
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
-            with suppress_output():
-                model = gp.Model()
-                model.setParam('OutputFlag', 0)
-                model.setParam('Threads', 1)
-                for k, v in self.subproblem_cfg.gurobi_params.items():
-                    if v is not None:
-                        model.setParam(k, v)
-                model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-                B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, name='bundle')
-                model.addConstr(weights @ B <= capacities[local_id])
-                model.update()
+            model = self._create_gurobi_model()
+            ub = masks[local_id].astype(float) if masks is not None else 1.0
+            B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, ub=ub, name='bundle')
+            model.addConstr(weights @ B <= capacities[local_id])
+            model.update()
             self.local_problems.append(model)
 
     def solve(self, theta):
@@ -36,9 +30,3 @@ class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
             except Exception as e:
                 raise ValueError(f'Failed to solve quadratic knapsack subproblem at local_id={i}, exception={e}')
         return results
-
-    def update_solver_settings(self, settings_dict):
-        if hasattr(self, 'local_problems'):
-            for model in self.local_problems:
-                for param, value in settings_dict.items():
-                    model.setParam(param, value)

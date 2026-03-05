@@ -73,21 +73,36 @@ if rank == 0:
         bounds.setdefault("lbs", {})[k] = -1000
         bounds.setdefault("ubs", {})[k] = 1000
 
+    A = meta["A"]
+
     print(f"\nA/B estimation: {n_obs} agents, {n_items} items (MTAs), {n_covariates} covariates")
     print(f"  id_mod={n_id_mod}, item_mod={n_item_mod} ({n_items} FE + "
           f"{n_item_mod - n_items} diag), id_quad={n_id_quad}, item_quad={n_item_quad}")
 else:
     input_data = None
+    A = None
 
 if comm is not None:
     config = comm.bcast(config, root=0)
+    A = comm.bcast(A, root=0)
 
 # ── Model ─────────────────────────────────────────────────────────────
 auction = ce.Model()
 auction.load_config(config)
 auction.data.load_and_distribute_input_data(input_data)
 auction.features.build_quadratic_covariates_from_data()
-auction.features.build_local_modular_error_oracle(seed=app.get("error_seed", 1998))
+# Build BTA-level errors aggregated to MTA (consistent with C-block error structure)
+seed = app.get("error_seed", 1998)
+n_btas = A.shape[1]
+n_local = auction.features.comm_manager.num_local_agent
+bta_errors = np.zeros((n_local, n_btas))
+for i, global_id in enumerate(auction.features.comm_manager.agent_ids):
+    rng = np.random.default_rng((seed, global_id))
+    bta_errors[i] = rng.normal(0, 1, n_btas)
+auction.features.local_modular_errors = bta_errors @ A.T
+auction.features._error_oracle = lambda bundles, ids: (auction.features.local_modular_errors[ids] * bundles).sum(-1)
+auction.features._error_oracle_vectorized = True
+auction.features._error_oracle_takes_data = False
 auction.subproblems.load_solver()
 
 callbacks = config.get("callbacks", {})

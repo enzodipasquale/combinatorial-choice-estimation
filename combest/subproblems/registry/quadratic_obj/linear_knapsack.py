@@ -1,27 +1,19 @@
 import numpy as np
 import gurobipy as gp
-from ...solver_base import SubproblemSolver
+from ...solver_base import SubproblemSolver, GurobiMixin
 from .quadratic_obj_base import QuadraticObjectiveMixin
-from combest.utils import suppress_output
 
-class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
+class LinearKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
         weights = self.data_manager.local_data["item_data"]['weight']
         capacities = self.data_manager.local_data["id_data"]['capacity']
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
-            with suppress_output():
-                model = gp.Model()
-                model.setParam('OutputFlag', 0)
-                model.setParam('Threads', 1)
-                time_limit = self.subproblem_cfg.gurobi_params.get('TimeLimit')
-                if time_limit:
-                    model.setParam('TimeLimit', time_limit)
-                model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-                B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY)
-                model.addConstr(weights @ B <= capacities[local_id])
-                model.update()
+            model = self._create_gurobi_model()
+            B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY)
+            model.addConstr(weights @ B <= capacities[local_id])
+            model.update()
             self.local_problems.append(model)
 
     def solve(self, theta):
@@ -35,9 +27,3 @@ class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
             model.optimize()
             results[i] = np.array([v.x for v in B], dtype=bool)
         return results
-
-    def update_solver_settings(self, settings_dict):
-        if hasattr(self, 'local_problems'):
-            for model in self.local_problems:
-                for param, value in settings_dict.items():
-                    model.setParam(param, value)
