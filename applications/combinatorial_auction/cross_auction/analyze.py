@@ -19,13 +19,12 @@ from pathlib import Path
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
-from applications.combinatorial_auction.data.prepare_data import load_raw_data, build_context, build_features, QUADRATIC
-from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
-    load_aggregation_matrix,
+from applications.combinatorial_auction.data.prepare_data import (
+    load_raw_data, build_context, build_features, load_aggregation_matrix, QUADRATIC,
 )
 
-AB_DIR = APP_DIR / "ab_block"
-BTA_DIR = APP_DIR / "point_estimate"
+AB_DIR = APP_DIR / "block_ab"
+BTA_DIR = APP_DIR / "block_c"
 
 
 def load_results():
