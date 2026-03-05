@@ -19,12 +19,8 @@ APP_DIR = AB_DIR.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
 from applications.combinatorial_auction.data.prepare_data import (
-    load_raw_data, build_context, build_features,
-    MODULAR, QUADRATIC, QUADRATIC_ID, WEIGHT_ROUNDING_TICK,
-)
-from applications.combinatorial_auction.data.prepare_data import DATA_DIR as BTA_DATA_DIR
-from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
-    load_aggregation_matrix,
+    load_raw_data, build_context, build_features, load_aggregation_matrix,
+    MODULAR, QUADRATIC, QUADRATIC_ID, WEIGHT_ROUNDING_TICK, DATA_DIR as BTA_DATA_DIR,
 )
 
 DATA_DIR = AB_DIR / "data"

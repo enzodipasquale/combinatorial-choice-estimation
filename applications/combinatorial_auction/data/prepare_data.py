@@ -182,6 +182,22 @@ def _assets_pop_centroid_delta4(ctx):
     pc = _pop_centroid(ctx, delta=4)
     return ctx["assets"][:, None, None] * pc[None, :, :]
 
+# ── BTA → MTA aggregation ─────────────────────────────────
+
+def load_aggregation_matrix(continental_btas):
+    """Build binary (n_mtas, n_btas) aggregation matrix from census BTA→MTA mapping."""
+    df = pd.read_csv(DATA_DIR / "cntysv2000_census-bta-may2009.csv", encoding="latin-1")
+    df = df.assign(bta=pd.to_numeric(df["BTA"], errors="coerce"),
+                   mta=pd.to_numeric(df["MTA"], errors="coerce")).dropna()
+    m = df[df["bta"].isin(continental_btas)]
+    bta_col = {b: i for i, b in enumerate(continental_btas)}
+    mta_ids = sorted(m["mta"].unique().astype(int).tolist())
+    mta_row = {mta: i for i, mta in enumerate(mta_ids)}
+    A = np.zeros((len(mta_ids), len(continental_btas)))
+    for _, r in m.iterrows():
+        A[mta_row[int(r["mta"])], bta_col[int(r["bta"])]] = 1
+    return A
+
 # ── Data loading  ─────────────────────────────────────────
 
 def build_hq_distance(bidder_data, bta_data, geo_distance):
