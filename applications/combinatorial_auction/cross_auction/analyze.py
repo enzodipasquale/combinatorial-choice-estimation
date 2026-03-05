@@ -25,6 +25,7 @@ from applications.combinatorial_auction.data.prepare_data import (
 
 AB_DIR = APP_DIR / "block_ab"
 BTA_DIR = APP_DIR / "block_c"
+JOINT_DIR = APP_DIR / "joint"
 
 
 def load_results():
@@ -40,6 +41,17 @@ def extract_fe(result):
     return theta[n_id : n_id + n_items]
 
 
+def extract_joint_fe(result):
+    """Extract BTA and MTA FEs from joint estimation result."""
+    theta = np.array(result["theta_hat"])
+    n_id = result["n_id_mod"] + result["n_id_quad"]
+    n_btas = result["n_btas"]
+    n_mtas = result["n_mtas"]
+    fe_bta = theta[n_id : n_id + n_btas]
+    fe_mta = theta[n_id + n_btas : n_id + n_btas + n_mtas]
+    return fe_bta, fe_mta
+
+
 def load_prices(raw, continental_mta_nums, A):
     # BTA prices (C-block winning bids, raw dollars)
     price_bta = raw["bta_data"]["bid"].to_numpy().astype(float)
@@ -50,8 +62,10 @@ def load_prices(raw, continental_mta_nums, A):
     mta_avg = winners.groupby("mta_num")["price"].mean()
     price_ab = np.array([mta_avg.get(m, 0.0) for m in continental_mta_nums])
 
-    # aggregate BTA prices to MTA
-    price_mta_c = A @ price_bta
+    # aggregate BTA prices to MTA, rescale to billions
+    price_mta_c = A @ price_bta / 1e9
+    price_ab = price_ab / 1e9
+    price_bta = price_bta / 1e9
     return price_mta_c, price_ab, price_bta
 
 
@@ -116,6 +130,46 @@ def run(include_diag_quad=False, quadratic_regressors=None):
     return {"beta": beta, "se": se, "r2": r2, "col_names": col_names, "resid": resid}
 
 
+def run_joint(result_file="joint_estimation_result.json"):
+    """Cross-auction α from joint estimation FEs."""
+    joint = json.load(open(JOINT_DIR / result_file))
+    fe_bta, fe_ab = extract_joint_fe(joint)
+
+    raw = load_raw_data(continental_only=True)
+    continental_btas = raw["bta_data"]["bta"].values.astype(int)
+    A = load_aggregation_matrix(continental_btas)
+    n_mtas = A.shape[0]
+
+    continental_mta_nums = joint["continental_mta_nums"]
+    price_mta_c, price_ab, price_bta = load_prices(raw, continental_mta_nums, A)
+
+    # aggregate BTA FE to MTA
+    fe_mta_c = A @ fe_bta
+    n_btas_per_mta = A.sum(axis=1)
+
+    Y = fe_mta_c - fe_ab
+    X_price = price_mta_c - price_ab
+    X = np.column_stack([np.ones(n_mtas), n_btas_per_mta, X_price])
+    col_names = ["const", "|m|", "α (price)"]
+
+    beta, se, r2, resid = ols(X, Y)
+
+    print(f"\n{'='*60}")
+    print(f"Cross-auction regression — JOINT  (N = {n_mtas} MTAs)")
+    print(f"{'='*60}")
+    print(f"  Joint result: {joint['n_items']} items, converged={joint['converged']}, iters={joint['iterations']}")
+    spec = joint.get("specification", {})
+    print(f"  Spec: mod={spec.get('modular')}, quad={spec.get('quadratic')}, qid={spec.get('quadratic_id')}")
+    print(f"\n  {'Covariate':<20} {'Estimate':>12} {'SE':>12} {'t-stat':>10}")
+    print(f"  {'-'*54}")
+    for name, b, s in zip(col_names, beta, se):
+        print(f"  {name:<20} {b:>12.6f} {s:>12.6f} {b/s:>10.3f}")
+    print(f"\n  R² = {r2:.4f}")
+    print(f"  Residual std = {resid.std():.4f}")
+
+    return {"beta": beta, "se": se, "r2": r2, "col_names": col_names, "resid": resid}
+
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -125,3 +179,10 @@ if __name__ == "__main__":
 
     print("\n── With within-MTA complementarity controls ──")
     run(include_diag_quad=True)
+
+    print("\n\n" + "="*60)
+    print("  JOINT ESTIMATION")
+    print("="*60)
+
+    print("\n── Joint ──")
+    run_joint()
