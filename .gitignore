@@ -31,6 +31,7 @@ run_with_timeout.sh
 *.err
 *.json
 *.slurm
+*.npz
 
 
 # Gurobi outputs
@@ -46,7 +47,7 @@ run_with_timeout.sh
 *.png
 
 # Project-specific directories
-/applications/firms_export/
+applications/firms_export/data/datasets
 combest/_legacy/
 combest/_deprecated/
 combest/scenarios/
@@ -70,7 +71,6 @@ bundled_choice_estimation.pdf
 requirements_HPC.txt
 applications/**/config.yaml
 applications/**/config_local.yaml
-applications/firms_export
 applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/se_bayesian_bootstrap/checkpoints
 applications/combinatorial_auction/se_bayesian_bootstrap/_past_checkpoints
