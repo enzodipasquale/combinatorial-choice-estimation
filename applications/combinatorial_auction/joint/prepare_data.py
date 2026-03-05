@@ -20,7 +20,7 @@ from applications.combinatorial_auction.data.prepare_data import (
     load_raw_data, build_context, build_features,
     MODULAR, QUADRATIC, QUADRATIC_ID, WEIGHT_ROUNDING_TICK, DATA_DIR as BTA_DATA_DIR,
 )
-from applications.combinatorial_auction.ab_block.prepare_data import load_ab_data, _normalize_acct
+from applications.combinatorial_auction.block_ab.prepare_data import load_ab_data, _normalize_acct
 from applications.combinatorial_auction.counterfactuals.MTA_licenses.prepare_data_counterfactual import (
     load_aggregation_matrix,
 )

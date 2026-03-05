@@ -20,7 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import combest as ce
 from combest.estimation.callbacks import adaptive_gurobi_timeout
-from applications.combinatorial_auction.ab_block.prepare_data import main as prepare_ab_data
+from applications.combinatorial_auction.block_ab.prepare_data import main as prepare_ab_data
 
 # ── MPI (optional) ────────────────────────────────────────────────────
 try:
