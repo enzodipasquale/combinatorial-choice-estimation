@@ -9,10 +9,13 @@ Usage:
   python search_rho.py --n_rho 5 --n_sample 100 --keep_top 20
   mpirun -n 4 python search_rho.py --n_rho 21 --alpha 0.5
 """
+import os
 import sys
+import json
 import time
 import argparse
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 import combest as ce
 from combest.estimation.callbacks import adaptive_gurobi_timeout
@@ -168,6 +171,55 @@ def compute_moments(bundles, n_dest, n_years, comm=None, n_total=None):
                            pers / (n * (n_years - 1))])
 
 
+def save_results(args, results, comm):
+    base = Path(__file__).resolve().parent / args.output_dir
+    slurm_id = os.environ.get("SLURM_JOB_ID")
+    tag = slurm_id if slurm_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = base / tag
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    meta = {
+        "timestamp": datetime.now().isoformat(),
+        "slurm_job_id": slurm_id,
+        "slurm_job_name": os.environ.get("SLURM_JOB_NAME"),
+        "slurm_num_nodes": os.environ.get("SLURM_NNODES"),
+        "n_ranks": comm.comm_size,
+        "args": vars(args),
+    }
+    with open(out_dir / "meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+
+    np.savez(out_dir / "results.npz",
+             rhos=np.array([r["rho"] for r in results]),
+             l2=np.array([r["l2"] for r in results]),
+             thetas=np.array([r["theta"] for r in results]),
+             times=np.array([r["time"] for r in results]),
+             alpha=args.alpha)
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        rhos = [r["rho"] for r in results]
+        dists = [r["l2"] for r in results]
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(rhos, dists, "o-", linewidth=2, markersize=8)
+        imin = int(np.argmin(dists))
+        ax.plot(rhos[imin], dists[imin], "r*", markersize=18,
+                label=f"min at ρ={rhos[imin]:.2f}")
+        ax.set_xlabel("ρ (error correlation)")
+        ax.set_ylabel("L2 moment distance")
+        ax.set_title("Moment distance vs ρ")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(out_dir / "rho_vs_l2.png", dpi=150)
+    except ImportError:
+        pass
+
+    print(f"\nResults saved to {out_dir}")
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--rho_min", type=float, default=0.0)
@@ -182,7 +234,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=999)
     p.add_argument("--no_warmstart", action="store_true")
     p.add_argument("--ws_keep_pct", type=float, default=30)
-    p.add_argument("--output", type=str, default="rho_search_results")
+    p.add_argument("--output_dir", type=str, default="results")
     return p.parse_args()
 
 
@@ -260,34 +312,7 @@ def main():
             theta_str = "  ".join(f"{v:8.4f}" for v in r["theta"])
             print(f"{r['rho']:6.3f} | {r['l2']:12.6f} | {r['time']:5.0f}s | {theta_str}")
 
-        out_dir = Path(__file__).resolve().parent
-        np.savez(out_dir / f"{args.output}.npz",
-                 rhos=np.array([r["rho"] for r in results]),
-                 l2=np.array([r["l2"] for r in results]),
-                 thetas=np.array([r["theta"] for r in results]),
-                 times=np.array([r["time"] for r in results]),
-                 alpha=args.alpha)
-
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-            rhos = [r["rho"] for r in results]
-            dists = [r["l2"] for r in results]
-            fig, ax = plt.subplots(figsize=(7, 5))
-            ax.plot(rhos, dists, "o-", linewidth=2, markersize=8)
-            imin = int(np.argmin(dists))
-            ax.plot(rhos[imin], dists[imin], "r*", markersize=18,
-                    label=f"min at ρ={rhos[imin]:.2f}")
-            ax.set_xlabel("ρ (error correlation)")
-            ax.set_ylabel("L2 moment distance")
-            ax.set_title("Moment distance vs ρ")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.savefig(out_dir / f"{args.output}.png", dpi=150)
-        except ImportError:
-            pass
+        save_results(args, results, comm)
 
 
 if __name__ == "__main__":

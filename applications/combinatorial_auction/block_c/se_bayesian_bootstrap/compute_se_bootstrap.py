@@ -12,7 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import combest as ce
 from combest.estimation.callbacks import adaptive_gurobi_timeout
 from applications.combinatorial_auction.data.prepare_data import main as prepare_data_main
-from applications.combinatorial_auction.results import save_bootstrap
+from applications.combinatorial_auction.block_c.results import save_bootstrap
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

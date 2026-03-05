@@ -16,7 +16,7 @@ sys.path.insert(0, str(BASE_DIR.parent.parent.parent))
 
 import combest as ce
 from combest.estimation.callbacks import adaptive_gurobi_timeout
-from applications.combinatorial_auction.joint_estimation.prepare_data import main as prepare_joint_data
+from applications.combinatorial_auction.joint.prepare_data import main as prepare_joint_data
 
 # ── MPI ──────────────────────────────────────────────────────────────
 try:

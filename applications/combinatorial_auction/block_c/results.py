@@ -5,8 +5,8 @@ import csv, json, os, datetime
 import numpy as np
 from pathlib import Path
 
-APP_DIR = Path(__file__).parent
-OUTPUT_DIR = APP_DIR / "estimation_results"
+BLOCK_C_DIR = Path(__file__).parent
+OUTPUT_DIR = BLOCK_C_DIR / "estimation_results"
 
 POINT_ESTIMATE_CSV = "point_estimate_runs.csv"
 BOOTSTRAP_CSV = "se_bootstrap_runs.csv"
