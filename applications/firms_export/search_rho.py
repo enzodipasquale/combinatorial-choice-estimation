@@ -268,6 +268,12 @@ def main():
             theta_str = "  ".join(f"{v:8.4f}" for v in r["theta"])
             print(f"{r['rho']:6.3f} | {r['l2']:12.6f} | {r['time']:5.0f}s | {theta_str}")
 
+        best = min(results, key=lambda r: r["l2"])
+        names = model.config.dimensions.covariate_names
+        print(f"\nBest ρ = {best['rho']:.4f}  (L2 = {best['l2']:.6f})")
+        for k in sorted(names):
+            print(f"  {names[k]:>14s}:  {best['theta'][k]:.6f}")
+
         save_results(args, results, comm)
 
 
