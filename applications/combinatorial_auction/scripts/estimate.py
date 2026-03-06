@@ -28,6 +28,7 @@ def main(config_path):
             quadratic_regressors=app.get("quadratic_regressors", ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]),
             quadratic_id_regressors=app.get("quadratic_id_regressors", []),
             item_modular=app.get("item_modular", "fe"),
+            separate_ab_quadratics=app.get("separate_ab_quadratics", False),
         )
         meta.pop("raw", None)
 
