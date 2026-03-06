@@ -69,8 +69,7 @@ my_tests/
 debug_*.py
 bundled_choice_estimation.pdf
 requirements_HPC.txt
-applications/**/config.yaml
-applications/**/config_local.yaml
+applications/**/config*.yaml
 applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/checkpoints
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/_past_checkpoints
