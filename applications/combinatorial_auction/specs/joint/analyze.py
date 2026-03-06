@@ -69,12 +69,12 @@ def run_joint(result_file="result.json"):
     delta_bta = -fe_bta
     delta_ab = -fe_ab
 
-    # (1) A@delta_BTA - delta_MTA ~ const + |m| - alpha_1*(price_c - price_ab)
+    # (1) A@delta_BTA - delta_MTA ~ const + |m| - alpha_1*(A@price_BTA - price_ab)
     #     Under xi_m = sum xi_j, residual vanishes and coeff on price_diff = -alpha_1
     Y1 = A @ delta_bta - delta_ab
     X1 = np.column_stack([np.ones(n_mtas), A.sum(1), price_mta_c - price_ab])
     beta1, se1, r2_1, resid1 = ols(X1, Y1)
-    _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (price_c - price_ab)",
+    _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (A@price_BTA - price_MTA)",
                       n_mtas, ["const", "|m|", "-alpha_1"], beta1, se1, r2_1, resid1)
 
     # (2) delta_MTA ~ const + |m| + alpha_1*(-price_MTA)
