@@ -3,7 +3,8 @@ import json, sys
 import numpy as np
 from pathlib import Path
 
-APP_DIR = Path(__file__).parent.parent
+SPECS_DIR = Path(__file__).parent.parent
+APP_DIR = SPECS_DIR.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import (
@@ -11,7 +12,7 @@ from applications.combinatorial_auction.data.loaders import (
 )
 
 JOINT_DIR = Path(__file__).parent
-STANDALONE_DIR = APP_DIR / "standalone_blocks"
+STANDALONE_DIR = SPECS_DIR / "standalone_blocks"
 
 
 def extract_fe(result):

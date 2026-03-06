@@ -129,12 +129,6 @@ def _ab_block(raw, ctx, mod_names, quad_names, qid_names):
     mod = np.stack([mta_reg[name]() for name in mod_names], axis=-1).astype(np.float64)
 
     _, Q_mta = _aggregate_quadratics(ctx, quad_names, A)
-    n_qfeat = Q_mta.shape[-1]
-
-    # extract diagonal into item_modular, zero it in Q
-    diag_quad = np.array([np.diag(Q_mta[:, :, k]) for k in range(n_qfeat)]).T
-    for k in range(n_qfeat):
-        np.fill_diagonal(Q_mta[:, :, k], 0)
 
     # quadratic_id
     qid = None
@@ -153,7 +147,7 @@ def _ab_block(raw, ctx, mod_names, quad_names, qid_names):
         id_data["quadratic"] = qid
 
     item_data = {
-        "modular": np.hstack([-np.eye(n_mtas), diag_quad]),
+        "modular": -np.eye(n_mtas, dtype=np.float64),
         "quadratic": Q_mta,
         "weight": (A @ ctx["weight"].astype(np.float64)).astype(int),
     }
