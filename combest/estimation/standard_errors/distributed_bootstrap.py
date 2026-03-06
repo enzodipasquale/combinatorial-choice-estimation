@@ -237,7 +237,6 @@ class DistributedBootstrapMixin:
                 f"Distributed bootstrap requires at most one sample per rank.")
 
         self.verbose = verbose
-        self._param_indices = self.config.standard_errors.parameters_to_log or self.dim.display_indices
         t0 = time.perf_counter()
 
         state = BootstrapState(num_bootstrap, self.dim, self.comm_manager)
@@ -315,7 +314,7 @@ class DistributedBootstrapMixin:
                 theta_hat=theta_hat, converged=True, num_iterations=0, final_objective=None)
 
         if self.verbose and self.comm_manager.is_root():
-            idx = self._param_indices
+            idx = self.dim.display_indices
             logger.info(" LOADED point estimate from %s (%s)",
                         pt_dir, "converged" if converged else "not converged")
             logger.info(" θ = [%s]", ', '.join(
@@ -566,7 +565,7 @@ class DistributedBootstrapMixin:
             self._log_boot_details(s['retired_boot_id'], state)
 
     def _log_boot_details(self, boot_ids, state):
-        param_idx = self._param_indices
+        param_idx = self.dim.display_indices
         w = max(self.dim.covariate_label_width, 12)
         range_idx = [i for i in range(self.dim.n_covariates) if i not in param_idx]
         hdr_params = ''.join(f"{self.dim.display_label(i):>{w}}" for i in param_idx)
@@ -604,7 +603,7 @@ class DistributedBootstrapMixin:
         stats = self.compute_bootstrap_stats(theta_for_stats)
         if self.verbose:
             theta_hat = self.point_result.theta_hat
-            idx = self._param_indices
+            idx = self.dim.display_indices
             w = max(self.dim.covariate_label_width, 8)
             logger.info(" ")
             if n_non_converged > 0:
