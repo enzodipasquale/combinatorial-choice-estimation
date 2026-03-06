@@ -88,9 +88,15 @@ def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=100
     theta_ubs = np.full(n_covariates, float(ub))
 
     for k, v in (theta_bounds.get("lbs") or {}).items():
-        theta_lbs[_resolve_bound_key(k, name_to_idx)] = float(v)
+        try:
+            theta_lbs[_resolve_bound_key(k, name_to_idx)] = float(v)
+        except KeyError:
+            pass  # skip bounds for covariates not in the model
     for k, v in (theta_bounds.get("ubs") or {}).items():
-        theta_ubs[_resolve_bound_key(k, name_to_idx)] = float(v)
+        try:
+            theta_ubs[_resolve_bound_key(k, name_to_idx)] = float(v)
+        except KeyError:
+            pass  # skip bounds for covariates not in the model
 
     return theta_lbs, theta_ubs
 
