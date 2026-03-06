@@ -39,7 +39,7 @@ class RowGenerationEstimationResult:
 
         def _label(i):
             if covariate_labels is not None:
-                return covariate_labels[i]
+                return covariate_labels[i][:w]
             return f"θ[{i}]"
 
         logger.info(" ")

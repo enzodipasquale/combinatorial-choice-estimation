@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Download and process FCC Auction 4 (Broadband PCS A/B block) data.
-
-Source: Penn State Center for Auctions, Procurements and Competition Policy
-        https://capcp.la.psu.edu/data-and-software/fcc-spectrum-auction-data/
-
-Auction 4 ran Dec 5 1994 – Mar 13 1995.  99 MTA-level licenses (51 MTAs × 2
-frequency blocks, minus 3 A-block pioneer's-preference awards in M001, M002,
-M010).  18 winners out of 31 qualified bidders.  $7.0B gross revenue.
-
-Outputs (in data/):
-    winning_bids.csv  – 99 rows: license, mta, block, winner, price, population
-    bidders.csv       – 31 rows: fcc_acct, name, eligibility (in population)
-"""
-
 import io, zipfile, urllib.request
 from pathlib import Path
 
@@ -21,11 +7,10 @@ import pandas as pd
 URL = ("https://capcp.la.psu.edu/wp-content/uploads/sites/11/"
        "fcc-spectrum-auction-data/FCC_Auction04e.zip")
 
-OUT_DIR = Path(__file__).parent / "data"
+OUT_DIR = Path(__file__).parent / "datasets" / "ab"
 
 
 def fetch_excel():
-    """Download zip → return openpyxl Workbook (read-only)."""
     print(f"Downloading {URL} ...")
     resp = urllib.request.urlopen(URL)
     with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:

@@ -20,6 +20,7 @@ class SerialBootstrapMixin:
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
+        self._param_indices = self.config.standard_errors.parameters_to_log or self.dim.display_indices
         self.row_gen = self.row_generation_manager
         t0 = time.perf_counter()
 
@@ -118,14 +119,14 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.bootstrap_history[bootstrap_iter]
-        param_indices = self.dim.get_display_indices(self.config.standard_errors.parameters_to_log)
+        param_indices = self._param_indices
         w = max(self.dim.covariate_label_width, 10)
 
         if bootstrap_iter % 100 == 0:
             param_width = len(param_indices) * (w + 1) - 1
             header1 = (f"{'Boot':>5} | {'Time':^9} | {'Pricing':^9} | {'Master':^9} | {'RG':^5} | "
                       f"{'#Constr':>7} | {'Reduced':^12} | {'#Viol':^5} | {'Objective':^12} | {f'Parameters':^{param_width}}")
-            param_label_row = ' '.join(f'{self.dim.covariate_labels[i]:>{w}}' for i in param_indices)
+            param_label_row = ' '.join(f'{self.dim.display_label(i):>{w}}' for i in param_indices)
             header2 = (f"{'':>5} | {'(s)':^9} | {'(s)':^9} | {'(s)':^9} | {'Iters':^5} | "
                       f"{'':>7} | {'Cost':^12} | {'':^5} | {'Value':^12} | {param_label_row}")
             logger.info("-" * len(header1))
@@ -150,7 +151,7 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
 
-        param_indices = self.dim.get_display_indices(self.config.standard_errors.parameters_to_log)
+        param_indices = self._param_indices
         w = max(self.dim.covariate_label_width, 8)
 
         sep_width = w + 4 + 12 + 3 + 12 + 3 + 10
@@ -161,5 +162,5 @@ class SerialBootstrapMixin:
         logger.info(f"{'Param':>{w}} | {'Mean':>12} | {'SE':>12} | {'t-stat':>10}")
         logger.info("-" * sep_width)
         for i in param_indices:
-            logger.info(f"{self.dim.covariate_labels[i]:>{w}} | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
+            logger.info(f"{self.dim.display_label(i):>{w}} | {result.mean[i]:>12.5f} | {result.se[i]:>12.5f} | {result.t_stats[i]:>10.2f}")
         logger.info("-" * sep_width)

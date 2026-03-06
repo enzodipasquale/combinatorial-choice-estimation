@@ -20,7 +20,7 @@ class OneSlackSolver(RowGenerationSolver):
         theta_obj_coef = self.pt_estimation_manager.compute_theta_obj_coef(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
-            lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates)
+            lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates, self.dim.covariate_names)
             theta = self.master_model.addMVar(self.dim.n_covariates,
                                               obj=theta_obj_coef, lb=lb, ub=ub,
                                               name='parameter')
