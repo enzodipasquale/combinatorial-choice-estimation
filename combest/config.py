@@ -17,7 +17,7 @@ class ConfigMixin:
                     else:
                         setattr(self, f.name, other_value)
 
-MAX_LABEL_WIDTH = 14
+MAX_DISPLAY_WIDTH = 14
 
 @dataclass
 class DimensionsConfig(ConfigMixin):
@@ -37,14 +37,18 @@ class DimensionsConfig(ConfigMixin):
     def _build_labels(self):
         if self.n_covariates is not None:
             names = self.covariate_names or {}
-            self.covariate_labels = [names.get(i, f"θ[{i}]")[:MAX_LABEL_WIDTH]
-                                     for i in range(self.n_covariates)]
+            self.covariate_labels = [names.get(i, f"θ[{i}]") for i in range(self.n_covariates)]
             self.named_covariate_indices = list(names.keys())
-            self.covariate_label_width = max((len(l) for l in self.covariate_labels), default=5)
+            self.covariate_label_width = min(
+                max((len(l) for l in self.covariate_labels), default=5),
+                MAX_DISPLAY_WIDTH,
+            )
+            self.display_indices = self.named_covariate_indices or list(range(min(5, self.n_covariates)))
         else:
             self.covariate_labels = None
             self.named_covariate_indices = None
             self.covariate_label_width = 5
+            self.display_indices = None
 
     @property
     def n_agents(self):
@@ -52,18 +56,28 @@ class DimensionsConfig(ConfigMixin):
             return None
         return self.n_simulations * self.n_obs
 
-    def get_display_indices(self, parameters_to_log=None, max_default=5):
-        return (parameters_to_log or self.named_covariate_indices
-                or list(range(min(max_default, self.n_covariates))))
+    def display_label(self, i):
+        return self.covariate_labels[i][:MAX_DISPLAY_WIDTH]
 
 @dataclass
 class SubproblemConfig(ConfigMixin):
     name: str = None
     gurobi_params: dict = field(default_factory=dict)
 
-def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=10000):
+def _resolve_bound_key(k, name_to_idx):
+    try:
+        return int(k)
+    except (ValueError, TypeError):
+        if name_to_idx and k in name_to_idx:
+            return name_to_idx[k]
+        raise KeyError(f"Unknown covariate name in bounds: '{k}'")
+
+def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=10000,
+                        covariate_names=None):
     if not theta_bounds:
         return default_lb, default_ub
+
+    name_to_idx = {v: k for k, v in (covariate_names or {}).items()}
 
     lb = theta_bounds.get("lb", default_lb)
     ub = theta_bounds.get("ub", default_ub)
@@ -72,9 +86,9 @@ def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=100
     theta_ubs = np.full(n_covariates, float(ub))
 
     for k, v in (theta_bounds.get("lbs") or {}).items():
-        theta_lbs[int(k)] = float(v)
+        theta_lbs[_resolve_bound_key(k, name_to_idx)] = float(v)
     for k, v in (theta_bounds.get("ubs") or {}).items():
-        theta_ubs[int(k)] = float(v)
+        theta_ubs[_resolve_bound_key(k, name_to_idx)] = float(v)
 
     return theta_lbs, theta_ubs
 
@@ -92,8 +106,9 @@ class RowGenerationConfig(ConfigMixin):
     verbose: bool = True
     save_master_model_dir: str = None
 
-    def theta_bounds_arrays(self, n_covariates: int):
-        return theta_bounds_arrays(self.theta_bounds, n_covariates, self.theta_lbs, self.theta_ubs)
+    def theta_bounds_arrays(self, n_covariates: int, covariate_names=None):
+        return theta_bounds_arrays(self.theta_bounds, n_covariates, self.theta_lbs, self.theta_ubs,
+                                   covariate_names)
 
 @dataclass
 class EllipsoidConfig(ConfigMixin):
@@ -116,8 +131,8 @@ class StandardErrorsConfig(ConfigMixin):
     parameters_to_log: list = None
     theta_bounds: dict = None
 
-    def theta_bounds_arrays(self, n_covariates: int):
-        return theta_bounds_arrays(self.theta_bounds, n_covariates)
+    def theta_bounds_arrays(self, n_covariates: int, covariate_names=None):
+        return theta_bounds_arrays(self.theta_bounds, n_covariates, covariate_names=covariate_names)
 
 @dataclass
 class ModelConfig(ConfigMixin):

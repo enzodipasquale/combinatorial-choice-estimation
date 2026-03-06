@@ -49,6 +49,7 @@ class RowGenerationSolver:
     def solve(self, resampling_weights=None, initialize_solver=True,
               iteration_callback=None, initialization_callback=None, verbose=False):
         self.verbose = verbose
+        self._param_indices = self.cfg.parameters_to_log or self.dim.display_indices
         if self.verbose:
             self.pt_estimation_manager._log_instance_summary()
         if initialize_solver:
@@ -89,8 +90,8 @@ class RowGenerationSolver:
         elapsed = time.perf_counter() - t0
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
-            result.log_summary(self.dim.get_display_indices(self.cfg.parameters_to_log),
-                               self.dim.covariate_labels, self.dim.covariate_label_width)
+            result.log_summary(self._param_indices, self.dim.covariate_labels,
+                               self.dim.covariate_label_width)
         return result
 
     def _row_generation_iteration(self, iteration):
@@ -123,7 +124,7 @@ class RowGenerationSolver:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.iteration_history[iteration]
-        param_indices = self.dim.get_display_indices(self.cfg.parameters_to_log)
+        param_indices = self._param_indices
         w = max(self.dim.covariate_label_width, 10)
 
         if iteration % 80 == 0:
@@ -131,7 +132,7 @@ class RowGenerationSolver:
             header1 = (f"{'Iter':>4} | {'Reduced':^12} | {'#Viol':^5} | {'Pricing':^11} | "
                       f"{'Master':^10} | {'Objective':^13} | "
                       f"{'Constr':>6} | {f'Parameters':^{param_width}}")
-            param_label_row = ' '.join(f'{self.dim.covariate_labels[i]:>{w}}' for i in param_indices)
+            param_label_row = ' '.join(f'{self.dim.display_label(i):>{w}}' for i in param_indices)
             header2 = (f"{'':>4} | {'Cost':^12} | {'':^5} | {'(s)':^11} | "
                       f"{'(s)':^10} | {'Value':^13} | "
                       f"{'':>6} | {param_label_row}")
