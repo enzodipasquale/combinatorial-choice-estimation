@@ -65,7 +65,8 @@ def main(config_path):
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
         if rank == 0 and result is not None:
-            _save(result, config, meta, experiment_dir / "result.json")
+            suffix = "FE" if app.get("item_modular", "fe") == "fe" else "noFE"
+            _save(result, config, meta, experiment_dir / f"result_{suffix}.json")
 
     if mode in ("bootstrap", "both"):
         boot_cfg = config.get("bootstrap", {})
@@ -144,6 +145,8 @@ def _save(result, config, meta, path):
         "objective": float(result.final_objective),
         "iterations": int(result.num_iterations),
     }
+    if result.u_hat is not None:
+        out["u_hat"] = result.u_hat.tolist()
     for k in ["n_btas", "n_mtas", "n_obs_c", "n_obs_ab", "continental_mta_nums"]:
         if k in meta:
             out[k] = [int(x) for x in meta[k]] if isinstance(meta[k], (list, np.ndarray)) and k == "continental_mta_nums" else meta[k]
