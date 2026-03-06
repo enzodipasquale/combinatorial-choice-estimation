@@ -7,11 +7,13 @@ AB_ELIG_BANDWIDTH = 30.0
 
 
 def prepare(dataset, modular_regressors, quadratic_regressors,
-            quadratic_id_regressors=(), item_modular="fe"):
+            quadratic_id_regressors=(), item_modular="fe",
+            separate_ab_quadratics=False):
     raw = load_bta_data()
     ctx = build_context(raw)
     fn = {"c_block": _c_block, "ab_block": _ab_block, "joint": _joint}[dataset]
-    input_data, meta = fn(raw, ctx, modular_regressors, quadratic_regressors, quadratic_id_regressors)
+    kwargs = dict(separate_ab_quadratics=separate_ab_quadratics) if dataset == "joint" else {}
+    input_data, meta = fn(raw, ctx, modular_regressors, quadratic_regressors, quadratic_id_regressors, **kwargs)
     if item_modular == "price":
         _apply_price(input_data, raw, meta, dataset)
 
@@ -37,11 +39,18 @@ def prepare(dataset, modular_regressors, quadratic_regressors,
     if item_modular == "price":
         names[off] = "price"
     off += n_item_mod
+    sep = separate_ab_quadratics and dataset == "joint"
     for i, n in enumerate(quadratic_id_regressors):
-        names[off + i] = n
+        names[off + i] = f"{n}_c" if sep else n
+    if sep:
+        for i, n in enumerate(quadratic_id_regressors):
+            names[off + len(quadratic_id_regressors) + i] = f"{n}_ab"
     off += n_id_quad
     for i, n in enumerate(quadratic_regressors):
-        names[off + i] = n
+        names[off + i] = f"{n}_c" if sep else n
+    if sep:
+        for i, n in enumerate(quadratic_regressors):
+            names[off + len(quadratic_regressors) + i] = f"{n}_ab"
     meta["covariate_names"] = names
 
     return input_data, meta
@@ -164,7 +173,7 @@ def _ab_block(raw, ctx, mod_names, quad_names, qid_names):
 
 # ── Joint ────────────────────────────────────────────────────────────
 
-def _joint(raw, ctx, mod_names, quad_names, qid_names):
+def _joint(raw, ctx, mod_names, quad_names, qid_names, separate_ab_quadratics=False):
     btas = raw["bta_data"]["bta"].values.astype(int)
     A = load_aggregation_matrix(btas)
     n_btas, n_mtas = A.shape[1], A.shape[0]
@@ -220,9 +229,10 @@ def _joint(raw, ctx, mod_names, quad_names, qid_names):
     item_mask[:n_obs_c, :n_btas] = 1
     item_mask[n_obs_c:, n_btas:] = 1
 
-    item_quad = np.zeros((n_items, n_items, n_qfeat), dtype=np.float64)
-    item_quad[:n_btas, :n_btas] = c_quad
-    item_quad[n_btas:, n_btas:] = Q_mta
+    n_qfeat_total = 2 * n_qfeat if separate_ab_quadratics else n_qfeat
+    item_quad = np.zeros((n_items, n_items, n_qfeat_total), dtype=np.float64)
+    item_quad[:n_btas, :n_btas, :n_qfeat] = c_quad
+    item_quad[n_btas:, n_btas:, -n_qfeat:] = Q_mta
 
     id_data = {
         "modular": id_mod,
@@ -231,10 +241,12 @@ def _joint(raw, ctx, mod_names, quad_names, qid_names):
         "capacity": np.concatenate([ctx["capacity"], ab_capacity]),
     }
     if c_qid is not None:
-        id_quad = np.zeros((n_obs, n_items, n_items, c_qid.shape[-1]), dtype=np.float64)
-        id_quad[:n_obs_c, :n_btas, :n_btas] = c_qid
+        n_qid = c_qid.shape[-1]
+        n_qid_total = 2 * n_qid if separate_ab_quadratics else n_qid
+        id_quad = np.zeros((n_obs, n_items, n_items, n_qid_total), dtype=np.float64)
+        id_quad[:n_obs_c, :n_btas, :n_btas, :n_qid] = c_qid
         if ab_qid is not None:
-            id_quad[n_obs_c:, n_btas:, n_btas:] = ab_qid
+            id_quad[n_obs_c:, n_btas:, n_btas:, -n_qid:] = ab_qid
         id_data["quadratic"] = id_quad
 
     item_data = {
