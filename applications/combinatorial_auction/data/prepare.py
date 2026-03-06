@@ -270,8 +270,6 @@ def _apply_price(input_data, raw, meta, dataset):
         price_mta = np.array([mta_avg.get(m, 0) for m in mta_nums]) / 1e9
 
         if dataset == "ab_block":
-            item_mod = input_data["item_data"]["modular"]
-            item_mod[:, :meta["n_mtas"]] = 0
-            item_mod[:, 0] = -price_mta
+            input_data["item_data"]["modular"] = -price_mta[:, None]
         else:
             input_data["item_data"]["modular"] = -np.concatenate([price_bta, price_mta])[:, None]
