@@ -17,7 +17,7 @@ class SerialBootstrapMixin:
         if not isinstance(self.row_generation_manager, NSlackSolver):
             raise TypeError("Bootstrap requires the n_slack formulation.")
         initialization_callback, iteration_callback = pt_estimate_callbacks
-        theta_boots = []
+        theta_boots, u_boots = [], []
         self.bootstrap_history = {}
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
@@ -77,6 +77,7 @@ class SerialBootstrapMixin:
 
             if self.comm_manager.is_root():
                 theta_boots.append(self.row_gen.master_variables[0].X.copy())
+                u_boots.append(self.row_gen.master_variables[1].X.copy())
                 self._update_bootstrap_info(b)
             self._log_bootstrap_iteration(b)
 
@@ -84,7 +85,7 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root():
             return None
 
-        stats_result = self.compute_bootstrap_stats(theta_boots)
+        stats_result = self.create_bootstrap_result(theta_boots, u_boots)
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         return stats_result
 

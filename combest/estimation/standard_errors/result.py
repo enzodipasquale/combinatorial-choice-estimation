@@ -11,3 +11,4 @@ class BayesianBootstrapResult:
     ci_upper: np.ndarray
     confidence: float
     samples: np.ndarray = None
+    u_samples: np.ndarray = None

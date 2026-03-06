@@ -60,19 +60,21 @@ class StandardErrorsManager(SerialBootstrapMixin, DistributedBootstrapMixin):
     # Statistics (shared by both bootstrap methods)
     # ------------------------------------------------------------------
 
-    def compute_bootstrap_stats(self, theta_boots, confidence=0.95):
+    def create_bootstrap_result(self, theta_boots, u_boots, converged_mask=None, confidence=0.95):
         if not self.comm_manager.is_root():
             return None
         theta_boots = np.asarray(theta_boots)
-        n_samples, _ = theta_boots.shape
-        mean = theta_boots.mean(axis=0)
-        se = theta_boots.std(axis=0, ddof=1)
+        u_boots = np.asarray(u_boots)
+        theta_for_stats = theta_boots if converged_mask is None else theta_boots[converged_mask]
+        n_samples, _ = theta_for_stats.shape
+        mean = theta_for_stats.mean(axis=0)
+        se = theta_for_stats.std(axis=0, ddof=1)
         t_stats = np.where(se > 1e-16, mean / se, np.nan)
         alpha = 1 - confidence
-        ci_lower = np.percentile(theta_boots, 100 * alpha / 2, axis=0)
-        ci_upper = np.percentile(theta_boots, 100 * (1 - alpha / 2), axis=0)
+        ci_lower = np.percentile(theta_for_stats, 100 * alpha / 2, axis=0)
+        ci_upper = np.percentile(theta_for_stats, 100 * (1 - alpha / 2), axis=0)
         return BayesianBootstrapResult(
             mean=mean, se=se, t_stats=t_stats, n_samples=n_samples,
             ci_lower=ci_lower, ci_upper=ci_upper,
-            confidence=confidence, samples=theta_boots,
+            confidence=confidence, samples=theta_boots, u_samples=u_boots,
         )
