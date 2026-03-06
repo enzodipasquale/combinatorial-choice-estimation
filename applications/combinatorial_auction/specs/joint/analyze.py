@@ -69,16 +69,14 @@ def run_joint(result_file="result_FE.json"):
     delta_bta = -fe_bta
     delta_ab = -fe_ab
 
-    # (1) A@delta_BTA - delta_MTA ~ const + |m| - alpha_1*(A@price_BTA - price_ab)
-    #     Under xi_m = sum xi_j, residual vanishes and coeff on price_diff = -alpha_1
+    # (1) A@delta_BTA - delta_MTA ~ const + |m| + alpha_1*(p_MTA - A@p_BTA)
     Y1 = A @ delta_bta - delta_ab
-    X1 = np.column_stack([np.ones(n_mtas), A.sum(1), price_mta_c - price_ab])
+    X1 = np.column_stack([np.ones(n_mtas), A.sum(1), price_ab - price_mta_c])
     beta1, se1, r2_1, resid1 = ols(X1, Y1)
-    _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (A@price_BTA - price_MTA)",
-                      n_mtas, ["const", "|m|", "-alpha_1"], beta1, se1, r2_1, resid1)
+    _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (p_MTA - A@p_BTA)",
+                      n_mtas, ["const", "|m|", "alpha_1"], beta1, se1, r2_1, resid1)
 
-    # (1b) Auction-specific alpha: A@delta_BTA - delta_MTA ~ const + |m| - a1_BTA*(A@p_BTA) + a1_MTA*p_MTA
-    #      Under xi_m = sum xi_j, coeff on A@p_BTA = -alpha_1^BTA, coeff on p_MTA = +alpha_1^MTA
+    # (1b) Auction-specific alpha: A@delta_BTA - delta_MTA ~ const + |m| + alpha_1^BTA*(-A@p_BTA) + alpha_1^MTA*(p_MTA)
     X1b = np.column_stack([np.ones(n_mtas), A.sum(1), -price_mta_c, price_ab])
     beta1b, se1b, r2_1b, resid1b = ols(X1b, Y1)
     _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (-A@p_BTA) + p_MTA",
