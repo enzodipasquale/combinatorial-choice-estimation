@@ -64,11 +64,32 @@ def run_joint(result_file="result.json"):
     mta_nums = joint["continental_mta_nums"]
     price_mta_c, price_ab, _ = load_prices(raw, mta_nums, A)
 
+    # (1) Cross-auction: A @ delta_BTA - delta_MTA on const, |m|, price_c - price_ab
     Y = A @ fe_bta - fe_ab
     X = np.column_stack([np.ones(n_mtas), A.sum(1), price_mta_c - price_ab])
     beta, se, r2, resid = ols(X, Y)
-    _print_regression("Cross-auction (joint)", n_mtas, ["const", "|m|", "alpha"], beta, se, r2, resid)
-    return dict(beta=beta, se=se, r2=r2, col_names=["const", "|m|", "alpha"], resid=resid)
+    _print_regression("Cross-auction: A@delta_BTA - delta_MTA ~ const + |m| + price_diff",
+                      n_mtas, ["const", "|m|", "alpha"], beta, se, r2, resid)
+
+    # (2) delta_MTA on const, |m|, price_MTA
+    X2 = np.column_stack([np.ones(n_mtas), A.sum(1), price_ab])
+    beta2, se2, r2_2, resid2 = ols(X2, fe_ab)
+    _print_regression("delta_MTA ~ const + |m| + price_MTA",
+                      n_mtas, ["const", "|m|", "price_MTA"], beta2, se2, r2_2, resid2)
+
+    # (3) delta_MTA on const, price_MTA
+    X3 = np.column_stack([np.ones(n_mtas), price_ab])
+    beta3, se3, r2_3, resid3 = ols(X3, fe_ab)
+    _print_regression("delta_MTA ~ const + price_MTA",
+                      n_mtas, ["const", "price_MTA"], beta3, se3, r2_3, resid3)
+
+    # (4) delta_BTA on const, price_BTA
+    _, _, price_bta = load_prices(raw, mta_nums, A)
+    n_btas = len(fe_bta)
+    X4 = np.column_stack([np.ones(n_btas), price_bta])
+    beta4, se4, r2_4, resid4 = ols(X4, fe_bta)
+    _print_regression("delta_BTA ~ const + price_BTA",
+                      n_btas, ["const", "price_BTA"], beta4, se4, r2_4, resid4)
 
 
 if __name__ == "__main__":
