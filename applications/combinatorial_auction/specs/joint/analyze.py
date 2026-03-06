@@ -53,7 +53,7 @@ def _print_regression(title, n_mtas, col_names, beta, se, r2, resid):
     print(f"  Residual std = {resid.std():.4f}")
 
 
-def run_joint(result_file="result.json"):
+def run_joint(result_file="result_FE.json"):
     joint = json.load(open(JOINT_DIR / result_file))
     fe_bta, fe_ab = extract_joint_fe(joint)
 
@@ -76,6 +76,14 @@ def run_joint(result_file="result.json"):
     beta1, se1, r2_1, resid1 = ols(X1, Y1)
     _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (A@price_BTA - price_MTA)",
                       n_mtas, ["const", "|m|", "-alpha_1"], beta1, se1, r2_1, resid1)
+
+    # (1b) Auction-specific alpha: A@delta_BTA - delta_MTA ~ const + |m| - a1_BTA*(A@p_BTA) + a1_MTA*p_MTA
+    #      Under xi_m = sum xi_j, coeff on A@p_BTA = -alpha_1^BTA, coeff on p_MTA = +alpha_1^MTA
+    X1b = np.column_stack([np.ones(n_mtas), A.sum(1), -price_mta_c, price_ab])
+    beta1b, se1b, r2_1b, resid1b = ols(X1b, Y1)
+    _print_regression("A@delta_BTA - delta_MTA ~ const + |m| + (-A@p_BTA) + p_MTA",
+                      n_mtas, ["const", "|m|", "alpha_1^BTA", "alpha_1^MTA"],
+                      beta1b, se1b, r2_1b, resid1b)
 
     # (2) delta_MTA ~ const + |m| + alpha_1*(-price_MTA)
     X2 = np.column_stack([np.ones(n_mtas), A.sum(1), -price_ab])
