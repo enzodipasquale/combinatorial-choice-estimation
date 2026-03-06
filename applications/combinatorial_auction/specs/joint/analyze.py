@@ -12,7 +12,8 @@ from applications.combinatorial_auction.data.loaders import (
 )
 
 JOINT_DIR = Path(__file__).parent
-STANDALONE_DIR = SPECS_DIR / "standalone_blocks"
+C_BLOCK_DIR = SPECS_DIR / "c_block"
+AB_BLOCK_DIR = SPECS_DIR / "ab_block"
 
 
 def extract_fe(result):
@@ -60,9 +61,9 @@ def _print_regression(title, n_mtas, col_names, beta, se, r2, resid):
     print(f"  Residual std = {resid.std():.4f}")
 
 
-def run_standalone(bta_result_file="result.json", ab_result_file="result.json"):
-    bta_res = json.load(open(STANDALONE_DIR / bta_result_file))
-    ab_res = json.load(open(STANDALONE_DIR / ab_result_file.replace("result", "ab_result")))
+def run_standalone(c_result_file="result.json", ab_result_file="result.json"):
+    bta_res = json.load(open(C_BLOCK_DIR / c_result_file))
+    ab_res = json.load(open(AB_BLOCK_DIR / ab_result_file))
     fe_bta = extract_fe(bta_res)
     fe_ab = extract_fe(ab_res)
 
