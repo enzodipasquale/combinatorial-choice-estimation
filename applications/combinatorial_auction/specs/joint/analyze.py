@@ -24,7 +24,7 @@ def extract_fe(result):
 
 def extract_joint_fe(result):
     theta = np.array(result["theta_hat"])
-    n_id = result.get("n_id_mod", 1) + result.get("n_id_quad", 0)
+    n_id = result["n_id_mod"]
     n_btas, n_mtas = result["n_btas"], result["n_mtas"]
     return theta[n_id : n_id + n_btas], theta[n_id + n_btas : n_id + n_btas + n_mtas]
 
