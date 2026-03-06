@@ -25,17 +25,26 @@ def _extract_master_vars(model, n_covariates, n_agents):
     return gp.MVar.fromlist(vs[:n_covariates]), gp.MVar.fromlist(vs[n_covariates:n_covariates + n_agents])
 
 
-def _parse_theta_from_sol(sol_path):
-    vals = {}
+def _parse_vars_from_sol(sol_path):
+    theta_vals, u_vals = {}, {}
     with open(sol_path) as f:
         for line in f:
             parts = line.split()
-            if len(parts) == 2 and parts[0].startswith('parameter['):
-                vals[int(parts[0].split('[')[1][:-1])] = float(parts[1])
-    theta = np.zeros(max(vals) + 1, dtype=np.float64)
-    for i, v in vals.items():
+            if len(parts) != 2:
+                continue
+            name, val = parts[0], float(parts[1])
+            if name.startswith('parameter['):
+                theta_vals[int(name.split('[')[1][:-1])] = val
+            elif name.startswith('utility['):
+                u_vals[int(name.split('[')[1][:-1])] = val
+    theta = np.zeros(max(theta_vals) + 1, dtype=np.float64)
+    for i, v in theta_vals.items():
         theta[i] = v
-    return theta
+    u = np.zeros(max(u_vals) + 1, dtype=np.float64) if u_vals else None
+    if u is not None:
+        for i, v in u_vals.items():
+            u[i] = v
+    return theta, u
 
 
 # =========================================================================
@@ -598,9 +607,9 @@ class DistributedBootstrapMixin:
         converged_mask = state.converged
         n_converged = int(converged_mask.sum())
         n_non_converged =  state.num_bootstrap - n_converged
-        theta_for_stats = theta_vals if n_converged == 0 else theta_vals[converged_mask]
-        
-        stats = self.compute_bootstrap_stats(theta_for_stats)
+        stats = self.create_bootstrap_result(
+            theta_vals, state.u_vals,
+            converged_mask if n_converged > 0 else None)
         if self.verbose:
             theta_hat = self.point_result.theta_hat
             idx = self.dim.display_indices
@@ -638,13 +647,15 @@ class DistributedBootstrapMixin:
         if not boot_dirs:
             return logger.info("No bootstrap checkpoints in %s", checkpoints_dir)
 
-        theta_list, converged = [], []
+        theta_list, u_list, converged = [], [], []
         for bd in boot_dirs:
             sol = os.path.join(bd, "master.sol")
             meta = os.path.join(bd, "meta.json")
             if not os.path.exists(sol):
                 continue
-            theta_list.append(_parse_theta_from_sol(sol))
+            theta, u = _parse_vars_from_sol(sol)
+            theta_list.append(theta)
+            u_list.append(u)
             if os.path.exists(meta):
                 with open(meta) as f:
                     converged.append(json.load(f).get('converged', False))
@@ -652,9 +663,9 @@ class DistributedBootstrapMixin:
                 converged.append(False)
 
         converged = np.asarray(converged, dtype=bool)
-        theta_boots = np.asarray(theta_list)
         nc = int(converged.sum())
         logger.info("Loaded %d boots (%d converged)", len(theta_list), nc)
 
-        return self.compute_bootstrap_stats(
-            theta_boots[converged] if converged.any() else theta_boots)
+        return self.create_bootstrap_result(
+            np.asarray(theta_list), np.asarray(u_list),
+            converged if converged.any() else None)

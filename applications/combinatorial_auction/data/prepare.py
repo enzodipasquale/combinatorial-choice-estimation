@@ -140,7 +140,7 @@ def _ab_block(raw, ctx, mod_names, quad_names, qid_names):
 
     id_data = {
         "modular": mod,
-        "capacity": np.round(ab_elig // WEIGHT_ROUNDING_TICK).astype(int),
+        "capacity": np.round(ab_elig / AB_ELIG_BANDWIDTH // WEIGHT_ROUNDING_TICK).astype(int),
         "obs_bundles": obs,
     }
     if qid is not None:
@@ -187,7 +187,7 @@ def _joint(raw, ctx, mod_names, quad_names, qid_names):
     n_obs_ab = len(bidders)
     ab_elig = bidders["eligibility"].to_numpy().astype(float)
     elig_norm = ab_elig / (ctx["pop_sum"] * AB_ELIG_BANDWIDTH)
-    ab_capacity = np.round(ab_elig // WEIGHT_ROUNDING_TICK).astype(int)
+    ab_capacity = np.round(ab_elig / AB_ELIG_BANDWIDTH // WEIGHT_ROUNDING_TICK).astype(int)
     mta_weight = (A @ ctx["weight"].astype(np.float64)).astype(int)
 
     ab_obs = _ab_obs_bundles(winners, bidders, mta_idx)
