@@ -49,7 +49,6 @@ class RowGenerationSolver:
     def solve(self, resampling_weights=None, initialize_solver=True,
               iteration_callback=None, initialization_callback=None, verbose=False):
         self.verbose = verbose
-        self._param_indices = self.cfg.parameters_to_log or self.dim.display_indices
         if self.verbose:
             self.pt_estimation_manager._log_instance_summary()
         if initialize_solver:
@@ -90,7 +89,7 @@ class RowGenerationSolver:
         elapsed = time.perf_counter() - t0
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
-            result.log_summary(self._param_indices, self.dim.covariate_labels,
+            result.log_summary(self.dim.display_indices, self.dim.covariate_labels,
                                self.dim.covariate_label_width)
         return result
 
@@ -124,7 +123,7 @@ class RowGenerationSolver:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.iteration_history[iteration]
-        param_indices = self._param_indices
+        param_indices = self.dim.display_indices
         w = max(self.dim.covariate_label_width, 10)
 
         if iteration % 80 == 0:

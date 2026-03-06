@@ -20,7 +20,6 @@ class SerialBootstrapMixin:
         theta_boots = []
         self.bootstrap_history = {}
         self.verbose = verbose
-        self._param_indices = self.config.standard_errors.parameters_to_log or self.dim.display_indices
         self.row_gen = self.row_generation_manager
         t0 = time.perf_counter()
 
@@ -119,7 +118,7 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
         info = self.bootstrap_history[bootstrap_iter]
-        param_indices = self._param_indices
+        param_indices = self.dim.display_indices
         w = max(self.dim.covariate_label_width, 10)
 
         if bootstrap_iter % 100 == 0:
@@ -151,7 +150,7 @@ class SerialBootstrapMixin:
         if not self.comm_manager.is_root() or not self.verbose:
             return
 
-        param_indices = self._param_indices
+        param_indices = self.dim.display_indices
         w = max(self.dim.covariate_label_width, 8)
 
         sep_width = w + 4 + 12 + 3 + 12 + 3 + 10

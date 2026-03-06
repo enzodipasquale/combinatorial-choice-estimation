@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import json, sys
 import numpy as np
-import pandas as pd
 from pathlib import Path
 
 APP_DIR = Path(__file__).parent.parent

@@ -26,6 +26,7 @@ class DimensionsConfig(ConfigMixin):
     n_covariates: int = None
     n_simulations: int = 1
     covariate_names: dict = None
+    display_indices: list = None
 
     def __post_init__(self):
         self._build_labels()
@@ -43,12 +44,13 @@ class DimensionsConfig(ConfigMixin):
                 max((len(l) for l in self.covariate_labels), default=5),
                 MAX_DISPLAY_WIDTH,
             )
-            self.display_indices = self.named_covariate_indices or list(range(min(5, self.n_covariates)))
+            if self.display_indices is None:
+                self.display_indices = (self.named_covariate_indices
+                                        or list(range(min(5, self.n_covariates))))
         else:
             self.covariate_labels = None
             self.named_covariate_indices = None
             self.covariate_label_width = 5
-            self.display_indices = None
 
     @property
     def n_agents(self):
@@ -102,7 +104,7 @@ class RowGenerationConfig(ConfigMixin):
     theta_ubs: float = 1000
     theta_lbs: float = 0
     theta_bounds: dict = None
-    parameters_to_log: list = None
+
     verbose: bool = True
     save_master_model_dir: str = None
 
@@ -128,7 +130,7 @@ class StandardErrorsConfig(ConfigMixin):
     rowgen_max_iters: int = 1000
     rowgen_min_iters: int = 0
     master_gurobi_params: dict = field(default_factory=dict)
-    parameters_to_log: list = None
+
     theta_bounds: dict = None
 
     def theta_bounds_arrays(self, n_covariates: int, covariate_names=None):
