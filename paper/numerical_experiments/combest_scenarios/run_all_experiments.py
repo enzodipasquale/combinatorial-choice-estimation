@@ -26,7 +26,6 @@ def main():
     grid_N = config["grid"].get("debug_N" if debug else "N", [10])
     specs = [args.spec] if args.spec else list(config["specifications"].keys())
     n_reps = args.replications or config.get("experiment", {}).get("n_replications", 50)
-    n_bootstrap = min(config.get("experiment", {}).get("n_bootstrap", 200), args.mpi_procs)
     stats_dir = f"results/{args.env}"
 
     def get_timeout(M):
@@ -65,7 +64,6 @@ def main():
                     "python", str(script_dir / "run_experiment.py"),
                     "--spec", spec, "--N", str(N), "--M", str(M),
                     "--replication", str(rep), "--config", config_path.name,
-                    "--n-bootstrap", str(n_bootstrap),
                 ]
                 if alpha_val is not None:
                     cmd.extend(["--alpha", str(alpha_val)])

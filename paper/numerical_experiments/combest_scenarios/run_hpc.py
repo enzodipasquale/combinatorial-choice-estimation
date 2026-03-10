@@ -9,9 +9,9 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from paper.numerical_experiments.large_scale.run_experiment import run_replication
-from paper.numerical_experiments.large_scale.compute_statistics import load_replication_results, compute_statistics
-from paper.numerical_experiments.large_scale.aggregate_results import (
+from paper.numerical_experiments.combest_scenarios.run_experiment import run_replication
+from paper.numerical_experiments.combest_scenarios.compute_statistics import load_replication_results, compute_statistics
+from paper.numerical_experiments.combest_scenarios.aggregate_results import (
     load_all_statistics, generate_table_csv, generate_table_latex,
 )
 

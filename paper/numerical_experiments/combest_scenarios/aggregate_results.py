@@ -52,9 +52,8 @@ def generate_table_csv(local_stats, hpc_stats, config, output_path):
     with open(output_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Specification", "M", "N",
-                     "Bias α", "RMSE α", "SE α",
-                     "Bias λ", "RMSE λ", "SE λ",
-                     "SE δ", "Runtime (local)", "Runtime (HPC)"])
+                     "Bias α", "RMSE α", "Bias λ", "RMSE λ",
+                     "Runtime (local)", "Runtime (HPC)"])
         for spec in specs:
             for M in grid_M:
                 for N in grid_N:
@@ -62,18 +61,15 @@ def generate_table_csv(local_stats, hpc_stats, config, output_path):
                     hpc = hpc_stats[spec][M][N]
                     s = hpc or loc
                     if s is None:
-                        w.writerow([spec, M, N] + ["---"] * 9)
+                        w.writerow([spec, M, N] + ["---"] * 6)
                     else:
                         rt_local = loc.get("runtime", np.nan) if loc else np.nan
                         rt_hpc = hpc.get("runtime", np.nan) if hpc else np.nan
                         w.writerow([spec, M, N,
                                     fmt(s.get("bias_alpha", np.nan)),
                                     fmt(s.get("rmse_alpha", np.nan)),
-                                    fmt(s.get("se_alpha", np.nan)),
                                     fmt(s.get("bias_lambda", np.nan)),
                                     fmt(s.get("rmse_lambda", np.nan)),
-                                    fmt(s.get("se_lambda", np.nan)),
-                                    fmt(s.get("se_delta", np.nan)),
                                     fmt(rt_local, 2),
                                     fmt(rt_hpc, 2)])
 
@@ -87,7 +83,7 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
         "\\begin{table}[htbp]",
         "\\centering",
         "\\footnotesize",
-        "\\caption{Bias, RMSE, bootstrap standard errors, and runtime}",
+        "\\caption{Bias, RMSE, and runtime}",
         "\\label{tab:benchmarks}",
         "\\begin{threeparttable}",
         "\\begin{tabular}{l" + " c" * (len(grid_M) * n_N) + "}",
@@ -112,17 +108,12 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
         rows = [
             ("Bias $\\alpha$", "bias_alpha", 3),
             ("RMSE $\\alpha$", "rmse_alpha", 3),
-            ("s.e.\\ $\\alpha$", "se_alpha", 3),
         ]
         if has_lambda:
             rows += [
                 ("Bias $\\lambda$", "bias_lambda", 3),
                 ("RMSE $\\lambda$", "rmse_lambda", 3),
-                ("s.e.\\ $\\lambda$", "se_lambda", 3),
             ]
-        rows += [
-            ("s.e.\\ $\\delta$", "se_delta", 3),
-        ]
 
         for row_label, key, dec in rows:
             cells = []
@@ -154,11 +145,8 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
         "\\begin{tablenotes}",
         "\\footnotesize",
         "\\item \\textit{Notes:} Averages over 50 replications. $S = 1$, $\\rho = 0.5$. "
-        "$\\alpha$: modular agent feature coefficient; $\\lambda$: non-modular feature coefficient; "
-        "$\\delta$: item fixed effects. "
-        "Standard errors from Bayesian bootstrap (200 resamples); "
-        "s.e.\\ $\\delta$ is the median across the $M$ fixed effects. "
-        "Runtime in seconds (point estimation + bootstrap).",
+        "$\\alpha$: modular agent feature coefficient; $\\lambda$: non-modular feature coefficient. "
+        "Runtime in seconds (point estimation).",
         "\\end{tablenotes}",
         "\\end{threeparttable}",
         "\\end{table}",

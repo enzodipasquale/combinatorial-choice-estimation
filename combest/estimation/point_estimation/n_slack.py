@@ -19,8 +19,8 @@ class NSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def _initialize_master(self):
-        theta_obj_coef = self.pt_estimation_manager.compute_theta_obj_coef(self.local_obs_weights)
-        u_obj_coef = self.pt_estimation_manager.compute_u_obj_weights(self.local_obs_weights)
+        theta_obj_coef = self.pt_estimation_manager.compute_theta_LP_coef(self.local_obs_weights)
+        u_obj_coef = self.pt_estimation_manager.compute_u_LP_coef(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates, self.dim.covariate_names)
@@ -143,8 +143,8 @@ class NSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def update_objective_for_weights(self):
-        theta_obj_coef = self.pt_estimation_manager.compute_theta_obj_coef(self.local_obs_weights)
-        u_obj_weights = self.pt_estimation_manager.compute_u_obj_weights(self.local_obs_weights)
+        theta_obj_coef = self.pt_estimation_manager.compute_theta_LP_coef(self.local_obs_weights)
+        u_obj_weights = self.pt_estimation_manager.compute_u_LP_coef(self.local_obs_weights)
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables

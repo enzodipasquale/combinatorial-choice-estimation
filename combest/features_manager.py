@@ -112,7 +112,7 @@ class FeaturesManager:
 
     def build_quadratic_covariates_from_data(self):
         self.data_manager._validate_quadratic_data_dimensions()
-        qinfo = self.data_manager.quadratic_data_info
+        qinfo = self.data_manager.get_quadratic_data_info()
         def quadratic_covariates_oracle(bundles, ids, data):
             feats = []
             if qinfo.modular_agent:
