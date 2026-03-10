@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import combest as ce
-from paper.numerical_experiments.large_scale.generate_data import generate_data
+from paper.numerical_experiments.combest_scenarios.generate_data import generate_data
 
 
 def bundle_stats(spec, M, alpha=0.1, lambda_val=None, N=25, seed=0, sigma=1.0):

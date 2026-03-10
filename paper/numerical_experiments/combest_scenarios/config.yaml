@@ -1,9 +1,9 @@
 experiment:
   n_replications: 50
-  n_bootstrap: 200
   rho: 0.5
   beta_star: ones
   debug_mode: false
+  sigma: 1.0
 
 specifications:
   gross_substitutes:
@@ -55,9 +55,3 @@ subproblem:
     TimeLimit: 10.0
     OutputFlag: 0
     Threads: 1
-
-standard_errors:
-  method: bayesian
-  rowgen_tol: 0.01
-  rowgen_max_iters: 200
-  rowgen_min_iters: 0

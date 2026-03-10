@@ -35,15 +35,10 @@ class DataManager:
         self.input_data = {"id_data": {}, "item_data": {}}
         self.local_data = {"id_data": {}, "item_data": {}}
         self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
-        self._local_data_version = 0
-
-    @lru_cache(maxsize=1)
-    def _get_local_obs_bundles(self, _version):
-        return np.asarray(self.local_data["id_data"]["obs_bundles"], dtype=bool)
 
     @property
     def local_obs_bundles(self):
-        return self._get_local_obs_bundles(self._local_data_version)
+        return self.local_data["id_data"]["obs_bundles"]
 
     def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
         if self.comm_manager.is_root():
@@ -64,7 +59,6 @@ class DataManager:
         self.local_data["item_data"].update(item_data)
         self.input_data_dictionary_metadata["id_data"].update(id_meta)
         self.input_data_dictionary_metadata["item_data"].update(item_meta)
-        self._local_data_version = getattr(self, "_local_data_version", 0) + 1
 
         if not preserve_global_data and self.comm_manager.is_root():
             self.input_data = {"id_data": {}, "item_data": {}}
@@ -73,7 +67,6 @@ class DataManager:
         self.input_data = {"id_data": {}, "item_data": {}}
         self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
         self.local_data = {"id_data": {}, "item_data": {}}
-        self._local_data_version = 0
 
     @property
     def local_obs_quantity(self):
@@ -82,12 +75,20 @@ class DataManager:
             return np.asarray(q, dtype=np.float64)
         return np.ones(self.comm_manager.num_local_agent, dtype=np.float64)
 
-    @property
-    def quadratic_data_info(self):
-        return self._quadratic_data_info(self._local_data_version)
+
+    def get_quadratic_data_info(self):
+        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
+        dim = lambda d, k: d[k].shape[-1] if k in d else 0
+        return QuadraticDataInfo(
+                    modular_agent=dim(agent_data, "modular"),
+                    modular_item=dim(item_data, "modular"),
+                    quadratic_agent=dim(agent_data, "quadratic"),
+                    quadratic_item=dim(item_data, "quadratic"),
+                    constraint_mask=agent_data.get("constraint_mask"),
+                )
 
     def _validate_quadratic_data_dimensions(self):
-        qinfo = self.quadratic_data_info
+        qinfo = self.get_quadratic_data_info()
         agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
         n_items = self.dimensions_cfg.n_items
         n_local = self.comm_manager.num_local_agent
@@ -111,15 +112,3 @@ class DataManager:
                 f"Total covariates from data ({total_covariates}) != "
                 f"n_covariates in config ({self.dimensions_cfg.n_covariates})"
             )
-
-    @lru_cache(maxsize=1)
-    def _quadratic_data_info(self, _version):
-        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
-        dim = lambda d, k: d[k].shape[-1] if k in d else 0
-        return QuadraticDataInfo(
-                    modular_agent=dim(agent_data, "modular"),
-                    modular_item=dim(item_data, "modular"),
-                    quadratic_agent=dim(agent_data, "quadratic"),
-                    quadratic_item=dim(item_data, "quadratic"),
-                    constraint_mask=agent_data.get("constraint_mask"),
-                )

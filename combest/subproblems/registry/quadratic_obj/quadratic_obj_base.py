@@ -4,11 +4,7 @@ from functools import lru_cache
 class QuadraticObjectiveMixin:
     @property
     def _qinfo(self):
-        return self._get_qinfo(self.data_manager._local_data_version)
-    
-    @lru_cache(maxsize=1)
-    def _get_qinfo(self, _version):
-        return self.data_manager.quadratic_data_info
+        return self.data_manager.get_quadratic_data_info()
     
     @property
     def _slices(self):

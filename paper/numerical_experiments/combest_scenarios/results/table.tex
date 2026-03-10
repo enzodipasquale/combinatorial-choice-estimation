@@ -1,0 +1,53 @@
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Bias, RMSE, bootstrap standard errors, and runtime}
+\label{tab:benchmarks}
+\begin{threeparttable}
+\begin{tabular}{l c c c c c c c c c}
+\toprule
+ & \multicolumn{3}{c}{$M = 50$} & \multicolumn{3}{c}{$M = 100$} & \multicolumn{3}{c}{$M = 200$} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+$N$ & 100 & 500 & 1000 & 100 & 500 & 1000 & 100 & 500 & 1000 \\
+\midrule
+\multicolumn{10}{l}{\textit{Gross substitutes}} \\[2pt]
+Bias $\alpha$ & -0.018 & 0.010 & 0.010 & -0.011 & -0.012 & -0.004 & --- & --- & --- \\
+RMSE $\alpha$ & 0.029 & 0.015 & 0.016 & 0.025 & 0.021 & 0.010 & --- & --- & --- \\
+s.e.\ $\alpha$ & 0.043 & 0.028 & 0.013 & 0.033 & 0.008 & 0.007 & --- & --- & --- \\
+Bias $\lambda$ & -0.002 & 0.001 & 0.000 & -0.001 & 0.000 & 0.000 & --- & --- & --- \\
+RMSE $\lambda$ & 0.010 & 0.005 & 0.003 & 0.007 & 0.001 & 0.001 & --- & --- & --- \\
+s.e.\ $\lambda$ & 0.007 & 0.005 & 0.002 & 0.004 & 0.002 & 0.001 & --- & --- & --- \\
+s.e.\ $\delta$ & 0.429 & 0.274 & 0.140 & 0.465 & 0.199 & 0.157 & --- & --- & --- \\
+Runtime (local) & 51.38 & 158.27 & 349.61 & 1180.96 & 2606.32 & 5074.99 & --- & --- & --- \\[4pt]
+\multicolumn{10}{l}{\textit{Supermodular}} \\[2pt]
+Bias $\alpha$ & 0.029 & 0.015 & 0.009 & -0.034 & -0.013 & -0.003 & --- & --- & --- \\
+RMSE $\alpha$ & 0.057 & 0.022 & 0.023 & 0.040 & 0.015 & 0.007 & --- & --- & --- \\
+s.e.\ $\alpha$ & 0.041 & 0.024 & 0.014 & 0.041 & 0.011 & 0.009 & --- & --- & --- \\
+Bias $\lambda$ & -0.003 & -0.003 & -0.002 & 0.001 & -0.002 & -0.001 & --- & --- & --- \\
+RMSE $\lambda$ & 0.012 & 0.005 & 0.003 & 0.005 & 0.002 & 0.002 & --- & --- & --- \\
+s.e.\ $\lambda$ & 0.010 & 0.003 & 0.002 & 0.002 & 0.002 & 0.001 & --- & --- & --- \\
+s.e.\ $\delta$ & 0.305 & 0.130 & 0.094 & 0.232 & 0.146 & 0.107 & --- & --- & --- \\
+Runtime (local) & 9.21 & 43.14 & 92.85 & 76.23 & 586.24 & 1015.32 & --- & --- & --- \\[4pt]
+\multicolumn{10}{l}{\textit{Linear knapsack}} \\[2pt]
+Bias $\alpha$ & 0.037 & 0.011 & 0.012 & -0.020 & -0.014 & -0.003 & --- & --- & --- \\
+RMSE $\alpha$ & 0.071 & 0.016 & 0.019 & 0.025 & 0.017 & 0.008 & --- & --- & --- \\
+s.e.\ $\alpha$ & 0.051 & 0.025 & 0.014 & 0.037 & 0.008 & 0.008 & --- & --- & --- \\
+s.e.\ $\delta$ & 0.240 & 0.127 & 0.099 & 0.198 & 0.108 & 0.080 & --- & --- & --- \\
+Runtime (local) & 1.92 & 10.90 & 31.62 & 48.96 & 151.72 & 407.33 & --- & --- & --- \\[4pt]
+\multicolumn{10}{l}{\textit{Quadratic knapsack}} \\[2pt]
+Bias $\alpha$ & -0.035 & 0.005 & -0.002 & --- & --- & --- & --- & --- & --- \\
+RMSE $\alpha$ & 0.058 & 0.012 & 0.004 & --- & --- & --- & --- & --- & --- \\
+s.e.\ $\alpha$ & 0.031 & 0.019 & 0.011 & --- & --- & --- & --- & --- & --- \\
+Bias $\lambda$ & -0.007 & -0.002 & 0.002 & --- & --- & --- & --- & --- & --- \\
+RMSE $\lambda$ & 0.014 & 0.006 & 0.005 & --- & --- & --- & --- & --- & --- \\
+s.e.\ $\lambda$ & 0.011 & 0.003 & 0.003 & --- & --- & --- & --- & --- & --- \\
+s.e.\ $\delta$ & 0.433 & 0.149 & 0.139 & --- & --- & --- & --- & --- & --- \\
+Runtime (local) & 22.82 & 87.79 & 227.49 & --- & --- & --- & --- & --- & --- \\[4pt]
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Averages over 50 replications. $S = 1$, $\rho = 0.5$. $\alpha$: modular agent feature coefficient; $\lambda$: non-modular feature coefficient; $\delta$: item fixed effects. Standard errors from Bayesian bootstrap (200 resamples); s.e.\ $\delta$ is the median across the $M$ fixed effects. Runtime in seconds (point estimation + bootstrap).
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
