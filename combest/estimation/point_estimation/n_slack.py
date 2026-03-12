@@ -19,15 +19,14 @@ class NSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def _initialize_master(self):
-        theta_obj_coef = self.pt_estimation_manager.compute_theta_LP_coef(self.local_obs_weights)
-        u_obj_coef = self.pt_estimation_manager.compute_u_LP_coef(self.local_obs_weights)
+        theta_coef, u_coef = self.compute_LP_coef(self.local_obs_weights)
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates, self.dim.covariate_names)
             theta = self.master_model.addMVar(self.dim.n_covariates,
-                                              obj=theta_obj_coef, lb=lb, ub=ub,
+                                              obj=theta_coef, lb=lb, ub=ub,
                                               name='parameter')
-            u = self.master_model.addMVar(self.dim.n_agents, lb=0, obj=u_obj_coef, name='utility')
+            u = self.master_model.addMVar(self.dim.n_agents, lb=0, obj=u_coef, name='utility')
             self.master_variables = (theta, u)
             self.master_model.optimize()
             self.all_concatenated_constraints = None
@@ -87,26 +86,21 @@ class NSlackSolver(RowGenerationSolver):
     # Violations & constraints
     # ------------------------------------------------------------------
 
-    def _compute_local_violations(self, pricing_results, theta, u_local, weights):
-        covariates_local = self.features_manager.covariates_oracle(pricing_results)
-        errors_local = self.features_manager.error_oracle(pricing_results)
-        u_theta = covariates_local @ theta + errors_local
-        weighted_reduced_costs = weights * (u_theta - u_local)
 
-        local_max_rc = weighted_reduced_costs.max() if weighted_reduced_costs.size > 0 else -np.inf
-        local_violations = np.where(weighted_reduced_costs > self.cfg.tolerance)[0]
+    def compute_constraints_coeff(self, cuts):
+        covariates, error, u_theta , bundles  = cuts
+        reduced_costs = self.local_obs_weights * (u_theta - self.u_iter_local)
+
+        local_max_rc = reduced_costs.max() if reduced_costs.size > 0 else -np.inf
+        local_violations = np.where(reduced_costs > self.cfg.tolerance)[0]
         local_violations_id = self.comm_manager.agent_ids[local_violations]
-        covariates_and_errors_local = np.column_stack([
-                                                        covariates_local[local_violations],
-                                                        errors_local[local_violations]
+        covariates_and_error = np.column_stack([
+                                                        covariates[local_violations],
+                                                        error[local_violations]
                                                     ])
-        bundles_local = pricing_results[local_violations]
-        return local_max_rc, len(local_violations), local_violations_id, bundles_local, covariates_and_errors_local
-
-    def compute_constraints_coeff(self, pricing_results):
-        local_max_rc, n_local_viol, local_violations_id, bundles_local, covariates_and_errors_local = \
-            self._compute_local_violations(pricing_results, self.theta_iter, self.u_iter_local, self.local_obs_weights)
-
+        bundles_local = bundles[local_violations]
+        n_local_viol =  len(local_violations)
+        
         local_meta = np.array([local_max_rc, n_local_viol], dtype=np.float64)
         all_meta = self.comm_manager.Allgather(local_meta).reshape(-1, 2)
         global_max_rc = all_meta[:, 0].max()
@@ -115,23 +109,23 @@ class NSlackSolver(RowGenerationSolver):
         reduced_cost = global_max_rc if self.comm_manager.is_root() else None
 
         bundles = self.comm_manager.Gatherv_by_row(bundles_local, row_counts=violation_counts)
-        covariates_and_errors = self.comm_manager.Gatherv_by_row(covariates_and_errors_local, row_counts=violation_counts)
+        covariates_and_error = self.comm_manager.Gatherv_by_row(covariates_and_error, row_counts=violation_counts)
         violations_id = self.comm_manager.Gatherv_by_row(local_violations_id, row_counts=violation_counts)
 
         if self.comm_manager.is_root():
-            covariates = covariates_and_errors[:, :-1]
-            errors = covariates_and_errors[:, -1]
+            covariates = covariates_and_error[:, :-1]
+            error = covariates_and_error[:, -1]
             n_violations = len(violations_id)
         else:
-            covariates, errors, n_violations = None, None, None
+            covariates, error, n_violations = None, None, None
 
-        return (violations_id, bundles, covariates, errors), (stop, reduced_cost, n_violations)
+        return (violations_id, covariates, error), (stop, reduced_cost, n_violations)
 
-    def add_master_constraints(self, indices, bundles, covariates, errors):
+    def add_master_constraints(self, indices, covariates, error):
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
-        constr = self.master_model.addConstr(u[indices] >= covariates @ theta + errors)
+        constr = self.master_model.addConstr(u[indices] >= covariates @ theta + error)
         if self.all_concatenated_constraints is None:
             self.all_concatenated_constraints = constr
         else:
@@ -143,8 +137,8 @@ class NSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def update_objective_for_weights(self):
-        theta_obj_coef = self.pt_estimation_manager.compute_theta_LP_coef(self.local_obs_weights)
-        u_obj_weights = self.pt_estimation_manager.compute_u_LP_coef(self.local_obs_weights)
+        theta_obj_coef = self.compute_theta_LP_coef(self.local_obs_weights)
+        u_obj_weights = self.compute_u_LP_coef(self.local_obs_weights)
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables

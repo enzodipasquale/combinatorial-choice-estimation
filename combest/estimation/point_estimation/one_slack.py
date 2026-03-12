@@ -17,14 +17,15 @@ class OneSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def _initialize_master(self):
-        theta_obj_coef = self.pt_estimation_manager.compute_theta_LP_coef(self.local_obs_weights)
+        theta_coef, u_coef = self.compute_LP_coef(self.local_obs_weights)
+
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
             lb, ub = self.cfg.theta_bounds_arrays(self.dim.n_covariates, self.dim.covariate_names)
             theta = self.master_model.addMVar(self.dim.n_covariates,
-                                              obj=theta_obj_coef, lb=lb, ub=ub,
+                                              obj=theta_coef, lb=lb, ub=ub,
                                               name='parameter')
-            u_bar = self.master_model.addVar(lb=0, obj=1, name='utility')
+            u_bar = self.master_model.addVar(lb=0, obj=u_coef, name='utility')
             self.master_variables = (theta, u_bar)
             self.master_model.optimize()
             self.slack_counter = {}
@@ -37,26 +38,27 @@ class OneSlackSolver(RowGenerationSolver):
                 self.theta_iter = np.zeros(self.dim.n_covariates, dtype=np.float64)
         self.theta_iter = self.comm_manager.Bcast(self.theta_iter)
 
-    def _master_iteration(self, pricing_results):
-        covariates = self.features_manager.covariates_oracle(pricing_results)
-        errors = self.features_manager.error_oracle(pricing_results)
+    def _master_iteration(self, cuts):
+        covariates, error,  utility, _  = cuts
+
         covariates_sum = self.comm_manager.sum_row_andReduce(
             self.local_obs_weights[:, None] * covariates)
-        errors_sum = self.comm_manager.sum_row_andReduce(
-            self.local_obs_weights * errors)
+        error_sum = self.comm_manager.sum_row_andReduce(
+            self.local_obs_weights * error)
+        utility =  self.comm_manager.sum_row_andReduce(
+            self.local_obs_weights * utility)
 
         t1 = time.perf_counter()
         stop, reduced_cost, n_violations = False, None, 0
 
         if self.comm_manager.is_root():
             theta, u_bar = self.master_variables
-            u_pricing = covariates_sum @ theta.X + errors_sum
-            reduced_cost = u_pricing - u_bar.X
+            reduced_cost = utility - u_bar.X
 
             if reduced_cost <= self.cfg.tolerance:
                 stop = True
             else:
-                self.master_model.addConstr(u_bar >= covariates_sum @ theta + errors_sum)
+                self.master_model.addConstr(u_bar >= covariates_sum @ theta + error_sum)
                 self._enforce_slack_counter()
                 self.master_model.optimize()
                 n_violations = 1

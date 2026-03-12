@@ -46,6 +46,27 @@ class RowGenerationSolver:
     # Solve
     # ------------------------------------------------------------------
 
+    def compute_LP_coef(self, local_obs_weights=None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_obs_quantity
+        local_obs_covariates = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
+        theta_coeff = self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_covariates)
+        u_coeff = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.comm_manager.agent_counts)
+        return theta_coeff, u_coeff if self.comm_manager.is_root() else None
+
+
+    def compute_theta_LP_coef(self, local_obs_weights=None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_obs_quantity
+        local_obs_covariates = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
+        return self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_covariates)
+
+    def compute_u_LP_coef(self, local_obs_weights=None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_obs_quantity
+        all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.comm_manager.agent_counts)
+        return all_weights if self.comm_manager.is_root() else None
+
     def solve(self, resampling_weights=None, initialize_solver=True,
               iteration_callback=None, initialization_callback=None, verbose=False):
         self.verbose = verbose
@@ -95,8 +116,8 @@ class RowGenerationSolver:
 
     def _row_generation_iteration(self, iteration):
         t0 = time.perf_counter()
-        pricing_results = self.subproblem_manager.solve(self.theta_iter)
-        stop, reduced_cost, n_violations, (t1, t2) = self._master_iteration(pricing_results)
+        cuts = self.pt_estimation_manager.compute_cuts(self.theta_iter)
+        stop, reduced_cost, n_violations, (t1, t2) = self._master_iteration(cuts)
         pricing_time = t1 - t0
         master_time = t2 - t1 if self.comm_manager.is_root() else None
         self._distribute_solution()

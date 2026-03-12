@@ -144,7 +144,7 @@ class DiscountedJointQuadKnapsackSolver(SubproblemSolver):
 
 
 def discounted_covariates_oracle(bundles, ids, data):
-    id_d, it_d = data["id_data"], data["item_data"]
+    id_d, it_d = data.id_data, data.item_data
     nd, ny = it_d["n_dest"], it_d["n_years"]
     B = bundles.reshape(-1, ny, nd).astype(float)
     dw = id_d["discount_weights"][ids]
@@ -172,7 +172,7 @@ def discounted_covariates_oracle(bundles, ids, data):
 
 
 def discount_errors(model, n_dest):
-    dw = model.data.local_data["id_data"]["discount_weights"]
+    dw = model.data.local_data.id_data["discount_weights"]
     model.features.local_modular_errors *= np.repeat(dw, n_dest, axis=1)
 
 

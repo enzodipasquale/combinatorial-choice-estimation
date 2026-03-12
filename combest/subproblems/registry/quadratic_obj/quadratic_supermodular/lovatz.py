@@ -9,7 +9,7 @@ class QuadraticSupermodularLovaszSolver(SupermodularQuadraticObjectiveMixin, Sub
         P = quadratic.copy()
         diag = np.arange(self.dimensions_cfg.n_items)
         P[:, diag, diag] += linear
-        mask = self._qinfo.constraint_mask
+        mask = self.data_manager.id_data["constraint_mask"]
         num_iters = int(self.subproblem_cfg.gurobi_params.get(
             'num_iters_SGM', max(100000, 1000 * self.dimensions_cfg.n_items)))
         alpha = float(self.subproblem_cfg.gurobi_params.get(

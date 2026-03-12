@@ -119,7 +119,6 @@ def _build_error_oracle(model, dataset, meta, seed):
 
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
-    model.features._error_oracle_vectorized = True
     model.features._error_oracle_takes_data = False
 
 
