@@ -34,7 +34,7 @@ def build_oracles(model, seed=42):
         x_rev = b_1 @ rev_chars.T + beta * np.einsum('nrm,km->nk', b_2_r, rev_chars) / R
 
         # Entry cost feature (θ_s): (1-b_0)·b_1 + β·(1-b_1)·b_2_r
-        x_s = ((1 - b_0) * b_1).sum(-1) + beta * (b_2_r * (1 - b_1[:, None, :])).sum(-1).mean(-1)
+        x_s = ((1 - b_0) * b_1).sum(-1) + beta * ((1 - b_1)[:, None, :] * b_2_r ).sum(-1).mean(-1)
 
         # Synergy feature (θ_c): b_1'Cb_1 + β·b_2_r'Cb_2_r/R
         x_c = np.einsum('nj,jk,nk->n', b_1, C, b_1) + beta * np.einsum('nrj,jk,nrk->n', b_2_r, C, b_2_r) / R

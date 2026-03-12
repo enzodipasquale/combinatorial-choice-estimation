@@ -67,24 +67,25 @@ class TwoStageSolver(GurobiMixin, SubproblemSolver):
             # Σ_j b_1_j [x_j'θ_r + (1-b_0_j)θ_s + ε1_ij]
             # + Σ_{j<j'} b_1_j b_1_j' θ_c c_jj'
             rev = self.rev_chars.T @ theta_rev          # (M,)
-            c_b = rev + (1 - b_0_i) * theta_s + self.eps1[i]
+            mod_1 = rev + (1 - b_0_i) * theta_s + self.eps1[i]
 
-            obj = c_b @ b_1
+            obj = mod_1 @ b_1
             obj += theta_c * (b_1 @ C @ b_1)
 
             # --- Period 2: state b_1, choose b_2_r ---
             # Σ_j b_2_rj [x_j'θ_r + (1-b_1_j)θ_s + ε2_irj]
             # + Σ_{j<j'} b_2_rj b_2_rj' θ_c c_jj'
             for r in range(self.R):
-                c_d = rev + (1 - b_1) * theta_s + self.eps2[i, r]
-                obj += bR * (c_d @ b_2_r[r, :]
+                mod_2 = rev + (1 - b_1) * theta_s + self.eps2[i, r]
+                obj += bR * (mod_2 @ b_2_r[r, :]
                              + theta_c * (b_2_r[r, :] @ C @ b_2_r[r, :]))
 
             model.setObjective(obj, gp.GRB.MAXIMIZE)
             model.optimize()
 
             pol["b_1_star"][i] = np.array(b_1.X) > 0.5
-            b_1_star_f = pol["b_1_star"][i].astype(float)
+            b_1_star_f = pol["b_1_star"][i]
+            # pol["b_2_r_V"][i] = np.array(b_2_r.X) > 0.5
 
             # Re-optimize b_2 per scenario given b_1_star (independent knapsacks)
             b_2 = self.q_vars[i]
