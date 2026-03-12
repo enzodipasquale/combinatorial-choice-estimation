@@ -3,9 +3,8 @@ using the Schramm-Zowe proximal bundle method.
 
     theta = [theta_rev1, theta_rev2, theta_entry, theta_synergy]
 
-DGP generates observed bundles with n_simulations=1 (one error draw
-per observation).  Estimation uses n_simulations=2 for Monte-Carlo
-smoothing of the DC objective.
+DGP generates observed bundles with n_simulations=1, R=20.
+Estimation uses n_simulations=1, R=1.
 """
 import numpy as np
 import combest as ce
@@ -14,11 +13,14 @@ from oracles import build_oracles
 
 # ── Problem dimensions ──────────────────────────────────────────────
 beta = 4
-M, R, K = 5, 20, 3
-n_obs = 80
-n_rev = 2
+M, K = 8, 5
+R_dgp = 30          # second-stage scenarios for DGP
+R_est = 1          # second-stage scenarios for estimation
+S_est = 1
+n_obs = 500
+n_rev = 1
 n_cov = n_rev + 2
-theta_true = np.array([1.0, -0.5, -0.5, 0.2])
+theta_true = np.array([1.0, -1.0, 0.05])
 
 # ── Draw characteristics (shared across DGP and estimation) ────────
 seed_dgp = 42
@@ -29,40 +31,35 @@ _raw = rng.uniform(0, 1, (M, M))
 syn_chars = (_raw + _raw.T) / 2
 np.fill_diagonal(syn_chars, 0)
 
-# ── Phase 1: DGP — generate observed bundles (n_simulations=1) ─────
-dgp = ce.Model()
-dgp.load_config({
-    "dimensions": {"n_obs": n_obs, "n_items": M,
-                   "n_covariates": n_cov, "n_simulations": 1},
-    "subproblem": {"gurobi_params": {"TimeLimit": 10}},
-})
-dgp.data.load_and_distribute_input_data({
-    "id_data": {"obs_bundles": np.zeros((n_obs, M), dtype=bool),
-                "state_chars": state_chars, "capacity": np.full(n_obs, K)},
+input_data = {
+    "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K)},
     "item_data": {"rev_chars": rev_chars, "syn_chars": syn_chars,
-                  "beta": beta, "R": R, "seed": seed_dgp},
-})
+                  "beta": beta, "R": R_dgp, "seed": seed_dgp},
+}
+cfg = {
+    "dimensions": {"n_obs": n_obs, "n_items": M,
+                   "n_covariates": n_cov},
+    "subproblem": {"gurobi_params": {"TimeLimit": 10}},
+}
+
+# ── Phase 1: DGP — generate observed bundles (n_simulations=1) ─────
+
+dgp = ce.Model()
+dgp.load_config(cfg)
+dgp.data.load_and_distribute_input_data(input_data)
 cov_oracle, err_oracle = build_oracles(dgp, seed=seed_dgp)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
 dgp.features.set_error_oracle(err_oracle)
+obs_b_dgp = dgp.subproblems.generate_obs_bundles(theta_true)
 
-obs_b_dgp = dgp.subproblems.solve(theta_true).copy()  # (n_obs, M)
-
-# ── Phase 2: Estimation (n_simulations=2) ──────────────────────────
+# ── Phase 2: Estimation (n_simulations=1, R=1) ────────────────────
 model = ce.Model()
-model.load_config({
-    "dimensions": {"n_obs": n_obs, "n_items": M,
-                   "n_covariates": n_cov, "n_simulations": 2},
-    "subproblem": {"gurobi_params": {"TimeLimit": 10}},
-})
-model.data.load_and_distribute_input_data({
-    "id_data": {"obs_bundles": np.zeros((n_obs, M), dtype=bool),
-                "state_chars": state_chars, "capacity": np.full(n_obs, K)},
-    "item_data": {"rev_chars": rev_chars, "syn_chars": syn_chars,
-                  "beta": beta, "R": R, "seed": seed_dgp},
-})
+cfg["dimensions"]["n_simulations"] = S_est
+input_data["id_data"] ["obs_bundles"] = obs_b_dgp
+model.load_config(cfg)
+model.data.load_and_distribute_input_data(input_data)
 
 seed_est = 123
 cov_oracle, err_oracle = build_oracles(model, seed=seed_est)
@@ -71,17 +68,11 @@ model.subproblems.initialize_solver()
 model.features.set_covariates_oracle(cov_oracle)
 model.features.set_error_oracle(err_oracle)
 
-# Replicate DGP bundles across simulations via obs_ids
-obs_ids = model.comm_manager.obs_ids
-obs_b = obs_b_dgp[obs_ids]
-solver.obs_b = obs_b.astype(float)
-model.data.local_data.id_data["obs_bundles"] = obs_b
-
 # ── Run bundle solver ──────────────────────────────────────────────
 is_root = model.comm_manager.is_root()
 theta0 = np.zeros(n_cov)
 if is_root:
-    print(f"theta_true = {theta_true}")
+    print(f"theta_true = {theta_true}  R_dgp={R_dgp}  R_est={R_est}")
 
 result = model.point_estimation.bundle.solve(
     theta0, tau=1.0, max_iters=200, verbose=True)
@@ -92,3 +83,13 @@ if is_root:
     print(f"err={err:.4f}  obj={result.final_objective:.6f}  "
           f"iters={result.num_iterations}  converged={result.converged}  "
           f"time={result.total_time:.1f}s")
+
+# ── Evaluate objective at theta_hat and theta_true ────────────────
+weights = model.data_manager.local_obs_quantity
+f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(
+    result.theta_hat, weights)
+f_true, g_true = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(
+    theta_true, weights)
+if is_root:
+    print(f"\nf(theta_hat)  = {f_hat:.6f}   |grad| = {np.linalg.norm(g_hat):.6f}")
+    print(f"f(theta_true) = {f_true:.6f}   |grad| = {np.linalg.norm(g_true):.6f}")
