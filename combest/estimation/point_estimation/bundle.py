@@ -4,32 +4,31 @@ import gurobipy as gp
 from combest.estimation.result import RowGenerationEstimationResult
 
 
+# ── Algorithm hyperparameters ─────────────────────────────────────────
+TAU_INIT = 1.0              # initial proximity weight
+GAMMA = 0.1                 # serious step acceptance threshold
+GAMMA_UP = 0.9              # strong descent threshold for tau decrease
+GAMMA_TILDE = 0.9           # proximity control threshold for tau increase
+C = 1e-5                    # downshift safeguard
+TOL = 1e-5                  # stopping tolerance on relative step size
+TOL_F = 1e-6                # stopping tolerance on relative function decrease
+TOL_G = 1e-8                # stopping tolerance on aggregate subgradient norm
+TAU_MAX = 1e8               # upper bound on tau
+MAX_ITERS = 200             # maximum oracle calls
+FLAT_COUNT_LIMIT = 5        # consecutive flat serious steps before stopping
+NULL_CLOSE_LIMIT = 3        # consecutive small null steps before stopping
+
+
 class BundleSolver:
 
     def __init__(self, pt_estimation_manager):
         self.pt = pt_estimation_manager
 
-    def solve(self, theta0, tau=1.0, gamma=0.1, Gamma=0.9, gamma_tilde=0.9,
-              c=1e-5, tol=1e-5, tol_f=1e-6, tol_g=1e-8, max_iters=200,
-              max_bundle_size=50, verbose=False):
+    def solve(self, theta0, tau=TAU_INIT, gamma=GAMMA, Gamma=GAMMA_UP,
+              gamma_tilde=GAMMA_TILDE, c=C, tol=TOL, tol_f=TOL_F,
+              tol_g=TOL_G, max_iters=MAX_ITERS, verbose=False):
         """Schramm-Zowe proximal bundle method (Algorithm 1,
         Kuchlbauer-Liers-Stingl).
-
-        Parameters
-        ----------
-        theta0 : array_like   Starting point.
-        tau : float            Initial proximity weight.
-        gamma : float          Serious step acceptance threshold (0 < gamma < Gamma).
-        Gamma : float          Strong descent threshold for tau decrease (gamma < Gamma < 1).
-        gamma_tilde : float    Proximity control threshold for tau increase (gamma < gamma_tilde < 1).
-        c : float              Downshift safeguard.
-        tol : float            Stopping tolerance on relative step size.
-        tol_f : float          Stopping tolerance on relative function decrease.
-        tol_g : float          Stopping tolerance on aggregate subgradient norm
-                               (Remark 4.17).
-        max_iters : int        Maximum oracle calls.
-        max_bundle_size : int  Prune bundle to this size.
-        verbose : bool         Print iteration log.
         """
         pt = self.pt
         comm = pt.comm_manager
@@ -47,19 +46,25 @@ class BundleSolver:
 
         converged = False
         null_close_count = 0
-        flat_count = 0           # consecutive serious steps with tiny f decrease
+        flat_count = 0
         t0 = time.perf_counter()
 
+        _col_hdr = (" Iter  S/N     f_trial       f_hat"
+                    "        tau       rho    rel_step"
+                    "      |g*|")
+        _col_sep = " " + "─" * 78
+
         if verbose and comm.is_root():
-            print(f"  bundle init  f_hat={f_hat:.6f}")
+            print()
+            print(" BUNDLE METHOD")
+            print(f" tau={tau:.2f}  gamma={gamma}  tol={tol:.0e}"
+                  f"  max_iters={max_iters}")
+            print(f" f(theta0) = {f_hat:.6f}")
+            print()
+            print(_col_hdr)
+            print(_col_sep)
 
         for k in range(max_iters):
-            # Prune bundle before QP (keep most recent planes)
-            if comm.is_root() and len(thetas) > max_bundle_size:
-                thetas = thetas[-max_bundle_size:]
-                fs = fs[-max_bundle_size:]
-                gs = gs[-max_bundle_size:]
-
             # Solve QP subproblem (root only)
             theta_next = np.empty(n, dtype=np.float64)
             phi_next = 0.0
@@ -100,7 +105,7 @@ class BundleSolver:
 
                     # Decrease tau on strong descent (Step 9)
                     if rho >= Gamma:
-                        tau = max(tau / 2.0, 1e-3)
+                        tau = tau / 2.0
 
                     # Stopping criterion 1: small serious step
                     if rel_step < tol:
@@ -114,7 +119,7 @@ class BundleSolver:
                         flat_count += 1
                     else:
                         flat_count = 0
-                    if flat_count >= 5:
+                    if flat_count >= FLAT_COUNT_LIMIT:
                         converged = True
                         stop = True
                 else:
@@ -127,17 +132,20 @@ class BundleSolver:
                     rho_tilde = ((f_hat - (f_next - s_k)) / denom
                                  if denom > 1e-15 else 0.0)
 
-                    # Only increase tau if rho_tilde passes threshold
-                    if rho_tilde >= gamma_tilde:
-                        tau = min(tau * 2.0, 1e8)
+                    # Increase tau: unconditionally if rho < 0 (function went up),
+                    # otherwise only if rho_tilde passes threshold
+                    if rho < 0:
+                        tau = min(tau * 2.0, TAU_MAX)
+                    elif rho_tilde >= gamma_tilde:
+                        tau = min(tau * 2.0, TAU_MAX)
 
-                    # Stopping criterion 2: 3 successive small null steps
+                    # Stopping criterion 2: successive small null steps
                     if rel_step < tol:
                         null_close_count += 1
                     else:
                         null_close_count = 0
 
-                    if null_close_count >= 3:
+                    if null_close_count >= NULL_CLOSE_LIMIT:
                         converged = True
                         stop = True
 
@@ -149,15 +157,13 @@ class BundleSolver:
 
                 if verbose:
                     tag = "S" if serious else "N"
-                    extra = ""
-                    if not serious:
-                        extra = f"  rho~={rho_tilde:.3f}"
-                    else:
-                        extra = f"  df={rel_decrease:.1e}  flat={flat_count}"
-                    print(f"  bundle {k+1:>4d} [{tag}]  f={f_next:.6f}  "
-                          f"f_hat={f_hat:.6f}  tau={tau:.2e}  "
-                          f"rho={rho:.3f}  step={rel_step:.2e}"
-                          f"  |g*|={g_star_norm:.2e}{extra}")
+                    if (k + 1) % 50 == 0:
+                        print(_col_hdr)
+                        print(_col_sep)
+                    print(f" {k+1:4d}   {tag}"
+                          f"  {f_next:12.4f}  {f_hat:12.4f}"
+                          f"  {tau:9.2e}  {rho:7.3f}"
+                          f"  {rel_step:9.2e}  {g_star_norm:9.2e}")
 
             # Broadcast decisions to all ranks
             stop = bool(comm.Bcast(np.array(stop)))
