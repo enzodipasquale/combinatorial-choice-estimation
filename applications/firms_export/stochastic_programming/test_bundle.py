@@ -13,17 +13,19 @@ from oracles import build_oracles
 
 # ── Problem dimensions ──────────────────────────────────────────────
 beta = 4
-M, K = 8, 5
-R_dgp = 30          # second-stage scenarios for DGP
-R_est = 1          # second-stage scenarios for estimation
+M, K = 5, 3
+R_dgp = 5          # second-stage scenarios for DGP
+R_est = 5         # second-stage scenarios for estimation
 S_est = 1
-n_obs = 500
-n_rev = 1
+n_obs = 100
+n_rev = 3
 n_cov = n_rev + 2
-theta_true = np.array([1.0, -1.0, 0.05])
+theta_true = np.array([1.0]* n_rev + [-0.0, 0.3])
+seed_dgp = 43
+seed_est = 43
+
 
 # ── Draw characteristics (shared across DGP and estimation) ────────
-seed_dgp = 42
 rng = np.random.default_rng(seed_dgp)
 rev_chars = rng.uniform(0.5, 2.0, (n_rev, M))
 state_chars = (rng.random((n_obs, M)) > 0.5).astype(float)
@@ -57,11 +59,12 @@ obs_b_dgp = dgp.subproblems.generate_obs_bundles(theta_true)
 # ── Phase 2: Estimation (n_simulations=1, R=1) ────────────────────
 model = ce.Model()
 cfg["dimensions"]["n_simulations"] = S_est
-input_data["id_data"] ["obs_bundles"] = obs_b_dgp
+input_data["id_data"]["obs_bundles"] = obs_b_dgp
+input_data["item_data"]["R"] = R_est
+
 model.load_config(cfg)
 model.data.load_and_distribute_input_data(input_data)
 
-seed_est = 123
 cov_oracle, err_oracle = build_oracles(model, seed=seed_est)
 solver = model.subproblems.load_solver(TwoStageSolver)
 model.subproblems.initialize_solver()
@@ -85,11 +88,8 @@ if is_root:
           f"time={result.total_time:.1f}s")
 
 # ── Evaluate objective at theta_hat and theta_true ────────────────
-weights = model.data_manager.local_obs_quantity
-f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(
-    result.theta_hat, weights)
-f_true, g_true = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(
-    theta_true, weights)
+f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(result.theta_hat)
+f_true, g_true = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta_true)
 if is_root:
     print(f"\nf(theta_hat)  = {f_hat:.6f}   |grad| = {np.linalg.norm(g_hat):.6f}")
     print(f"f(theta_true) = {f_true:.6f}   |grad| = {np.linalg.norm(g_true):.6f}")
