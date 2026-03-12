@@ -13,41 +13,42 @@ class TwoStageSolver(GurobiMixin, SubproblemSolver):
         self.M, self.R = M, item_data["R"]
         self.beta = item_data["beta"]
         self.rev_chars = item_data["rev_chars"]        # (n_rev, M)
-        self.state_chars = id_data["state_chars"]      # (n, M)
+        self.state_chars = id_data["state_chars"]      # (n, M) inherited state b_0
         self.syn_chars = item_data["syn_chars"]        # (M, M) pairwise c_jj'
         self.n_rev = self.rev_chars.shape[0]
         self.cap = id_data["capacity"]
-        self.obs_b = id_data["obs_bundles"].astype(float)
+        obs_raw = id_data.get("obs_bundles", None)
+        self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
         self.eps1 = self.data_manager.local_data.errors["eps1"]
         self.eps2 = self.data_manager.local_data.errors["eps2"]
 
         self.local_problems = []
-        self.b_vars, self.d_vars = [], []
+        self.b_1_vars, self.b_2_r_vars = [], []
         for i in range(n):
             m = self._create_gurobi_model()
-            b = m.addMVar(M, vtype=gp.GRB.BINARY, name='b')
-            d = m.addMVar((self.R, M), vtype=gp.GRB.BINARY, name='d')
-            m.addConstr(b.sum() <= self.cap[i])
+            b_1 = m.addMVar(M, vtype=gp.GRB.BINARY, name='b_1')
+            b_2_r = m.addMVar((self.R, M), vtype=gp.GRB.BINARY, name='b_2_r')
+            m.addConstr(b_1.sum() <= self.cap[i])
             for r in range(self.R):
-                m.addConstr(d[r, :].sum() <= self.cap[i])
+                m.addConstr(b_2_r[r, :].sum() <= self.cap[i])
             m.update()
             self.local_problems.append(m)
-            self.b_vars.append(b)
-            self.d_vars.append(d)
+            self.b_1_vars.append(b_1)
+            self.b_2_r_vars.append(b_2_r)
 
         self.q_models, self.q_vars = [], []
         for i in range(n):
             m = self._create_gurobi_model()
-            d = m.addMVar(M, vtype=gp.GRB.BINARY, name='d')
-            m.addConstr(d.sum() <= self.cap[i])
+            b_2 = m.addMVar(M, vtype=gp.GRB.BINARY, name='b_2')
+            m.addConstr(b_2.sum() <= self.cap[i])
             m.update()
             self.q_models.append(m)
-            self.q_vars.append(d)
+            self.q_vars.append(b_2)
 
         id_data["policies"] = {
-            "b_star": np.zeros((n, M), dtype=bool),
-            "d_V": np.zeros((n, self.R, M), dtype=bool),
-            "d_Q": np.zeros((n, self.R, M), dtype=bool),
+            "b_1_star": np.zeros((n, M), dtype=bool),
+            "b_2_r_V": np.zeros((n, self.R, M), dtype=bool),
+            "b_2_r_Q": np.zeros((n, self.R, M), dtype=bool),
         }
 
     def solve(self, theta):
@@ -59,51 +60,49 @@ class TwoStageSolver(GurobiMixin, SubproblemSolver):
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, model in enumerate(self.local_problems):
-            b, d = self.b_vars[i], self.d_vars[i]
-            s_i = self.state_chars[i]           # (M,) inherited state
+            b_1, b_2_r = self.b_1_vars[i], self.b_2_r_vars[i]
+            b_0_i = self.state_chars[i]         # (M,) inherited state
 
-            # --- Stage 1: state s_i, choose b ---
-            # Σ_j b_j [x_j'θ_r + (1-s_ij)θ_s + ε1_ij]
-            # + Σ_{j<j'} b_j b_j' θ_c c_jj'
-            # (exit is free)
+            # --- Period 1: state b_0, choose b_1 ---
+            # Σ_j b_1_j [x_j'θ_r + (1-b_0_j)θ_s + ε1_ij]
+            # + Σ_{j<j'} b_1_j b_1_j' θ_c c_jj'
             rev = self.rev_chars.T @ theta_rev          # (M,)
-            c_b = rev + (1 - s_i) * theta_s + self.eps1[i]
+            c_b = rev + (1 - b_0_i) * theta_s + self.eps1[i]
 
-            obj = c_b @ b
-            obj += theta_c * (b @ C @ b)
+            obj = c_b @ b_1
+            obj += theta_c * (b_1 @ C @ b_1)
 
-            # --- Stage 2: state b, choose d_r ---
-            # Σ_j d_rj [x_j'θ_r + (1-b_j)θ_s + ε2_irj]
-            # + Σ_{j<j'} d_rj d_rj' θ_c c_jj'
+            # --- Period 2: state b_1, choose b_2_r ---
+            # Σ_j b_2_rj [x_j'θ_r + (1-b_1_j)θ_s + ε2_irj]
+            # + Σ_{j<j'} b_2_rj b_2_rj' θ_c c_jj'
             for r in range(self.R):
-                c_d = rev + (1 - b) * theta_s + self.eps2[i, r]
-                obj += bR * (c_d @ d[r, :]
-                             + theta_c * (d[r, :] @ C @ d[r, :]))
+                c_d = rev + (1 - b_1) * theta_s + self.eps2[i, r]
+                obj += bR * (c_d @ b_2_r[r, :]
+                             + theta_c * (b_2_r[r, :] @ C @ b_2_r[r, :]))
 
             model.setObjective(obj, gp.GRB.MAXIMIZE)
             model.optimize()
 
-            pol["b_star"][i] = np.array(b.X) > 0.5
-            b_star_f = pol["b_star"][i].astype(float)
+            pol["b_1_star"][i] = np.array(b_1.X) > 0.5
+            b_1_star_f = pol["b_1_star"][i].astype(float)
 
-            # Re-optimize d per scenario given b_star (independent knapsacks)
-            dq = self.q_vars[i]
+            # Re-optimize b_2 per scenario given b_1_star (independent knapsacks)
+            b_2 = self.q_vars[i]
             for r in range(self.R):
-                c_v = rev + (1 - b_star_f) * theta_s + self.eps2[i, r]
+                c_v = rev + (1 - b_1_star_f) * theta_s + self.eps2[i, r]
                 self.q_models[i].setObjective(
-                    c_v @ dq + theta_c * (dq @ C @ dq),
+                    c_v @ b_2 + theta_c * (b_2 @ C @ b_2),
                     gp.GRB.MAXIMIZE)
                 self.q_models[i].optimize()
-                pol["d_V"][i, r] = np.array(dq.X) > 0.5
+                pol["b_2_r_V"][i, r] = np.array(b_2.X) > 0.5
 
             # Q second stage: obs_b fixed
-            obs_b_i = self.obs_b[i]
             for r in range(self.R):
-                c_q = rev + (1 - obs_b_i) * theta_s + self.eps2[i, r]
+                c_q = rev + (1 - self.obs_b[i]) * theta_s + self.eps2[i, r]
                 self.q_models[i].setObjective(
-                    c_q @ dq + theta_c * (dq @ C @ dq),
+                    c_q @ b_2 + theta_c * (b_2 @ C @ b_2),
                     gp.GRB.MAXIMIZE)
                 self.q_models[i].optimize()
-                pol["d_Q"][i, r] = np.array(dq.X) > 0.5
+                pol["b_2_r_Q"][i, r] = np.array(b_2.X) > 0.5
 
-        return pol["b_star"]
+        return pol["b_1_star"]
