@@ -1,5 +1,5 @@
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 
@@ -16,7 +16,6 @@ class QuadraticDataInfo:
     modular_item: int = 0
     quadratic_agent: int = 0
     quadratic_item: int = 0
-    constraint_mask: np.ndarray = None
 
     def __post_init__(self):
         offset, self.slices = 0, {}
@@ -27,27 +26,27 @@ class QuadraticDataInfo:
                 offset += dim
 
 
+@dataclass
+class LocalData:
+    id_data: dict = field(default_factory=dict)
+    item_data: dict = field(default_factory=dict)
+    id_metadata: dict = field(default_factory=dict)
+    item_metadata: dict = field(default_factory=dict)
+    errors: dict = field(default_factory=dict)
+
 class DataManager:
 
     def __init__(self, dimensions_cfg, comm_manager):
         self.dimensions_cfg = dimensions_cfg
         self.comm_manager = comm_manager
-        self.input_data = {"id_data": {}, "item_data": {}}
-        self.local_data = {"id_data": {}, "item_data": {}}
-        self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
+        self.local_data = LocalData()
 
     @property
     def local_obs_bundles(self):
-        return self.local_data["id_data"]["obs_bundles"]
+        return self.local_data.id_data["obs_bundles"]
 
-    def load_and_distribute_input_data(self, input_data, preserve_global_data=False):
-        if self.comm_manager.is_root():
-            if preserve_global_data:
-                update_dict_recursive(self.input_data, input_data)
-            else:
-                self.input_data = input_data
-
-        root_data = self.input_data if self.comm_manager.is_root() else {"id_data": {}, "item_data": {}}
+    def load_and_distribute_input_data(self, input_data):
+        root_data = input_data if self.comm_manager.is_root() else {"id_data": {}, "item_data": {}}
         id_data_full, id_meta = self.comm_manager.bcast_dict(root_data["id_data"], return_metadata=True)
         obs_ids = self.comm_manager.obs_ids
         local_id = {k: v[obs_ids] if isinstance(v, np.ndarray) else v for k, v in id_data_full.items()}
@@ -55,41 +54,37 @@ class DataManager:
 
         item_data, item_meta = self.comm_manager.bcast_dict(root_data["item_data"], return_metadata=True)
 
-        self.local_data["id_data"].update(local_id)
-        self.local_data["item_data"].update(item_data)
-        self.input_data_dictionary_metadata["id_data"].update(id_meta)
-        self.input_data_dictionary_metadata["item_data"].update(item_meta)
+        self.local_data.id_data.update(local_id)
+        self.local_data.item_data.update(item_data)
+        self.local_data.id_metadata.update(id_meta)
+        self.local_data.item_metadata.update(item_meta)
 
-        if not preserve_global_data and self.comm_manager.is_root():
-            self.input_data = {"id_data": {}, "item_data": {}}
+
 
     def erase_input_data(self):
-        self.input_data = {"id_data": {}, "item_data": {}}
-        self.input_data_dictionary_metadata = {"id_data": {}, "item_data": {}}
-        self.local_data = {"id_data": {}, "item_data": {}}
+        self.local_data = LocalData()
 
     @property
     def local_obs_quantity(self):
-        q = self.local_data["id_data"].get("obs_quantity")
+        q = self.local_data.id_data.get("obs_quantity")
         if q is not None:
             return np.asarray(q, dtype=np.float64)
         return np.ones(self.comm_manager.num_local_agent, dtype=np.float64)
 
 
     def get_quadratic_data_info(self):
-        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
+        agent_data, item_data = self.local_data.id_data, self.local_data.item_data
         dim = lambda d, k: d[k].shape[-1] if k in d else 0
         return QuadraticDataInfo(
                     modular_agent=dim(agent_data, "modular"),
                     modular_item=dim(item_data, "modular"),
                     quadratic_agent=dim(agent_data, "quadratic"),
                     quadratic_item=dim(item_data, "quadratic"),
-                    constraint_mask=agent_data.get("constraint_mask"),
                 )
 
     def _validate_quadratic_data_dimensions(self):
         qinfo = self.get_quadratic_data_info()
-        agent_data, item_data = self.local_data["id_data"], self.local_data["item_data"]
+        agent_data, item_data = self.local_data.id_data, self.local_data.item_data
         n_items = self.dimensions_cfg.n_items
         n_local = self.comm_manager.num_local_agent
 

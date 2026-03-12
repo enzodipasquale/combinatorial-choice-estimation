@@ -6,9 +6,9 @@ from .quadratic_obj_base import QuadraticObjectiveMixin
 class QuadraticKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
-        weights = self.data_manager.local_data["item_data"]['weight']
-        capacities = self.data_manager.local_data["id_data"]['capacity']
-        masks = self.data_manager.local_data["id_data"].get("item_mask")
+        weights = self.data_manager.local_data.item_data['weight']
+        capacities = self.data_manager.local_data.id_data['capacity']
+        masks = self.data_manager.local_data.id_data.get("item_mask")
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
             model = self._create_gurobi_model()

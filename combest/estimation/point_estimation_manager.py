@@ -13,30 +13,45 @@ class PointEstimationManager:
         self.features_manager = features_manager
         self.subproblem_manager = subproblem_manager
 
-        from combest.estimation.point_estimation import NSlackSolver, OneSlackSolver, EllipsoidSolver
+        from combest.estimation.point_estimation import NSlackSolver, OneSlackSolver, EllipsoidSolver, BundleSolver
         self.n_slack = NSlackSolver(self)
         self.one_slack = OneSlackSolver(self)
         self.ellipsoid = EllipsoidSolver(self)
+        self.bundle = BundleSolver(self)
 
     # ------------------------------------------------------------------
     # Objective coefficients
     # ------------------------------------------------------------------
 
-    def compute_theta_LP_coef(self, local_obs_weights=None):
-        if local_obs_weights is None:
-            local_obs_weights = self.data_manager.local_obs_quantity
-        local_obs_covariates = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
-        return self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_covariates)
 
-    def compute_u_LP_coef(self, local_obs_weights=None):
-        if local_obs_weights is None:
-            local_obs_weights = self.data_manager.local_obs_quantity
-        all_weights = self.comm_manager.Gatherv_by_row(local_obs_weights, row_counts=self.comm_manager.agent_counts)
-        return all_weights if self.comm_manager.is_root() else None
 
     # ------------------------------------------------------------------
     # Objective / gradient evaluation
     # ------------------------------------------------------------------
+    def compute_cuts(self, theta):
+        bundles = self.subproblem_manager.solve(theta)
+        grads, const = self.features_manager.covariates_and_errors_oracle(bundles)
+        val = grads @ theta + const
+        return grads, const, val, bundles
+
+    def compute_nonlinear_cuts_at_root(self, theta, local_obs_weights=None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_obs_quantity
+        w = local_obs_weights
+        bundles = self.subproblem_manager.solve(theta)
+
+        cov_V, err_V = self.features_manager.covariates_and_errors_oracle(bundles)
+        cov_Q, err_Q = self.features_manager.covariates_and_errors_oracle(
+            self.data_manager.local_obs_bundles
+        )
+
+        grads = self.comm_manager.Gatherv_by_row(w[:, None] * (cov_V - cov_Q), row_counts=self.comm_manager.agent_counts)
+        const = self.comm_manager.Gatherv_by_row(w * (err_V - err_Q), row_counts=self.comm_manager.agent_counts)
+
+        if self.comm_manager.is_root():
+            return grads @ theta + const, grads
+        return None, None
+
 
     def compute_nonlinear_obj_and_grad_at_root(self, theta, local_obs_weights=None):
         if local_obs_weights is None:
@@ -56,18 +71,16 @@ class PointEstimationManager:
             return (grad @ theta + const).item(), grad
         return None, None
 
+
     def compute_polyhedral_obj_and_grad_at_root(self, theta, local_obs_weights=None):
-        bundles = self.subproblem_manager.solve(theta)
-        covariates = self.features_manager.covariates_oracle(bundles)
-        utility = self.features_manager.utility_oracle(bundles, theta)
-
-        covariates_sum = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * covariates)
-        utility_sum = self.comm_manager.sum_row_andReduce(local_obs_weights * utility)
-        theta_obj_coef = self.compute_theta_LP_coef(local_obs_weights)
-
+        grads, _, val, _ = self.compute_cuts(theta)
+        grad = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * grads)
+        val = self.comm_manager.sum_row_andReduce(local_obs_weights * val)
+        local_obs_covariates = self.features_manager.covariates_oracle(self.data_manager.local_obs_bundles)
+        theta_obj_coef = self.comm_manager.sum_row_andReduce(-local_obs_weights[:, None] * local_obs_covariates)
         if self.comm_manager.is_root():
-            obj = utility_sum + (theta_obj_coef @ theta)
-            grad = (covariates_sum + theta_obj_coef)
+            obj = val + (theta_obj_coef @ theta)
+            grad = (grad + theta_obj_coef)
             return obj, grad
         else:
             return None, None

@@ -88,7 +88,7 @@ class UnitDemandChoice(Model):
             rc_covariates = list(self._specification)
             characteristics = self._characteristics
 
-        market_idx = self.data.local_data["id_data"]["market_id"]
+        market_idx = self.data.local_data.id_data["market_id"]
         sim_idx = self.comm_manager.agent_ids // self.config.dimensions.n_obs
 
         # c_i = Σ ν_i + Π d_i
@@ -104,7 +104,6 @@ class UnitDemandChoice(Model):
 
         self.features.local_modular_errors = rc_errors + gumbel
         self.features._error_oracle = lambda bundles, ids: (self.features.local_modular_errors[ids] * bundles).sum(-1)
-        self.features._error_oracle_vectorized = True
         self.features._error_oracle_takes_data = False
 
         if self.comm_manager.is_root():
@@ -125,10 +124,10 @@ class UnitDemandChoice(Model):
 
 
         # store FE index in local data for solver
-        market_idx = self.data.local_data["id_data"]["market_id"]
-        self.data.local_data["id_data"]["fe_index"] = FE_map[market_idx]
+        market_idx = self.data.local_data.id_data["market_id"]
+        self.data.local_data.id_data["fe_index"] = FE_map[market_idx]
 
-        fe_idx = self.data.local_data["id_data"]["fe_index"]
+        fe_idx = self.data.local_data.id_data["fe_index"]
         def FE_oracle(bundles, ids):
             idx = (bundles * fe_idx[ids]).sum(1)
             out = np.zeros((len(ids), n_FEs))
@@ -137,7 +136,6 @@ class UnitDemandChoice(Model):
             return out
 
         self.features._covariates_oracle = FE_oracle
-        self.features._covariates_oracle_vectorized = True
         self.features._covariates_oracle_takes_data = False
 
     def estimate_fixed_effects(self, **kwargs):
@@ -154,7 +152,7 @@ class UnitDemandChoice(Model):
             return
         n_obs = self.config.dimensions.n_obs
         n_items = self.config.dimensions.n_items
-        n_markets = len(np.unique(self.data.local_data["id_data"]["market_id"]))
+        n_markets = len(np.unique(self.data.local_data.id_data["market_id"]))
         header = f"{'n_markets':>10} | {'n_obs':>6} | {'n_items':>8} | {'n_simulations':>14}"
         values = f"{n_markets:>10} | {n_obs:>6} | {n_items:>8} | {n_sims:>14}"
         logger.info(" PRODUCT DATA")
