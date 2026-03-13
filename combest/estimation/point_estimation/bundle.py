@@ -4,20 +4,17 @@ import gurobipy as gp
 from combest.estimation.result import RowGenerationEstimationResult
 
 
-# ── Algorithm hyperparameters ─────────────────────────────────────────
-TAU_INIT = 1.0              # initial proximity weight (auto-scaled to ||g0||)
-TAU_MIN = 1.0               # tau floor (prevents premature convergence)
+TAU_INIT = 1.0              # initial proximity weight
 GAMMA = 0.1                 # serious step acceptance threshold
-GAMMA_UP = 0.99             # strong descent threshold for tau decrease
+GAMMA_UP = 0.9              # strong descent threshold for tau decrease
 GAMMA_TILDE = 0.9           # proximity control threshold for tau increase
 C = 1e-5                    # downshift safeguard
-TOL = 1e-5                  # stopping tolerance on relative step size
-TOL_F = 1e-6                # stopping tolerance on relative function decrease
+TOL = 1e-8                  # stopping tolerance on relative step size
 TOL_G = 1e-8                # stopping tolerance on aggregate subgradient norm
 TAU_MAX = 1e8               # upper bound on tau
+ZETA = 1e-4                  # positive definiteness bound (Step 11)
 MAX_ITERS = 200             # maximum oracle calls
-FLAT_COUNT_LIMIT = 5        # consecutive flat serious steps before stopping
-NULL_CLOSE_LIMIT = 3        # consecutive small null steps before stopping
+NULL_CLOSE_LIMIT = 10        # consecutive small null steps before stopping
 
 
 class BundleSolver:
@@ -26,7 +23,7 @@ class BundleSolver:
         self.pt = pt_estimation_manager
 
     def solve(self, theta0, tau=TAU_INIT, gamma=GAMMA, Gamma=GAMMA_UP,
-              gamma_tilde=GAMMA_TILDE, c=C, tol=TOL, tol_f=TOL_F,
+              gamma_tilde=GAMMA_TILDE, c=C, zeta=ZETA, tol=TOL,
               tol_g=TOL_G, max_iters=MAX_ITERS, verbose=False):
         """Schramm-Zowe proximal bundle method (Algorithm 1,
         Kuchlbauer-Liers-Stingl).
@@ -41,20 +38,12 @@ class BundleSolver:
         f_hat, g_hat = pt.compute_nonlinear_obj_and_grad_at_root(
             theta_hat, weights)
 
-        # Auto-scale tau to gradient norm so first step ≈ unit length
-        if comm.is_root() and g_hat is not None:
-            g0_norm = np.linalg.norm(g_hat)
-            if g0_norm > tau:
-                tau = g0_norm
-        tau = float(comm.Bcast(np.array(tau if comm.is_root() else 0.0)))
-
         thetas = [theta_hat.copy()]
         fs = [f_hat]
         gs = [g_hat.copy() if g_hat is not None else None]
 
         converged = False
         null_close_count = 0
-        flat_count = 0
         t0 = time.perf_counter()
 
         _col_hdr = (" Iter  S/N     f_trial       f_hat"
@@ -106,28 +95,18 @@ class BundleSolver:
                 serious = rho >= gamma
                 if serious:
                     # ---- Serious step ----
-                    f_hat_old = f_hat
                     theta_hat = theta_next.copy()
                     f_hat = f_next
                     null_close_count = 0
 
                     # Decrease tau on strong descent (Step 9)
                     if rho >= Gamma:
-                        tau = max(tau * 0.75, TAU_MIN)
+                        tau = tau / 2.0
+                    # Step 11: enforce positive definiteness bound
+                    tau = max(tau, zeta)
 
                     # Stopping criterion 1: small serious step
                     if rel_step < tol:
-                        converged = True
-                        stop = True
-
-                    # Stopping criterion 3: flat objective
-                    rel_decrease = (f_hat_old - f_hat) / (
-                        1.0 + abs(f_hat_old))
-                    if rel_decrease < tol_f:
-                        flat_count += 1
-                    else:
-                        flat_count = 0
-                    if flat_count >= FLAT_COUNT_LIMIT:
                         converged = True
                         stop = True
                 else:
@@ -140,11 +119,8 @@ class BundleSolver:
                     rho_tilde = ((f_hat - (f_next - s_k)) / denom
                                  if denom > 1e-15 else 0.0)
 
-                    # Increase tau: unconditionally if rho < 0 (function went up),
-                    # otherwise only if rho_tilde passes threshold
-                    if rho < 0:
-                        tau = min(tau * 2.0, TAU_MAX)
-                    elif rho_tilde >= gamma_tilde:
+                    # Increase tau if proximity control triggers (Step 17)
+                    if rho_tilde >= gamma_tilde:
                         tau = min(tau * 2.0, TAU_MAX)
 
                     # Stopping criterion 2: successive small null steps
