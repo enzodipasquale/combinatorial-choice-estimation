@@ -12,17 +12,19 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 
 # ── Problem dimensions ──────────────────────────────────────────────
-beta = 4
-M, K = 5, 3
-R_dgp = 5          # second-stage scenarios for DGP
-R_est = 5         # second-stage scenarios for estimation
+beta = 0
+M, K = 8, 3
+R_dgp = 1          # second-stage scenarios for DGP
+R_est = 1         # second-stage scenarios for estimation
 S_est = 1
 n_obs = 100
-n_rev = 1
+n_rev = 2
 n_cov = n_rev + 2
-theta_true = np.array([1.0]* n_rev + [-0.0, 0.3])
-seed_dgp = 43
+theta_true = np.array([1.0]* n_rev + [-1.0, 0.3])
+seed_dgp = 42
 seed_est = 43
+max_iters = 75
+tau = 1.0
 
 
 # ── Draw characteristics (shared across DGP and estimation) ────────
@@ -78,7 +80,7 @@ if is_root:
     print(f"theta_true = {theta_true}  R_dgp={R_dgp}  R_est={R_est}")
 
 result = model.point_estimation.bundle.solve(
-    theta0, tau=1.0, max_iters=200, verbose=True)
+    theta0, tau=tau, max_iters=max_iters, verbose=True)
 
 if is_root:
     err = np.linalg.norm(result.theta_hat - theta_true)
