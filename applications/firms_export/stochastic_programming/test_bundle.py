@@ -13,18 +13,18 @@ from oracles import build_oracles
 
 # ── Problem dimensions ──────────────────────────────────────────────
 beta = 3
-M, K = 8, 8
-R_dgp = 1
-R_est = 1
+M, K = 20, 20
+R_dgp = 100
+R_est = 100
 S_est = 1
-n_obs = 3000
+n_obs = 100
 n_rev = 1
 n_cov = n_rev + 2
-theta_true = np.array([1.0] * n_rev + [-12.0, 0.5])
+theta_true = np.array([1.0] * n_rev + [-5.0, 0.05])
 seed_dgp = 42
 seed_est = 43
 max_iters = 200
-tau = 1
+tau = .1
 
 
 # ── Draw characteristics (shared across DGP and estimation) ────────
@@ -32,7 +32,7 @@ rng = np.random.default_rng(seed_dgp)
 rev_base = rng.uniform(0, 1.0, (n_rev, M))
 rev_chars_1 = rev_base + rng.uniform(-.1, .1, (n_rev, M))
 rev_chars_2 = rev_base + rng.uniform(-.1, .1, (n_rev, M))
-state_chars = (rng.random((n_obs, M)) > 0.5).astype(float)
+state_chars = (rng.random((n_obs, M)) > 0.9).astype(float)
 _raw = rng.uniform(0, 1, (M, M))
 syn_chars = (_raw + _raw.T) / 2
 np.fill_diagonal(syn_chars, 0)
@@ -82,7 +82,8 @@ model.features.set_error_oracle(err_oracle)
 # ── Run bundle solver ──────────────────────────────────────────────
 is_root = model.comm_manager.is_root()
 theta0 = np.zeros(n_cov)
-theta0[n_rev] = -7
+theta0 = theta_true
+# theta0[n_rev] = -7
 if is_root:
     print(f"theta_true = {theta_true}  R_dgp={R_dgp}  R_est={R_est}")
 
