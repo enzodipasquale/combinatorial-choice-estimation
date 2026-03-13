@@ -13,14 +13,14 @@ from oracles import build_oracles
 
 # ── Problem dimensions ──────────────────────────────────────────────
 beta = 3
-M, K = 20, 20
+M, K = 3, 3
 R_dgp = 100
 R_est = 100
 S_est = 1
-n_obs = 100
+n_obs = 1000
 n_rev = 1
 n_cov = n_rev + 2
-theta_true = np.array([1.0] * n_rev + [-5.0, 0.05])
+theta_true = np.array([1.0] * n_rev + [-5.0, 0.5])
 seed_dgp = 42
 seed_est = 43
 max_iters = 200
