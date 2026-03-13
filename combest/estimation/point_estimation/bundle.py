@@ -5,9 +5,10 @@ from combest.estimation.result import RowGenerationEstimationResult
 
 
 # ── Algorithm hyperparameters ─────────────────────────────────────────
-TAU_INIT = 1.0              # initial proximity weight
+TAU_INIT = 1.0              # initial proximity weight (auto-scaled to ||g0||)
+TAU_MIN = 1.0               # tau floor (prevents premature convergence)
 GAMMA = 0.1                 # serious step acceptance threshold
-GAMMA_UP = 0.9              # strong descent threshold for tau decrease
+GAMMA_UP = 0.99             # strong descent threshold for tau decrease
 GAMMA_TILDE = 0.9           # proximity control threshold for tau increase
 C = 1e-5                    # downshift safeguard
 TOL = 1e-5                  # stopping tolerance on relative step size
@@ -39,6 +40,13 @@ class BundleSolver:
         theta_hat = comm.Bcast(np.asarray(theta0, dtype=np.float64))
         f_hat, g_hat = pt.compute_nonlinear_obj_and_grad_at_root(
             theta_hat, weights)
+
+        # Auto-scale tau to gradient norm so first step ≈ unit length
+        if comm.is_root() and g_hat is not None:
+            g0_norm = np.linalg.norm(g_hat)
+            if g0_norm > tau:
+                tau = g0_norm
+        tau = float(comm.Bcast(np.array(tau if comm.is_root() else 0.0)))
 
         thetas = [theta_hat.copy()]
         fs = [f_hat]
@@ -105,7 +113,7 @@ class BundleSolver:
 
                     # Decrease tau on strong descent (Step 9)
                     if rho >= Gamma:
-                        tau = tau / 2.0
+                        tau = max(tau * 0.75, TAU_MIN)
 
                     # Stopping criterion 1: small serious step
                     if rel_step < tol:
@@ -154,6 +162,7 @@ class BundleSolver:
                 if g_star_norm < tol_g:
                     converged = True
                     stop = True
+
 
                 if verbose:
                     tag = "S" if serious else "N"
