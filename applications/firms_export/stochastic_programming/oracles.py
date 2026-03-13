@@ -7,9 +7,10 @@ def build_oracles(model, seed=42):
     M = model.config.dimensions.n_items
     R = ld.item_data["R"]
     beta = ld.item_data["beta"]
-    rev_chars = ld.item_data["rev_chars"]       # (n_rev, M)
+    rev_chars_1 = ld.item_data["rev_chars_1"]   # (n_rev, M) period 1
+    rev_chars_2 = ld.item_data["rev_chars_2"]   # (n_rev, M) period 2
     C = ld.item_data["syn_chars"]               # (M, M) pairwise complementarity
-    n_rev = rev_chars.shape[0]
+    n_rev = rev_chars_1.shape[0]
 
     eps1 = np.zeros((n, M))
     eps2 = np.zeros((n, R, M))
@@ -30,8 +31,8 @@ def build_oracles(model, seed=42):
         b_1 = bundles.astype(float)              # (batch, M) period 1 choice
         b_2_r = _get_b_2_r(bundles, ids, data).astype(float)  # (batch, R, M)
 
-        # Revenue features (θ_rev): b_1·rev + β·b_2_r·rev/R
-        x_rev = b_1 @ rev_chars.T + beta * np.einsum('nrm,km->nk', b_2_r, rev_chars) / R
+        # Revenue features (θ_rev): b_1·rev1 + β·b_2_r·rev2/R
+        x_rev = b_1 @ rev_chars_1.T + beta * np.einsum('nrm,km->nk', b_2_r, rev_chars_2) / R
 
         # Entry cost feature (θ_s): (1-b_0)·b_1 + β·(1-b_1)·b_2_r
         x_s = ((1 - b_0) * b_1).sum(-1) + beta * ((1 - b_1)[:, None, :] * b_2_r ).sum(-1).mean(-1)

@@ -63,12 +63,11 @@ class PointEstimationManager:
         cov_Q, err_Q = self.features_manager.covariates_and_errors_oracle(
             self.data_manager.local_obs_bundles
         )
-
         grad = self.comm_manager.sum_row_andReduce(w[:, None] * (cov_V - cov_Q))
         const = self.comm_manager.sum_row_andReduce(w * (err_V - err_Q))
 
         if self.comm_manager.is_root():
-            return (grad @ theta + const).item(), grad
+            return (grad @ theta + const).item() / self.config.dimensions.n_agents, grad/ self.config.dimensions.n_agents
         return None, None
 
 
