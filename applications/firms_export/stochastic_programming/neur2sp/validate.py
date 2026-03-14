@@ -37,14 +37,8 @@ def main():
     K = ckpt.get("K", M // 2)
     print(f"Model: M={M}, K={K}, n_rev={n_rev}")
 
-    rng_c = np.random.default_rng(args.seed_chars)
-    rev_base = rng_c.uniform(0, 1.0, (n_rev, M))
-    _rev1 = rev_base + rng_c.uniform(-0.1, 0.1, (n_rev, M))
-    rev_chars_2 = rev_base + rng_c.uniform(-0.1, 0.1, (n_rev, M))
-    _state = (rng_c.random((1000, M)) > 0.9).astype(float)
-    _raw = rng_c.uniform(0, 1, (M, M))
-    syn_chars = (_raw + _raw.T) / 2
-    np.fill_diagonal(syn_chars, 0)
+    from neur2sp.generate_data import _make_chars
+    _, rev_chars_2, syn_chars = _make_chars(M, n_rev, args.seed_chars)
 
     theta_bounds = {
         "theta_rev": (float(theta_lb[0]), float(theta_ub[0])),
