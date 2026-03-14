@@ -1,11 +1,3 @@
-"""Estimate a 4-parameter two-stage stochastic programming model
-using the Schramm-Zowe proximal bundle method.
-
-    theta = [theta_rev1, theta_rev2, theta_entry, theta_synergy]
-
-DGP generates observed bundles with n_simulations=1, R=20.
-Estimation uses n_simulations=1, R=1.
-"""
 import numpy as np
 import combest as ce
 from solver import TwoStageSolver
@@ -14,10 +6,10 @@ from oracles import build_oracles
 # ── Problem dimensions ──────────────────────────────────────────────
 beta = 3
 M, K = 3, 3
-R_dgp = 100
-R_est = 100
+R_dgp = 50
+R_est = 50
 S_est = 1
-n_obs = 1000
+n_obs = 500
 n_rev = 1
 n_cov = n_rev + 2
 theta_true = np.array([1.0] * n_rev + [-5.0, 0.5])
@@ -81,8 +73,7 @@ model.features.set_error_oracle(err_oracle)
 
 # ── Run bundle solver ──────────────────────────────────────────────
 is_root = model.comm_manager.is_root()
-theta0 = np.zeros(n_cov)
-theta0 = theta_true
+theta0 = theta_true.copy()
 # theta0[n_rev] = -7
 if is_root:
     print(f"theta_true = {theta_true}  R_dgp={R_dgp}  R_est={R_est}")
@@ -103,3 +94,14 @@ f_true, g_true = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(t
 if is_root:
     print(f"\nf(theta_hat)  = {f_hat:.6f}   |grad| = {np.linalg.norm(g_hat):.6f}")
     print(f"f(theta_true) = {f_true:.6f}   |grad| = {np.linalg.norm(g_true):.6f}")
+
+# ── Probe gradient landscape near theta_true ──────────────────────
+if is_root:
+    print("\n── Gradient probes near theta_true ──")
+    for delta in [np.zeros(n_cov),
+                  np.array([0.1, 0, 0]), np.array([-0.1, 0, 0]),
+                  np.array([0, 0.5, 0]), np.array([0, -0.5, 0]),
+                  np.array([0, 0, 0.1]), np.array([0, 0, -0.1])]:
+        th = theta_true + delta
+        f_p, g_p = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(th)
+        print(f"  theta={th}  f={f_p:.6f}  g={g_p}")

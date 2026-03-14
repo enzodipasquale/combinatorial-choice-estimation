@@ -6,14 +6,14 @@ from oracles import build_oracles
 
 # ── Same setup as test_bundle.py ─────────────────────────────────────
 beta = 3
-M, K = 15, 15
-R_dgp = 30
-R_est = 30
+M, K = 5, 5
+R_dgp = 50
+R_est = 50
 S_est = 1
-n_obs = 1000
+n_obs = 500
 n_rev = 1
 n_cov = n_rev + 2
-theta_true = np.array([1.0] * n_rev + [-5.0, 0.1])
+theta_true = np.array([1.0] * n_rev + [-5.0, 0.5])
 seed_dgp = 42
 error_seeds = [seed_dgp, 43, 44, 100, 200]
 
