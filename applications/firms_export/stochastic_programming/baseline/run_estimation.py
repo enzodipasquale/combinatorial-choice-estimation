@@ -7,19 +7,20 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from prepare_data_sp import main as load_data, build_input_data_sp
+from prepare_data import main as load_data, build_input_data
 
 # ── Settings ──────────────────────────────────────────────────────────
 COUNTRY = "MEX"
-KEEP_TOP = 10
-BETA = 0.8
+KEEP_TOP = 20
 END_BUFFER = 3
-R = 100
-N_SAMPLE = 500
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 0.5
-SIGMA_NU_2 = 2
+N_SAMPLE = 300
 N_SIMULATIONS = 1
+
+BETA = 0.85
+R = 100
+SIGMA_EPS = 1.0
+SIGMA_NU_1 = 1
+SIGMA_NU_2 = 1/(1-BETA)
 
 SEED = 42
 MAX_ITERS = 50
@@ -32,7 +33,7 @@ def build_model(n_sample=N_SAMPLE):
     if model.is_root():
         ctx = load_data(COUNTRY, KEEP_TOP, beta=BETA, end_buffer=END_BUFFER,
                         n_sample=n_sample)
-        input_data = build_input_data_sp(ctx, R=R)
+        input_data = build_input_data(ctx, R=R)
         n_obs = ctx["n_obs"]
         M = ctx["M"]
     else:
@@ -41,8 +42,7 @@ def build_model(n_sample=N_SAMPLE):
     n_obs = model.comm_manager.bcast(n_obs)
     M = model.comm_manager.bcast(M)
 
-    n_rev = 1
-    n_cov = n_rev + 3  # rev, s, sc, c
+    n_cov = 4  # rev, entry_c, entry_dist, entry_syn_d
 
     cfg = {
         "dimensions": {"n_obs": n_obs, "n_items": M,
@@ -68,13 +68,14 @@ if __name__ == "__main__":
     model = build_model()
     is_root = model.comm_manager.is_root()
 
-    # Starting point
-    theta0 = np.array([0.01, -5.0, -1.0, 0.2])
-    names = ["rev", "s", "sc", "c"]
+    # Starting point (from static estimates)
+    theta0 = np.array([ 0.02, -2.16, -0.04,  0.07])
+    names = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
 
     if is_root:
         print(f"\nStarting bundle method: theta0 = {theta0}")
         print(f"  R={R}, S={N_SIMULATIONS}, beta={BETA}, seed={SEED}")
+        print(f"  N={N_SAMPLE}, M={model.n_items}")
 
     # Evaluate gradient at theta0 first
     f_val, g_val = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta0)
@@ -86,14 +87,17 @@ if __name__ == "__main__":
     result = model.point_estimation.bundle.solve(
         theta0, tau=TAU, max_iters=MAX_ITERS, verbose=True)
 
-    result = model.point_estimation.bundle.solve(
-        result.theta_hat, tau=TAU, max_iters=MAX_ITERS, verbose=True)
-
     if is_root:
         print(f"\ntheta_hat = {result.theta_hat}")
+        for j, name in enumerate(names):
+            print(f"  {name:>12} = {result.theta_hat[j]:+.6f}")
         print(f"obj={result.final_objective:.6f}  iters={result.num_iterations}  "
               f"converged={result.converged}  time={result.total_time:.1f}s")
 
-        f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(
-            result.theta_hat)
-        print(f"f(theta_hat) = {f_hat:.6f}  |grad| = {np.linalg.norm(g_hat):.6f}")
+    # All ranks must participate in gradient computation (MPI collective)
+    theta_hat = model.comm_manager.Bcast(
+        result.theta_hat if is_root else np.zeros(len(names)))
+    f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta_hat)
+    if is_root:
+        g_str = "  ".join(f"{names[j]}={g_hat[j]:+.4f}" for j in range(len(names)))
+        print(f"f(theta_hat) = {f_hat:.6f}  grad: {g_str}  |g|={np.linalg.norm(g_hat):.6f}")

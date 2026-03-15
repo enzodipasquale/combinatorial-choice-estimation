@@ -45,7 +45,7 @@ def train(data_path, save_path, hidden_dim=32, n_hidden=2,
     data = np.load(data_path, allow_pickle=True)
     X = torch.tensor(data["inputs"], dtype=torch.float32)
     y = torch.tensor(data["labels"], dtype=torch.float32)
-    M, n_rev = int(data["M"]), int(data["n_rev"])
+    M = int(data["M"])
 
     n = len(X)
     perm = np.random.default_rng(seed).permutation(n)
@@ -96,24 +96,36 @@ def train(data_path, save_path, hidden_dim=32, n_hidden=2,
         r2 = 1 - ss_res / max(ss_tot, 1e-12)
     print(f"  R² (val) = {r2:.4f}   best_val_loss = {best_val:.6f}")
 
-    theta_lb = np.array(
-        list(data["theta_bounds_rev"][:1]) * n_rev
-        + [float(data["theta_bounds_s"][0])]
-        + [float(data["theta_bounds_c"][0])]
-    )
-    theta_ub = np.array(
-        list(data["theta_bounds_rev"][1:2]) * n_rev
-        + [float(data["theta_bounds_s"][1])]
-        + [float(data["theta_bounds_c"][1])]
-    )
+    # Input bounds for MIP embedding
+    eff_rev_bounds = data["eff_rev_bounds"]
+    input_lb = np.concatenate([
+        np.zeros(M),                           # b_1 >= 0
+        np.full(M, float(eff_rev_bounds[0])),  # eff_rev lower
+        [float(data["theta_bounds_s"][0]),
+         float(data["theta_bounds_sc"][0]),
+         float(data["theta_bounds_c"][0])],
+    ])
+    input_ub = np.concatenate([
+        np.ones(M),                            # b_1 <= 1
+        np.full(M, float(eff_rev_bounds[1])),  # eff_rev upper
+        [float(data["theta_bounds_s"][1]),
+         float(data["theta_bounds_sc"][1]),
+         float(data["theta_bounds_c"][1])],
+    ])
 
     torch.save({
         "weights": weights, "biases": biases,
         "hidden_dim": hidden_dim, "n_hidden": n_hidden,
         "input_dim": X.shape[1],
-        "M": M, "K": int(data["K"]), "n_rev": n_rev,
+        "M": M,
         "beta": float(data["beta"]),
-        "theta_lb": theta_lb, "theta_ub": theta_ub,
+        "beta_perpetual": float(data["beta_perpetual"]),
+        "sigma_nu_2": float(data["sigma_nu_2"]),
+        "input_lb": input_lb, "input_ub": input_ub,
+        "eff_rev_bounds": eff_rev_bounds,
+        "theta_bounds_s": data["theta_bounds_s"],
+        "theta_bounds_sc": data["theta_bounds_sc"],
+        "theta_bounds_c": data["theta_bounds_c"],
     }, save_path)
     print(f"  Saved  ->  {save_path}")
 

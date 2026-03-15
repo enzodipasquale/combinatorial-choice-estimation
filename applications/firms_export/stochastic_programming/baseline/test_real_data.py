@@ -1,3 +1,4 @@
+#!/bin/env python
 import sys
 from pathlib import Path
 import numpy as np
@@ -6,25 +7,26 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from prepare_data_sp import main as load_data, build_input_data_sp
+from prepare_data import main as load_data, build_input_data
 
 # ── Settings ──────────────────────────────────────────────────────────
 COUNTRY = "MEX"
-KEEP_TOP = 10
-BETA = 0.85
+KEEP_TOP = 20
 END_BUFFER = 3
-R = 100
-N_SAMPLE = 500
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 0.5
-SIGMA_NU_2 = 2
+N_SAMPLE = 300
 N_SIMULATIONS = 1
 
+BETA = 0.85
+R = 100
+SIGMA_EPS = 1.0
+SIGMA_NU_1 = 1
+SIGMA_NU_2 = 1/(1-BETA)
+
+
+theta_0  = np.array( [ 1.47413693, -2.89827683, -0.01765633 , 0.07047045])
 thetas = [
     np.zeros(4),
-    np.array([0.5, -5.0, -1.0, 0.1]),
-    np.array([1.0, -10.0, -2.0, 0.05]),
-    np.array([0.1, -1.0, -0.5, 0.0]),
+    theta_0,
 ]
 error_seeds = [42, 43, 44, 100, 200]
 
@@ -35,7 +37,7 @@ M = ctx["M"]
 n_obs = ctx["n_obs"]
 n_rev = 1
 n_cov = n_rev + 3
-names = ["rev", "s", "sc", "c"]
+names = ["rev", "entry_c", "entry_dist", "syn"]
 
 model = ce.Model()
 cfg = {
@@ -44,7 +46,10 @@ cfg = {
     "subproblem": {"gurobi_params": {"TimeLimit": 5}},
 }
 model.load_config(cfg)
-input_data = build_input_data_sp(ctx, R=R)
+if model.comm_manager.is_root():
+    input_data = build_input_data(ctx, R=R)
+else: 
+    input_data = None
 model.data.load_and_distribute_input_data(input_data)
 
 # ── Evaluate ──────────────────────────────────────────────────────────

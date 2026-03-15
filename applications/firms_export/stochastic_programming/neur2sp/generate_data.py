@@ -6,61 +6,53 @@ from multiprocessing import Pool
 from functools import partial
 
 
-def sample_feasible_b1(M, K, rng):
-    k = rng.integers(0, K + 1)
-    b = np.zeros(M)
-    if k > 0:
-        idx = rng.choice(M, size=min(k, M), replace=False)
-        b[idx] = 1.0
-    return b
-
-
-def _solve_one_sample(sample_idx, M, K, n_rev, beta,
-                      rev_chars_2, syn_chars, theta_bounds, R_train, seed):
+def _solve_one_sample(sample_idx, M, entry_chars, syn_chars,
+                      beta, beta_perpetual, sigma_nu_2,
+                      theta_bounds, eff_rev_bounds, R_train, seed):
     rng = np.random.default_rng((seed, sample_idx))
 
-    theta_rev = rng.uniform(*theta_bounds["theta_rev"], size=n_rev)
+    eff_rev = rng.uniform(eff_rev_bounds[0], eff_rev_bounds[1], size=M)
     theta_s = rng.uniform(*theta_bounds["theta_s"])
+    theta_sc = rng.uniform(*theta_bounds["theta_sc"])
     theta_c = rng.uniform(*theta_bounds["theta_c"])
-    theta = np.concatenate([theta_rev, [theta_s, theta_c]])
+    b1 = rng.integers(0, 2, size=M).astype(float)
 
-    b1 = sample_feasible_b1(M, K, rng)
+    entry_2 = beta * (theta_s + theta_sc * entry_chars)
+    syn_2 = theta_c * beta_perpetual * syn_chars
 
     m = gp.Model("p2")
     m.Params.OutputFlag = 0
     m.Params.Threads = 1
     b2 = m.addMVar(M, vtype=gp.GRB.BINARY, name="b2")
-    m.addConstr(b2.sum() <= K, name="cap")
     m.update()
-
-    C = syn_chars
-    base_coeff = rev_chars_2.T @ theta_rev + (1 - b1) * theta_s
 
     total_val = 0.0
     for r in range(R_train):
-        eps = rng.normal(0, 1, M)
-        m.setObjective((base_coeff + eps) @ b2 + theta_c * (b2 @ C @ b2),
-                       gp.GRB.MAXIMIZE)
+        nu2 = rng.normal(0, sigma_nu_2, M)
+        c = eff_rev + beta * nu2 + (1 - b1) * entry_2
+        m.setObjective(c @ b2 + b2 @ syn_2 @ b2, gp.GRB.MAXIMIZE)
         m.optimize()
         if m.Status == gp.GRB.OPTIMAL:
             total_val += m.ObjVal
 
-    x = np.concatenate([b1, theta])
-    y = beta * total_val / R_train
+    x = np.concatenate([b1, eff_rev, [theta_s, theta_sc, theta_c]])
+    y = total_val / R_train
     return sample_idx, x, y
 
 
-def generate_dataset(rev_chars_2, syn_chars, beta, M, K, n_rev,
-                     theta_bounds, n_samples=5000, R_train=500,
-                     seed=123, workers=1):
+def generate_dataset(entry_chars, syn_chars, beta, beta_perpetual, sigma_nu_2,
+                     M, theta_bounds, eff_rev_bounds,
+                     n_samples=5000, R_train=500, seed=123, workers=1):
     func = partial(
         _solve_one_sample,
-        M=M, K=K, n_rev=n_rev, beta=beta,
-        rev_chars_2=rev_chars_2, syn_chars=syn_chars,
-        theta_bounds=theta_bounds, R_train=R_train, seed=seed,
+        M=M, entry_chars=entry_chars, syn_chars=syn_chars,
+        beta=beta, beta_perpetual=beta_perpetual, sigma_nu_2=sigma_nu_2,
+        theta_bounds=theta_bounds, eff_rev_bounds=eff_rev_bounds,
+        R_train=R_train, seed=seed,
     )
 
-    inputs = np.empty((n_samples, M + n_rev + 2))
+    n_x = 2 * M + 3
+    inputs = np.empty((n_samples, n_x))
     labels = np.empty(n_samples)
     t0 = time.time()
 
@@ -90,44 +82,40 @@ def generate_dataset(rev_chars_2, syn_chars, beta, M, K, n_rev,
     return inputs, labels
 
 
-def _make_chars(M, n_rev, seed_chars):
-    rng_c = np.random.default_rng(seed_chars)
-    rev_base = rng_c.uniform(0, 1.0, (n_rev, M))
-    rev_chars_1 = rev_base + rng_c.uniform(-0.1, 0.1, (n_rev, M))
-    rev_chars_2 = rev_base + rng_c.uniform(-0.1, 0.1, (n_rev, M))
-    _ = (rng_c.random((1000, M)) > 0.9).astype(float)
-    _raw = rng_c.uniform(0, 1, (M, M))
-    syn_chars = (_raw + _raw.T) / 2
-    np.fill_diagonal(syn_chars, 0)
-    return rev_chars_1, rev_chars_2, syn_chars
-
-
 THETA_BOUNDS = {
-    "theta_rev": (-5.0, 5.0),
     "theta_s": (-10.0, 0.0),
+    "theta_sc": (-5.0, 0.0),
     "theta_c": (-1.0, 2.0),
 }
+
+EFF_REV_BOUNDS = (-50.0, 50.0)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--M", type=int, default=20)
-    ap.add_argument("--K", type=int, default=10)
-    ap.add_argument("--n_rev", type=int, default=1)
-    ap.add_argument("--beta", type=float, default=3.0)
+    ap.add_argument("--beta", type=float, default=0.8)
+    ap.add_argument("--sigma_nu_2", type=float, default=0.5)
     ap.add_argument("--n_samples", type=int, default=10000)
     ap.add_argument("--R_train", type=int, default=1000)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--seed_chars", type=int, default=42)
     ap.add_argument("--seed_data", type=int, default=123)
     ap.add_argument("--out", type=str, default="neur2sp/data.npz")
-    ap.add_argument("--chunk", type=int, default=0,
-                    help="chunk index (0-based) for distributed generation")
-    ap.add_argument("--n_chunks", type=int, default=1,
-                    help="total number of chunks")
+    ap.add_argument("--eff_rev_lb", type=float, default=EFF_REV_BOUNDS[0])
+    ap.add_argument("--eff_rev_ub", type=float, default=EFF_REV_BOUNDS[1])
+    ap.add_argument("--chunk", type=int, default=0)
+    ap.add_argument("--n_chunks", type=int, default=1)
     args = ap.parse_args()
 
-    _, rev_chars_2, syn_chars = _make_chars(args.M, args.n_rev, args.seed_chars)
+    beta_perpetual = args.beta / (1 - args.beta)
+    rng_c = np.random.default_rng(args.seed_chars)
+    entry_chars = rng_c.uniform(0, 1, args.M)
+    _raw = rng_c.uniform(0, 1, (args.M, args.M))
+    syn_chars = (_raw + _raw.T) / 2
+    np.fill_diagonal(syn_chars, 0)
+
+    eff_rev_bounds = (args.eff_rev_lb, args.eff_rev_ub)
 
     chunk_size = (args.n_samples + args.n_chunks - 1) // args.n_chunks
     start = args.chunk * chunk_size
@@ -136,19 +124,21 @@ def main():
 
     func = partial(
         _solve_one_sample,
-        M=args.M, K=args.K, n_rev=args.n_rev, beta=args.beta,
-        rev_chars_2=rev_chars_2, syn_chars=syn_chars,
-        theta_bounds=THETA_BOUNDS, R_train=args.R_train, seed=args.seed_data,
+        M=args.M, entry_chars=entry_chars, syn_chars=syn_chars,
+        beta=args.beta, beta_perpetual=beta_perpetual,
+        sigma_nu_2=args.sigma_nu_2,
+        theta_bounds=THETA_BOUNDS, eff_rev_bounds=eff_rev_bounds,
+        R_train=args.R_train, seed=args.seed_data,
     )
 
-    n_cov = args.n_rev + 2
-    inputs = np.empty((n_local, args.M + n_cov))
+    n_x = 2 * args.M + 3
+    inputs = np.empty((n_local, n_x))
     labels = np.empty(n_local)
     sample_indices = range(start, end)
     t0 = time.time()
 
     print(f"Chunk {args.chunk}/{args.n_chunks}: samples [{start}, {end})  "
-          f"(M={args.M}, K={args.K}, R={args.R_train}, workers={args.workers})")
+          f"(M={args.M}, R={args.R_train}, workers={args.workers})")
 
     if args.workers <= 1:
         for i, s in enumerate(sample_indices):
@@ -176,12 +166,17 @@ def main():
     print(f"Done in {time.time()-t0:.1f}s  —  "
           f"label range [{labels.min():.2f}, {labels.max():.2f}]")
 
-    save_dict = dict(inputs=inputs, labels=labels,
-                     rev_chars_2=rev_chars_2, syn_chars=syn_chars,
-                     M=args.M, K=args.K, n_rev=args.n_rev, beta=args.beta,
-                     theta_bounds_rev=THETA_BOUNDS["theta_rev"],
-                     theta_bounds_s=THETA_BOUNDS["theta_s"],
-                     theta_bounds_c=THETA_BOUNDS["theta_c"])
+    save_dict = dict(
+        inputs=inputs, labels=labels,
+        entry_chars=entry_chars, syn_chars=syn_chars,
+        M=args.M, beta=args.beta,
+        beta_perpetual=beta_perpetual,
+        sigma_nu_2=args.sigma_nu_2,
+        eff_rev_bounds=np.array(eff_rev_bounds),
+        theta_bounds_s=THETA_BOUNDS["theta_s"],
+        theta_bounds_sc=THETA_BOUNDS["theta_sc"],
+        theta_bounds_c=THETA_BOUNDS["theta_c"],
+    )
 
     if args.n_chunks > 1:
         out = args.out.replace(".npz", f"_chunk{args.chunk}.npz")
