@@ -1,16 +1,16 @@
 import numpy as np
 import gurobipy as gp
-from ...solver_base import SubproblemSolver, GurobiMixin
+from ...solver_base import SubproblemSolver, create_gurobi_model
 from .quadratic_obj_base import QuadraticObjectiveMixin
 
-class LinearKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, SubproblemSolver):
+class LinearKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
         weights = self.data_manager.local_data.item_data['weight']
         capacities = self.data_manager.local_data.id_data['capacity']
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
-            model = self._create_gurobi_model()
+            model = create_gurobi_model(self.subproblem_cfg)
             B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY)
             model.addConstr(weights @ B <= capacities[local_id])
             model.update()

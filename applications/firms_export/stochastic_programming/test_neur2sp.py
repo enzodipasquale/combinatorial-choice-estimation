@@ -1,9 +1,13 @@
+import sys
 import time
+from pathlib import Path
 import numpy as np
 import combest as ce
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "baseline"))
 from solver import TwoStageSolver
-from neur2sp.solver import TwoStageSolverNN
 from oracles import build_oracles
+from neur2sp.solver import TwoStageSolverNN
 
 beta = 3
 M, K = 3, 3
@@ -29,9 +33,6 @@ cfg = {
 }
 
 # Phase 0: DGP
-print("=" * 60)
-print("Phase 0: DGP")
-print("=" * 60)
 input_data_base = {
     "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K)},
     "item_data": {"rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
@@ -39,6 +40,13 @@ input_data_base = {
                   "seed": seed_dgp},
 }
 dgp = ce.Model()
+is_root = dgp.comm_manager.is_root()
+
+if is_root:
+    print("=" * 60)
+    print("Phase 0: DGP")
+    print("=" * 60)
+
 dgp.load_config(cfg)
 dgp.data.load_and_distribute_input_data(input_data_base)
 cov_o, err_o = build_oracles(dgp, seed=seed_dgp)
@@ -47,19 +55,22 @@ dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_o)
 dgp.features.set_error_oracle(err_o)
 obs_b_dgp = dgp.subproblems.generate_obs_bundles(theta_true)
-print(f"  obs_b sum range: [{obs_b_dgp.sum(1).min()}, {obs_b_dgp.sum(1).max()}]")
+if is_root:
+    print(f"  obs_b sum range: [{obs_b_dgp.sum(1).min()}, {obs_b_dgp.sum(1).max()}]")
 
 # Phase 1: Offline training
-print("\n" + "=" * 60)
-print("Phase 1: Offline NN training")
-print("=" * 60)
+if is_root:
+    print("\n" + "=" * 60)
+    print("Phase 1: Offline NN training")
+    print("=" * 60)
 
 data_path, model_path = "neur2sp/data.npz", "neur2sp/model.pt"
 theta_bounds = {"theta_rev": (-5.0, 5.0), "theta_s": (-10.0, 0.0),
                 "theta_c": (-1.0, 2.0)}
 
 from neur2sp.generate_data import generate_dataset
-print("Generating training data ...")
+if is_root:
+    print("Generating training data ...")
 t0 = time.time()
 inputs, labels = generate_dataset(
     rev_chars_2, syn_chars, beta, M, K, n_rev,
@@ -70,19 +81,23 @@ np.savez(data_path, inputs=inputs, labels=labels,
          theta_bounds_rev=theta_bounds["theta_rev"],
          theta_bounds_s=theta_bounds["theta_s"],
          theta_bounds_c=theta_bounds["theta_c"])
-print(f"  Data: {time.time()-t0:.1f}s  ({len(labels)} samples)")
+if is_root:
+    print(f"  Data: {time.time()-t0:.1f}s  ({len(labels)} samples)")
 
 from neur2sp.train import train as train_nn
-print("Training NN ...")
+if is_root:
+    print("Training NN ...")
 t0 = time.time()
 train_nn(data_path, model_path, hidden_dim=32, n_hidden=2,
          lr=1e-3, epochs=500, batch_size=256)
-print(f"  Training: {time.time()-t0:.1f}s")
+if is_root:
+    print(f"  Training: {time.time()-t0:.1f}s")
 
 # Phase 2: Exact solver
-print("\n" + "=" * 60)
-print("Phase 2: EXACT solver")
-print("=" * 60)
+if is_root:
+    print("\n" + "=" * 60)
+    print("Phase 2: EXACT solver")
+    print("=" * 60)
 input_data_est = {
     "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K),
                 "obs_bundles": obs_b_dgp},
@@ -106,9 +121,10 @@ res_exact = model_exact.point_estimation.bundle.solve(
 time_exact = time.time() - t0
 
 # Phase 3: NN surrogate solver
-print("\n" + "=" * 60)
-print("Phase 3: NN SURROGATE solver")
-print("=" * 60)
+if is_root:
+    print("\n" + "=" * 60)
+    print("Phase 3: NN SURROGATE solver")
+    print("=" * 60)
 input_data_nn = dict(input_data_est)
 input_data_nn["item_data"] = dict(input_data_est["item_data"],
                                   nn_model_path=model_path)
@@ -128,15 +144,16 @@ res_nn = model_nn.point_estimation.bundle.solve(
 time_nn = time.time() - t0
 
 # Summary
-print("\n" + "=" * 60)
-print("COMPARISON")
-print("=" * 60)
-err_e = np.linalg.norm(res_exact.theta_hat - theta_true)
-err_n = np.linalg.norm(res_nn.theta_hat - theta_true)
-print(f"  {'':20s} {'EXACT':>12s} {'NN-SURR':>12s}")
-print(f"  {'theta error':20s} {err_e:12.4f} {err_n:12.4f}")
-print(f"  {'objective':20s} {res_exact.final_objective:12.6f} "
-      f"{res_nn.final_objective:12.6f}")
-print(f"  {'iterations':20s} {res_exact.num_iterations:12d} "
-      f"{res_nn.num_iterations:12d}")
-print(f"  {'time (s)':20s} {time_exact:12.1f} {time_nn:12.1f}")
+if is_root:
+    print("\n" + "=" * 60)
+    print("COMPARISON")
+    print("=" * 60)
+    err_e = np.linalg.norm(res_exact.theta_hat - theta_true)
+    err_n = np.linalg.norm(res_nn.theta_hat - theta_true)
+    print(f"  {'':20s} {'EXACT':>12s} {'NN-SURR':>12s}")
+    print(f"  {'theta error':20s} {err_e:12.4f} {err_n:12.4f}")
+    print(f"  {'objective':20s} {res_exact.final_objective:12.6f} "
+          f"{res_nn.final_objective:12.6f}")
+    print(f"  {'iterations':20s} {res_exact.num_iterations:12d} "
+          f"{res_nn.num_iterations:12d}")
+    print(f"  {'time (s)':20s} {time_exact:12.1f} {time_nn:12.1f}")

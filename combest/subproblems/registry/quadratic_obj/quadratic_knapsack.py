@@ -1,9 +1,9 @@
 import numpy as np
 import gurobipy as gp
-from ...solver_base import SubproblemSolver, GurobiMixin
+from ...solver_base import SubproblemSolver, create_gurobi_model
 from .quadratic_obj_base import QuadraticObjectiveMixin
 
-class QuadraticKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, SubproblemSolver):
+class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
         weights = self.data_manager.local_data.item_data['weight']
@@ -11,7 +11,7 @@ class QuadraticKnapsackGRBSolver(GurobiMixin, QuadraticObjectiveMixin, Subproble
         masks = self.data_manager.local_data.id_data.get("item_mask")
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
-            model = self._create_gurobi_model()
+            model = create_gurobi_model(self.subproblem_cfg)
             ub = masks[local_id].astype(float) if masks is not None else 1.0
             B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, ub=ub, name='bundle')
             model.addConstr(weights @ B <= capacities[local_id])
