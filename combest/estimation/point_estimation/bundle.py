@@ -24,7 +24,8 @@ class BundleSolver:
 
     def solve(self, theta0, tau=TAU_INIT, gamma=GAMMA, Gamma=GAMMA_UP,
               gamma_tilde=GAMMA_TILDE, c=C, zeta=ZETA, tol=TOL,
-              tol_g=TOL_G, max_iters=MAX_ITERS, verbose=False):
+              tol_g=TOL_G, max_iters=MAX_ITERS, prune=True,
+              verbose=False):
         """Schramm-Zowe proximal bundle method (Algorithm 1,
         Kuchlbauer-Liers-Stingl).
         """
@@ -66,8 +67,9 @@ class BundleSolver:
             theta_next = np.empty(n, dtype=np.float64)
             phi_next = 0.0
             g_star_norm = 0.0
+            lambdas = None
             if comm.is_root():
-                theta_next[:], phi_next = self._solve_qp(
+                theta_next[:], phi_next, lambdas, s_values = self._solve_qp(
                     thetas, fs, gs, theta_hat, f_hat, tau, c, n)
                 # Aggregate subgradient: g* = tau * (theta_hat - theta_next)
                 # Must use the tau that was passed to the QP, before any update
@@ -98,6 +100,51 @@ class BundleSolver:
                     theta_hat = theta_next.copy()
                     f_hat = f_next
                     null_close_count = 0
+
+                    # -- Bundle pruning (Schramm-Zowe reset) --
+                    if prune:
+                        # lambdas are QP duals for the n_old planes
+                        # (before the new exactness plane was appended)
+                        n_old = len(lambdas)
+                        PRUNE_THRESH = 1e-6
+                        active_idx = [i for i in range(n_old)
+                                      if lambdas[i] > PRUNE_THRESH]
+                        inactive_idx = [i for i in range(n_old)
+                                        if lambdas[i] <= PRUNE_THRESH]
+
+                        new_thetas = [thetas[i] for i in active_idx]
+                        new_fs = [fs[i] for i in active_idx]
+                        new_gs = [gs[i] for i in active_idx]
+
+                        # Aggregate inactive planes into one synthetic plane
+                        if inactive_idx:
+                            lam_inact = np.array([lambdas[i]
+                                                  for i in inactive_idx])
+                            lam_sum = lam_inact.sum()
+                            if lam_sum > 1e-12:
+                                w = lam_inact / lam_sum
+                                g_agg = sum(
+                                    w[j] * gs[inactive_idx[j]]
+                                    for j in range(len(inactive_idx)))
+                                # Downshifted linearization at new theta_hat
+                                f_agg = sum(
+                                    w[j] * (fs[inactive_idx[j]]
+                                            + gs[inactive_idx[j]]
+                                            @ (theta_hat - thetas[inactive_idx[j]])
+                                            - s_values[inactive_idx[j]])
+                                    for j in range(len(inactive_idx)))
+                                new_thetas.append(theta_hat.copy())
+                                new_fs.append(f_agg)
+                                new_gs.append(g_agg)
+
+                        # Exactness plane at new stability center
+                        new_thetas.append(theta_hat.copy())
+                        new_fs.append(f_hat)
+                        new_gs.append(g_next.copy())
+
+                        thetas[:] = new_thetas
+                        fs[:] = new_fs
+                        gs[:] = new_gs
 
                     # Decrease tau on strong descent (Step 9)
                     if rho >= Gamma:
@@ -186,11 +233,15 @@ class BundleSolver:
             t + (tau / 2) * (z - theta_hat) @ (z - theta_hat),
             gp.GRB.MINIMIZE)
 
+        s_values = []
         for i in range(len(thetas)):
             g_i, f_i, th_i = gs[i], fs[i], thetas[i]
             diff = theta_hat - th_i
             s_i = max(0.0, f_i + g_i @ diff - f_hat) + c * (diff @ diff)
+            s_values.append(s_i)
             m.addConstr(t >= f_i + g_i @ (z - th_i) - s_i)
 
         m.optimize()
-        return np.array(z.X), t.X
+        lambdas = np.array([constr.Pi for constr in m.getConstrs()])
+        assert np.all(lambdas >= -1e-10), f"Negative duals: {lambdas}"
+        return np.array(z.X), t.X, lambdas, s_values

@@ -74,3 +74,4 @@ applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/checkpoints
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/_past_checkpoints
 applications/combinatorial_auction/block_c/estimation_results/
+.cache/

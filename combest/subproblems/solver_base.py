@@ -18,25 +18,22 @@ class SubproblemSolver(ABC):
         pass
 
     def update_solver_settings(self, settings_dict):
-        pass
+        models = getattr(self, 'local_problems', None)
+        if models:
+            for model in models:
+                for param, value in settings_dict.items():
+                    model.setParam(param, value)
 
 
-class GurobiMixin:
-
-    def _create_gurobi_model(self):
-        import gurobipy as gp
-        from combest.utils import suppress_output
-        with suppress_output():
-            model = gp.Model()
-            model.setParam('OutputFlag', 0)
-            model.setParam('Threads', 1)
-            for k, v in self.subproblem_cfg.gurobi_params.items():
-                if v is not None:
-                    model.setParam(k, v)
-            model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
-        return model
-
-    def update_solver_settings(self, settings_dict):
-        for model in self.local_problems:
-            for param, value in settings_dict.items():
-                model.setParam(param, value)
+def create_gurobi_model(subproblem_cfg):
+    import gurobipy as gp
+    from combest.utils import suppress_output
+    with suppress_output():
+        model = gp.Model()
+        model.setParam('OutputFlag', 0)
+        model.setParam('Threads', 1)
+        for k, v in subproblem_cfg.gurobi_params.items():
+            if v is not None:
+                model.setParam(k, v)
+        model.setAttr('ModelSense', gp.GRB.MAXIMIZE)
+    return model
