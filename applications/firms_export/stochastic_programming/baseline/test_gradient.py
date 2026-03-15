@@ -5,7 +5,7 @@ from oracles import build_oracles
 
 # ── Settings ──────────────────────────────────────────────────────────
 beta = .8
-M, K = 10, 10
+M = 10
 R_dgp = 200
 R_est = 200
 S_est = 1
@@ -32,7 +32,7 @@ syn_chars = (_raw + _raw.T) / 2
 np.fill_diagonal(syn_chars, 0)
 
 input_data = {
-    "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K),
+    "id_data": {"state_chars": state_chars,
                 "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
     "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
                   "beta": beta, "R": R_dgp},
@@ -89,7 +89,7 @@ for label, theta in theta_points.items():
             "subproblem": {"gurobi_params": {"TimeLimit": 10}},
         }
         input_data_copy = {
-            "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K),
+            "id_data": {"state_chars": state_chars,
                         "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
                         "obs_bundles": obs_b_dgp},
             "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,

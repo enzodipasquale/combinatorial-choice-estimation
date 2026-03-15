@@ -9,20 +9,21 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 from neur2sp.solver import TwoStageSolverNN
 
-beta = 3
-M, K = 3, 3
-R_dgp, R_est = 100, 100
-n_obs, n_rev = 1000, 1
-n_cov = n_rev + 2
-theta_true = np.array([1.0] * n_rev + [-5.0, 0.5])
+beta = 0.8
+M = 3
+R_dgp, R_est = 20, 20
+n_obs, n_rev = 100, 1
+n_cov = n_rev + 3
+theta_true = np.array([0.5] * n_rev + [-5.0, -1.0, 0.1])
+sigma_eps, sigma_nu_1, sigma_nu_2 = 1.0, 0.5, 0.5
 seed_dgp, seed_est = 42, 43
-max_iters, tau = 200, 0.1
+max_iters, tau = 50, 1.0
 
 rng = np.random.default_rng(seed_dgp)
-rev_base = rng.uniform(0, 1.0, (n_rev, M))
-rev_chars_1 = rev_base + rng.uniform(-0.1, 0.1, (n_rev, M))
-rev_chars_2 = rev_base + rng.uniform(-0.1, 0.1, (n_rev, M))
+rev_chars_1 = rng.uniform(0, 2, (n_obs, n_rev, M))
+rev_chars_2 = rng.uniform(0, 2, (n_obs, n_rev, M))
 state_chars = (rng.random((n_obs, M)) > 0.9).astype(float)
+entry_chars = rng.uniform(0, 1, M)
 _raw = rng.uniform(0, 1, (M, M))
 syn_chars = (_raw + _raw.T) / 2
 np.fill_diagonal(syn_chars, 0)
@@ -34,10 +35,10 @@ cfg = {
 
 # Phase 0: DGP
 input_data_base = {
-    "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K)},
-    "item_data": {"rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
-                  "syn_chars": syn_chars, "beta": beta, "R": R_dgp,
-                  "seed": seed_dgp},
+    "id_data": {"state_chars": state_chars,
+                "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
+    "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
+                  "beta": beta, "R": R_dgp},
 }
 dgp = ce.Model()
 is_root = dgp.comm_manager.is_root()
@@ -49,7 +50,10 @@ if is_root:
 
 dgp.load_config(cfg)
 dgp.data.load_and_distribute_input_data(input_data_base)
-cov_o, err_o = build_oracles(dgp, seed=seed_dgp)
+cov_o, err_o = build_oracles(dgp, seed=seed_dgp,
+                              sigma_eps=sigma_eps,
+                              sigma_nu_1=sigma_nu_1,
+                              sigma_nu_2=sigma_nu_2)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_o)
@@ -65,21 +69,33 @@ if is_root:
     print("=" * 60)
 
 data_path, model_path = "neur2sp/data.npz", "neur2sp/model.pt"
-theta_bounds = {"theta_rev": (-5.0, 5.0), "theta_s": (-10.0, 0.0),
+perpetual = 1 / (1 - beta)
+beta_perpetual = beta * perpetual
+
+# Estimate eff_rev bounds from the data and theta range
+theta_rev_range = (-5.0, 5.0)
+max_rev = rev_chars_2.max()
+eff_rev_ub = beta_perpetual * (abs(theta_rev_range[1]) * max_rev + 3 * sigma_eps)
+eff_rev_lb = -eff_rev_ub
+theta_bounds = {"theta_s": (-10.0, 0.0), "theta_sc": (-5.0, 0.0),
                 "theta_c": (-1.0, 2.0)}
+eff_rev_bounds = (eff_rev_lb, eff_rev_ub)
 
 from neur2sp.generate_data import generate_dataset
 if is_root:
-    print("Generating training data ...")
+    print(f"Generating training data (eff_rev_bounds=[{eff_rev_lb:.1f}, {eff_rev_ub:.1f}]) ...")
 t0 = time.time()
 inputs, labels = generate_dataset(
-    rev_chars_2, syn_chars, beta, M, K, n_rev,
-    theta_bounds, n_samples=3000, R_train=500, seed=123)
+    entry_chars, syn_chars, beta, beta_perpetual, sigma_nu_2,
+    M, theta_bounds, eff_rev_bounds,
+    n_samples=1000, R_train=200, seed=123)
 np.savez(data_path, inputs=inputs, labels=labels,
-         rev_chars_2=rev_chars_2, syn_chars=syn_chars,
-         M=M, K=K, n_rev=n_rev, beta=beta,
-         theta_bounds_rev=theta_bounds["theta_rev"],
+         entry_chars=entry_chars, syn_chars=syn_chars,
+         M=M, beta=beta, beta_perpetual=beta_perpetual,
+         sigma_nu_2=sigma_nu_2,
+         eff_rev_bounds=np.array(eff_rev_bounds),
          theta_bounds_s=theta_bounds["theta_s"],
+         theta_bounds_sc=theta_bounds["theta_sc"],
          theta_bounds_c=theta_bounds["theta_c"])
 if is_root:
     print(f"  Data: {time.time()-t0:.1f}s  ({len(labels)} samples)")
@@ -99,17 +115,20 @@ if is_root:
     print("Phase 2: EXACT solver")
     print("=" * 60)
 input_data_est = {
-    "id_data": {"state_chars": state_chars, "capacity": np.full(n_obs, K),
-                "obs_bundles": obs_b_dgp},
-    "item_data": {"rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
-                  "syn_chars": syn_chars, "beta": beta, "R": R_est,
-                  "seed": seed_est},
+    "id_data": {"state_chars": state_chars,
+                "obs_bundles": obs_b_dgp,
+                "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
+    "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
+                  "beta": beta, "R": R_est},
 }
 
 model_exact = ce.Model()
 model_exact.load_config(cfg)
 model_exact.data.load_and_distribute_input_data(input_data_est)
-cov_o, err_o = build_oracles(model_exact, seed=seed_est)
+cov_o, err_o = build_oracles(model_exact, seed=seed_est,
+                              sigma_eps=sigma_eps,
+                              sigma_nu_1=sigma_nu_1,
+                              sigma_nu_2=sigma_nu_2)
 model_exact.subproblems.load_solver(TwoStageSolver)
 model_exact.subproblems.initialize_solver()
 model_exact.features.set_covariates_oracle(cov_o)
@@ -125,14 +144,22 @@ if is_root:
     print("\n" + "=" * 60)
     print("Phase 3: NN SURROGATE solver")
     print("=" * 60)
-input_data_nn = dict(input_data_est)
-input_data_nn["item_data"] = dict(input_data_est["item_data"],
-                                  nn_model_path=model_path)
+input_data_nn = {
+    "id_data": {"state_chars": state_chars,
+                "obs_bundles": obs_b_dgp,
+                "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
+    "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
+                  "beta": beta, "R": R_est,
+                  "nn_model_path": model_path},
+}
 
 model_nn = ce.Model()
 model_nn.load_config(cfg)
 model_nn.data.load_and_distribute_input_data(input_data_nn)
-cov_o, err_o = build_oracles(model_nn, seed=seed_est)
+cov_o, err_o = build_oracles(model_nn, seed=seed_est,
+                              sigma_eps=sigma_eps,
+                              sigma_nu_1=sigma_nu_1,
+                              sigma_nu_2=sigma_nu_2)
 model_nn.subproblems.load_solver(TwoStageSolverNN)
 model_nn.subproblems.initialize_solver()
 model_nn.features.set_covariates_oracle(cov_o)

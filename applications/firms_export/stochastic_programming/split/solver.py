@@ -26,7 +26,6 @@ class TwoStageSolverSplit(SubproblemSolver):
         self.beta_s = item_data["beta_s"]                  # scalar
         self.n_rev = self.rev_chars_1.shape[1]
         self.n_per_period = self.n_rev + 3                 # params per period
-        self.cap = id_data["capacity"]
         obs_raw = id_data.get("obs_bundles", None)
         self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
         self.eps_1 = self.data_manager.local_data.errors["eps_1"]
@@ -35,7 +34,7 @@ class TwoStageSolverSplit(SubproblemSolver):
         self.problems = []
         self.local_problems = []
         for i in range(n):
-            ep = EntryProblem(M, self.R, self.cap[i], self.subproblem_cfg)
+            ep = EntryProblem(M, self.R, self.subproblem_cfg)
             self.problems.append(ep)
             self.local_problems.append(ep.model)
 

@@ -31,27 +31,32 @@ def main():
     args = ap.parse_args()
 
     predict, ckpt = load_nn(args.model)
-    M, n_rev = int(ckpt["M"]), int(ckpt["n_rev"])
-    theta_lb, theta_ub = ckpt["theta_lb"], ckpt["theta_ub"]
-    beta = ckpt.get("beta", 3.0)
-    K = ckpt.get("K", M // 2)
-    print(f"Model: M={M}, K={K}, n_rev={n_rev}")
+    M = int(ckpt["M"])
+    beta = float(ckpt["beta"])
+    beta_perpetual = float(ckpt["beta_perpetual"])
+    sigma_nu_2 = float(ckpt["sigma_nu_2"])
+    eff_rev_bounds = tuple(ckpt["eff_rev_bounds"])
+    print(f"Model: M={M}, input_dim={ckpt['input_dim']}")
 
-    from neur2sp.generate_data import _make_chars
-    _, rev_chars_2, syn_chars = _make_chars(M, n_rev, args.seed_chars)
+    rng_c = np.random.default_rng(args.seed_chars)
+    entry_chars = rng_c.uniform(0, 1, M)
+    _raw = rng_c.uniform(0, 1, (M, M))
+    syn_chars = (_raw + _raw.T) / 2
+    np.fill_diagonal(syn_chars, 0)
 
     theta_bounds = {
-        "theta_rev": (float(theta_lb[0]), float(theta_ub[0])),
-        "theta_s": (float(theta_lb[n_rev]), float(theta_ub[n_rev])),
-        "theta_c": (float(theta_lb[n_rev + 1]), float(theta_ub[n_rev + 1])),
+        "theta_s": tuple(float(x) for x in ckpt["theta_bounds_s"]),
+        "theta_sc": tuple(float(x) for x in ckpt["theta_bounds_sc"]),
+        "theta_c": tuple(float(x) for x in ckpt["theta_bounds_c"]),
     }
 
     print(f"Generating {args.n_test} test samples  "
           f"(R_test={args.R_test}, workers={args.workers})")
     t0 = time.time()
     X_test, y_test = generate_dataset(
-        rev_chars_2, syn_chars, beta, M, K, n_rev,
-        theta_bounds, n_samples=args.n_test, R_train=args.R_test,
+        entry_chars, syn_chars, beta, beta_perpetual, sigma_nu_2,
+        M, theta_bounds, eff_rev_bounds,
+        n_samples=args.n_test, R_train=args.R_test,
         seed=args.seed_test, workers=args.workers,
     )
     print(f"Test data generated in {time.time()-t0:.1f}s")
@@ -79,11 +84,6 @@ def main():
     abs_res = np.abs(residuals)
     for p in [10, 25, 50, 75, 90, 95, 99]:
         print(f"  P{p:2d} abs error = {np.percentile(abs_res, p):.4f}")
-
-    out_path = args.model.replace(".pt", "_validation.npz")
-    np.savez(out_path, X_test=X_test, y_test=y_test, y_pred=y_pred,
-             residuals=residuals, r2=r2, mae=mae, rmse=rmse)
-    print(f"  Results saved to {out_path}")
 
 
 if __name__ == "__main__":

@@ -97,6 +97,7 @@ class BundleSolver:
                 serious = rho >= gamma
                 if serious:
                     # ---- Serious step ----
+                    theta_hat_old = theta_hat.copy()
                     theta_hat = theta_next.copy()
                     f_hat = f_next
                     null_close_count = 0
@@ -130,7 +131,7 @@ class BundleSolver:
                                 f_agg = sum(
                                     w[j] * (fs[inactive_idx[j]]
                                             + gs[inactive_idx[j]]
-                                            @ (theta_hat - thetas[inactive_idx[j]])
+                                            @ (theta_hat_old - thetas[inactive_idx[j]])
                                             - s_values[inactive_idx[j]])
                                     for j in range(len(inactive_idx)))
                                 new_thetas.append(theta_hat.copy())

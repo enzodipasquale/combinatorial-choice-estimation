@@ -55,7 +55,7 @@ def solve_exact_joint(b1_var, b2r_var, model, theta, rev_chars_1, rev_chars_2,
     return np.array(b1_var.X) > 0.5, np.array(b2r_var.X) > 0.5
 
 
-def solve_b2_given_b1(b1, theta, rev_chars_2, syn_chars, eps2, R, M, K,
+def solve_b2_given_b1(b1, theta, rev_chars_2, syn_chars, eps2, R, M,
                       q_model, q_var):
     n_rev = rev_chars_2.shape[0]
     theta_rev, theta_s, theta_c = theta[:n_rev], theta[n_rev], theta[n_rev + 1]
@@ -73,7 +73,7 @@ def solve_b2_given_b1(b1, theta, rev_chars_2, syn_chars, eps2, R, M, K,
 
 
 def solve_surrogate(theta, rev_chars_1, syn_chars, b_0, eps1,
-                    nn_weights, nn_biases, pre_bounds, M, K):
+                    nn_weights, nn_biases, pre_bounds, M):
     n_rev = rev_chars_1.shape[0]
     theta_rev, theta_s, theta_c = theta[:n_rev], theta[n_rev], theta[n_rev + 1]
     C = syn_chars
@@ -84,7 +84,6 @@ def solve_surrogate(theta, rev_chars_1, syn_chars, b_0, eps1,
     m.ModelSense = gp.GRB.MAXIMIZE
 
     b_1 = m.addMVar(M, vtype=gp.GRB.BINARY, name="b_1")
-    m.addConstr(b_1.sum() <= K)
     tvars = [m.addVar(lb=float(theta[t]), ub=float(theta[t]),
                       name=f"th_{t}") for t in range(len(theta))]
     m.update()
@@ -109,7 +108,7 @@ def main():
 
     ckpt = torch.load(args.model, map_location="cpu", weights_only=False)
     nn_weights, nn_biases = ckpt["weights"], ckpt["biases"]
-    M, K = int(ckpt["M"]), int(ckpt["K"])
+    M = int(ckpt["M"])
     n_rev, beta = int(ckpt["n_rev"]), float(ckpt["beta"])
     theta_lb, theta_ub = ckpt["theta_lb"], ckpt["theta_ub"]
     n_cov = n_rev + 2
@@ -122,8 +121,8 @@ def main():
     R = args.R_eval
     rng = np.random.default_rng(args.seed_test)
 
-    print(f"Exact joint MIP vs NN surrogate + exact knapsacks")
-    print(f"M={M}, K={K}, R={R}, n_test={args.n_test}")
+    print(f"Exact joint MIP vs NN surrogate + exact second-stage")
+    print(f"M={M}, R={R}, n_test={args.n_test}")
     print(f"Covariates: {n_cov} (n_rev={n_rev}, theta_s, theta_c)\n")
 
     # reusable Gurobi models
@@ -133,9 +132,6 @@ def main():
     m_ex.ModelSense = gp.GRB.MAXIMIZE
     b1_ex = m_ex.addMVar(M, vtype=gp.GRB.BINARY, name="b1")
     b2r_ex = m_ex.addMVar((R, M), vtype=gp.GRB.BINARY, name="b2r")
-    m_ex.addConstr(b1_ex.sum() <= K)
-    for r in range(R):
-        m_ex.addConstr(b2r_ex[r, :].sum() <= K)
     m_ex.update()
 
     m_q = gp.Model("q")
@@ -143,7 +139,6 @@ def main():
     m_q.Params.Threads = 1
     m_q.ModelSense = gp.GRB.MAXIMIZE
     b2_q = m_q.addMVar(M, vtype=gp.GRB.BINARY, name="b2")
-    m_q.addConstr(b2_q.sum() <= K)
     m_q.update()
 
     # second q-model for NN method (so we don't interfere)
@@ -152,7 +147,6 @@ def main():
     m_q2.Params.Threads = 1
     m_q2.ModelSense = gp.GRB.MAXIMIZE
     b2_q2 = m_q2.addMVar(M, vtype=gp.GRB.BINARY, name="b2")
-    m_q2.addConstr(b2_q2.sum() <= K)
     m_q2.update()
 
     cosine_sims_match, cosine_sims_miss = [], []
@@ -173,10 +167,7 @@ def main():
         b_0 = (rng.random(M) > 0.9).astype(float)
         eps1 = rng.normal(0, 1, M)
         eps2 = rng.normal(0, 1, (R, M))
-        b_1_obs = np.zeros(M, dtype=bool)
-        k_obs = rng.integers(0, K + 1)
-        if k_obs > 0:
-            b_1_obs[rng.choice(M, size=min(k_obs, M), replace=False)] = True
+        b_1_obs = rng.integers(0, 2, size=M).astype(bool)
 
         # ── EXACT: joint MIP → b_1*, b_2_r* ──
         t1 = time.time()
@@ -187,7 +178,7 @@ def main():
 
         t1 = time.time()
         b2r_obs_ex = solve_b2_given_b1(b_1_obs, theta, rev_chars_2, syn_chars,
-                                       eps2, R, M, K, m_q, b2_q)
+                                       eps2, R, M, m_q, b2_q)
         time_exact_knap += time.time() - t1
 
         cov_V_ex = covariates(b1_exact, b2r_exact, b_0,
@@ -200,17 +191,17 @@ def main():
         grad_exact = cov_V_ex - cov_Q_ex
         obj_exact = grad_exact @ theta + (err_V_ex - err_Q_ex)
 
-        # ── NN HYBRID: surrogate MIP → b_1_nn, then exact knapsacks ──
+        # ── NN HYBRID: surrogate MIP → b_1_nn, then exact second-stage ──
         t1 = time.time()
         b1_nn = solve_surrogate(theta, rev_chars_1, syn_chars, b_0, eps1,
-                                nn_weights, nn_biases, pre_bounds, M, K)
+                                nn_weights, nn_biases, pre_bounds, M)
         time_nn_b1 += time.time() - t1
 
         t1 = time.time()
         b2r_V_nn = solve_b2_given_b1(b1_nn, theta, rev_chars_2, syn_chars,
-                                     eps2, R, M, K, m_q2, b2_q2)
+                                     eps2, R, M, m_q2, b2_q2)
         b2r_Q_nn = solve_b2_given_b1(b_1_obs, theta, rev_chars_2, syn_chars,
-                                     eps2, R, M, K, m_q2, b2_q2)
+                                     eps2, R, M, m_q2, b2_q2)
         time_nn_knap += time.time() - t1
 
         cov_V_nn = covariates(b1_nn, b2r_V_nn, b_0,
@@ -262,7 +253,7 @@ def main():
 
     print(f"\n{'='*60}")
     print(f"GRADIENT COMPARISON  (n={args.n_test}, R={R})")
-    print(f"Exact joint MIP  vs  NN surrogate + exact knapsacks")
+    print(f"Exact joint MIP  vs  NN surrogate + exact second-stage")
     print(f"{'='*60}")
     print(f"\nb_1 match: {b1_matches}/{args.n_test} "
           f"({b1_matches/args.n_test*100:.1f}%)")
@@ -299,10 +290,10 @@ def main():
     n = args.n_test
     print(f"\nTiming (per solve):")
     print(f"  EXACT:  joint MIP = {time_exact_b1/n*1000:.1f}ms  "
-          f"Q knapsacks = {time_exact_knap/n*1000:.1f}ms  "
+          f"Q second-stage = {time_exact_knap/n*1000:.1f}ms  "
           f"total = {(time_exact_b1+time_exact_knap)/n*1000:.1f}ms")
     print(f"  NN:     surr MIP  = {time_nn_b1/n*1000:.1f}ms  "
-          f"V+Q knapsacks = {time_nn_knap/n*1000:.1f}ms  "
+          f"V+Q second-stage = {time_nn_knap/n*1000:.1f}ms  "
           f"total = {(time_nn_b1+time_nn_knap)/n*1000:.1f}ms")
     print(f"  Speedup: {(time_exact_b1+time_exact_knap)/(time_nn_b1+time_nn_knap):.2f}x")
 
