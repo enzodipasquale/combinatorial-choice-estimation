@@ -18,9 +18,8 @@ S_EST = 1
 
 THETA_TRUE = np.array([0.5] * N_REV + [-5.0, -1.0, 0.1])
 
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 0.5
-SIGMA_NU_2 = 0.5
+SIGMA_1 = 1.0
+SIGMA_2 = 0.5
 
 SEED_DGP = 42
 SEED_EST = 43
@@ -53,9 +52,8 @@ dgp = ce.Model()
 dgp.load_config(cfg)
 dgp.data.load_and_distribute_input_data(input_data)
 cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
-                                       sigma_eps=SIGMA_EPS,
-                                       sigma_nu_1=SIGMA_NU_1,
-                                       sigma_nu_2=SIGMA_NU_2)
+                                       sigma_1=SIGMA_1,
+                                       sigma_2=SIGMA_2)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
@@ -74,9 +72,8 @@ model.load_config(cfg)
 model.data.load_and_distribute_input_data(input_data)
 
 cov_oracle, err_oracle = build_oracles(model, seed=SEED_EST,
-                                       sigma_eps=SIGMA_EPS,
-                                       sigma_nu_1=SIGMA_NU_1,
-                                       sigma_nu_2=SIGMA_NU_2)
+                                       sigma_1=SIGMA_1,
+                                       sigma_2=SIGMA_2)
 solver = model.subproblems.load_solver(TwoStageSolver)
 model.subproblems.initialize_solver()
 model.features.set_covariates_oracle(cov_oracle)

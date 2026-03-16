@@ -18,9 +18,8 @@ N_SIMULATIONS = 1
 
 BETA = 0.5
 R = 100
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 1.0
-SIGMA_NU_2 = 1 / (1 - BETA)
+SIGMA_1 = 1.0
+SIGMA_2 = 1.0
 
 SEED = 42
 MAX_DC_ITERS = 20
@@ -55,9 +54,8 @@ def build_model(n_sample=N_SAMPLE):
     model.data.load_and_distribute_input_data(input_data)
 
     cov_oracle, err_oracle = build_oracles(model, seed=SEED,
-                                           sigma_eps=SIGMA_EPS,
-                                           sigma_nu_1=SIGMA_NU_1,
-                                           sigma_nu_2=SIGMA_NU_2)
+                                           sigma_1=SIGMA_1,
+                                           sigma_2=SIGMA_2)
     model.subproblems.load_solver(TwoStageSolver)
     model.subproblems.initialize_solver()
     model.features.set_covariates_oracle(cov_oracle)
@@ -77,7 +75,7 @@ if __name__ == "__main__":
         print(f"\nStarting DC algorithm: theta0 = {theta0}")
         print(f"  R={R}, beta={BETA}, seed={SEED}")
         print(f"  N={N_SAMPLE}, M={model.n_items}")
-        print(f"  sigma_eps={SIGMA_EPS}, sigma_nu_1={SIGMA_NU_1}, sigma_nu_2={SIGMA_NU_2:.2f}")
+        print(f"  sigma_1={SIGMA_1}, sigma_2={SIGMA_2}")
 
     solver = model.subproblems.subproblem_solver
     row_gen = model.point_estimation.n_slack

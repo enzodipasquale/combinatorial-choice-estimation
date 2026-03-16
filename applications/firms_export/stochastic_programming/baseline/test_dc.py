@@ -16,9 +16,8 @@ N_COV = N_REV + 3
 
 THETA_TRUE = np.array([1.0] * N_REV + [-2.0, -1.0, .5])
 
-SIGMA_EPS = 0.0
-SIGMA_NU_1 = 1.0
-SIGMA_NU_2 = 1.0 / (1- BETA)
+SIGMA_1 = 1.0
+SIGMA_2 = 1.0
 
 SEED_DGP = 42
 SEED_EST = 43
@@ -48,9 +47,8 @@ dgp = ce.Model()
 dgp.load_config(cfg_dgp)
 dgp.data.load_and_distribute_input_data(input_data_dgp)
 cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
-                                       sigma_eps=SIGMA_EPS,
-                                       sigma_nu_1=SIGMA_NU_1,
-                                       sigma_nu_2=SIGMA_NU_2)
+                                       sigma_1=SIGMA_1,
+                                       sigma_2=SIGMA_2)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
@@ -78,8 +76,7 @@ modular = np.stack([
 
 eps_1_est = np.zeros((N_OBS, M))
 for i in range(N_OBS):
-    eps_1_est[i] = (np.random.default_rng((SEED_EST, i, 0)).normal(0, SIGMA_EPS, M)
-                    + np.random.default_rng((SEED_EST, i, 1)).normal(0, SIGMA_NU_1, M))
+    eps_1_est[i] = np.random.default_rng((SEED_EST, i, 0)).normal(0, SIGMA_1, M)
 
 
 def build_mincut_model():
@@ -130,9 +127,8 @@ def build_dc_model():
     m.load_config(cfg_est)
     m.data.load_and_distribute_input_data(input_data_est)
     cov_o, err_o = build_oracles(m, seed=SEED_EST,
-                                  sigma_eps=SIGMA_EPS,
-                                  sigma_nu_1=SIGMA_NU_1,
-                                  sigma_nu_2=SIGMA_NU_2)
+                                  sigma_1=SIGMA_1,
+                                  sigma_2=SIGMA_2)
     m.subproblems.load_solver(TwoStageSolver)
     m.subproblems.initialize_solver()
     m.features.set_covariates_oracle(cov_o)

@@ -16,8 +16,7 @@ END_BUFFER = 3
 N_SAMPLE = 50000
 N_SIMULATIONS = 1
 
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 1
+SIGMA_1 = 1.0
 
 SEED = 42
 MAX_ITERS = 200
@@ -82,9 +81,7 @@ def build_model(n_sample=N_SAMPLE):
     n_local = model.comm_manager.num_local_agent
     eps_1 = np.zeros((n_local, M))
     for i, gid in enumerate(model.comm_manager.agent_ids):
-        eps = np.random.default_rng((SEED, gid, 0)).normal(0, SIGMA_EPS, M)
-        nu1 = np.random.default_rng((SEED, gid, 1)).normal(0, SIGMA_NU_1, M)
-        eps_1[i] = eps + nu1
+        eps_1[i] = np.random.default_rng((SEED, gid, 0)).normal(0, SIGMA_1, M)
     model.features.local_modular_errors = eps_1
     model.features._error_oracle = lambda bundles, ids: (eps_1[ids] * bundles).sum(-1)
     model.features._error_oracle_takes_data = False

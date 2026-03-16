@@ -17,9 +17,8 @@ N_SIMULATIONS = 1
 
 BETA = 0.8
 R = 100
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 1
-SIGMA_NU_2 = 1/(1-BETA)
+SIGMA_1 = 1.0
+SIGMA_2 = 1.0
 
 
 theta_0  = np.array( [ 1.47413693, -2.89827683, -0.01765633 , 0.07047045])
@@ -61,9 +60,8 @@ for theta in thetas:
 
     for seed in error_seeds:
         cov_oracle, err_oracle = build_oracles(model, seed=seed,
-                                               sigma_eps=SIGMA_EPS,
-                                               sigma_nu_1=SIGMA_NU_1,
-                                               sigma_nu_2=SIGMA_NU_2)
+                                               sigma_1=SIGMA_1,
+                                               sigma_2=SIGMA_2)
         model.subproblems.load_solver(TwoStageSolver)
         model.subproblems.initialize_solver()
         model.features.set_covariates_oracle(cov_oracle)

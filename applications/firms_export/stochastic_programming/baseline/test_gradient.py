@@ -14,9 +14,8 @@ S_EST = 1
 
 THETA_TRUE = np.array([1] * N_REV + [-15.0, -2.0, 0.05])
 
-SIGMA_EPS = 1
-SIGMA_NU_1 = 1
-SIGMA_NU_2 = 5
+SIGMA_1 = 1.0
+SIGMA_2 = 5.0
 
 SEED_DGP = 42
 ERROR_SEEDS = [SEED_DGP, 43, 44, 100, 200]
@@ -47,9 +46,8 @@ dgp = ce.Model()
 dgp.load_config(cfg)
 dgp.data.load_and_distribute_input_data(input_data)
 cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
-                                       sigma_eps=SIGMA_EPS,
-                                       sigma_nu_1=SIGMA_NU_1,
-                                       sigma_nu_2=SIGMA_NU_2)
+                                       sigma_1=SIGMA_1,
+                                       sigma_2=SIGMA_2)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
@@ -95,9 +93,8 @@ for label, theta in theta_points.items():
         model.load_config(cfg_copy)
         model.data.load_and_distribute_input_data(input_data_copy)
         cov_o, err_o = build_oracles(model, seed=seed_est,
-                                     sigma_eps=SIGMA_EPS,
-                                     sigma_nu_1=SIGMA_NU_1,
-                                     sigma_nu_2=SIGMA_NU_2)
+                                     sigma_1=SIGMA_1,
+                                     sigma_2=SIGMA_2)
         model.subproblems.load_solver(TwoStageSolver)
         model.subproblems.initialize_solver()
         model.features.set_covariates_oracle(cov_o)
