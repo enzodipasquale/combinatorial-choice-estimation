@@ -5,6 +5,7 @@ import numpy as np
 import combest as ce
 from solver import TwoStageSolver
 from oracles import build_oracles
+from dc import DCSolver
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
@@ -12,7 +13,7 @@ from prepare_data import main as load_data, build_input_data
 COUNTRY = "MEX"
 KEEP_TOP = 20
 END_BUFFER = 3
-N_SAMPLE = 10000
+N_SAMPLE = 200
 N_SIMULATIONS = 1
 
 BETA = 0.0
@@ -21,8 +22,9 @@ SIGMA_1 = 1.0
 SIGMA_2 = 1.0
 
 SEED = 42
-MAX_ITERS = 100
-TAU = 1.0
+MAX_DC_ITERS = 20
+MAX_RG_ITERS = 200
+DC_TOL = 1e-6
 
 
 def build_model(n_sample=N_SAMPLE):
@@ -45,6 +47,8 @@ def build_model(n_sample=N_SAMPLE):
         "dimensions": {"n_obs": n_obs, "n_items": M,
                        "n_covariates": n_cov, "n_simulations": N_SIMULATIONS},
         "subproblem": {"gurobi_params": {"TimeLimit": 10}},
+        "row_generation": {"max_iters": MAX_RG_ITERS, "tolerance": 1e-6,
+                          "theta_bounds": {"lb": -1000}},
     }
     model.load_config(cfg)
     model.data.load_and_distribute_input_data(input_data)
@@ -64,32 +68,25 @@ if __name__ == "__main__":
     model = build_model()
     is_root = model.comm_manager.is_root()
 
-    theta0 = np.array([ 1.47413693, -2.89827683, -0.01765633, 0.07047045])
+    theta0 = np.array([1.47413693, -2.89827683, -0.01765633, 0.07047045])
     names = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
 
     if is_root:
-        print(f"\nStarting bundle method: theta0 = {theta0}")
-        print(f"  R={R}, S={N_SIMULATIONS}, beta={BETA}, seed={SEED}")
+        print(f"\nStarting DC algorithm (static, beta=0): theta0 = {theta0}")
+        print(f"  R={R}, beta={BETA}, seed={SEED}")
         print(f"  N={N_SAMPLE}, M={model.n_items}")
+        print(f"  sigma_1={SIGMA_1}, sigma_2={SIGMA_2}")
 
-    f_val, g_val = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta0)
-    if is_root:
-        g_str = "  ".join(f"{names[j]}={g_val[j]:+.4f}" for j in range(len(names)))
-        print(f"f(theta0) = {f_val:.6f}  grad: {g_str}  |g|={np.linalg.norm(g_val):.4f}")
+    solver = model.subproblems.subproblem_solver
+    row_gen = model.point_estimation.n_slack
+    dc = DCSolver(row_gen, solver)
 
-    result = model.point_estimation.bundle.solve(
-        theta0, tau=TAU, max_iters=MAX_ITERS, verbose=True)
+    result = dc.solve(theta0, max_dc_iters=MAX_DC_ITERS, tol=DC_TOL,
+                      verbose=True)
 
-    if is_root:
+    if is_root and result is not None:
         print(f"\ntheta_hat = {result.theta_hat}")
         for j, name in enumerate(names):
             print(f"  {name:>12} = {result.theta_hat[j]:+.6f}")
-        print(f"obj={result.final_objective:.6f}  iters={result.num_iterations}  "
+        print(f"obj={result.final_objective:.6f}  dc_iters={result.num_iterations}  "
               f"converged={result.converged}  time={result.total_time:.1f}s")
-
-    theta_hat = model.comm_manager.Bcast(
-        result.theta_hat if is_root else np.zeros(len(names)))
-    f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta_hat)
-    if is_root:
-        g_str = "  ".join(f"{names[j]}={g_hat[j]:+.4f}" for j in range(len(names)))
-        print(f"f(theta_hat) = {f_hat:.6f}  grad: {g_str}  |g|={np.linalg.norm(g_hat):.6f}")

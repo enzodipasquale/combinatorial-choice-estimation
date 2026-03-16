@@ -7,9 +7,9 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 from dc import DCSolver
 
-BETA = 0.8
+BETA = 0.9
 M = 15
-R = 100
+R = 1
 N_OBS = 1000
 N_REV = 1
 N_COV = N_REV + 3
