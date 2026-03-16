@@ -44,7 +44,7 @@ cfg = {
 }
 model.load_config(cfg)
 if model.comm_manager.is_root():
-    input_data = build_input_data(ctx, R=R, beta=BETA)
+    input_data = build_input_data(ctx, R=R)
 else:
     input_data = None
 model.data.load_and_distribute_input_data(input_data)
@@ -59,7 +59,7 @@ for theta in thetas:
         print("  " + "-" * (len(header) - 2))
 
     for seed in error_seeds:
-        cov_oracle, err_oracle = build_oracles(model, seed=seed,
+        cov_oracle, err_oracle = build_oracles(model, beta=BETA, seed=seed,
                                                sigma_1=SIGMA_1,
                                                sigma_2=SIGMA_2)
         model.subproblems.load_solver(TwoStageSolver)

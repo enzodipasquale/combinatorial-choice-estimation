@@ -6,8 +6,10 @@ import combest as ce
 from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut import (
     QuadraticSupermodularMinCutSolver,
 )
-from solver import TwoStageSolver
+from solver import TwoStageSolverSplit
 from oracles import build_oracles
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "baseline"))
 from dc import DCSolver
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
@@ -19,18 +21,19 @@ END_BUFFER = 2
 N_SAMPLE = 5000
 N_SIMULATIONS = 1
 
-BETA = 0.85
 R = 200
 SIGMA_1 = 1.0
-SIGMA_2 = 1.0 / (1- BETA)
+SIGMA_2 = 1.0
 
 SEED = 42
 MAX_DC_ITERS = 20
 MAX_RG_ITERS = 200
 DC_TOL = 1e-6
 
-N_COV = 4
-NAMES = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
+N_COV_STATIC = 4
+N_COV = 8
+NAMES = ["rev_1", "entry_c_1", "entry_dist_1", "syn_1",
+         "rev_2", "entry_c_2", "entry_dist_2", "syn_2"]
 
 
 def load_ctx():
@@ -74,7 +77,7 @@ def build_static_model(base_model, ctx, n_obs, M):
 
     cfg = {
         "dimensions": {"n_obs": n_obs, "n_items": M,
-                       "n_covariates": N_COV, "n_simulations": 1},
+                       "n_covariates": N_COV_STATIC, "n_simulations": 1},
         "row_generation": {"max_iters": MAX_RG_ITERS, "tolerance": 1e-6,
                           "theta_bounds": {"lb": -1000}},
     }
@@ -114,10 +117,10 @@ def build_dc_model(ctx, n_obs, M):
     m.load_config(cfg)
     m.data.load_and_distribute_input_data(input_data)
 
-    cov_oracle, err_oracle = build_oracles(m, beta=BETA, seed=SEED,
+    cov_oracle, err_oracle = build_oracles(m, seed=SEED,
                                            sigma_1=SIGMA_1,
                                            sigma_2=SIGMA_2)
-    m.subproblems.load_solver(TwoStageSolver)
+    m.subproblems.load_solver(TwoStageSolverSplit)
     m.subproblems.initialize_solver()
     m.features.set_covariates_oracle(cov_oracle)
     m.features.set_error_oracle(err_oracle)
@@ -130,7 +133,7 @@ if __name__ == "__main__":
 
     if is_root:
         print(f"\n{'='*60}")
-        print(f"  1. STATIC (MinCut, beta=0)")
+        print(f"  1. STATIC (MinCut)")
         print(f"{'='*60}")
 
     model_mc = build_static_model(base_model, ctx, n_obs, M)
@@ -139,19 +142,21 @@ if __name__ == "__main__":
 
     theta0 = np.empty(N_COV, dtype=np.float64)
     if is_root:
-        theta0[:] = result_mc.theta_hat
-        print(f"\nStatic theta_hat = {result_mc.theta_hat}")
-        for j, name in enumerate(NAMES):
-            print(f"  {name:>12} = {result_mc.theta_hat[j]:+.6f}")
+        th = result_mc.theta_hat
+        theta0[:N_COV_STATIC] = th
+        theta0[N_COV_STATIC:] = th
+        print(f"\nStatic theta_hat = {th}")
+        for j, name in enumerate(NAMES[:N_COV_STATIC]):
+            print(f"  {name:>12} = {th[j]:+.6f}")
         print(f"obj={result_mc.final_objective:.6f}  "
               f"iters={result_mc.num_iterations}  time={result_mc.total_time:.1f}s")
     theta0 = base_model.comm_manager.Bcast(theta0)
 
     if is_root:
         print(f"\n{'='*60}")
-        print(f"  2. DC (beta={BETA}, R={R})")
+        print(f"  2. DC (split, R={R})")
         print(f"{'='*60}")
-        print(f"  theta0 (from static) = {theta0}")
+        print(f"  theta0 (from static, duplicated) = {theta0}")
         print(f"  N={N_SAMPLE}, M={M}, seed={SEED}")
         print(f"  sigma_1={SIGMA_1}, sigma_2={SIGMA_2}")
 
