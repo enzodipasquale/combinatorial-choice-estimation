@@ -17,15 +17,15 @@ class TwoStageSolverSplit(SubproblemSolver):
         n = self.comm_manager.num_local_agent
         self.M = M
         self.R = item_data["R"]
-        self.rev_chars_1 = id_data["rev_chars_1"]         # (n, n_rev, M)
-        self.rev_chars_2_d = id_data["rev_chars_2_d"]     # (n, n_rev, M) pre-discounted
-        self.state_chars = id_data["state_chars"]          # (n, M)
-        self.entry_chars = item_data["entry_chars"]        # (M,)
-        self.syn_chars = item_data["syn_chars"]            # (M, M)
-        self.syn_chars_2 = item_data["syn_chars_2"]       # (M, M) pre-discounted
-        self.beta_s = item_data["beta_s"]                  # scalar
+        self.rev_chars_1 = id_data["rev_chars_1"]
+        self.rev_chars_2_d = id_data["rev_chars_2_d"]
+        self.state_chars = id_data["state_chars"]
+        self.entry_chars = item_data["entry_chars"]
+        self.syn_chars = item_data["syn_chars"]
+        self.syn_chars_2 = item_data["syn_chars_2"]
+        self.beta_s = item_data["beta_s"]
         self.n_rev = self.rev_chars_1.shape[1]
-        self.n_per_period = self.n_rev + 3                 # params per period
+        self.n_per_period = self.n_rev + 3
         obs_raw = id_data.get("obs_bundles", None)
         self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
         self.eps_1 = self.data_manager.local_data.errors["eps_1"]
@@ -46,19 +46,17 @@ class TwoStageSolverSplit(SubproblemSolver):
 
     def solve(self, theta):
         k = self.n_per_period
-        # Period 1 parameters
         theta_rev1 = theta[:self.n_rev]
         theta_s1 = theta[self.n_rev]
         theta_sc1 = theta[self.n_rev + 1]
         theta_c1 = theta[self.n_rev + 2]
-        # Period 2 parameters
         theta_rev2 = theta[k:k + self.n_rev]
         theta_s2 = theta[k + self.n_rev]
         theta_sc2 = theta[k + self.n_rev + 1]
         theta_c2 = theta[k + self.n_rev + 2]
 
-        rev1 = np.einsum('inm,n->im', self.rev_chars_1, theta_rev1)     # (n, M)
-        rev2_d = np.einsum('inm,n->im', self.rev_chars_2_d, theta_rev2) # (n, M)
+        rev1 = np.einsum('inm,n->im', self.rev_chars_1, theta_rev1)
+        rev2_d = np.einsum('inm,n->im', self.rev_chars_2_d, theta_rev2)
         entry_1 = theta_s1 + theta_sc1 * self.entry_chars
         entry_2 = self.beta_s * (theta_s2 + theta_sc2 * self.entry_chars)
         syn_1 = theta_c1 * self.syn_chars

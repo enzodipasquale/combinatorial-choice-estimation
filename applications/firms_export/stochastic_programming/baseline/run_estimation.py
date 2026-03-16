@@ -6,24 +6,23 @@ import combest as ce
 from solver import TwoStageSolver
 from oracles import build_oracles
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
 
-# ── Settings ──────────────────────────────────────────────────────────
 COUNTRY = "MEX"
 KEEP_TOP = 20
 END_BUFFER = 3
-N_SAMPLE = 300
+N_SAMPLE = 10000
 N_SIMULATIONS = 1
 
-BETA = 0.85
-R = 100
+BETA = 0.0
+R = 1
 SIGMA_EPS = 1.0
 SIGMA_NU_1 = 1
 SIGMA_NU_2 = 1/(1-BETA)
 
 SEED = 42
-MAX_ITERS = 50
+MAX_ITERS = 100
 TAU = 1.0
 
 
@@ -42,8 +41,7 @@ def build_model(n_sample=N_SAMPLE):
     n_obs = model.comm_manager.bcast(n_obs)
     M = model.comm_manager.bcast(M)
 
-    n_cov = 4  # rev, entry_c, entry_dist, entry_syn_d
-
+    n_cov = 4
     cfg = {
         "dimensions": {"n_obs": n_obs, "n_items": M,
                        "n_covariates": n_cov, "n_simulations": N_SIMULATIONS},
@@ -68,8 +66,7 @@ if __name__ == "__main__":
     model = build_model()
     is_root = model.comm_manager.is_root()
 
-    # Starting point (from static estimates)
-    theta0 = np.array([ 0.02, -2.16, -0.04,  0.07])
+    theta0 = np.array([ 1.47413693, -2.89827683, -0.01765633, 0.07047045])
     names = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
 
     if is_root:
@@ -77,13 +74,11 @@ if __name__ == "__main__":
         print(f"  R={R}, S={N_SIMULATIONS}, beta={BETA}, seed={SEED}")
         print(f"  N={N_SAMPLE}, M={model.n_items}")
 
-    # Evaluate gradient at theta0 first
     f_val, g_val = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta0)
     if is_root:
         g_str = "  ".join(f"{names[j]}={g_val[j]:+.4f}" for j in range(len(names)))
         print(f"f(theta0) = {f_val:.6f}  grad: {g_str}  |g|={np.linalg.norm(g_val):.4f}")
 
-    # Run bundle method
     result = model.point_estimation.bundle.solve(
         theta0, tau=TAU, max_iters=MAX_ITERS, verbose=True)
 
@@ -94,7 +89,6 @@ if __name__ == "__main__":
         print(f"obj={result.final_objective:.6f}  iters={result.num_iterations}  "
               f"converged={result.converged}  time={result.total_time:.1f}s")
 
-    # All ranks must participate in gradient computation (MPI collective)
     theta_hat = model.comm_manager.Bcast(
         result.theta_hat if is_root else np.zeros(len(names)))
     f_hat, g_hat = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta_hat)

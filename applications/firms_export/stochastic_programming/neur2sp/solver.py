@@ -19,21 +19,20 @@ class TwoStageSolverNN(SubproblemSolver):
         n = self.comm_manager.num_local_agent
         self.M = M
         self.R = item_data["R"]
-        self.rev_chars_1 = id_data["rev_chars_1"]         # (n, n_rev, M)
-        self.rev_chars_2_d = id_data["rev_chars_2_d"]     # (n, n_rev, M) pre-discounted
-        self.state_chars = id_data["state_chars"]          # (n, M)
-        self.entry_chars = item_data["entry_chars"]        # (M,)
-        self.syn_chars = item_data["syn_chars"]            # (M, M)
-        self.syn_chars_2 = item_data["syn_chars_2"]        # (M, M) pre-discounted
+        self.rev_chars_1 = id_data["rev_chars_1"]
+        self.rev_chars_2_d = id_data["rev_chars_2_d"]
+        self.state_chars = id_data["state_chars"]
+        self.entry_chars = item_data["entry_chars"]
+        self.syn_chars = item_data["syn_chars"]
+        self.syn_chars_2 = item_data["syn_chars_2"]
         self.beta_s = item_data["beta_s"]
         self.n_rev = self.rev_chars_1.shape[1]
         obs_raw = id_data.get("obs_bundles", None)
         self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
-        self.eps_1 = self.data_manager.local_data.errors["eps_1"]       # (n, M)
-        self.eps_2 = self.data_manager.local_data.errors["eps_2"]       # (n, R, M)
-        self.eps_2_perm = self.data_manager.local_data.errors["eps_2_perm"]  # (n, M)
+        self.eps_1 = self.data_manager.local_data.errors["eps_1"]
+        self.eps_2 = self.data_manager.local_data.errors["eps_2"]
+        self.eps_2_perm = self.data_manager.local_data.errors["eps_2_perm"]
 
-        # Load NN checkpoint
         ckpt = torch.load(item_data["nn_model_path"],
                           map_location="cpu", weights_only=False)
         self.nn_weights = ckpt["weights"]
@@ -43,8 +42,7 @@ class TwoStageSolverNN(SubproblemSolver):
         self.pre_bounds = compute_layer_bounds(
             self.nn_weights, self.nn_biases, input_lb, input_ub)
 
-        # Surrogate MIP per agent: b_1 (M binary) + eff_rev (M fixed) + theta (3 fixed)
-        n_ctx = M + 3  # eff_rev (M) + theta_s, theta_sc, theta_c
+        n_ctx = M + 3
         self.surrogate_models, self.b_1_vars = [], []
         self.eff_rev_vars, self.theta_vars, self.nn_out_vars = [], [], []
         for i in range(n):
@@ -64,7 +62,6 @@ class TwoStageSolverNN(SubproblemSolver):
             self.theta_vars.append(tvars)
             self.nn_out_vars.append(nn_out)
 
-        # EntryProblem per agent (reuse for second-stage)
         self.problems = [EntryProblem(M, self.R, self.subproblem_cfg)
                          for _ in range(n)]
 
@@ -89,10 +86,8 @@ class TwoStageSolverNN(SubproblemSolver):
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, ep in enumerate(self.problems):
-            # eff_rev = rev2_d[i] + permanent part of eps_2
             eff_rev = rev2_d[i] + self.eps_2_perm[i]
 
-            # Fix eff_rev and theta in surrogate MIP
             for j in range(self.M):
                 self.eff_rev_vars[i][j].lb = float(eff_rev[j])
                 self.eff_rev_vars[i][j].ub = float(eff_rev[j])
@@ -100,7 +95,6 @@ class TwoStageSolverNN(SubproblemSolver):
             self.theta_vars[i][1].lb = self.theta_vars[i][1].ub = float(theta_sc)
             self.theta_vars[i][2].lb = self.theta_vars[i][2].ub = float(theta_c)
 
-            # Surrogate MIP for b_1
             mod_1 = rev1[i] + (1 - self.state_chars[i]) * entry + self.eps_1[i]
             b_1 = self.b_1_vars[i]
             obj = mod_1 @ b_1 + b_1 @ syn_1 @ b_1 + self.nn_out_vars[i]
@@ -108,7 +102,6 @@ class TwoStageSolverNN(SubproblemSolver):
             self.surrogate_models[i].optimize()
             pol["b_1_star"][i] = np.array(b_1.X) > 0.5
 
-            # Exact second-stage
             mod_2 = rev2_d[i] + self.eps_2[i]
             pol["b_2_r_V"][i] = ep.solve_second_stage(
                 pol["b_1_star"][i].astype(float), mod_2, entry_2, syn_2)
