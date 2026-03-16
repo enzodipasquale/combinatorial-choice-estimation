@@ -1,3 +1,5 @@
+import yaml
+from pathlib import Path
 import numpy as np
 import combest as ce
 from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut import (
@@ -7,20 +9,20 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 from dc import DCSolver
 
-BETA = 0.9
-M = 15
-R = 1
-N_OBS = 1000
-N_REV = 1
+with open(Path(__file__).resolve().parent / "test_config.yaml") as f:
+    CFG = yaml.safe_load(f)["test_dc"]
+
+BETA = CFG["beta"]
+M = CFG["M"]
+R = CFG["R"]
+N_OBS = CFG["n_obs"]
+N_REV = CFG["n_rev"]
 N_COV = N_REV + 3
-
-THETA_TRUE = np.array([1.0] * N_REV + [-2.0, -1.0, .5])
-
-SIGMA_1 = 1.0
-SIGMA_2 = 1.0
-
-SEED_DGP = 42
-SEED_EST = 43
+THETA_TRUE = np.array(CFG["theta_true"])
+SIGMA_1 = CFG["sigma_1"]
+SIGMA_2 = CFG["sigma_2"]
+SEED_DGP = CFG["seed_dgp"]
+SEED_EST = CFG["seed_est"]
 
 rng = np.random.default_rng(SEED_DGP)
 rev_base = rng.uniform(0, 1.0, (N_REV, M))

@@ -1,6 +1,7 @@
 #!/bin/env python
 import sys
 from pathlib import Path
+import yaml
 import numpy as np
 import combest as ce
 from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut import (
@@ -15,20 +16,23 @@ from dc import DCSolver
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
 
-COUNTRY = "MEX"
-KEEP_TOP = 20
-END_BUFFER = 2
-N_SAMPLE = 5000
-N_SIMULATIONS = 1
+with open(Path(__file__).resolve().parent / "config.yaml") as f:
+    CFG = yaml.safe_load(f)
 
-R = 200
-SIGMA_1 = 1.0
-SIGMA_2 = 1.0
+COUNTRY = CFG["data"]["country"]
+KEEP_TOP = CFG["data"]["keep_top"]
+END_BUFFER = CFG["data"]["end_buffer"]
+N_SAMPLE = CFG["dc"]["n_sample"]
+N_SIMULATIONS = CFG["estimation"]["n_simulations"]
 
-SEED = 42
-MAX_DC_ITERS = 20
-MAX_RG_ITERS = 200
-DC_TOL = 1e-6
+R = CFG["dc"]["R"]
+SIGMA_1 = CFG["estimation"]["sigma_1"]
+SIGMA_2 = CFG["estimation"]["sigma_2"]
+
+SEED = CFG["estimation"]["seed"]
+MAX_DC_ITERS = CFG["dc"]["max_dc_iters"]
+MAX_RG_ITERS = CFG["estimation"]["max_rg_iters"]
+DC_TOL = CFG["dc"]["dc_tol"]
 
 N_COV_STATIC = 4
 N_COV = 8
