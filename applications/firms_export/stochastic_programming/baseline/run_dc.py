@@ -15,11 +15,11 @@ from prepare_data import main as load_data, build_input_data
 
 COUNTRY = "MEX"
 KEEP_TOP = 20
-END_BUFFER = 3
-N_SAMPLE = 200
+END_BUFFER = 2
+N_SAMPLE = 5000
 N_SIMULATIONS = 1
 
-BETA = 0.5
+BETA = 0.85
 R = 200
 SIGMA_1 = 1.0
 SIGMA_2 = 1.0 / (1- BETA)
