@@ -9,6 +9,7 @@ class EntryProblem:
         self.M, self.R = M, R
 
         self.model = create_gurobi_model(solver_cfg)
+        self.model.Params.Threads = 1
         self.b_1 = self.model.addMVar(M, vtype=gp.GRB.BINARY, name='b_1')
         self.b_2_r = self.model.addMVar((R, M), vtype=gp.GRB.BINARY, name='b_2_r')
         self.e_2_r = self.model.addMVar((R, M), vtype=gp.GRB.BINARY, name='e_2_r')
