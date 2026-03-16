@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "d
 from prepare_data import main as load_data
 
 COUNTRY = "MEX"
-KEEP_TOP = 20
+KEEP_TOP = 50
 END_BUFFER = 3
-N_SAMPLE = 500
+N_SAMPLE = 50000
 N_SIMULATIONS = 1
 
 SIGMA_EPS = 1.0
