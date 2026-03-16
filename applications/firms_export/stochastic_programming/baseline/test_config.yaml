@@ -1,0 +1,23 @@
+test_dc:
+  beta: 0.9
+  M: 15
+  R: 1
+  n_obs: 1000
+  n_rev: 1
+  theta_true: [1.0, -2.0, -1.0, 0.5]
+  sigma_1: 1.0
+  sigma_2: 1.0
+  seed_dgp: 42
+  seed_est: 43
+
+test_real_data:
+  country: MEX
+  keep_top: 20
+  end_buffer: 3
+  n_sample: 500
+  n_simulations: 1
+  beta: 0.8
+  R: 100
+  sigma_1: 1.0
+  sigma_2: 1.0
+  error_seeds: [42, 43, 44, 100, 200]

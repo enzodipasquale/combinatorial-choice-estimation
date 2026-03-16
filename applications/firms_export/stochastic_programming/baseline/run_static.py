@@ -1,6 +1,7 @@
 #!/bin/env python
 import sys
 from pathlib import Path
+import yaml
 import numpy as np
 import combest as ce
 from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut import (
@@ -10,14 +11,16 @@ from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut i
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data
 
-COUNTRY = "MEX"
-KEEP_TOP = 20
-END_BUFFER = 2
-N_SAMPLE = 100
+with open(Path(__file__).resolve().parent / "config.yaml") as f:
+    CFG = yaml.safe_load(f)
 
-SIGMA_1 = 1.0
-SEED = 42
-MAX_RG_ITERS = 200
+COUNTRY = CFG["data"]["country"]
+KEEP_TOP = CFG["data"]["keep_top"]
+END_BUFFER = CFG["data"]["end_buffer"]
+N_SAMPLE = CFG["static"]["n_sample"]
+SIGMA_1 = CFG["estimation"]["sigma_1"]
+SEED = CFG["estimation"]["seed"]
+MAX_RG_ITERS = CFG["estimation"]["max_rg_iters"]
 
 N_COV = 4
 NAMES = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
