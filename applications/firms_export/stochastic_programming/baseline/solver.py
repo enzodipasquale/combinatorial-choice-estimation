@@ -18,10 +18,6 @@ class EntryProblem:
             self.model.addConstr(self.e_2_r[r, :] >= self.b_2_r[r, :] - self.b_1)
         self.model.update()
 
-        self.q_model = create_gurobi_model(solver_cfg)
-        self.b_2 = self.q_model.addMVar(M, vtype=gp.GRB.BINARY, name='b_2')
-        self.q_model.update()
-
     def solve_joint(self, mod_1, mod_2, entry_2, syn_1, syn_coeff_2, C_d):
         b_1, b_2_r, e_2_r = self.b_1, self.b_2_r, self.e_2_r
 
@@ -57,14 +53,16 @@ class TwoStageSolver(SubproblemSolver):
         self.rev_chars_2_d = id_data["rev_chars_2_d"]
         self.state_chars = id_data["state_chars"]
         self.entry_chars = item_data["entry_chars"]
+        self.entry_chars_2 = item_data["entry_chars_2"]
         self.syn_chars = item_data["syn_chars"]
-        self.beta_s = item_data["beta_s"]
+        self.discount_2 = item_data["discount_2"]
         self.n_rev = self.rev_chars_1.shape[1]
         obs_raw = id_data.get("obs_bundles", None)
         self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
         self.eps_1 = self.data_manager.local_data.errors["eps_1"]
         self.eps_2 = self.data_manager.local_data.errors["eps_2"]
         self.C_d = self.syn_chars * self.entry_chars[:, None]
+        self.C_d_2 = item_data["C_d_2"]
 
         self.problems = []
         self.local_problems = []
@@ -88,13 +86,12 @@ class TwoStageSolver(SubproblemSolver):
         rev1 = np.einsum('inm,n->im', self.rev_chars_1, theta_rev)
         rev2_d = np.einsum('inm,n->im', self.rev_chars_2_d, theta_rev)
         entry = theta_s + theta_sd * self.entry_chars
-        entry_2 = self.beta_s * entry
-        syn_coeff_2 = self.beta_s * theta_syn
+        entry_2 = self.discount_2 * theta_s + theta_sd * self.entry_chars_2
 
-        return rev1, rev2_d, entry, entry_2, theta_syn, syn_coeff_2
+        return rev1, rev2_d, entry, entry_2, theta_syn
 
     def solve(self, theta):
-        rev1, rev2_d, entry, entry_2, theta_syn, syn_coeff_2 = self._unpack_theta(theta)
+        rev1, rev2_d, entry, entry_2, theta_syn = self._unpack_theta(theta)
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, ep in enumerate(self.problems):
@@ -105,17 +102,17 @@ class TwoStageSolver(SubproblemSolver):
             mod_2 = rev2_d[i] + self.eps_2[i]
 
             b_1_star, b_2_r_V = ep.solve_joint(
-                mod_1, mod_2, entry_2, syn_1, syn_coeff_2, self.C_d)
+                mod_1, mod_2, entry_2, syn_1, theta_syn, self.C_d_2)
             pol["b_1_star"][i] = b_1_star
             pol["b_2_r_V"][i] = b_2_r_V
 
         return pol["b_1_star"]
 
     def solve_Q(self, theta):
-        _, rev2_d, _, entry_2, _, syn_coeff_2 = self._unpack_theta(theta)
+        _, rev2_d, _, entry_2, theta_syn = self._unpack_theta(theta)
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, ep in enumerate(self.problems):
             mod_2 = rev2_d[i] + self.eps_2[i]
             pol["b_2_r_Q"][i] = ep.solve_second_stage(
-                self.obs_b[i], mod_2, entry_2, syn_coeff_2, self.C_d)
+                self.obs_b[i], mod_2, entry_2, theta_syn, self.C_d_2)

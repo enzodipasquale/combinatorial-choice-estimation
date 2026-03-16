@@ -27,7 +27,7 @@ def build_model(n_sample=N_SAMPLE):
     model = ce.Model()
 
     if model.is_root():
-        ctx = load_data(COUNTRY, KEEP_TOP, beta=0, end_buffer=END_BUFFER,
+        ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                         n_sample=n_sample)
 
         rev_1 = ctx["rev_chars_1"][:, 0, :]

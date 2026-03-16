@@ -29,7 +29,7 @@ thetas = [
 ]
 error_seeds = [42, 43, 44, 100, 200]
 
-ctx = load_data(COUNTRY, KEEP_TOP, beta=BETA, end_buffer=END_BUFFER,
+ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                 n_sample=N_SAMPLE)
 M = ctx["M"]
 n_obs = ctx["n_obs"]
@@ -45,7 +45,7 @@ cfg = {
 }
 model.load_config(cfg)
 if model.comm_manager.is_root():
-    input_data = build_input_data(ctx, R=R)
+    input_data = build_input_data(ctx, R=R, beta=BETA)
 else:
     input_data = None
 model.data.load_and_distribute_input_data(input_data)

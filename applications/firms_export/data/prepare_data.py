@@ -95,7 +95,6 @@ def compute_exp_rev(y, max_iters=100):
             FEs[axis] = updated
         if max_delta < 1e-12:
             break
-    print(f"Converged in {iter+1} iterations (max_delta={max_delta:.3e})")
     return np.exp(_build_tensor(FEs, shape))
 
 
@@ -130,7 +129,6 @@ NAN_FILL_ZERO = {"col_dep_ever", "rta_coverage"}
 
 DEST_TIME_VARYING = ["gdp_d", "gdpcap_d", "pop_d", "eu_d"]
 
-GRAVITY_GMT_COLS = ["gmt_offset_2020_o", "gmt_offset_2020_d"]
 ALL_GRAVITY_VARS = GRAVITY_TIME_INVARIANT + GRAVITY_TIME_VARYING
 
 
@@ -139,19 +137,15 @@ def download_cepii_gravity(cache_dir):
     cache_dir.mkdir(parents=True, exist_ok=True)
     csv_files = list(cache_dir.glob("Gravity_V*.csv"))
     if csv_files:
-        print(f"CEPII Gravity data already cached at {csv_files[0].name}")
         return csv_files[0]
     zip_path = cache_dir / "gravity.zip"
-    print("Downloading CEPII Gravity dataset (~200 MB)...")
     urllib.request.urlretrieve(CEPII_GRAVITY_URL, zip_path)
-    print("Download complete. Extracting...")
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(cache_dir)
     zip_path.unlink()
     csv_files = list(cache_dir.glob("Gravity_V*.csv"))
     if not csv_files:
         raise FileNotFoundError("No Gravity_V*.csv found in extracted CEPII archive")
-    print(f"Extracted: {csv_files[0].name}")
     return csv_files[0]
 
 
@@ -167,18 +161,11 @@ def validate_destinations_against_cepii(destinations, cache_dir):
         elif d in RAW_TO_CEPII:
             mapped = RAW_TO_CEPII[d]
             if mapped is not None:
-                print(f"  {d} -> mapped to {mapped}")
                 validated.append(mapped)
             else:
-                print(f"  {d} -> dropped (no CEPII equivalent)")
                 dropped.append(d)
         else:
-            print(f"  WARNING: {d} not in CEPII and no mapping defined — dropped")
             dropped.append(d)
-    if dropped:
-        print(f"  Dropped {len(dropped)} destinations: {dropped}")
-    else:
-        print(f"  All {len(validated)} destinations validated against CEPII")
     return validated
 
 
@@ -186,12 +173,8 @@ def load_cepii_gravity(cache_dir, destinations, home=None):
     csv_path = download_cepii_gravity(cache_dir)
     header = pd.read_csv(csv_path, nrows=0).columns.tolist()
     desired_cols = (["iso3_o", "iso3_d", "year"]
-                    + ALL_GRAVITY_VARS + GRAVITY_GMT_COLS + DEST_TIME_VARYING)
+                    + ALL_GRAVITY_VARS + DEST_TIME_VARYING)
     usecols = [c for c in desired_cols if c in header]
-    missing = [c for c in desired_cols if c not in header]
-    if missing:
-        print(f"  Warning: columns not found in CEPII data: {missing}")
-    print("Reading CEPII Gravity CSV (chunked)...")
     relevant = set(destinations) | ({home} if home else set())
     filtered = []
     for chunk in pd.read_csv(csv_path, usecols=usecols, chunksize=100_000):
@@ -199,21 +182,15 @@ def load_cepii_gravity(cache_dir, destinations, home=None):
         if mask.any():
             filtered.append(chunk[mask])
     gravity_df = pd.concat(filtered, ignore_index=True)
-    print(f"Loaded {len(gravity_df)} rows for {len(destinations)} destinations")
     return gravity_df
 
 
 def build_pairwise_df(gravity_df, destinations, variable, year=None):
     if variable not in gravity_df.columns:
-        print(f"  Skipping {variable}: not in CEPII data")
         return None
     df = gravity_df[["iso3_o", "iso3_d", "year", variable]].copy()
     if year is not None:
-        max_cepii_year = df["year"].max()
-        use_year = min(year, max_cepii_year)
-        if use_year != year:
-            print(f"  {variable}: year {year} > max CEPII year {max_cepii_year}, "
-                  f"using {max_cepii_year}")
+        use_year = min(year, df["year"].max())
         df = df[df["year"] == use_year]
     else:
         df = df.dropna(subset=[variable])
@@ -233,68 +210,33 @@ def build_all_gravity_features(dataframe, home=None):
     destinations = sorted(dataframe["d"].unique())
     years = sorted(dataframe["y"].unique())
 
-    print("Validating destination codes against CEPII:")
     destinations = validate_destinations_against_cepii(destinations, DATA_DIR)
-
     gravity_df = load_cepii_gravity(DATA_DIR, destinations, home=home)
 
     pairwise = {}
-    print("Building time-invariant pairwise features:")
     for var in GRAVITY_TIME_INVARIANT:
         feat = build_pairwise_df(gravity_df, destinations, var)
         if feat is not None:
-            n_missing = int(feat.isna().sum().sum())
-            if var in NAN_FILL_ZERO and n_missing > 0:
+            if var in NAN_FILL_ZERO:
                 feat.fillna(0.0, inplace=True)
-                print(f"  {var}: {feat.shape}, filled {n_missing} NaN with 0")
-            else:
-                print(f"  {var}: {feat.shape}, NaN={n_missing}")
             pairwise[var] = feat
 
-    print("Building time-varying pairwise features:")
     for var in GRAVITY_TIME_VARYING:
         for year in years:
             feat = build_pairwise_df(gravity_df, destinations, var, year=year)
             if feat is not None:
-                n_missing = int(feat.isna().sum().sum())
-                if var in NAN_FILL_ZERO and n_missing > 0:
+                if var in NAN_FILL_ZERO:
                     feat.fillna(0.0, inplace=True)
-                    print(f"  {var}_{year}: {feat.shape}, filled {n_missing} NaN "
-                          f"with 0")
-                else:
-                    print(f"  {var}_{year}: {feat.shape}, NaN={n_missing}")
                 pairwise[f"{var}_{year}"] = feat
 
-    if all(c in gravity_df.columns for c in GRAVITY_GMT_COLS):
-        print("Building timezone difference feature:")
-        gmt = gravity_df.drop_duplicates(subset=["iso3_o", "iso3_d"], keep="last")
-        gmt_pivot_o = gmt.pivot_table(
-            index="iso3_o", columns="iso3_d",
-            values="gmt_offset_2020_o", aggfunc="first")
-        gmt_pivot_d = gmt.pivot_table(
-            index="iso3_o", columns="iso3_d",
-            values="gmt_offset_2020_d", aggfunc="first")
-        tz_diff = (gmt_pivot_o - gmt_pivot_d).abs()
-        tz_diff = tz_diff.reindex(index=destinations, columns=destinations)
-        for d in destinations:
-            if d in tz_diff.index and d in tz_diff.columns:
-                tz_diff.loc[d, d] = 0.0
-        pairwise["tz_diff"] = tz_diff
-        n_missing = tz_diff.isna().sum().sum()
-        print(f"  tz_diff: {tz_diff.shape}, NaN={n_missing}")
-
     dest_features = {}
-    print("Building destination-level time-varying features:")
     for var in DEST_TIME_VARYING:
         feat = build_pairwise_df(gravity_df, destinations, var)
         if feat is not None:
-            n_missing = int(feat.isna().sum().sum())
-            print(f"  {var}: {feat.shape}, NaN={n_missing}")
             dest_features[var] = feat
 
     home_to_dest = {}
     if home:
-        print("Building home-to-destination features:")
         home_df = gravity_df[gravity_df["iso3_o"] == home]
         for var in GRAVITY_TIME_INVARIANT:
             if var not in home_df.columns:
@@ -303,14 +245,6 @@ def build_all_gravity_features(dataframe, home=None):
             sub = sub.drop_duplicates("iso3_d", keep="last")
             vals = sub.set_index("iso3_d")[var].reindex(destinations)
             home_to_dest[var] = vals.values.astype(float)
-        if all(c in home_df.columns for c in GRAVITY_GMT_COLS):
-            sub = home_df.drop_duplicates("iso3_d", keep="last")
-            home_gmt = sub["gmt_offset_2020_o"].iloc[0]
-            gmt_d = sub.set_index("iso3_d")["gmt_offset_2020_d"].reindex(
-                destinations)
-            home_to_dest["tz_diff"] = np.abs(home_gmt - gmt_d.values)
-        n_nan = sum(int(np.isnan(v).sum()) for v in home_to_dest.values())
-        print(f"  {len(home_to_dest)} features, total NaN={n_nan}")
 
     return pairwise, dest_features, home_to_dest, destinations
 
@@ -323,7 +257,7 @@ def _zero_diag(M):
 
 def build_context(dataframe, expected_revenue, pairwise_features,
                   home_to_dest, destinations, home,
-                  beta=0.8, end_buffer=3, n_sample=None):
+                  end_buffer=3, n_sample=None, filter_active=True):
     all_years = sorted(dataframe["y"].unique())
     firms_all = dataframe["f"].unique()
     n_dest = len(destinations)
@@ -358,6 +292,9 @@ def build_context(dataframe, expected_revenue, pairwise_features,
             if y < ey:
                 continue
             ti = year_to_idx[y]
+            if filter_active and y != ey:
+                if ti > 0 and not obs_kept[fi, ti - 1].any():
+                    continue
             records.append((fi, ti, y))
 
     n_obs = len(records)
@@ -404,23 +341,12 @@ def build_context(dataframe, expected_revenue, pairwise_features,
     dist_raw = pairwise_features["dist"].values.astype(float) / 1e3
     syn_chars = _zero_diag(np.exp(-dist_raw))
 
-    sizes = obs_bundles.sum(1)
-    print(f"\nSP Context: {n_obs} obs from {len(firms)} firms, "
-          f"{n_dest} destinations")
-    print(f"  Entry years: {all_years[1]}-{max_entry_year}, beta={beta}, "
-          f"buffer={end_buffer}")
-    print(f"  Bundle sizes: mean={sizes.mean():.1f}, "
-          f"median={np.median(sizes):.0f}, max={sizes.max()}")
-    print(f"  Obs years: {obs_years[0]}-{obs_years[-1]}, "
-          f"{len(obs_years)} years")
-
     return {
         "n_obs": n_obs,
         "n_dest": n_dest,
         "M": n_dest,
         "firms": firms,
         "destinations": destinations,
-        "beta": beta,
         "obs_bundles": obs_bundles,
         "obs_bundles_2": obs_bundles_2,
         "state_chars": state_chars,
@@ -435,7 +361,7 @@ def build_context(dataframe, expected_revenue, pairwise_features,
     }
 
 
-def build_input_data(ctx, R):
+def build_input_data(ctx, R, beta=0.0):
     return {
         "id_data": {
             "state_chars":   ctx["state_chars"],
@@ -447,18 +373,18 @@ def build_input_data(ctx, R):
         "item_data": {
             "syn_chars":   ctx["syn_chars"],
             "entry_chars": ctx["entry_chars"],
-            "beta":        ctx["beta"],
+            "beta":        beta,
             "R":           R,
         },
     }
 
 
-def main(country="MEX", keep_top=50, beta=0.8, end_buffer=3, n_sample=None):
-    key = repr((country, keep_top, beta, end_buffer, n_sample))
+def main(country="MEX", keep_top=50, end_buffer=3, n_sample=None,
+         filter_active=True):
+    key = repr((country, keep_top, end_buffer, n_sample, filter_active))
     key_hash = hashlib.md5(key.encode()).hexdigest()[:8]
     cache_file = CACHE_DIR / f"ctx_{key_hash}.pkl"
     if cache_file.exists():
-        print(f"Loading cached context from {cache_file.name}")
         return pickle.loads(cache_file.read_bytes())
 
     dataframe = filter_dataframe(keep_top, load_raw_data(country))
@@ -468,11 +394,11 @@ def main(country="MEX", keep_top=50, beta=0.8, end_buffer=3, n_sample=None):
         build_all_gravity_features(dataframe, home=country)
     ctx = build_context(dataframe, expected_revenue, pairwise,
                         home_to_dest, destinations, country,
-                        beta=beta, end_buffer=end_buffer, n_sample=n_sample)
+                        end_buffer=end_buffer, n_sample=n_sample,
+                        filter_active=filter_active)
 
     CACHE_DIR.mkdir(exist_ok=True)
     cache_file.write_bytes(pickle.dumps(ctx))
-    print(f"Cached context to {cache_file.name}")
     return ctx
 
 

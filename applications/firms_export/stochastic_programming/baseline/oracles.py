@@ -7,12 +7,18 @@ def build_oracles(model, seed=42, sigma_eps=1.0, sigma_nu_1=1.0, sigma_nu_2=1.0)
     M = model.config.dimensions.n_items
     R = ld.item_data["R"]
     beta = ld.item_data["beta"]
-    perpetual = 1 / (1 - beta)
+    perpetual = 1 / (1 - beta) if beta < 1 else 1.0
     rev_chars_1 = ld.id_data["rev_chars_1"]
     rev_chars_2 = ld.id_data["rev_chars_2"]
     C = ld.item_data["syn_chars"]
     entry_chars = ld.item_data["entry_chars"]
     n_rev = rev_chars_1.shape[1]
+
+    rev_chars_2_d = beta * perpetual * rev_chars_2
+    entry_chars_2 = beta * entry_chars
+    C_d_2 = beta * C * entry_chars[:, None]
+    discount_2 = beta
+    beta_s = beta
 
     eps = np.zeros((n, M))
     nu1 = np.zeros((n, M))
@@ -23,18 +29,14 @@ def build_oracles(model, seed=42, sigma_eps=1.0, sigma_nu_1=1.0, sigma_nu_2=1.0)
         nu2[i] = np.random.default_rng((seed, gid, 2)).normal(0, sigma_nu_2, (R, M))
 
     eps_1 = eps + nu1
-    eps_2_perm = beta * perpetual * eps
-    eps_2 = eps_2_perm[:, None, :] + beta * nu2
+    eps_2 = beta * perpetual * eps[:, None, :] + beta * nu2
 
     ld.errors["eps_1"] = eps_1
     ld.errors["eps_2"] = eps_2
-    ld.errors["eps_2_perm"] = eps_2_perm
-
-    rev_chars_2_d = beta * perpetual * rev_chars_2
-    beta_s = beta
-
     ld.id_data["rev_chars_2_d"] = rev_chars_2_d
-    ld.item_data["beta_s"] = beta_s
+    ld.item_data["entry_chars_2"] = entry_chars_2
+    ld.item_data["C_d_2"] = C_d_2
+    ld.item_data["discount_2"] = discount_2
 
     def _get_b_2_r(bundles, ids, data):
         pol = data.id_data["policies"]
