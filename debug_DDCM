@@ -1,0 +1,277 @@
+"""
+DCA vs BFGS vs Newton for DDC MLE — K=10, with exact Hessians.
+
+-ℓ(θ) = h(θ) - g(θ),  both convex.
+
+We compute exact Hessians of h and g separately, so:
+  - Newton on full problem uses D²h - D²g
+  - DCA subproblem uses D²h (PSD, convex)
+  - BFGS as baseline
+"""
+
+import numpy as np
+from scipy.optimize import minimize
+
+# ---- Model ----
+
+def generate_mdp(S, A, K, seed=42):
+    rng = np.random.RandomState(seed)
+    x_sak = rng.randn(S, A, K) / np.sqrt(K)
+    P_sas = rng.dirichlet(np.ones(S), size=(S, A))
+    return x_sak, P_sas
+
+def solve_bellman(theta, x_sak, P_sas, beta, tol=1e-12, max_iter=10000):
+    S, A, K = x_sak.shape
+    r_sa = x_sak @ theta
+    V = np.zeros(S)
+    for _ in range(max_iter):
+        Q = r_sa + beta * (P_sas @ V)
+        m = Q.max(axis=1)
+        V_new = m + np.log(np.exp(Q - m[:, None]).sum(axis=1))
+        if np.abs(V_new - V).max() < tol:
+            return V_new, r_sa + beta * (P_sas @ V_new)
+        V = V_new
+    return V, r_sa + beta * (P_sas @ V)
+
+# ---- dV/dtheta and d2V/dtheta2 ----
+
+def compute_dV_d2V(pi, x_sak, P_sas, beta):
+    """
+    Returns:
+      dV:  (S, K)    first derivative
+      d2V: (S, K, K) second derivative (PSD for each s)
+    """
+    S, A, K = x_sak.shape
+
+    # Pbar, Xbar
+    Pbar = np.einsum('sa,sap->sp', pi, P_sas)       # (S, S)
+    Xbar = np.einsum('sa,sak->sk', pi, x_sak)       # (S, K)
+
+    # dV = (I - beta Pbar)^{-1} Xbar
+    M = np.eye(S) - beta * Pbar
+    Minv = np.linalg.inv(M)                          # (S, S)
+    dV = Minv @ Xbar                                 # (S, K)
+
+    # dq(s,a)/dtheta = x(s,a) + beta * P(.|s,a) @ dV
+    PdV = beta * np.einsum('sap,pk->sak', P_sas, dV) # (S, A, K)
+    dq = x_sak + PdV                                  # (S, A, K)
+
+    # Covariance C(s)_{kl} = sum_a pi(a|s) dq(s,a,k) dq(s,a,l) - dV(s,k) dV(s,l)
+    # = Var_{a~pi}[dq(s,a)]
+    C = (np.einsum('sa,sak,sal->skl', pi, dq, dq)
+         - np.einsum('sk,sl->skl', dV, dV))           # (S, K, K)
+
+    # d2V(s) = sum_{s'} Minv[s,s'] C(s')
+    d2V = np.einsum('sp,pkl->skl', Minv, C)           # (S, K, K)
+
+    return dV, d2V
+
+# ---- h: value, gradient, hessian ----
+
+def h_all(theta, n_s, x_sak, P_sas, beta):
+    """h(θ) = Σ_s n_s V^θ(s). Returns val, grad, hess."""
+    V, Q = solve_bellman(theta, x_sak, P_sas, beta)
+    pi = np.exp(Q - V[:, None])
+    dV, d2V = compute_dV_d2V(pi, x_sak, P_sas, beta)
+    val = n_s @ V
+    grad = n_s @ dV
+    hess = np.einsum('s,skl->kl', n_s, d2V)
+    return val, grad, hess
+
+# ---- g: value, gradient, hessian ----
+
+def g_all(theta, mu_sa, x_sak, P_sas, beta):
+    """g(θ) = Σ_{s,a} μ̂_{sa} q(s,a;θ). Returns val, grad, hess."""
+    S, A, K = x_sak.shape
+    V, Q = solve_bellman(theta, x_sak, P_sas, beta)
+    pi = np.exp(Q - V[:, None])
+    dV, d2V = compute_dV_d2V(pi, x_sak, P_sas, beta)
+
+    # dq(s,a)/dtheta
+    PdV = beta * np.einsum('sap,pk->sak', P_sas, dV)
+    dq = x_sak + PdV                                    # (S, A, K)
+
+    # d2q(s,a)/dtheta2 = beta * sum_{s'} P_{s'|s,a} d2V(s')
+    d2q = beta * np.einsum('sap,pkl->sakl', P_sas, d2V) # (S, A, K, K)
+
+    val = (mu_sa * Q).sum()
+    grad = np.einsum('sa,sak->k', mu_sa, dq)
+    hess = np.einsum('sa,sakl->kl', mu_sa, d2q)
+    return val, grad, hess
+
+# ---- Full neg-LL ----
+
+def neg_ll_all(theta, mu_sa, n_s, x_sak, P_sas, beta):
+    """Returns -ℓ, gradient, hessian."""
+    hv, hg, hh = h_all(theta, n_s, x_sak, P_sas, beta)
+    gv, gg, gh = g_all(theta, mu_sa, x_sak, P_sas, beta)
+    return hv - gv, hg - gg, hh - gh
+
+# ---- BFGS (no hessian) ----
+
+def solve_bfgs(mu_sa, n_s, x_sak, P_sas, beta, theta0):
+    def f_and_g(th):
+        v, g, _ = neg_ll_all(th, mu_sa, n_s, x_sak, P_sas, beta)
+        return v, g
+    result = minimize(
+        fun=lambda th: f_and_g(th)[0], x0=theta0,
+        jac=lambda th: f_and_g(th)[1],
+        method='BFGS', options={'maxiter': 500, 'gtol': 1e-8}
+    )
+    return result.x, result.fun, result.nit
+
+# ---- Newton on full problem ----
+
+def solve_newton(mu_sa, n_s, x_sak, P_sas, beta, theta0):
+    result = minimize(
+        fun=lambda th: neg_ll_all(th, mu_sa, n_s, x_sak, P_sas, beta)[0],
+        x0=theta0,
+        jac=lambda th: neg_ll_all(th, mu_sa, n_s, x_sak, P_sas, beta)[1],
+        hess=lambda th: neg_ll_all(th, mu_sa, n_s, x_sak, P_sas, beta)[2],
+        method='trust-ncg', options={'maxiter': 500, 'gtol': 1e-8}
+    )
+    return result.x, result.fun, result.nit
+
+# ---- DCA with Newton on subproblem ----
+
+def solve_dca(mu_sa, n_s, x_sak, P_sas, beta, theta0, max_outer=50,
+              use_newton=False):
+    theta = theta0.copy()
+    hv, _, _ = h_all(theta, n_s, x_sak, P_sas, beta)
+    gv, _, _ = g_all(theta, mu_sa, x_sak, P_sas, beta)
+    neg_ll = hv - gv
+
+    label = "DCA-Newton" if use_newton else "DCA-BFGS"
+    print(f"{'it':>3s}  {'−ℓ(θ)':>12s}  {'Δθ':>10s}  {'Δobj':>10s}  [{label}]")
+    print(f"  0  {neg_ll:12.4f}")
+
+    for t in range(1, max_outer + 1):
+        _, c, _ = g_all(theta, mu_sa, x_sak, P_sas, beta)
+
+        if use_newton:
+            result = minimize(
+                fun=lambda th: h_all(th, n_s, x_sak, P_sas, beta)[0] - c @ th,
+                x0=theta,
+                jac=lambda th: h_all(th, n_s, x_sak, P_sas, beta)[1] - c,
+                hess=lambda th: h_all(th, n_s, x_sak, P_sas, beta)[2],
+                method='trust-ncg', options={'maxiter': 200, 'gtol': 1e-10}
+            )
+        else:
+            result = minimize(
+                fun=lambda th: h_all(th, n_s, x_sak, P_sas, beta)[0] - c @ th,
+                x0=theta,
+                jac=lambda th: h_all(th, n_s, x_sak, P_sas, beta)[1] - c,
+                method='BFGS', options={'maxiter': 200, 'gtol': 1e-10}
+            )
+        theta_new = result.x
+
+        hv, _, _ = h_all(theta_new, n_s, x_sak, P_sas, beta)
+        gv, _, _ = g_all(theta_new, mu_sa, x_sak, P_sas, beta)
+        neg_ll_new = hv - gv
+
+        dt = np.linalg.norm(theta_new - theta)
+        do = neg_ll - neg_ll_new
+        print(f"{t:3d}  {neg_ll_new:12.4f}  {dt:10.2e}  {do:10.2e}")
+
+        theta = theta_new
+        neg_ll = neg_ll_new
+        if dt < 1e-8 and abs(do) < 1e-8:
+            print("Converged.")
+            break
+
+    return theta, neg_ll
+
+# ---- Simulate ----
+
+def simulate_data(theta_true, x_sak, P_sas, beta, N, seed=123):
+    rng = np.random.RandomState(seed)
+    S, A, K = x_sak.shape
+    V, Q = solve_bellman(theta_true, x_sak, P_sas, beta)
+    pi = np.exp(Q - V[:, None])
+    s = rng.randint(S)
+    states, actions = [], []
+    for _ in range(500 + N):
+        a = rng.choice(A, p=pi[s])
+        states.append(s); actions.append(a)
+        s = rng.choice(S, p=P_sas[s, a])
+    return np.array(states[500:]), np.array(actions[500:])
+
+# ---- Main ----
+
+S, A, K = 8, 4, 10
+beta = 0.9
+N = 10000
+theta_true = np.random.RandomState(7).randn(K) * 0.5
+
+print(f"S={S}, A={A}, K={K}, beta={beta}, N={N}")
+print(f"theta_true = {theta_true.round(3)}\n")
+
+x_sak, P_sas = generate_mdp(S, A, K)
+data_s, data_a = simulate_data(theta_true, x_sak, P_sas, beta, N)
+
+mu_sa = np.zeros((S, A))
+for i in range(N):
+    mu_sa[data_s[i], data_a[i]] += 1
+n_s = mu_sa.sum(axis=1)
+
+# --- Hessian check ---
+print("=== HESSIAN CHECK (at random θ) ===")
+theta_test = np.random.RandomState(0).randn(K) * 0.3
+_, g_a, H_a = neg_ll_all(theta_test, mu_sa, n_s, x_sak, P_sas, beta)
+H_num = np.zeros((K, K))
+for k in range(K):
+    e = np.zeros(K); e[k] = 1e-5
+    _, gp, _ = neg_ll_all(theta_test + e, mu_sa, n_s, x_sak, P_sas, beta)
+    _, gm, _ = neg_ll_all(theta_test - e, mu_sa, n_s, x_sak, P_sas, beta)
+    H_num[k] = (gp - gm) / 2e-5
+print(f"max |H_analytic - H_numerical| = {np.abs(H_a - H_num).max():.2e}")
+
+# Check h hessian is PSD
+_, _, Hh = h_all(theta_test, n_s, x_sak, P_sas, beta)
+eigs_h = np.linalg.eigvalsh(Hh)
+print(f"D²h eigenvalues: min={eigs_h.min():.4e}, max={eigs_h.max():.4e}  "
+      f"({'PSD ✓' if eigs_h.min() > -1e-10 else 'NOT PSD ✗'})")
+
+# Check g hessian is PSD
+_, _, Hg = g_all(theta_test, mu_sa, x_sak, P_sas, beta)
+eigs_g = np.linalg.eigvalsh(Hg)
+print(f"D²g eigenvalues: min={eigs_g.min():.4e}, max={eigs_g.max():.4e}  "
+      f"({'PSD ✓' if eigs_g.min() > -1e-10 else 'NOT PSD ✗'})")
+
+# Full hessian = D²h - D²g (indefinite in general)
+eigs_full = np.linalg.eigvalsh(H_a)
+print(f"D²(h-g) eigenvalues: min={eigs_full.min():.4e}, max={eigs_full.max():.4e}  "
+      f"({'indefinite' if eigs_full.min() < -1e-10 else 'PSD'})")
+print()
+
+# --- 1. BFGS ---
+print("=== BFGS ===")
+tb, nb, nit = solve_bfgs(mu_sa, n_s, x_sak, P_sas, beta, np.zeros(K))
+print(f"-ℓ = {nb:.6f}, iters = {nit}\n")
+
+# --- 2. Newton on full problem ---
+print("=== NEWTON (trust-ncg, exact hessian on full problem) ===")
+tn, nn, nitn = solve_newton(mu_sa, n_s, x_sak, P_sas, beta, np.zeros(K))
+print(f"-ℓ = {nn:.6f}, iters = {nitn}\n")
+
+# --- 3. DCA with BFGS inner ---
+print("=== DCA with BFGS inner (30 outer iters) ===")
+td_b, nd_b = solve_dca(mu_sa, n_s, x_sak, P_sas, beta, np.zeros(K),
+                         max_outer=30, use_newton=False)
+print()
+
+# --- 4. DCA with Newton inner ---
+print("=== DCA with Newton inner (30 outer iters) ===")
+td_n, nd_n = solve_dca(mu_sa, n_s, x_sak, P_sas, beta, np.zeros(K),
+                         max_outer=30, use_newton=True)
+print()
+
+# --- Summary ---
+print("=" * 60)
+print("SUMMARY")
+print("=" * 60)
+print(f"{'Method':<25s}  {'−ℓ':>12s}  {'||θ−θ*||':>10s}")
+print(f"{'BFGS':<25s}  {nb:12.6f}  {np.linalg.norm(tb-theta_true):10.4f}")
+print(f"{'Newton (trust-ncg)':<25s}  {nn:12.6f}  {np.linalg.norm(tn-theta_true):10.4f}")
+print(f"{'DCA + BFGS inner':<25s}  {nd_b:12.6f}  {np.linalg.norm(td_b-theta_true):10.4f}")
+print(f"{'DCA + Newton inner':<25s}  {nd_n:12.6f}  {np.linalg.norm(td_n-theta_true):10.4f}")

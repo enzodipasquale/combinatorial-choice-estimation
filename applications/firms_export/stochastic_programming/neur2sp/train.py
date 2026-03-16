@@ -96,18 +96,17 @@ def train(data_path, save_path, hidden_dim=32, n_hidden=2,
         r2 = 1 - ss_res / max(ss_tot, 1e-12)
     print(f"  R² (val) = {r2:.4f}   best_val_loss = {best_val:.6f}")
 
-    # Input bounds for MIP embedding
     eff_rev_bounds = data["eff_rev_bounds"]
     input_lb = np.concatenate([
-        np.zeros(M),                           # b_1 >= 0
-        np.full(M, float(eff_rev_bounds[0])),  # eff_rev lower
+        np.zeros(M),
+        np.full(M, float(eff_rev_bounds[0])),
         [float(data["theta_bounds_s"][0]),
          float(data["theta_bounds_sc"][0]),
          float(data["theta_bounds_c"][0])],
     ])
     input_ub = np.concatenate([
-        np.ones(M),                            # b_1 <= 1
-        np.full(M, float(eff_rev_bounds[1])),  # eff_rev upper
+        np.ones(M),
+        np.full(M, float(eff_rev_bounds[1])),
         [float(data["theta_bounds_s"][1]),
          float(data["theta_bounds_sc"][1]),
          float(data["theta_bounds_c"][1])],

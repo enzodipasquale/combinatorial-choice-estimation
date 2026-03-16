@@ -125,7 +125,6 @@ def main():
     print(f"M={M}, R={R}, n_test={args.n_test}")
     print(f"Covariates: {n_cov} (n_rev={n_rev}, theta_s, theta_c)\n")
 
-    # reusable Gurobi models
     m_ex = gp.Model("exact")
     m_ex.Params.OutputFlag = 0
     m_ex.Params.Threads = 1
@@ -141,7 +140,6 @@ def main():
     b2_q = m_q.addMVar(M, vtype=gp.GRB.BINARY, name="b2")
     m_q.update()
 
-    # second q-model for NN method (so we don't interfere)
     m_q2 = gp.Model("q2")
     m_q2.Params.OutputFlag = 0
     m_q2.Params.Threads = 1
@@ -169,7 +167,6 @@ def main():
         eps2 = rng.normal(0, 1, (R, M))
         b_1_obs = rng.integers(0, 2, size=M).astype(bool)
 
-        # ── EXACT: joint MIP → b_1*, b_2_r* ──
         t1 = time.time()
         b1_exact, b2r_exact = solve_exact_joint(
             b1_ex, b2r_ex, m_ex, theta,
@@ -191,7 +188,6 @@ def main():
         grad_exact = cov_V_ex - cov_Q_ex
         obj_exact = grad_exact @ theta + (err_V_ex - err_Q_ex)
 
-        # ── NN HYBRID: surrogate MIP → b_1_nn, then exact second-stage ──
         t1 = time.time()
         b1_nn = solve_surrogate(theta, rev_chars_1, syn_chars, b_0, eps1,
                                 nn_weights, nn_biases, pre_bounds, M)
@@ -214,7 +210,6 @@ def main():
         grad_nn = cov_V_nn - cov_Q_nn
         obj_nn = grad_nn @ theta + (err_V_nn - err_Q_nn)
 
-        # ── Compare ──
         b1_match = np.array_equal(b1_exact, b1_nn)
         if b1_match:
             b1_matches += 1
@@ -245,7 +240,6 @@ def main():
                   f"b1_match={b1_matches}/{t+1}  "
                   f"mean_obj_gap={np.mean(obj_gaps):.2f}%")
 
-    # ── Report ──
     grad_exact_all = np.array(grad_exact_all)
     grad_nn_all = np.array(grad_nn_all)
     obj_gaps = np.array(obj_gaps)

@@ -3,29 +3,29 @@ import combest as ce
 from solver import TwoStageSolver
 from oracles import build_oracles
 
-# ── Settings ──────────────────────────────────────────────────────────
-beta = .8
-M = 10
-R_dgp = 200
-R_est = 200
-S_est = 1
-n_obs = 2000
-n_rev = 1
-n_cov = n_rev + 3
-theta_true = np.array([1] * n_rev + [-15.0, -2.0, 0.05])
-sigma_eps = 1  # permanent component std
-sigma_nu_1 = 1  # period-1 transitory component std
-sigma_nu_2 = 5  # period-2 transitory component std
-seed_dgp = 42
-error_seeds = [seed_dgp, 43, 44, 100, 200]
+BETA = 0.8
+M = 5
+R_DGP = 100
+R_EST = 100
+N_OBS = 200
+N_REV = 1
+N_COV = N_REV + 3
+S_EST = 1
 
+THETA_TRUE = np.array([1] * N_REV + [-15.0, -2.0, 0.05])
 
-# ── Draw characteristics (shared across DGP and estimation) ────────
-rng = np.random.default_rng(seed_dgp)
-rev_base = rng.uniform(0, 1.0, (n_rev, M))
-rev_chars_1 = rev_base[None, :, :] + rng.uniform(0, 1, (n_obs, n_rev, M))
-rev_chars_2 = rev_base[None, :, :] + rng.uniform(0, 1, (n_obs, n_rev, M))
-state_chars = (rng.random((n_obs, M)) > .9).astype(float)
+SIGMA_EPS = 1
+SIGMA_NU_1 = 1
+SIGMA_NU_2 = 5
+
+SEED_DGP = 42
+ERROR_SEEDS = [SEED_DGP, 43, 44, 100, 200]
+
+rng = np.random.default_rng(SEED_DGP)
+rev_base = rng.uniform(0, 1.0, (N_REV, M))
+rev_chars_1 = rev_base[None, :, :] + rng.uniform(0, 1, (N_OBS, N_REV, M))
+rev_chars_2 = rev_base[None, :, :] + rng.uniform(0, 1, (N_OBS, N_REV, M))
+state_chars = (rng.random((N_OBS, M)) > 0.9).astype(float)
 entry_chars = rng.uniform(0, 1, M)
 _raw = rng.uniform(0, 1, (M, M))
 syn_chars = (_raw + _raw.T) / 2
@@ -35,39 +35,36 @@ input_data = {
     "id_data": {"state_chars": state_chars,
                 "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
     "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
-                  "beta": beta, "R": R_dgp},
+                  "beta": BETA, "R": R_DGP},
 }
 cfg = {
-    "dimensions": {"n_obs": n_obs, "n_items": M,
-                   "n_covariates": n_cov},
+    "dimensions": {"n_obs": N_OBS, "n_items": M,
+                   "n_covariates": N_COV},
     "subproblem": {"gurobi_params": {"TimeLimit": 10}},
 }
 
-# ── DGP ──────────────────────────────────────────────────────────────
 dgp = ce.Model()
 dgp.load_config(cfg)
 dgp.data.load_and_distribute_input_data(input_data)
-cov_oracle, err_oracle = build_oracles(dgp, seed=seed_dgp,
-                                       sigma_eps=sigma_eps,
-                                       sigma_nu_1=sigma_nu_1,
-                                       sigma_nu_2=sigma_nu_2)
+cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
+                                       sigma_eps=SIGMA_EPS,
+                                       sigma_nu_1=SIGMA_NU_1,
+                                       sigma_nu_2=SIGMA_NU_2)
 dgp.subproblems.load_solver(TwoStageSolver)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
 dgp.features.set_error_oracle(err_oracle)
-obs_b_dgp = dgp.subproblems.generate_obs_bundles(theta_true)
+obs_b_dgp = dgp.subproblems.generate_obs_bundles(THETA_TRUE)
 if dgp.comm_manager.is_root():
     print("Items:", M)
     print(obs_b_dgp.sum(1))
     print(dgp.data.local_data.id_data["policies"]["b_2_r_V"].sum(-1).mean(-1))
 
-# ── Eval points ──────────────────────────────────────────────────────
 theta_points = {
-    "theta_true":       theta_true,
+    "theta_true": THETA_TRUE,
 }
 
-# ── Error seeds to compare ───────────────────────────────────────────
-names = [f"θ_rev{i}" for i in range(n_rev)] + ["θ_s", "θ_sc", "θ_c"]
+names = [f"rev{i}" for i in range(N_REV)] + ["entry_c", "entry_dist", "syn"]
 header = f"  {'seed':>6}  {'f':>12}  " + "  ".join(f"{n:>12}" for n in names) + f"  {'|g|':>10}"
 sep = "  " + "-" * (len(header) - 2)
 
@@ -81,11 +78,11 @@ for label, theta in theta_points.items():
         print(header)
         print(sep)
 
-    for seed_est in error_seeds:
+    for seed_est in ERROR_SEEDS:
         model = ce.Model()
         cfg_copy = {
-            "dimensions": {"n_obs": n_obs, "n_items": M,
-                           "n_covariates": n_cov, "n_simulations": S_est},
+            "dimensions": {"n_obs": N_OBS, "n_items": M,
+                           "n_covariates": N_COV, "n_simulations": S_EST},
             "subproblem": {"gurobi_params": {"TimeLimit": 10}},
         }
         input_data_copy = {
@@ -93,14 +90,14 @@ for label, theta in theta_points.items():
                         "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
                         "obs_bundles": obs_b_dgp},
             "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
-                          "beta": beta, "R": R_est},
+                          "beta": BETA, "R": R_EST},
         }
         model.load_config(cfg_copy)
         model.data.load_and_distribute_input_data(input_data_copy)
         cov_o, err_o = build_oracles(model, seed=seed_est,
-                                     sigma_eps=sigma_eps,
-                                     sigma_nu_1=sigma_nu_1,
-                                     sigma_nu_2=sigma_nu_2)
+                                     sigma_eps=SIGMA_EPS,
+                                     sigma_nu_1=SIGMA_NU_1,
+                                     sigma_nu_2=SIGMA_NU_2)
         model.subproblems.load_solver(TwoStageSolver)
         model.subproblems.initialize_solver()
         model.features.set_covariates_oracle(cov_o)
@@ -108,5 +105,5 @@ for label, theta in theta_points.items():
 
         f_val, g_val = model.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta)
         if model.comm_manager.is_root():
-            g_str = "  ".join(f"{g_val[j]:+12.4f}" for j in range(n_cov))
+            g_str = "  ".join(f"{g_val[j]:+12.4f}" for j in range(N_COV))
             print(f"  {seed_est:>6}  {f_val:12.4f}  {g_str}  {np.linalg.norm(g_val):10.4f}")

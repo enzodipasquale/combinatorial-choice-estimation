@@ -6,17 +6,16 @@ import combest as ce
 from solver import TwoStageSolver
 from oracles import build_oracles
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
 
-# ── Settings ──────────────────────────────────────────────────────────
 COUNTRY = "MEX"
 KEEP_TOP = 20
 END_BUFFER = 3
-N_SAMPLE = 300
+N_SAMPLE = 500
 N_SIMULATIONS = 1
 
-BETA = 0.85
+BETA = 0.8
 R = 100
 SIGMA_EPS = 1.0
 SIGMA_NU_1 = 1
@@ -25,12 +24,11 @@ SIGMA_NU_2 = 1/(1-BETA)
 
 theta_0  = np.array( [ 1.47413693, -2.89827683, -0.01765633 , 0.07047045])
 thetas = [
-    np.zeros(4),
     theta_0,
+    np.zeros(4),
 ]
 error_seeds = [42, 43, 44, 100, 200]
 
-# ── Setup ─────────────────────────────────────────────────────────────
 ctx = load_data(COUNTRY, KEEP_TOP, beta=BETA, end_buffer=END_BUFFER,
                 n_sample=N_SAMPLE)
 M = ctx["M"]
@@ -48,11 +46,10 @@ cfg = {
 model.load_config(cfg)
 if model.comm_manager.is_root():
     input_data = build_input_data(ctx, R=R)
-else: 
+else:
     input_data = None
 model.data.load_and_distribute_input_data(input_data)
 
-# ── Evaluate ──────────────────────────────────────────────────────────
 for theta in thetas:
     if model.comm_manager.is_root():
         t_str = np.array2string(theta, precision=2, separator=", ")
