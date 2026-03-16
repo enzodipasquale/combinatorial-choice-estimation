@@ -34,7 +34,7 @@ thetas = [
 error_seeds = [42, 43]
 names = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
 
-ctx = load_data(COUNTRY, KEEP_TOP, beta=BETA, end_buffer=END_BUFFER,
+ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                 n_sample=N_SAMPLE)
 M = ctx["M"]
 n_obs = ctx["n_obs"]

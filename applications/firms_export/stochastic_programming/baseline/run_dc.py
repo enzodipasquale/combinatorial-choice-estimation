@@ -32,9 +32,9 @@ def build_model(n_sample=N_SAMPLE):
     model = ce.Model()
 
     if model.is_root():
-        ctx = load_data(COUNTRY, KEEP_TOP, beta=BETA, end_buffer=END_BUFFER,
+        ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                         n_sample=n_sample)
-        input_data = build_input_data(ctx, R=R)
+        input_data = build_input_data(ctx, R=R, beta=BETA)
         n_obs = ctx["n_obs"]
         M = ctx["M"]
     else:
