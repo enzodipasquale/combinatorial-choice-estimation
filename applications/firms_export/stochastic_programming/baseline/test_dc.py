@@ -36,7 +36,7 @@ input_data_dgp = {
     "id_data": {"state_chars": state_chars,
                 "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2},
     "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
-                  "beta": BETA, "R": R},
+                  "R": R},
 }
 cfg_dgp = {
     "dimensions": {"n_obs": N_OBS, "n_items": M, "n_covariates": N_COV},
@@ -46,7 +46,7 @@ cfg_dgp = {
 dgp = ce.Model()
 dgp.load_config(cfg_dgp)
 dgp.data.load_and_distribute_input_data(input_data_dgp)
-cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
+cov_oracle, err_oracle = build_oracles(dgp, beta=BETA, seed=SEED_DGP,
                                        sigma_1=SIGMA_1,
                                        sigma_2=SIGMA_2)
 dgp.subproblems.load_solver(TwoStageSolver)
@@ -122,11 +122,11 @@ def build_dc_model():
                     "rev_chars_1": rev_chars_1, "rev_chars_2": rev_chars_2,
                     "obs_bundles": obs_b},
         "item_data": {"syn_chars": syn_chars, "entry_chars": entry_chars,
-                      "beta": BETA, "R": R},
+                      "R": R},
     }
     m.load_config(cfg_est)
     m.data.load_and_distribute_input_data(input_data_est)
-    cov_o, err_o = build_oracles(m, seed=SEED_EST,
+    cov_o, err_o = build_oracles(m, beta=BETA, seed=SEED_EST,
                                   sigma_1=SIGMA_1,
                                   sigma_2=SIGMA_2)
     m.subproblems.load_solver(TwoStageSolver)

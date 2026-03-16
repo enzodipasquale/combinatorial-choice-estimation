@@ -13,7 +13,7 @@ from prepare_data import main as load_data, build_input_data
 COUNTRY = "MEX"
 KEEP_TOP = 20
 END_BUFFER = 3
-N_SAMPLE = 200
+N_SAMPLE = 5000
 N_SIMULATIONS = 1
 
 BETA = 0.0
@@ -33,7 +33,7 @@ def build_model(n_sample=N_SAMPLE):
     if model.is_root():
         ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                         n_sample=n_sample)
-        input_data = build_input_data(ctx, R=R, beta=BETA)
+        input_data = build_input_data(ctx, R=R)
         n_obs = ctx["n_obs"]
         M = ctx["M"]
     else:
@@ -53,7 +53,7 @@ def build_model(n_sample=N_SAMPLE):
     model.load_config(cfg)
     model.data.load_and_distribute_input_data(input_data)
 
-    cov_oracle, err_oracle = build_oracles(model, seed=SEED,
+    cov_oracle, err_oracle = build_oracles(model, beta=BETA, seed=SEED,
                                            sigma_1=SIGMA_1,
                                            sigma_2=SIGMA_2)
     model.subproblems.load_solver(TwoStageSolver)

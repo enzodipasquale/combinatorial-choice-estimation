@@ -1,12 +1,11 @@
 import numpy as np
 
 
-def build_oracles(model, seed=42, sigma_1=1.0, sigma_2=1.0):
+def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
     ld = model.data.local_data
     n = model.comm_manager.num_local_agent
     M = model.config.dimensions.n_items
     R = ld.item_data["R"]
-    beta = ld.item_data["beta"]
     perpetual = 1 / (1 - beta) if beta < 1 else 1.0
     rev_chars_1 = ld.id_data["rev_chars_1"]
     rev_chars_2 = ld.id_data["rev_chars_2"]

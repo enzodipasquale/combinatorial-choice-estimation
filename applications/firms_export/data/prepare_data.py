@@ -361,7 +361,7 @@ def build_context(dataframe, expected_revenue, pairwise_features,
     }
 
 
-def build_input_data(ctx, R, beta=0.0):
+def build_input_data(ctx, R):
     return {
         "id_data": {
             "state_chars":   ctx["state_chars"],
@@ -373,7 +373,6 @@ def build_input_data(ctx, R, beta=0.0):
         "item_data": {
             "syn_chars":   ctx["syn_chars"],
             "entry_chars": ctx["entry_chars"],
-            "beta":        beta,
             "R":           R,
         },
     }
