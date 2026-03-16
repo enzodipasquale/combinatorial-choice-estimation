@@ -17,9 +17,8 @@ N_SIMULATIONS = 1
 
 BETA = 0.0
 R = 1
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 1
-SIGMA_NU_2 = 1/(1-BETA)
+SIGMA_1 = 1.0
+SIGMA_2 = 1.0
 
 SEED = 42
 MAX_ITERS = 100
@@ -51,9 +50,8 @@ def build_model(n_sample=N_SAMPLE):
     model.data.load_and_distribute_input_data(input_data)
 
     cov_oracle, err_oracle = build_oracles(model, seed=SEED,
-                                           sigma_eps=SIGMA_EPS,
-                                           sigma_nu_1=SIGMA_NU_1,
-                                           sigma_nu_2=SIGMA_NU_2)
+                                           sigma_1=SIGMA_1,
+                                           sigma_2=SIGMA_2)
     model.subproblems.load_solver(TwoStageSolver)
     model.subproblems.initialize_solver()
     model.features.set_covariates_oracle(cov_oracle)

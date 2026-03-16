@@ -21,9 +21,8 @@ N_SIMULATIONS = 1
 
 BETA = 0.0
 R = 1
-SIGMA_EPS = 1.0
-SIGMA_NU_1 = 1
-SIGMA_NU_2 = 1/(1-BETA)
+SIGMA_1 = 1.0
+SIGMA_2 = 1.0
 
 thetas = [
     np.zeros(4),
@@ -99,9 +98,7 @@ def setup_mincut_errors(model, seed):
     M = model.config.dimensions.n_items
     eps_1 = np.zeros((n, M))
     for i, gid in enumerate(model.comm_manager.agent_ids):
-        eps = np.random.default_rng((seed, gid, 0)).normal(0, SIGMA_EPS, M)
-        nu1 = np.random.default_rng((seed, gid, 1)).normal(0, SIGMA_NU_1, M)
-        eps_1[i] = eps + nu1
+        eps_1[i] = np.random.default_rng((seed, gid, 0)).normal(0, SIGMA_1, M)
     model.features.local_modular_errors = eps_1
     model.features._error_oracle = lambda bundles, ids: (eps_1[ids] * bundles).sum(-1)
     model.features._error_oracle_takes_data = False
@@ -130,8 +127,8 @@ for theta in thetas:
             print(f"  {seed:>6}  {'mincut':>8}  {f_mc:12.6f}  {g_str}  {np.linalg.norm(g_mc):10.4f}")
 
         cov_oracle, err_oracle = build_oracles(
-            model, seed=seed, sigma_eps=SIGMA_EPS,
-            sigma_nu_1=SIGMA_NU_1, sigma_nu_2=SIGMA_NU_2)
+            model, seed=seed, sigma_1=SIGMA_1,
+            sigma_2=SIGMA_2)
         model.subproblems.load_solver(TwoStageSolver)
         model.subproblems.initialize_solver()
         model.features.set_covariates_oracle(cov_oracle)

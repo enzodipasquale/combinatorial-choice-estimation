@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def build_oracles(model, seed=42, sigma_eps=1.0, sigma_nu_1=1.0, sigma_nu_2=1.0):
+def build_oracles(model, seed=42, sigma_1=1.0, sigma_2=1.0):
     ld = model.data.local_data
     n = model.comm_manager.num_local_agent
     M = model.config.dimensions.n_items
@@ -20,16 +20,11 @@ def build_oracles(model, seed=42, sigma_eps=1.0, sigma_nu_1=1.0, sigma_nu_2=1.0)
     discount_2 = beta
     beta_s = beta
 
-    eps = np.zeros((n, M))
-    nu1 = np.zeros((n, M))
-    nu2 = np.zeros((n, R, M))
+    eps_1 = np.zeros((n, M))
+    eps_2 = np.zeros((n, R, M))
     for i, gid in enumerate(model.comm_manager.agent_ids):
-        eps[i] = np.random.default_rng((seed, gid, 0)).normal(0, sigma_eps, M)
-        nu1[i] = np.random.default_rng((seed, gid, 1)).normal(0, sigma_nu_1, M)
-        nu2[i] = np.random.default_rng((seed, gid, 2)).normal(0, sigma_nu_2, (R, M))
-
-    eps_1 = eps + nu1
-    eps_2 = beta * perpetual * eps[:, None, :] + beta * nu2
+        eps_1[i] = np.random.default_rng((seed, gid, 0)).normal(0, sigma_1, M)
+        eps_2[i] = np.random.default_rng((seed, gid, 1)).normal(0, sigma_2, (R, M))
 
     ld.errors["eps_1"] = eps_1
     ld.errors["eps_2"] = eps_2
