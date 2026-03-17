@@ -41,6 +41,9 @@ def _pop_centroid(ctx, delta):
 
 # modular regressors: (ctx) -> (n_obs, n_items)
 
+@modular("elig_constant")
+def _(ctx): return ctx["elig"][:, None] * np.ones(len(ctx["pop"]))[None, :]
+
 @modular("elig_pop")
 def _(ctx): return ctx["elig"][:, None] * ctx["pop"][None, :]
 
@@ -64,6 +67,9 @@ def _(ctx): return ctx["elig"][:, None] * ctx["price"][None, :]
 @quadratic("adjacency")
 def _(ctx): return normalize_interaction_matrix(ctx["bta_adjacency"], ctx["pop"])
 
+@quadratic("pop_centroid_delta2")
+def _(ctx): return _pop_centroid(ctx, delta=2)
+
 @quadratic("pop_centroid_delta4")
 def _(ctx): return _pop_centroid(ctx, delta=4)
 
@@ -82,5 +88,14 @@ def _(ctx):
 @quadratic_id("elig_adjacency")
 def _(ctx): return ctx["elig"][:, None, None] * QUADRATIC["adjacency"](ctx)[None, :, :]
 
+@quadratic_id("elig_pop_centroid_delta2")
+def _(ctx): return ctx["elig"][:, None, None] * _pop_centroid(ctx, delta=2)[None, :, :]
+
 @quadratic_id("elig_pop_centroid_delta4")
 def _(ctx): return ctx["elig"][:, None, None] * _pop_centroid(ctx, delta=4)[None, :, :]
+
+@quadratic_id("elig_travel_survey")
+def _(ctx): return ctx["elig"][:, None, None] * QUADRATIC["travel_survey"](ctx)[None, :, :]
+
+@quadratic_id("elig_air_travel")
+def _(ctx): return ctx["elig"][:, None, None] * QUADRATIC["air_travel"](ctx)[None, :, :]
