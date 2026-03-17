@@ -31,8 +31,6 @@ class PointEstimationManager:
     def compute_cuts(self, theta):
         bundles = self.subproblem_manager.solve(theta)
         grads, const = self.features_manager.covariates_and_errors_oracle(bundles)
-        self.features_manager.predicted_covariates = grads
-        self.features_manager.predicted_errors = const
         val = grads @ theta + const
         return grads, const, val, bundles
 

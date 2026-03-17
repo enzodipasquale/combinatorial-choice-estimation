@@ -55,9 +55,7 @@ class SubproblemManager:
     def solve(self, theta):
         if self.subproblem_solver is None:
             raise ValueError("Solver not initialized")
-        bundles = self.subproblem_solver.solve(theta)
-        self.predicted_bundles = bundles
-        return bundles
+        return self.subproblem_solver.solve(theta)
 
     def generate_obs_bundles(self, theta):
         local_bundles = self.initialize_and_solve(theta)
