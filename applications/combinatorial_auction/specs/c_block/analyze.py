@@ -7,7 +7,7 @@ SPECS_DIR = Path(__file__).parent.parent
 APP_DIR = SPECS_DIR.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
-from applications.combinatorial_auction.data.loaders import load_bta_data
+from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
 
 CBLOCK_DIR = Path(__file__).parent
 POP_THRESHOLD = 500_000
@@ -119,160 +119,66 @@ def _run_iv_block(label, mask, delta, price, dist_thresholds,
 
 def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.678871):
     """
-    Decompose bidder values using u_hat, b*, and the IV price coefficient.
-
-    u_hat_si  = features(b*_si) @ theta_hat + eps_si(b*_si)
-
-    The FE part of theta encodes  theta^FE_j = -delta_j  with
-    delta_j = alpha_0 - alpha_1*p_j + xi_j,  so the price cost in
-    utility space is  alpha_1 * price(b*).
-
-    Gross surplus ($B) = u_hat / alpha_1 + price(b*)
-    Net   surplus ($B) = u_hat / alpha_1
-    Price paid    ($B) = b* @ price
+    Net surplus ($B) = u_hat / alpha_1
     """
     result = json.load(open(CBLOCK_DIR / result_file))
-    u_hat = np.array(result["u_hat"])                        # (n_agents,)
-    bundles = np.array(result["predicted_bundles"])             # (n_agents, n_btas)
+    u_hat = np.array(result["u_hat"])
     n_obs = result["n_obs"]
     n_agents = len(u_hat)
     n_sim = n_agents // n_obs
 
-    theta = np.array(result["theta_hat"])
-
-    raw = load_bta_data()
-    price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9  # (n_btas,) $B
-
-    # ── structural / epsilon from cached oracle outputs ────
-    covariates = np.array(result["predicted_covariates"])     # (n_agents, n_covariates)
-    errors = np.array(result["predicted_errors"])             # (n_agents,)
-    structural = covariates @ theta                           # (n_agents,)
-    epsilon = errors                                          # (n_agents,)
-
-    # ── per agent-simulation quantities ──────────────────────
-    price_paid = bundles @ price                             # (n_agents,) $B
-    n_items = bundles.sum(1)                                 # (n_agents,)
-    net_surplus = u_hat / alpha_1                            # (n_agents,) $B
-    gross_surplus = net_surplus + price_paid                  # (n_agents,) $B
-
-    # ── average over simulations → per-bidder ────────────────
-    price_paid_m = price_paid.reshape(n_obs, n_sim).mean(1)
-    n_items_m = n_items.reshape(n_obs, n_sim).mean(1)
+    net_surplus = u_hat / alpha_1
     net_m = net_surplus.reshape(n_obs, n_sim).mean(1)
-    gross_m = gross_surplus.reshape(n_obs, n_sim).mean(1)
-
-    winners = n_items_m > 0
 
     print(f"\n{'='*60}")
-    print(f"BIDDER VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f})")
+    print(f"VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f}, "
+          f"n_sim={n_sim}, n_obs={n_obs})")
     print(f"{'='*60}")
-    print(f"  {n_sim} simulation(s),  {int(winners.sum())} winners / {n_obs} bidders")
+    obj = result["objective"]
+    eps_net = obj / (n_sim * alpha_1)
+    total_net = net_m.sum()
+    obs_net = total_net - eps_net
 
-    def _block(label, mask):
-        n = mask.sum()
-        print(f"\n  --- {label} (N={n}) ---")
-        print(f"  {'Metric':<35} {'Mean':>12} {'Median':>12} {'Total':>14}")
-        print(f"  {'-'*73}")
-        for name, arr in [("Items in b*",     n_items_m),
-                          ("Gross value ($B)", gross_m),
-                          ("Price paid ($B)",  price_paid_m),
-                          ("Net surplus ($B)", net_m)]:
-            v = arr[mask]
-            print(f"  {name:<35} {v.mean():>12.6f} {np.median(v):>12.6f} {v.sum():>14.4f}")
-        # markup only for bidders with positive price
-        pp = price_paid_m[mask]
-        gv = gross_m[mask]
-        pos = pp > 0
-        if pos.any():
-            markup = gv[pos] / pp[pos] - 1
-            print(f"  {'Markup (gross/price - 1)':<35} {markup.mean():>12.4f} {np.median(markup):>12.4f}")
+    print(f"  total net surplus  = ${total_net:>10.4f}B")
+    print(f"    observable part  = ${obs_net:>10.4f}B")
+    print(f"    epsilon part     = ${eps_net:>10.4f}B  (= obj / n_sim / a1)")
+    print(f"  mean net surplus   = ${net_m.mean():>10.4f}B")
+    print(f"  median net surplus = ${np.median(net_m):>10.4f}B")
 
-    _block("All bidders", np.ones(n_obs, dtype=bool))
-    _block("Winners", winners)
-
-    # ── 4-component decomposition of u_hat ─────────────────────
-    #
-    # u_hat_si = max_b { beta_contrib(b) + gamma_contrib(b)
-    #                   + alpha_0*|b| + xi*b
-    #                   - alpha_1*price(b)
-    #                   + eps_si(b) }
-    #
-    # At b* this gives exactly:
-    # u_hat = [beta_gamma_contrib] + [alpha_0*|b*| + xi*b*] + [-alpha_1*price(b*)] + epsilon
-    #
-    # (1) beta + gamma contribution (id_modular + quadratic)
-    n_id = result["n_id_mod"]
-    n_btas_r = result["n_btas"]
-    beta_gamma_contrib = (covariates[:, :n_id] @ theta[:n_id]
-                          + covariates[:, n_id + n_btas_r:] @ theta[n_id + n_btas_r:])
-
-    # (2) non-price FE: alpha_0*|b*| + xi*b*
-    theta_fe = theta[n_id : n_id + n_btas_r]
-    delta = -theta_fe                                            # delta_j = -theta^FE_j
-    xi = delta - alpha_0 + alpha_1 * price                      # xi_j = delta_j - alpha_0 + alpha_1*p_j
-    non_price_fe = alpha_0 * n_items + bundles @ xi              # alpha_0*|b*| + xi*b*
-
-    # (3) price FE: -alpha_1 * price(b*)
-    price_fe = -alpha_1 * price_paid
-
-    # (4) epsilon (private shock)
-    # already have: epsilon = errors
-
-    # sanity check: (1)+(2)+(3)+(4) should equal u_hat
-    recon = beta_gamma_contrib + non_price_fe + price_fe + epsilon
-    print(f"\n  Reconstruction error: {np.abs(recon - u_hat).max():.2e}")
-
-    # convert to gross $B: divide by alpha_1 and add back price for gross
-    # gross = u_hat/alpha_1 + price = [(1)+(2)+(3)+(4)]/alpha_1 + price
-    #       = (1)/a1 + (2)/a1 + [(3)/a1 + price] + (4)/a1
-    #       = (1)/a1 + (2)/a1 + 0              + (4)/a1
-    # note: (3)/a1 + price = -price + price = 0, so price cancels!
-    gross_beta_gamma = beta_gamma_contrib / alpha_1
-    gross_non_price_fe = non_price_fe / alpha_1     # (alpha_0*|b*| + xi*b*) / alpha_1
-    gross_epsilon = epsilon / alpha_1
-
-    # average over simulations
-    g_bg_m = gross_beta_gamma.reshape(n_obs, n_sim).mean(1)
-    g_npfe_m = gross_non_price_fe.reshape(n_obs, n_sim).mean(1)
-    g_eps_m = gross_epsilon.reshape(n_obs, n_sim).mean(1)
-
-    obs_revenue = price.sum()
-    print(f"\n  --- Aggregate ---")
-    print(f"  Observed revenue:    ${obs_revenue:.4f}B")
-    print(f"  Predicted revenue:   ${price_paid_m.sum():.4f}B")
-    print(f"  Total gross value:   ${gross_m.sum():.4f}B")
-    print(f"  Total net surplus:   ${net_m.sum():.4f}B")
-    print(f"\n  --- Gross value decomposition ---")
-    print(f"  (1) beta+gamma:      ${g_bg_m.sum():.4f}B  ({g_bg_m.sum()/gross_m.sum():.1%})")
-    print(f"  (2) alpha_0+xi:      ${g_npfe_m.sum():.4f}B  ({g_npfe_m.sum()/gross_m.sum():.1%})")
-    print(f"  (3) price FE:        cancels with price_paid (= $0)")
-    print(f"  (4) epsilon:         ${g_eps_m.sum():.4f}B  ({g_eps_m.sum()/gross_m.sum():.1%})")
-    print(f"  Sum (1)+(2)+(4):     ${(g_bg_m.sum()+g_npfe_m.sum()+g_eps_m.sum()):.4f}B")
-
-    # ── same decomposition without xi (prediction case) ──────
-    # xi_j are 2SLS residuals, not known ex ante.
-    # Set xi=0: non-price FE becomes just alpha_0*|b*|,
-    # and xi*b* gets absorbed into a residual together with epsilon.
-    gross_alpha0_only = (alpha_0 * n_items) / alpha_1              # $B
-    gross_xi_plus_eps = (bundles @ xi + epsilon) / alpha_1         # $B  (residual)
-    g_a0_m = gross_alpha0_only.reshape(n_obs, n_sim).mean(1)
-    g_xe_m = gross_xi_plus_eps.reshape(n_obs, n_sim).mean(1)
-
-    print(f"\n  --- Gross value decomposition (without xi, prediction case) ---")
-    print(f"  (1) beta+gamma:      ${g_bg_m.sum():.4f}B  ({g_bg_m.sum()/gross_m.sum():.1%})")
-    print(f"  (2) alpha_0 only:    ${g_a0_m.sum():.4f}B  ({g_a0_m.sum()/gross_m.sum():.1%})")
-    print(f"  (3) price FE:        cancels with price_paid (= $0)")
-    print(f"  (4) xi+epsilon:      ${g_xe_m.sum():.4f}B  ({g_xe_m.sum()/gross_m.sum():.1%})")
-    print(f"  Sum (1)+(2)+(4):     ${(g_bg_m.sum()+g_a0_m.sum()+g_xe_m.sum()):.4f}B")
-
-    # ── top 5 bidders by gross value ─────────────────────────
+    # ── observable part decomposition using observed bundles ──
+    raw = load_bta_data()
+    ctx = build_context(raw)
+    price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9
+    b_obs = ctx["c_obs_bundles"]                              # (n_obs, n_btas)
+    obs_bundle_size = b_obs.sum(1)
+    obs_price_paid = b_obs @ price
     bidder_names = raw["bidder_data"]["co_name"].values
-    top5 = np.argsort(gross_m)[::-1][:5]
-    print(f"\n  --- Top 5 bidders by gross value ---")
-    print(f"  {'#':<4} {'Bidder':<30} {'Gross ($B)':>12} {'Price ($B)':>12} {'Net ($B)':>12} {'Items':>6}")
-    print(f"  {'-'*76}")
-    for rank, i in enumerate(top5, 1):
-        print(f"  {rank:<4} {bidder_names[i]:<30} {gross_m[i]:>12.6f} {price_paid_m[i]:>12.6f} {net_m[i]:>12.6f} {n_items_m[i]:>6.1f}")
+
+    theta = np.array(result["theta_hat"])
+    n_id = result["n_id_mod"]
+    n_btas = result["n_btas"]
+    theta_fe = theta[n_id : n_id + n_btas]
+    delta = -theta_fe
+    xi = delta - alpha_0 + alpha_1 * price
+
+    obs_revenue = obs_price_paid.sum()                        # (1) -obs_revenue
+    xi_part = (b_obs @ xi).sum() / alpha_1                    # (2) xi component
+    a0_part = alpha_0 / alpha_1 * b_obs.sum()                 # (3) alpha_0 component
+    gamma_part = obs_net - (-obs_revenue) - xi_part - a0_part # (4) residual
+
+    print(f"\n  Observable part decomposition (at observed bundles):")
+    print(f"    (1) -observed revenue  = ${-obs_revenue:>10.4f}B")
+    print(f"    (2) xi component       = ${xi_part:>10.4f}B")
+    print(f"    (3) alpha_0 component  = ${a0_part:>10.4f}B")
+    print(f"    (4) gamma residual     = ${gamma_part:>10.4f}B")
+    print(f"    sum (1)+(2)+(3)+(4)    = ${(-obs_revenue + xi_part + a0_part + gamma_part):>10.4f}B")
+
+    top5 = np.argsort(net_m)[::-1][:5]
+    print(f"\n  Top 5 by net surplus:")
+    print(f"  {'#':<3} {'Bidder':<40} {'Net ($B)':>10} {'Price ($B)':>10} {'|b|':>4}")
+    print(f"  {'-'*70}")
+    for r, i in enumerate(top5, 1):
+        print(f"  {r:<3} {bidder_names[i]:<40} {net_m[i]:>10.4f} {obs_price_paid[i]:>10.4f} {obs_bundle_size[i]:>4d}")
 
 
 def run(result_file="result_FE.json"):

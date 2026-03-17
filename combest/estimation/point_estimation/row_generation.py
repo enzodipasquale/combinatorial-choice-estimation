@@ -197,10 +197,6 @@ class RowGenerationSolver:
     # ------------------------------------------------------------------
 
     def _create_result(self, num_iterations=None, total_time=None):
-        # gather predicted quantities from all ranks (runs on all ranks)
-        predicted_bundles = self._gather_by_agents('predicted_bundles', self.subproblem_manager)
-        predicted_covariates = self._gather_by_agents('predicted_covariates', self.features_manager)
-        predicted_errors = self._gather_by_agents('predicted_errors', self.features_manager)
         if not self.comm_manager.is_root():
             return None
         converged = num_iterations <= self.cfg.max_iters if num_iterations is not None else None
@@ -217,18 +213,8 @@ class RowGenerationSolver:
             total_time=total_time,
             final_n_violations=final_info.get('n_violations', 0),
             u_hat=self._result_u_hat(),
-            predicted_bundles=predicted_bundles,
-            predicted_covariates=predicted_covariates,
-            predicted_errors=predicted_errors,
             timing=(pricing_times, master_times),
             warnings=[])
-
-    def _gather_by_agents(self, attr, source):
-        local = getattr(source, attr, None)
-        if local is None:
-            return None
-        return self.comm_manager.Gatherv_by_row(
-            local, row_counts=self.comm_manager.agent_counts)
 
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}
