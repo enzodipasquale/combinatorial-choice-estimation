@@ -62,14 +62,14 @@ def main(config_path):
     callbacks = config.get("callbacks", {})
     mode = app.get("mode", "estimation")
 
-    if mode in ("estimation", "both"):
+    if mode == "estimation":
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
         if rank == 0 and result is not None:
             suffix = "FE" if app.get("item_modular", "fe") == "fe" else "noFE"
             _save(result, config, meta, experiment_dir / f"result_{suffix}.json")
 
-    if mode in ("bootstrap", "both"):
+    elif mode == "bootstrap":
         boot_cfg = config.get("bootstrap", {})
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         _, dist_cb = adaptive_gurobi_timeout(callbacks["boot"])
@@ -147,6 +147,8 @@ def _save(result, config, meta, path):
     }
     if result.u_hat is not None:
         out["u_hat"] = result.u_hat.tolist()
+    if result.predicted_bundles is not None:
+        out["predicted_bundles"] = result.predicted_bundles.tolist()
     for k in ["n_btas", "n_mtas", "n_obs_c", "n_obs_ab", "continental_mta_nums"]:
         if k in meta:
             out[k] = [int(x) for x in meta[k]] if isinstance(meta[k], (list, np.ndarray)) and k == "continental_mta_nums" else meta[k]
