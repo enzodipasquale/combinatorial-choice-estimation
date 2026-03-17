@@ -108,8 +108,6 @@ class RowGenerationSolver:
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
-        # Final solve at theta_hat so predicted_bundles are at the solution
-        self.subproblem_manager.solve(self.theta_iter)
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
             result.log_summary(self.dim.display_indices, self.dim.covariate_labels,
@@ -176,8 +174,10 @@ class RowGenerationSolver:
     # ------------------------------------------------------------------
 
     def _create_result(self, num_iterations=None, total_time=None):
-        # gather predicted_bundles from all ranks (runs on all ranks)
-        predicted_bundles = self._gather_predicted_bundles()
+        # gather predicted quantities from all ranks (runs on all ranks)
+        predicted_bundles = self._gather_by_agents('predicted_bundles', self.subproblem_manager)
+        predicted_covariates = self._gather_by_agents('predicted_covariates', self.features_manager)
+        predicted_errors = self._gather_by_agents('predicted_errors', self.features_manager)
         if not self.comm_manager.is_root():
             return None
         converged = num_iterations <= self.cfg.max_iters if num_iterations is not None else None
@@ -195,11 +195,13 @@ class RowGenerationSolver:
             final_n_violations=final_info.get('n_violations', 0),
             u_hat=self._result_u_hat(),
             predicted_bundles=predicted_bundles,
+            predicted_covariates=predicted_covariates,
+            predicted_errors=predicted_errors,
             timing=(pricing_times, master_times),
             warnings=[])
 
-    def _gather_predicted_bundles(self):
-        local = getattr(self.subproblem_manager, 'predicted_bundles', None)
+    def _gather_by_agents(self, attr, source):
+        local = getattr(source, attr, None)
         if local is None:
             return None
         return self.comm_manager.Gatherv_by_row(

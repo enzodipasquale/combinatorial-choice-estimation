@@ -18,6 +18,8 @@ class RowGenerationEstimationResult:
     final_n_violations: int = None
     u_hat: np.ndarray = None
     predicted_bundles: np.ndarray = None
+    predicted_covariates: np.ndarray = None
+    predicted_errors: np.ndarray = None
     timing: dict = field(default_factory=dict)
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)

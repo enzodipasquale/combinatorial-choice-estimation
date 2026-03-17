@@ -149,6 +149,10 @@ def _save(result, config, meta, path):
         out["u_hat"] = result.u_hat.tolist()
     if result.predicted_bundles is not None:
         out["predicted_bundles"] = result.predicted_bundles.tolist()
+    if result.predicted_covariates is not None:
+        out["predicted_covariates"] = result.predicted_covariates.tolist()
+    if result.predicted_errors is not None:
+        out["predicted_errors"] = result.predicted_errors.tolist()
     for k in ["n_btas", "n_mtas", "n_obs_c", "n_obs_ab", "continental_mta_nums"]:
         if k in meta:
             out[k] = [int(x) for x in meta[k]] if isinstance(meta[k], (list, np.ndarray)) and k == "continental_mta_nums" else meta[k]
