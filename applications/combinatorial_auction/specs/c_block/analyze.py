@@ -120,95 +120,74 @@ def _run_iv_block(label, mask, delta, price, dist_thresholds,
 
 
 def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.678871):
-    """Compute bidder valuations in $B using IV price coefficient."""
-    result = json.load(open(CBLOCK_DIR / result_file))
-    theta = np.array(result["theta_hat"])
-    n_id = result["n_id_mod"]
-    n_btas = result["n_btas"]
-    n_obs = result["n_obs"]
+    """
+    Decompose bidder values using u_hat, b*, and the IV price coefficient.
 
-    beta = theta[:n_id]                           # elig_pop coefficient
-    theta_fe = theta[n_id : n_id + n_btas]        # item FEs
-    gamma = theta[n_id + n_btas:]                  # quadratic coefficients
-    delta = -theta_fe                              # delta_j = -theta_j^FE
+    u_hat_si  = features(b*_si) @ theta_hat + eps_si(b*_si)
+
+    The FE part of theta encodes  theta^FE_j = -delta_j  with
+    delta_j = alpha_0 - alpha_1*p_j + xi_j,  so the price cost in
+    utility space is  alpha_1 * price(b*).
+
+    Gross surplus ($B) = u_hat / alpha_1 + price(b*)
+    Net   surplus ($B) = u_hat / alpha_1
+    Price paid    ($B) = b* @ price
+    """
+    result = json.load(open(CBLOCK_DIR / result_file))
+    u_hat = np.array(result["u_hat"])                        # (n_agents,)
+    bundles = np.array(result["predicted_bundles"])             # (n_agents, n_btas)
+    n_obs = result["n_obs"]
+    n_agents = len(u_hat)
+    n_sim = n_agents // n_obs
 
     raw = load_bta_data()
-    ctx = build_context(raw)
-    price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9
-    obs = ctx["c_obs_bundles"].astype(float)       # (n_obs, n_btas)
+    price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9  # (n_btas,) $B
 
-    # recover xi
-    xi = delta - alpha_0 + alpha_1 * price         # xi_j = delta_j - alpha_0 + alpha_1*p_j
+    # ── per agent-simulation quantities ──────────────────────
+    price_paid = bundles @ price                             # (n_agents,) $B
+    n_items = bundles.sum(1)                                 # (n_agents,)
+    net_surplus = u_hat / alpha_1                            # (n_agents,) $B
+    gross_surplus = net_surplus + price_paid                  # (n_agents,) $B
 
-    # structural utility at observed bundle (no epsilon)
-    # V_i(obs_i) = id_mod_contribution + item_fe_contribution + quad_contribution
+    # ── average over simulations → per-bidder ────────────────
+    price_paid_m = price_paid.reshape(n_obs, n_sim).mean(1)
+    n_items_m = n_items.reshape(n_obs, n_sim).mean(1)
+    net_m = net_surplus.reshape(n_obs, n_sim).mean(1)
+    gross_m = gross_surplus.reshape(n_obs, n_sim).mean(1)
 
-    # 1. id_modular: sum_j obs_ij * elig_i * pop_j * beta
-    id_mod = _build_features(MODULAR, ["elig_pop"], ctx)  # (n_obs, n_btas, 1)
-    id_mod_at_obs = np.einsum('ijk,ij->ik', id_mod, obs)  # (n_obs, 1)
-    id_contribution = (id_mod_at_obs @ beta)               # (n_obs,)
-
-    # 2. item FE: sum_j obs_ij * delta_j
-    fe_contribution = obs @ delta                           # (n_obs,)
-
-    # 3. quadratic: sum_k gamma_k * obs_i' Q_k obs_i
-    quad_names = ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]
-    Q = _build_features(QUADRATIC, quad_names, ctx)        # (n_btas, n_btas, 4)
-    quad_contribution = np.einsum('ij,jlk,il,k->i', obs, Q, obs, gamma)  # (n_obs,)
-
-    # total structural utility
-    V_obs = id_contribution + fe_contribution + quad_contribution
-
-    # decompose fe_contribution: delta_j = alpha_0 - alpha_1*p_j + xi_j
-    n_items_won = obs.sum(1)                                # |b_i|
-    price_paid = obs @ price                                # sum_j obs_ij * p_j ($B)
-    alpha0_contribution = n_items_won * alpha_0
-    price_contribution = -alpha_1 * price_paid              # -alpha_1 * p in utility
-    xi_contribution = obs @ xi                              # sum_j obs_ij * xi_j
-
-    # gross value = everything except price term, in $B
-    gross_structural = (id_contribution + alpha0_contribution + xi_contribution
-                        + quad_contribution) / alpha_1
-    net_structural = V_obs / alpha_1                        # = gross - price_paid
-
-    # u_hat: includes epsilon, at optimal bundle (may differ from observed)
-    u_hat = np.array(result["u_hat"])
-    n_sim = len(u_hat) // n_obs
-    u_hat_mean = u_hat.reshape(n_obs, n_sim).mean(1)
-    net_surplus = u_hat_mean / alpha_1
-
-    # only winners (bidders who won at least one item)
-    winners = n_items_won > 0
+    winners = n_items_m > 0
 
     print(f"\n{'='*60}")
-    print(f"BIDDER VALUATIONS (alpha_0={alpha_0:.4f}, alpha_1={alpha_1:.4f})")
+    print(f"BIDDER VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f})")
     print(f"{'='*60}")
-    print(f"\n  {n_sim} simulation(s), {int(winners.sum())} winners / {n_obs} bidders")
+    print(f"  {n_sim} simulation(s),  {int(winners.sum())} winners / {n_obs} bidders")
 
-    print(f"\n  --- All bidders (N={n_obs}) ---")
-    print(f"  {'Metric':<35} {'Mean':>10} {'Median':>10} {'Total':>12}")
-    print(f"  {'-'*67}")
-    print(f"  {'Net surplus (u_hat/a1, $B)':<35} {net_surplus.mean():>10.6f} {np.median(net_surplus):>10.6f} {net_surplus.sum():>12.4f}")
-    print(f"  {'Net structural (V/a1, $B)':<35} {net_structural.mean():>10.6f} {np.median(net_structural):>10.6f} {net_structural.sum():>12.4f}")
-    print(f"  {'Gross structural ($B)':<35} {gross_structural.mean():>10.6f} {np.median(gross_structural):>10.6f} {gross_structural.sum():>12.4f}")
-    print(f"  {'Price paid ($B)':<35} {price_paid.mean():>10.6f} {np.median(price_paid):>10.6f} {price_paid.sum():>12.4f}")
+    def _block(label, mask):
+        n = mask.sum()
+        print(f"\n  --- {label} (N={n}) ---")
+        print(f"  {'Metric':<35} {'Mean':>12} {'Median':>12} {'Total':>14}")
+        print(f"  {'-'*73}")
+        for name, arr in [("Items in b*",     n_items_m),
+                          ("Gross value ($B)", gross_m),
+                          ("Price paid ($B)",  price_paid_m),
+                          ("Net surplus ($B)", net_m)]:
+            v = arr[mask]
+            print(f"  {name:<35} {v.mean():>12.6f} {np.median(v):>12.6f} {v.sum():>14.4f}")
+        # markup only for bidders with positive price
+        pp = price_paid_m[mask]
+        gv = gross_m[mask]
+        pos = pp > 0
+        if pos.any():
+            markup = gv[pos] / pp[pos] - 1
+            print(f"  {'Markup (gross/price - 1)':<35} {markup.mean():>12.4f} {np.median(markup):>12.4f}")
 
-    print(f"\n  --- Winners only (N={int(winners.sum())}) ---")
-    print(f"  {'Metric':<35} {'Mean':>10} {'Median':>10} {'Total':>12}")
-    print(f"  {'-'*67}")
-    w = winners
-    print(f"  {'Items won':<35} {n_items_won[w].mean():>10.1f} {np.median(n_items_won[w]):>10.1f} {n_items_won[w].sum():>12.0f}")
-    print(f"  {'Net surplus (u_hat/a1, $B)':<35} {net_surplus[w].mean():>10.6f} {np.median(net_surplus[w]):>10.6f} {net_surplus[w].sum():>12.4f}")
-    print(f"  {'Net structural (V/a1, $B)':<35} {net_structural[w].mean():>10.6f} {np.median(net_structural[w]):>10.6f} {net_structural[w].sum():>12.4f}")
-    print(f"  {'Gross structural ($B)':<35} {gross_structural[w].mean():>10.6f} {np.median(gross_structural[w]):>10.6f} {gross_structural[w].sum():>12.4f}")
-    print(f"  {'Price paid ($B)':<35} {price_paid[w].mean():>10.6f} {np.median(price_paid[w]):>10.6f} {price_paid[w].sum():>12.4f}")
-    print(f"  {'Markup (gross/price - 1)':<35} {(gross_structural[w]/price_paid[w]).mean()-1:>10.4f} {np.median(gross_structural[w]/price_paid[w])-1:>10.4f}")
+    _block("All bidders", np.ones(n_obs, dtype=bool))
+    _block("Winners", winners)
 
     print(f"\n  --- Aggregate ---")
-    print(f"  Total auction revenue:  ${price_paid.sum():.4f}B")
-    print(f"  Total gross value:      ${gross_structural.sum():.4f}B")
-    print(f"  Total net surplus:      ${net_structural.sum():.4f}B")
-    print(f"  Total surplus (w/ eps): ${net_surplus.sum():.4f}B")
+    print(f"  Total revenue:       ${price_paid_m.sum():.4f}B")
+    print(f"  Total gross value:   ${gross_m.sum():.4f}B")
+    print(f"  Total net surplus:   ${net_m.sum():.4f}B")
 
 
 def run(result_file="result_FE.json"):
