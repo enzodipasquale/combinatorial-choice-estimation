@@ -24,16 +24,16 @@ SIGMA_1 = CFG["sigma_1"]
 SIGMA_2 = CFG["sigma_2"]
 ERROR_SEEDS = CFG["error_seeds"]
 
-theta_0 = np.array([1.47413693, -2.89827683, -0.01765633, 0.07047045])
-thetas = [theta_0, np.zeros(4)]
+theta_0 = np.array([1.47413693, -2.89827683, -0.01765633, 0.0, 0.07047045])
+thetas = [theta_0, np.zeros(5)]
 
 ctx = load_data(COUNTRY, KEEP_TOP, end_buffer=END_BUFFER,
                 n_sample=N_SAMPLE)
 M = ctx["M"]
 n_obs = ctx["n_obs"]
 n_rev = 1
-n_cov = n_rev + 3
-names = ["rev", "entry_c", "entry_dist", "syn"]
+n_cov = n_rev + 4
+names = ["rev", "entry_c", "entry_dist", "syn", "syn_d"]
 
 model = ce.Model()
 cfg = {

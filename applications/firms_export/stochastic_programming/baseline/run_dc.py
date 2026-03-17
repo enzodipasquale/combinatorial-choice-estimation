@@ -33,8 +33,8 @@ MAX_DC_ITERS = CFG["dc"]["max_dc_iters"]
 MAX_RG_ITERS = CFG["estimation"]["max_rg_iters"]
 DC_TOL = CFG["dc"]["dc_tol"]
 
-N_COV = 4
-NAMES = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
+N_COV = 5
+NAMES = ["rev", "entry_c", "entry_dist", "syn", "syn_d"]
 
 
 def load_ctx():
@@ -65,6 +65,7 @@ def build_static_model(base_model, ctx, n_obs, M):
             ctx["rev_chars_1"][:, 0, :],
             switch,
             switch * entry_chars[None, :],
+            switch * syn_state,
             switch * syn_state * entry_chars[None, :],
         ], axis=-1)
 

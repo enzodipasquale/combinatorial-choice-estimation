@@ -1,0 +1,11 @@
+test_dc:
+  M: 10
+  R: 1
+  n_obs: 500
+  n_rev: 1
+  theta_true: [1.0, -2.0, -1.0, 0.3, 0.5,
+               0.8, -1.5, -0.8, 0.2, 0.4]
+  sigma_1: 1.0
+  sigma_2: 1.0
+  seed_dgp: 42
+  seed_est: 43

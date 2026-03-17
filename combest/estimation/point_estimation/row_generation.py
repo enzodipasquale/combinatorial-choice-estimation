@@ -108,6 +108,8 @@ class RowGenerationSolver:
                 break
             iteration += 1
         elapsed = time.perf_counter() - t0
+        # Final solve at theta_hat so last_bundles are at the solution
+        self.subproblem_manager.solve(self.theta_iter)
         result = self._create_result(iteration + 1, total_time=elapsed)
         if result is not None and self.verbose:
             result.log_summary(self.dim.display_indices, self.dim.covariate_labels,
@@ -174,6 +176,8 @@ class RowGenerationSolver:
     # ------------------------------------------------------------------
 
     def _create_result(self, num_iterations=None, total_time=None):
+        # gather last_bundles from all ranks (runs on all ranks)
+        last_bundles = self._gather_last_bundles()
         if not self.comm_manager.is_root():
             return None
         converged = num_iterations <= self.cfg.max_iters if num_iterations is not None else None
@@ -190,8 +194,16 @@ class RowGenerationSolver:
             total_time=total_time,
             final_n_violations=final_info.get('n_violations', 0),
             u_hat=self._result_u_hat(),
+            last_bundles=last_bundles,
             timing=(pricing_times, master_times),
             warnings=[])
+
+    def _gather_last_bundles(self):
+        local = getattr(self.subproblem_manager, 'last_bundles', None)
+        if local is None:
+            return None
+        return self.comm_manager.Gatherv_by_row(
+            local, row_counts=self.comm_manager.agent_counts)
 
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}

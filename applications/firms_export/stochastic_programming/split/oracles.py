@@ -36,17 +36,19 @@ def build_oracles(model, seed=42, sigma_1=1.0, sigma_2=1.0):
         x_rev_1 = np.einsum('nm,nkm->nk', b_1, rev_chars_1[ids])
         x_s_1 = switch_1.sum(-1)
         x_sd_1 = (switch_1 * entry_chars).sum(-1)
-        syn_1 = b_0 @ C * entry_chars
-        x_syn_1 = (switch_1 * syn_1).sum(-1)
+        syn_base_1 = b_0 @ C
+        x_syn_1 = (switch_1 * syn_base_1).sum(-1)
+        x_syn_d_1 = (switch_1 * syn_base_1 * entry_chars).sum(-1)
 
         x_rev_2 = np.einsum('nrm,nkm->nk', b_2_r, rev_chars_2[ids]) / R
         x_s_2 = switch_2.sum(-1).mean(-1)
         x_sd_2 = (switch_2 * entry_chars).sum(-1).mean(-1)
-        syn_2 = b_1 @ C * entry_chars
-        x_syn_2 = (switch_2 * syn_2[:, None, :]).sum(-1).mean(-1)
+        syn_base_2 = b_1 @ C
+        x_syn_2 = (switch_2 * syn_base_2[:, None, :]).sum(-1).mean(-1)
+        x_syn_d_2 = (switch_2 * syn_base_2[:, None, :] * entry_chars).sum(-1).mean(-1)
 
-        return np.column_stack([x_rev_1, x_s_1, x_sd_1, x_syn_1,
-                                x_rev_2, x_s_2, x_sd_2, x_syn_2])
+        return np.column_stack([x_rev_1, x_s_1, x_sd_1, x_syn_1, x_syn_d_1,
+                                x_rev_2, x_s_2, x_sd_2, x_syn_2, x_syn_d_2])
 
     def error_oracle(bundles, ids, data):
         b_1 = bundles.astype(float)
