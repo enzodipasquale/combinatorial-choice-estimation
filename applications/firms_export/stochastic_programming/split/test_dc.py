@@ -1,3 +1,4 @@
+import sys
 import yaml
 from pathlib import Path
 import numpy as np
@@ -5,19 +6,21 @@ import combest as ce
 from combest.subproblems.registry.quadratic_obj.quadratic_supermodular.min_cut import (
     QuadraticSupermodularMinCutSolver,
 )
-from solver import TwoStageSolver
+from solver import TwoStageSolverSplit
 from oracles import build_oracles
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "baseline"))
 from dc import DCSolver
 
 with open(Path(__file__).resolve().parent / "test_config.yaml") as f:
     CFG = yaml.safe_load(f)["test_dc"]
 
-BETA = CFG["beta"]
 M = CFG["M"]
 R = CFG["R"]
 N_OBS = CFG["n_obs"]
 N_REV = CFG["n_rev"]
-N_COV = N_REV + 4
+N_COV_STATIC = N_REV + 4
+N_COV = 2 * N_COV_STATIC
 THETA_TRUE = np.array(CFG["theta_true"])
 SIGMA_1 = CFG["sigma_1"]
 SIGMA_2 = CFG["sigma_2"]
@@ -48,10 +51,10 @@ cfg_dgp = {
 dgp = ce.Model()
 dgp.load_config(cfg_dgp)
 dgp.data.load_and_distribute_input_data(input_data_dgp)
-cov_oracle, err_oracle = build_oracles(dgp, beta=BETA, seed=SEED_DGP,
+cov_oracle, err_oracle = build_oracles(dgp, seed=SEED_DGP,
                                        sigma_1=SIGMA_1,
                                        sigma_2=SIGMA_2)
-dgp.subproblems.load_solver(TwoStageSolver)
+dgp.subproblems.load_solver(TwoStageSolverSplit)
 dgp.subproblems.initialize_solver()
 dgp.features.set_covariates_oracle(cov_oracle)
 dgp.features.set_error_oracle(err_oracle)
@@ -60,11 +63,12 @@ obs_b = dgp.subproblems.generate_obs_bundles(THETA_TRUE)
 is_root = dgp.comm_manager.is_root()
 if is_root:
     print(f"DGP: theta_true = {THETA_TRUE}")
-    print(f"     beta={BETA}, M={M}, R={R}, N={N_OBS}")
+    print(f"     M={M}, R={R}, N={N_OBS}")
     print(f"     obs items/firm: mean={obs_b.sum(1).mean():.2f}  "
           f"max={obs_b.sum(1).max()}")
 
-names = [f"rev{i}" for i in range(N_REV)] + ["entry_c", "entry_dist", "syn", "syn_d"]
+names_1 = [f"rev{i}" for i in range(N_REV)] + ["entry_c", "entry_dist", "syn", "syn_d"]
+names = [n + "_1" for n in names_1] + [n + "_2" for n in names_1]
 
 switch = 1 - state_chars
 syn_state = state_chars @ syn_chars
@@ -86,7 +90,7 @@ def build_mincut_model():
     m = ce.Model()
     cfg_mc = {
         "dimensions": {"n_obs": N_OBS, "n_items": M,
-                       "n_covariates": N_COV, "n_simulations": 1},
+                       "n_covariates": N_COV_STATIC, "n_simulations": 1},
         "row_generation": {"max_iters": 200, "tolerance": 1e-6,
                            "theta_bounds": {"lb": -1000}},
     }
@@ -129,10 +133,10 @@ def build_dc_model():
     }
     m.load_config(cfg_est)
     m.data.load_and_distribute_input_data(input_data_est)
-    cov_o, err_o = build_oracles(m, beta=BETA, seed=SEED_EST,
+    cov_o, err_o = build_oracles(m, seed=SEED_EST,
                                   sigma_1=SIGMA_1,
                                   sigma_2=SIGMA_2)
-    m.subproblems.load_solver(TwoStageSolver)
+    m.subproblems.load_solver(TwoStageSolverSplit)
     m.subproblems.initialize_solver()
     m.features.set_covariates_oracle(cov_o)
     m.features.set_error_oracle(err_o)
@@ -141,7 +145,7 @@ def build_dc_model():
 
 if is_root:
     print(f"\n{'='*60}")
-    print(f"  1. MINCUT ROW GENERATION (QuadraticSupermodularMinCutSolver)")
+    print(f"  1. MINCUT ROW GENERATION (static, {N_COV_STATIC} params)")
     print(f"{'='*60}")
 
 model_mc = build_mincut_model()
@@ -150,23 +154,24 @@ result_mc = model_mc.point_estimation.n_slack.solve(
 
 if is_root:
     print(f"\n  MINCUT theta_hat = {result_mc.theta_hat}")
-    for j, name in enumerate(names):
-        print(f"    {name:>10}:  true={THETA_TRUE[j]:+.4f}  hat={result_mc.theta_hat[j]:+.4f}"
+    for j, name in enumerate(names_1):
+        print(f"    {name:>10}:  true_1={THETA_TRUE[j]:+.4f}  hat={result_mc.theta_hat[j]:+.4f}"
               f"  err={result_mc.theta_hat[j]-THETA_TRUE[j]:+.4f}")
     print(f"  obj={result_mc.final_objective:.6f}  "
           f"iters={result_mc.num_iterations}  time={result_mc.total_time:.1f}s")
 
 if is_root:
     print(f"\n{'='*60}")
-    print(f"  2. DC ALGORITHM (TwoStageSolver, beta={BETA})")
+    print(f"  2. DC ALGORITHM (TwoStageSolverSplit, {N_COV} params)")
     print(f"{'='*60}")
 
+theta0_dc = THETA_TRUE * 0.5
 model_dc = build_dc_model()
 solver = model_dc.subproblems.subproblem_solver
 row_gen = model_dc.point_estimation.n_slack
 dc = DCSolver(row_gen, solver)
 
-result_dc = dc.solve(THETA_TRUE * 0.5, max_dc_iters=30, tol=1e-6, verbose=True)
+result_dc = dc.solve(theta0_dc, max_dc_iters=30, tol=1e-6, verbose=True)
 
 if is_root and result_dc is not None:
     print(f"\n  DC theta_hat = {result_dc.theta_hat}")
@@ -179,7 +184,10 @@ if is_root and result_dc is not None:
 solver.solve_Q(THETA_TRUE)
 f_true, _ = model_dc.point_estimation.compute_nonlinear_obj_and_grad_at_root(THETA_TRUE)
 
-theta_mc = result_mc.theta_hat if is_root else np.zeros(N_COV)
+theta_mc = np.zeros(N_COV)
+if is_root:
+    theta_mc[:N_COV_STATIC] = result_mc.theta_hat
+    theta_mc[N_COV_STATIC:] = result_mc.theta_hat
 theta_mc = model_dc.comm_manager.Bcast(theta_mc)
 solver.solve_Q(theta_mc)
 f_mc, _ = model_dc.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta_mc)
@@ -191,10 +199,11 @@ f_dc, _ = model_dc.point_estimation.compute_nonlinear_obj_and_grad_at_root(theta
 
 if is_root and result_dc is not None:
     print(f"\n{'='*60}")
-    print(f"  COMPARISON (all obj evaluated on 2SP model)")
+    print(f"  COMPARISON (all obj evaluated on split 2SP model)")
     print(f"{'='*60}")
     print(f"  {'':>10}  {'true':>10}  {'mincut':>10}  {'DC':>10}")
     for j, name in enumerate(names):
-        print(f"  {name:>10}  {THETA_TRUE[j]:+10.4f}  {result_mc.theta_hat[j]:+10.4f}  "
+        mc_val = theta_mc[j]
+        print(f"  {name:>10}  {THETA_TRUE[j]:+10.4f}  {mc_val:+10.4f}  "
               f"{result_dc.theta_hat[j]:+10.4f}")
     print(f"  {'obj':>10}  {f_true:10.4f}  {f_mc:10.4f}  {f_dc:10.4f}")

@@ -22,8 +22,8 @@ SIGMA_1 = CFG["estimation"]["sigma_1"]
 SEED = CFG["estimation"]["seed"]
 MAX_RG_ITERS = CFG["estimation"]["max_rg_iters"]
 
-N_COV = 4
-NAMES = ["rev", "entry_c", "entry_dist", "entry_syn_d"]
+N_COV = 5
+NAMES = ["rev", "entry_c", "entry_dist", "syn", "syn_d"]
 
 
 if __name__ == "__main__":
@@ -51,6 +51,7 @@ if __name__ == "__main__":
             ctx["rev_chars_1"][:, 0, :],
             switch,
             switch * entry_chars[None, :],
+            switch * syn_state,
             switch * syn_state * entry_chars[None, :],
         ], axis=-1)
 

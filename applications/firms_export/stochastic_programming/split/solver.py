@@ -1,10 +1,13 @@
-import sys
+import importlib.util
 from pathlib import Path
 import numpy as np
 from combest.subproblems.solver_base import SubproblemSolver
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "baseline"))
-from solver import EntryProblem
+_baseline_solver_path = str(Path(__file__).resolve().parent.parent / "baseline" / "solver.py")
+_spec = importlib.util.spec_from_file_location("baseline_solver", _baseline_solver_path)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+EntryProblem = _mod.EntryProblem
 
 
 class TwoStageSolverSplit(SubproblemSolver):
@@ -22,11 +25,12 @@ class TwoStageSolverSplit(SubproblemSolver):
         self.entry_chars = item_data["entry_chars"]
         self.syn_chars = item_data["syn_chars"]
         self.n_rev = self.rev_chars_1.shape[1]
-        self.n_per_period = self.n_rev + 3
+        self.n_per_period = self.n_rev + 4
         obs_raw = id_data.get("obs_bundles", None)
         self.obs_b = obs_raw.astype(float) if obs_raw is not None else np.zeros((n, M))
         self.eps_1 = self.data_manager.local_data.errors["eps_1"]
         self.eps_2 = self.data_manager.local_data.errors["eps_2"]
+        self.C = self.syn_chars
         self.C_d = self.syn_chars * self.entry_chars[:, None]
 
         self.problems = []
@@ -48,42 +52,48 @@ class TwoStageSolverSplit(SubproblemSolver):
         theta_s_1 = theta[self.n_rev]
         theta_sd_1 = theta[self.n_rev + 1]
         theta_syn_1 = theta[self.n_rev + 2]
+        theta_syn_d_1 = theta[self.n_rev + 3]
+
         theta_rev_2 = theta[k:k + self.n_rev]
         theta_s_2 = theta[k + self.n_rev]
         theta_sd_2 = theta[k + self.n_rev + 1]
         theta_syn_2 = theta[k + self.n_rev + 2]
+        theta_syn_d_2 = theta[k + self.n_rev + 3]
 
         rev1 = np.einsum('inm,n->im', self.rev_chars_1, theta_rev_1)
         rev2 = np.einsum('inm,n->im', self.rev_chars_2, theta_rev_2)
         entry = theta_s_1 + theta_sd_1 * self.entry_chars
         entry_2 = theta_s_2 + theta_sd_2 * self.entry_chars
 
-        return rev1, rev2, entry, entry_2, theta_syn_1, theta_syn_2
+        C_syn_1 = theta_syn_1 * self.C + theta_syn_d_1 * self.C_d
+        C_syn_2 = theta_syn_2 * self.C + theta_syn_d_2 * self.C_d
+
+        return rev1, rev2, entry, entry_2, C_syn_1, C_syn_2
 
     def solve(self, theta):
-        rev1, rev2, entry, entry_2, theta_syn_1, theta_syn_2 = \
+        rev1, rev2, entry, entry_2, C_syn_1, C_syn_2 = \
             self._unpack_theta(theta)
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, ep in enumerate(self.problems):
             b_0 = self.state_chars[i]
             switch_1 = 1 - b_0
-            syn_1 = theta_syn_1 * switch_1 * (self.C_d @ b_0)
+            syn_1 = switch_1 * (C_syn_1 @ b_0)
             mod_1 = rev1[i] + switch_1 * entry + self.eps_1[i]
             mod_2 = rev2[i] + self.eps_2[i]
 
             b_1_star, b_2_r_V = ep.solve_joint(
-                mod_1, mod_2, entry_2, syn_1, theta_syn_2, self.C_d)
+                mod_1, mod_2, entry_2, syn_1, C_syn_2)
             pol["b_1_star"][i] = b_1_star
             pol["b_2_r_V"][i] = b_2_r_V
 
         return pol["b_1_star"]
 
     def solve_Q(self, theta):
-        _, rev2, _, entry_2, _, theta_syn_2 = self._unpack_theta(theta)
+        _, rev2, _, entry_2, _, C_syn_2 = self._unpack_theta(theta)
 
         pol = self.data_manager.local_data.id_data["policies"]
         for i, ep in enumerate(self.problems):
             mod_2 = rev2[i] + self.eps_2[i]
             pol["b_2_r_Q"][i] = ep.solve_second_stage(
-                self.obs_b[i], mod_2, entry_2, theta_syn_2, self.C_d)
+                self.obs_b[i], mod_2, entry_2, C_syn_2)

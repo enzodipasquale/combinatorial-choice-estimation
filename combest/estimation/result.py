@@ -17,6 +17,7 @@ class RowGenerationEstimationResult:
     total_time: float = None
     final_n_violations: int = None
     u_hat: np.ndarray = None
+    last_bundles: np.ndarray = None
     timing: dict = field(default_factory=dict)
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)

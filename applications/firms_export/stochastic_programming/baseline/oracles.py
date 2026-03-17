@@ -16,6 +16,7 @@ def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
     rev_chars_2_d = beta * perpetual * rev_chars_2
     entry_chars_2 = beta * entry_chars
     C_d_2 = beta * C * entry_chars[:, None]
+    C_2 = beta * C
     discount_2 = beta
     beta_s = beta
 
@@ -30,6 +31,7 @@ def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
     ld.id_data["rev_chars_2_d"] = rev_chars_2_d
     ld.item_data["entry_chars_2"] = entry_chars_2
     ld.item_data["C_d_2"] = C_d_2
+    ld.item_data["C_2"] = C_2
     ld.item_data["discount_2"] = discount_2
 
     def _get_b_2_r(bundles, ids, data):
@@ -52,12 +54,15 @@ def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
         x_sd = ((switch_1 * entry_chars).sum(-1)
                 + beta_s * (switch_2 * entry_chars).sum(-1).mean(-1))
 
-        syn_1 = b_0 @ C * entry_chars
-        x_syn = (switch_1 * syn_1).sum(-1)
-        syn_2 = b_1 @ C * entry_chars
-        x_syn += beta_s * (switch_2 * syn_2[:, None, :]).sum(-1).mean(-1)
+        syn_base_1 = b_0 @ C
+        x_syn = (switch_1 * syn_base_1).sum(-1)
+        syn_base_2 = b_1 @ C
+        x_syn += beta_s * (switch_2 * syn_base_2[:, None, :]).sum(-1).mean(-1)
 
-        return np.column_stack([x_rev, x_s, x_sd, x_syn])
+        x_syn_d = (switch_1 * syn_base_1 * entry_chars).sum(-1)
+        x_syn_d += beta_s * (switch_2 * syn_base_2[:, None, :] * entry_chars).sum(-1).mean(-1)
+
+        return np.column_stack([x_rev, x_s, x_sd, x_syn, x_syn_d])
 
     def error_oracle(bundles, ids, data):
         b_1 = bundles.astype(float)
