@@ -7,9 +7,7 @@ SPECS_DIR = Path(__file__).parent.parent
 APP_DIR = SPECS_DIR.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
-from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-from applications.combinatorial_auction.data.registries import MODULAR, QUADRATIC
-from applications.combinatorial_auction.data.prepare import _build_features
+from applications.combinatorial_auction.data.loaders import load_bta_data
 
 CBLOCK_DIR = Path(__file__).parent
 POP_THRESHOLD = 500_000
@@ -140,8 +138,16 @@ def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.6
     n_agents = len(u_hat)
     n_sim = n_agents // n_obs
 
+    theta = np.array(result["theta_hat"])
+
     raw = load_bta_data()
     price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9  # (n_btas,) $B
+
+    # ── structural / epsilon from cached oracle outputs ────
+    covariates = np.array(result["predicted_covariates"])     # (n_agents, n_covariates)
+    errors = np.array(result["predicted_errors"])             # (n_agents,)
+    structural = covariates @ theta                           # (n_agents,)
+    epsilon = errors                                          # (n_agents,)
 
     # ── per agent-simulation quantities ──────────────────────
     price_paid = bundles @ price                             # (n_agents,) $B
@@ -184,10 +190,30 @@ def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.6
     _block("All bidders", np.ones(n_obs, dtype=bool))
     _block("Winners", winners)
 
+    # ── structural vs epsilon decomposition ────────────────────
+    # structural includes price cost; add it back for gross decomposition
+    gross_structural = (structural + alpha_1 * price_paid) / alpha_1  # $B
+    gross_epsilon = epsilon / alpha_1                                   # $B
+    gross_struct_m = gross_structural.reshape(n_obs, n_sim).mean(1)
+    gross_eps_m = gross_epsilon.reshape(n_obs, n_sim).mean(1)
+
+    obs_revenue = price.sum()
     print(f"\n  --- Aggregate ---")
-    print(f"  Total revenue:       ${price_paid_m.sum():.4f}B")
+    print(f"  Observed revenue:    ${obs_revenue:.4f}B")
+    print(f"  Predicted revenue:   ${price_paid_m.sum():.4f}B")
     print(f"  Total gross value:   ${gross_m.sum():.4f}B")
+    print(f"    structural part:   ${gross_struct_m.sum():.4f}B  ({gross_struct_m.sum()/gross_m.sum():.1%})")
+    print(f"    epsilon part:      ${gross_eps_m.sum():.4f}B  ({gross_eps_m.sum()/gross_m.sum():.1%})")
     print(f"  Total net surplus:   ${net_m.sum():.4f}B")
+
+    # ── top 5 bidders by gross value ─────────────────────────
+    bidder_names = raw["bidder_data"]["co_name"].values
+    top5 = np.argsort(gross_m)[::-1][:5]
+    print(f"\n  --- Top 5 bidders by gross value ---")
+    print(f"  {'#':<4} {'Bidder':<30} {'Gross ($B)':>12} {'Price ($B)':>12} {'Net ($B)':>12} {'Items':>6}")
+    print(f"  {'-'*76}")
+    for rank, i in enumerate(top5, 1):
+        print(f"  {rank:<4} {bidder_names[i]:<30} {gross_m[i]:>12.6f} {price_paid_m[i]:>12.6f} {net_m[i]:>12.6f} {n_items_m[i]:>6.1f}")
 
 
 def run(result_file="result_FE.json"):
