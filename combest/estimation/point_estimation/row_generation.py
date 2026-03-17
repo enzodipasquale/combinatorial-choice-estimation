@@ -79,7 +79,27 @@ class RowGenerationSolver:
         self._initialize_master()
         return self._run_loop(iteration_callback, initialization_callback)
 
+    def _capture_base_objective(self):
+        if self.comm_manager.is_root() and self.master_model is not None:
+            self.master_model.update()
+            self._base_objective = self.master_model.getObjective()
+
+    def _update_penalty(self, iteration):
+        pen = self.cfg.quadratic_penalty
+        if pen is None or not self.comm_manager.is_root():
+            return
+        weight = pen.initial_weight * max(0.0, 1.0 - iteration / pen.decay_iterations)
+        theta = self.master_variables[0]
+        obj = self._base_objective.copy()
+        if weight > 0:
+            ref = getattr(self, 'penalty_ref', None)
+            for k in range(self.dim.n_covariates):
+                t = theta[k] - ref[k] if ref is not None else theta[k]
+                obj += weight * t * t
+        self.master_model.setObjective(obj, GRB.MINIMIZE)
+
     def _run_loop(self, iteration_callback=None, initialization_callback=None):
+        self._capture_base_objective()
         if initialization_callback is not None:
             initialization_callback(self)
         self._distribute_solution()
@@ -117,7 +137,10 @@ class RowGenerationSolver:
     def _row_generation_iteration(self, iteration):
         t0 = time.perf_counter()
         cuts = self.pt_estimation_manager.compute_cuts(self.theta_iter)
+        self._update_penalty(iteration)
         stop, reduced_cost, n_violations, (t1, t2) = self._master_iteration(cuts)
+        if self.cfg.quadratic_penalty is not None and iteration < self.cfg.quadratic_penalty.decay_iterations:
+            stop = False
         pricing_time = t1 - t0
         master_time = t2 - t1 if self.comm_manager.is_root() else None
         self._distribute_solution()
