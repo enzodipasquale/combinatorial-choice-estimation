@@ -102,6 +102,7 @@ def _c_block(raw, ctx, mod_names, quad_names, qid_names):
         "modular": mod,
         "capacity": ctx["capacity"],
         "obs_bundles": ctx["c_obs_bundles"],
+        "elig": ctx["elig"],
     }
     if qid is not None:
         id_data["quadratic"] = qid

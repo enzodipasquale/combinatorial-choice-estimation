@@ -101,6 +101,11 @@ def theta_bounds_arrays(theta_bounds, n_covariates, default_lb=0, default_ub=100
     return theta_lbs, theta_ubs
 
 @dataclass
+class QuadraticPenaltyConfig(ConfigMixin):
+    initial_weight: float = 1.0
+    decay_iterations: int = 50
+
+@dataclass
 class RowGenerationConfig(ConfigMixin):
     max_slack_counter: float = float('inf')
     tolerance: float = 1e-6
@@ -111,8 +116,14 @@ class RowGenerationConfig(ConfigMixin):
     theta_lbs: float = 0
     theta_bounds: dict = None
 
+    quadratic_penalty: QuadraticPenaltyConfig = None
+
     verbose: bool = True
     save_master_model_dir: str = None
+
+    def __post_init__(self):
+        if isinstance(self.quadratic_penalty, dict):
+            self.quadratic_penalty = QuadraticPenaltyConfig(**self.quadratic_penalty)
 
     def theta_bounds_arrays(self, n_covariates: int, covariate_names=None):
         return theta_bounds_arrays(self.theta_bounds, n_covariates, self.theta_lbs, self.theta_ubs,

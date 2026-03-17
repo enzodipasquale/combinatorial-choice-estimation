@@ -56,7 +56,8 @@ def main(config_path):
     model.load_config(config)
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
-    _build_error_oracle(model, app["dataset"], meta, app.get("error_seed", 1998))
+    _build_error_oracle(model, app["dataset"], meta, app.get("error_seed", 1998),
+                        error_scaling=app.get("error_scaling"))
     model.subproblems.load_solver()
 
     callbacks = config.get("callbacks", {})
@@ -97,9 +98,12 @@ def main(config_path):
             json.dump(out, open(experiment_dir / "bootstrap_result.json", "w"), indent=2)
 
 
-def _build_error_oracle(model, dataset, meta, seed):
+def _build_error_oracle(model, dataset, meta, seed, error_scaling=None):
     if dataset == "c_block":
         model.features.build_local_modular_error_oracle(seed=seed)
+        if error_scaling == "elig":
+            elig = model.data.local_data.id_data['elig']
+            model.features.local_modular_errors *= elig[:, None]
         return
 
     A = meta["A"]
