@@ -54,6 +54,8 @@ class NSlackSolver(RowGenerationSolver):
             self.add_master_constraints(*constraints_coeff)
         if self.comm_manager.is_root():
             self.master_model.optimize()
+            if self.master_model.Status != gp.GRB.OPTIMAL:
+                raise RuntimeError(f'Master problem not optimal after iteration, status={self.master_model.Status}')
         t2 = time.perf_counter()
         return stop, reduced_cost, n_violations, (t1, t2)
 

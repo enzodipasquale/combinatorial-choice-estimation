@@ -141,6 +141,9 @@ class RowGenerationSolver:
         stop, reduced_cost, n_violations, (t1, t2) = self._master_iteration(cuts)
         if self.cfg.quadratic_penalty is not None and iteration < self.cfg.quadratic_penalty.decay_iterations:
             stop = False
+        # update penalty reference to current solution for next iteration
+        if self.cfg.quadratic_penalty is not None and self.comm_manager.is_root():
+            self.penalty_ref = self.master_variables[0].X.copy()
         pricing_time = t1 - t0
         master_time = t2 - t1 if self.comm_manager.is_root() else None
         self._distribute_solution()
