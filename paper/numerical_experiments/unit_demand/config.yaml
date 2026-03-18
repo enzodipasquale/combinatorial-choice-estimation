@@ -1,17 +1,17 @@
 experiment:
-  n_replications: 50
+  n_replications: 200
   K: 3
   beta_star: [1.0, -0.5, 0.5]
   n_simulations: 1
   sigma: 1.0  # effective noise std = sigma * sqrt(K)
+  ghk_draws: 200
 
 dgps:
-  logit: {}
   probit: {}
 
 grid:
-  J: [5, 10, 20]
-  N: [100, 500, 1000]
+  J: [5]
+  N: [500, 1000, 2000, 5000]
 
 row_generation:
   max_iters: 200

@@ -13,6 +13,7 @@ from oracles import build_oracles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "baseline"))
 from dc import DCSolver
+from combest.estimation.callbacks import adaptive_gurobi_timeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
@@ -174,8 +175,9 @@ if __name__ == "__main__":
     row_gen = model_dc.point_estimation.n_slack
     dc = DCSolver(row_gen, solver)
 
+    rg_cb, _ = adaptive_gurobi_timeout(CFG["callbacks"]["row_gen"])
     result = dc.solve(theta0, max_dc_iters=MAX_DC_ITERS, tol=DC_TOL,
-                      verbose=True)
+                      iteration_callback=rg_cb, verbose=True)
 
     if is_root and result is not None:
         print(f"\nDC theta_hat = {result.theta_hat}")

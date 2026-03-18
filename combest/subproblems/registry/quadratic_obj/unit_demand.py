@@ -20,7 +20,7 @@ class UnitDemandSolver(QuadraticObjectiveMixin, SubproblemSolver):
 
     def solve(self, theta):
         U = self._build_linear_coeff_batch(theta)
-        mask = self.data_manager.id_data["constraint_mask"]
+        mask = self.data_manager.local_data.id_data.get("constraint_mask")
         if mask is not None:
             U = np.where(mask, U, -np.inf)
         j_star = np.argmax(U, axis=1)

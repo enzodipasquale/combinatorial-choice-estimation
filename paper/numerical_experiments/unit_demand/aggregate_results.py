@@ -7,9 +7,6 @@ import numpy as np
 from pathlib import Path
 
 
-DGP_LABELS = {"logit": "Logit", "probit": "Probit"}
-
-
 def load_all_statistics(results_dir, config):
     dgps = list(config["dgps"].keys())
     grid_J, grid_N = config["grid"]["J"], config["grid"]["N"]
@@ -29,7 +26,9 @@ def load_all_statistics(results_dir, config):
 
 
 def fmt(val, decimals=3):
-    return "---" if val is None or np.isnan(val) else f"{val:.{decimals}f}"
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return "---"
+    return f"{val:.{decimals}f}"
 
 
 def generate_table_csv(stats, config, output_path):
@@ -39,84 +38,81 @@ def generate_table_csv(stats, config, output_path):
     with open(output_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["DGP", "J", "N",
-                     "Bias MLE", "RMSE MLE", "Runtime MLE",
-                     "Bias Combest", "RMSE Combest", "Runtime Combest"])
+                     "RMSE MLE", "RMSE Combest",
+                     "N*MSE MLE", "N*MSE Combest",
+                     "Eff. Ratio",
+                     "Runtime MLE", "Runtime Combest"])
         for dgp in dgps:
             for J in grid_J:
                 for N in grid_N:
                     s = stats[dgp][J][N]
                     if s is None:
-                        w.writerow([dgp, J, N] + ["---"] * 6)
+                        w.writerow([dgp, J, N] + ["---"] * 7)
                     else:
                         w.writerow([dgp, J, N,
-                                    fmt(s["bias_mle"]), fmt(s["rmse_mle"]),
-                                    fmt(s["runtime_mle"], 2),
-                                    fmt(s["bias_combest"]), fmt(s["rmse_combest"]),
-                                    fmt(s["runtime_combest"], 2)])
+                                    fmt(s.get("mle_rmse_mean"), 4),
+                                    fmt(s.get("combest_rmse_mean"), 4),
+                                    fmt(s.get("N_mse_mle"), 2),
+                                    fmt(s.get("N_mse_combest"), 2),
+                                    fmt(s.get("efficiency_ratio_total"), 3),
+                                    fmt(s.get("runtime_mle"), 2),
+                                    fmt(s.get("runtime_combest"), 2)])
 
 
 def generate_table_latex(stats, config, output_path):
     dgps = list(config["dgps"].keys())
     grid_J, grid_N = config["grid"]["J"], config["grid"]["N"]
-    n_N = len(grid_N)
     exp = config["experiment"]
 
     lines = [
         "\\begin{table}[htbp]",
         "\\centering",
         "\\footnotesize",
-        "\\caption{Comparison of MLE and combinatorial estimator: unit demand}",
-        "\\label{tab:unit_demand}",
+        "\\caption{Asymptotic efficiency: combinatorial estimator vs.\\ simulated MLE (probit)}",
+        "\\label{tab:efficiency}",
         "\\begin{threeparttable}",
-        "\\begin{tabular}{l" + " c" * (len(grid_J) * n_N) + "}",
+        "\\begin{tabular}{l" + " c" * len(grid_N) + "}",
         "\\toprule",
-        " & " + " & ".join(
-            f"\\multicolumn{{{n_N}}}{{c}}{{$J = {J}$}}" for J in grid_J) + " \\\\",
+        "$N$ & " + " & ".join(str(N) for N in grid_N) + " \\\\",
+        "\\midrule",
     ]
 
-    cmidrules = []
-    for i, J in enumerate(grid_J):
-        start = 2 + i * n_N
-        cmidrules.append(f"\\cmidrule(lr){{{start}-{start + n_N - 1}}}")
-    lines.append(" ".join(cmidrules))
-    lines.append("$N$ & " + " & ".join([str(N) for N in grid_N] * len(grid_J)) + " \\\\")
-    lines.append("\\midrule")
-
     for dgp in dgps:
-        label = DGP_LABELS.get(dgp, dgp)
-        ncols = len(grid_J) * n_N + 1
-        lines.append(f"\\multicolumn{{{ncols}}}{{l}}{{\\textit{{{label}}}}} \\\\[2pt]")
+        for J in grid_J:
+            rows = [
+                ("RMSE (MLE)", "mle_rmse_mean", 4),
+                ("RMSE (Combest)", "combest_rmse_mean", 4),
+                ("$N \\cdot$ MSE (MLE)", "N_mse_mle", 2),
+                ("$N \\cdot$ MSE (Combest)", "N_mse_combest", 2),
+                ("Efficiency ratio", "efficiency_ratio_total", 3),
+                ("Runtime (MLE)", "runtime_mle", 2),
+                ("Runtime (Combest)", "runtime_combest", 2),
+            ]
 
-        rows = [
-            ("Bias (MLE)", "bias_mle", 3),
-            ("Bias (Combest)", "bias_combest", 3),
-            ("RMSE (MLE)", "rmse_mle", 3),
-            ("RMSE (Combest)", "rmse_combest", 3),
-            ("Runtime (MLE)", "runtime_mle", 2),
-            ("Runtime (Combest)", "runtime_combest", 2),
-        ]
-
-        for row_label, key, dec in rows:
-            cells = []
-            for J in grid_J:
+            for row_label, key, dec in rows:
+                cells = []
                 for N in grid_N:
                     s = stats[dgp][J][N]
-                    val = s.get(key, np.nan) if s else np.nan
+                    val = s.get(key) if s else None
                     cells.append(fmt(val, dec))
-            lines.append(f"{row_label} & " + " & ".join(cells) + " \\\\")
-
-        if lines[-1].endswith("\\\\"):
-            lines[-1] = lines[-1][:-2] + "\\\\[4pt]"
+                lines.append(f"{row_label} & " + " & ".join(cells) + " \\\\")
 
     beta_str = ", ".join(str(b) for b in exp["beta_star"])
+    sigma_str = exp.get("sigma", 1.0)
+    ghk_str = exp.get("ghk_draws", 200)
     lines += [
         "\\bottomrule",
         "\\end{tabular}",
         "\\begin{tablenotes}",
         "\\footnotesize",
-        f"\\item \\textit{{Notes:}} Averages over replications. "
-        f"$K = {exp['K']}$, $\\beta^* = ({beta_str})$. "
-        f"Runtime in seconds.",
+        f"\\item \\textit{{Notes:}} "
+        f"$K = {exp['K']}$, $J = {grid_J[0]}$, "
+        f"$\\beta^* = ({beta_str})$, "
+        f"$\\sigma = {sigma_str}$, "
+        f"GHK draws $= {ghk_str}$. "
+        f"Efficiency ratio $= $ MSE(Combest) / MSE(MLE). "
+        f"$N \\cdot$ MSE should stabilize under $\\sqrt{{N}}$-consistency. "
+        f"Averages over {exp['n_replications']} replications.",
         "\\end{tablenotes}",
         "\\end{threeparttable}",
         "\\end{table}",
