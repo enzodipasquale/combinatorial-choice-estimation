@@ -10,7 +10,7 @@ from oracles import build_oracles
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
 from prepare_data import main as load_data, build_input_data
 
-with open(Path(__file__).resolve().parent / "test_config.yaml") as f:
+with open(Path(__file__).resolve().parent / "config_test.yaml") as f:
     CFG = yaml.safe_load(f)["test_real_data"]
 
 COUNTRY = CFG["country"]
