@@ -12,7 +12,8 @@ class DCSolver:
         self.row_gen = row_gen_solver
         self.solver = subproblem_solver
 
-    def solve(self, theta0, max_dc_iters=20, tol=1e-6, verbose=False):
+    def solve(self, theta0, max_dc_iters=20, tol=1e-6, verbose=False,
+              iteration_callback=None):
         comm = self.row_gen.comm_manager
         n = len(theta0)
         theta_k = comm.Bcast(np.asarray(theta0, dtype=np.float64))
@@ -40,6 +41,7 @@ class DCSolver:
             result = self.row_gen.solve(
                 initialize_solver=False,
                 initialize_master=init_master,
+                iteration_callback=iteration_callback,
                 verbose=verbose)
 
             theta_next = np.empty(n, dtype=np.float64)

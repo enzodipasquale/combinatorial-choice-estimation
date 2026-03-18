@@ -43,6 +43,7 @@ def run_replication(dgp, N, J, K, beta, replication=0, config=None):
     n_simulations = exp.get("n_simulations", 1)
     base_sigma = exp.get("sigma", 1.0)
     sigma = base_sigma * np.sqrt(K)
+    ghk_draws = exp.get("ghk_draws", 200)
     seed = replication * 1000 + 42
 
     if dgp == "logit":
@@ -56,7 +57,8 @@ def run_replication(dgp, N, J, K, beta, replication=0, config=None):
         gamma_mle, _ = estimate_logit_mle_individual(X, choices)
         beta_mle = gamma_mle * sigma
     else:
-        beta_mle, _ = estimate_probit_mle_individual(X, choices, Sigma, seed=seed + 1)
+        beta_mle, _ = estimate_probit_mle_individual(
+            X, choices, Sigma, R=ghk_draws, seed=seed + 1)
     runtime_mle = time.perf_counter() - t0
 
     obs_bundles = choices_to_bundles(choices, J)

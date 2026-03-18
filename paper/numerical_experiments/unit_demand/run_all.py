@@ -48,13 +48,16 @@ def main():
                 results.append(r)
                 print("\u2713")
 
-            stats = compute_statistics(results)
+            stats = compute_statistics(results, N=N)
             with open(results_dir / f"stats_{dgp}_N{N}_J{J}.json", "w") as f:
                 json.dump(stats, f, indent=2)
 
-            for method in ("mle", "combest"):
-                print(f"  {method}: Bias={stats[f'bias_{method}']:.4f}, "
-                      f"RMSE={stats[f'rmse_{method}']:.4f}")
+            print(f"  MLE:     RMSE={stats['mle_rmse_mean']:.4f}")
+            print(f"  Combest: RMSE={stats['combest_rmse_mean']:.4f}")
+            if stats.get("efficiency_ratio_total") is not None:
+                print(f"  Efficiency ratio: {stats['efficiency_ratio_total']:.3f}")
+            if stats.get("N_mse_mle") is not None:
+                print(f"  N*MSE:  MLE={stats['N_mse_mle']:.2f}  Combest={stats['N_mse_combest']:.2f}")
 
     print(f"\n{'='*60}\nGenerating tables...\n{'='*60}")
     stats = load_all_statistics(results_dir, config)
