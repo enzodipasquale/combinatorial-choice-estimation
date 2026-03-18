@@ -65,62 +65,95 @@ def _build_distant_stats(var, geo, dist_thresholds):
     return means, stds
 
 
+def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
+    """Run a single IV regression. Returns (spec_label, beta, se, r2, f_stat, r2_fs)."""
+    X = np.column_stack([np.ones(n), -p_s])
+
+    if instruments == "pop_hhinc":
+        Z = np.column_stack([zm, zh])
+        z_label, n_inst = "pop+hhinc", 2
+    elif instruments == "pop_std":
+        Z = np.column_stack([zm, zs])
+        z_label, n_inst = "pop+std", 2
+    elif instruments == "all":
+        Z = np.column_stack([zm, zs, zh])
+        z_label, n_inst = "pop+std+hhinc", 3
+
+    b_iv, s_iv, r2_iv, res_iv = tsls(X, d_s, Z)
+    X_fs = np.column_stack([np.ones(n)] + [Z[:, k] for k in range(n_inst)])
+    _, _, r2_fs, _ = ols(X_fs, -p_s)
+    f_stat = (r2_fs / n_inst) / ((1 - r2_fs) / (n - n_inst - 1))
+    spec_label = f"IV z={z_label} d>{d}"
+    return spec_label, b_iv, s_iv, r2_iv, f_stat, r2_fs
+
+
+# ── IV spec registry ──────────────────────────────────────────────
+# (instruments, dist_threshold_km)
+PREFERRED_IV = ("pop_hhinc", 500)
+OTHER_IV_SPECS = [
+    ("pop_std",    500),
+    ("all",        500),
+    ("pop_hhinc", 1000),
+    ("pop_std",   1000),
+    ("all",       1000),
+    ("pop_hhinc", 1500),
+    ("pop_std",   1500),
+    ("all",       1500),
+    ("pop_hhinc", 2000),
+    ("pop_std",   2000),
+    ("all",       2000),
+]
+
+
 def _run_iv_block(label, mask, delta, price, dist_thresholds,
                   iv_pop_mean, iv_pop_std, iv_hhinc_mean):
-    """Run OLS and IV regressions for a given subsample."""
+    """Run OLS and preferred IV in detail, then summary table of all IV specs."""
     n = mask.sum()
     d_s, p_s = delta[mask], price[mask]
 
-    # OLS: delta ~ const + (-price)
+    # ── OLS ───────────────────────────────────────────────────────
     X = np.column_stack([np.ones(n), -p_s])
     b, s, r2, res = ols(X, d_s)
     _print_regression(f"OLS {label}: delta ~ const + (-price)",
                       n, ["const", "alpha_1"], b, s, r2, res)
 
-    # IV at each distance threshold
-    for d in dist_thresholds:
-        zm = iv_pop_mean[d][mask]
-        zs = iv_pop_std[d][mask]
-        zh = iv_hhinc_mean[d][mask]
+    # ── Preferred IV (full output) ────────────────────────────────
+    def _get_zs(d):
+        return iv_pop_mean[d][mask], iv_pop_std[d][mask], iv_hhinc_mean[d][mask]
 
-        X_endog = np.column_stack([np.ones(n), -p_s])
+    inst, d = PREFERRED_IV
+    zm, zs, zh = _get_zs(d)
+    spec, b_iv, s_iv, r2_iv, f_stat, r2_fs = _run_iv(label, n, d_s, p_s, zm, zs, zh, inst, d)
+    _print_regression(f"IV {label} ({spec}): delta ~ const + (-price)",
+                      n, ["const", "alpha_1"], b_iv, s_iv, r2_iv, delta[mask] - np.column_stack([np.ones(n), -p_s]) @ b_iv)
+    print(f"  First-stage F = {f_stat:.1f},  R2 = {r2_fs:.4f}")
 
-        # IV with avg_pop + std_pop (just-identified: 2 instruments, 2 endogenous)
-        Z_iv = np.column_stack([zm, zs])  # no constant in Z: both regressors instrumented
-        b_iv, s_iv, r2_iv, res_iv = tsls(X_endog, d_s, Z_iv)
-        # first-stage F for -price on instruments
-        X_fs = np.column_stack([np.ones(n), zm, zs])
-        b_fs, _, r2_fs, _ = ols(X_fs, -p_s)
-        f_stat = ((r2_fs) / 2) / ((1 - r2_fs) / (n - 3))
-        _print_regression(f"IV {label} (z=avg_pop+std_pop, d>{d}km): delta ~ const + (-price)",
-                          n, ["const", "alpha_1"], b_iv, s_iv, r2_iv, res_iv)
-        print(f"  First-stage F = {f_stat:.1f},  R2 = {r2_fs:.4f}")
+    # ── Summary table of all IV specs ─────────────────────────────
+    rows = [(spec, b_iv, s_iv, r2_iv, f_stat)]
+    for inst, d in OTHER_IV_SPECS:
+        zm, zs, zh = _get_zs(d)
+        sp, bi, si, ri, fi, _ = _run_iv(label, n, d_s, p_s, zm, zs, zh, inst, d)
+        rows.append((sp, bi, si, ri, fi))
 
-        # IV with avg_pop + avg_hhinc (just-identified, less collinear)
-        Z_iv2 = np.column_stack([zm, zh])
-        b_iv2, s_iv2, r2_iv2, res_iv2 = tsls(X_endog, d_s, Z_iv2)
-        X_fs2 = np.column_stack([np.ones(n), zm, zh])
-        _, _, r2_fs2, _ = ols(X_fs2, -p_s)
-        f_stat2 = ((r2_fs2) / 2) / ((1 - r2_fs2) / (n - 3))
-        _print_regression(f"IV {label} (z=avg_pop+avg_hhinc, d>{d}km): delta ~ const + (-price)",
-                          n, ["const", "alpha_1"], b_iv2, s_iv2, r2_iv2, res_iv2)
-        print(f"  First-stage F = {f_stat2:.1f},  R2 = {r2_fs2:.4f}")
+    S = 24  # spec column width
+    print(f"\n{'='*90}")
+    print(f"All IV specs {label}  (N = {n})")
+    print(f"{'='*90}")
+    print(f"  {'Spec':<{S}} {'a0':>8} {'se':>8} {'t':>7}  {'a1':>8} {'se':>8} {'t':>7}  {'F':>6} {'R2':>6}")
+    print(f"  {'-'*(S+8+8+7+2+8+8+7+2+6+6+4)}")
+    for sp, bi, si, ri, fi in rows:
+        t0, t1 = bi[0]/si[0], bi[1]/si[1]
+        print(f"  {sp:<{S}} {bi[0]:>8.3f} {si[0]:>8.3f} {t0:>7.2f}  {bi[1]:>8.3f} {si[1]:>8.3f} {t1:>7.2f}  {fi:>6.1f} {ri:>6.3f}")
 
-        # IV with avg_pop + std_pop + avg_hhinc (overidentified)
-        Z_iv3 = np.column_stack([zm, zs, zh])
-        b_iv3, s_iv3, r2_iv3, res_iv3 = tsls(X_endog, d_s, Z_iv3)
-        X_fs3 = np.column_stack([np.ones(n), zm, zs, zh])
-        _, _, r2_fs3, _ = ols(X_fs3, -p_s)
-        f_stat3 = ((r2_fs3) / 3) / ((1 - r2_fs3) / (n - 4))
-        _print_regression(f"IV {label} (z=avg_pop+std_pop+avg_hhinc, d>{d}km): delta ~ const + (-price)",
-                          n, ["const", "alpha_1"], b_iv3, s_iv3, r2_iv3, res_iv3)
-        print(f"  First-stage F = {f_stat3:.1f},  R2 = {r2_fs3:.4f}")
+    return b_iv  # preferred IV coefficients: [alpha_0, alpha_1]
 
 
-def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.678871):
+def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     """
     Net surplus ($B) = u_hat / alpha_1
     """
+    if alpha_0 is None or alpha_1 is None:
+        raise ValueError("alpha_0 and alpha_1 must be provided (from IV regression)")
     result = json.load(open(CBLOCK_DIR / result_file))
     u_hat = np.array(result["u_hat"])
     n_obs = result["n_obs"]
@@ -141,9 +174,7 @@ def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.6
 
     print(f"  total net surplus  = ${total_net:>10.4f}B")
     print(f"    observable part  = ${obs_net:>10.4f}B")
-    print(f"    epsilon part     = ${eps_net:>10.4f}B  (= obj / n_sim / a1)")
-    print(f"  mean net surplus   = ${net_m.mean():>10.4f}B")
-    print(f"  median net surplus = ${np.median(net_m):>10.4f}B")
+    print(f"    epsilon part     = ${eps_net:>10.4f}B")
 
     # ── observable part decomposition using observed bundles ──
     raw = load_bta_data()
@@ -173,12 +204,23 @@ def run_valuations(result_file="result_FE.json", alpha_0=-2.495269, alpha_1=40.6
     print(f"    (4) gamma residual     = ${gamma_part:>10.4f}B")
     print(f"    sum (1)+(2)+(3)+(4)    = ${(-obs_revenue + xi_part + a0_part + gamma_part):>10.4f}B")
 
-    top5 = np.argsort(net_m)[::-1][:5]
-    print(f"\n  Top 5 by net surplus:")
-    print(f"  {'#':<3} {'Bidder':<40} {'Net ($B)':>10} {'Price ($B)':>10} {'|b|':>4}")
-    print(f"  {'-'*70}")
-    for r, i in enumerate(top5, 1):
-        print(f"  {r:<3} {bidder_names[i]:<40} {net_m[i]:>10.4f} {obs_price_paid[i]:>10.4f} {obs_bundle_size[i]:>4d}")
+    elig = raw["bidder_data"]["pops_eligible"].to_numpy().astype(float)
+    assets = raw["bidder_data"]["assets"].to_numpy().astype(float)
+    revenues = raw["bidder_data"]["revenues"].to_numpy().astype(float)
+    W = 30  # bidder name column width
+
+    def _top5(title, idx):
+        print(f"\n  {title}:")
+        print(f"  {'#':<3} {'Bidder':<{W}} {'Elig (M)':>8} {'Net ($M)':>9} {'Price ($M)':>10} {'|b|':>4}")
+        print(f"  {'-'*(3+W+8+9+10+4+5)}")
+        for rank, i in enumerate(idx, 1):
+            name = bidder_names[i][:W]
+            print(f"  {rank:<3} {name:<{W}} {elig[i]/1e6:>8.1f} {net_m[i]*1e3:>9.1f} {obs_price_paid[i]*1e3:>10.1f} {obs_bundle_size[i]:>4d}")
+
+    _top5("Top 5 by net surplus", np.argsort(net_m)[::-1][:5])
+    _top5("Top 5 by eligibility", np.argsort(elig)[::-1][:5])
+    _top5("Top 5 by assets", np.argsort(assets)[::-1][:5])
+    _top5("Top 5 by revenues", np.argsort(revenues)[::-1][:5])
 
 
 def run(result_file="result_FE.json"):
@@ -209,12 +251,13 @@ def run(result_file="result_FE.json"):
     print(f"\n{'#'*60}")
     print(f"# RURAL (pop90 < {POP_THRESHOLD:,}): {rural.sum()} BTAs")
     print(f"{'#'*60}")
-    _run_iv_block("rural", rural, delta, price, dist_thresholds,
-                  iv_pop_mean, iv_pop_std, iv_hhinc_mean)
+    b_iv = _run_iv_block("rural", rural, delta, price, dist_thresholds,
+                         iv_pop_mean, iv_pop_std, iv_hhinc_mean)
+    return b_iv  # [alpha_0, alpha_1] from preferred IV
 
 
 
 if __name__ == "__main__":
     import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
-    run()
-    run_valuations()
+    b_iv = run()
+    run_valuations(alpha_0=b_iv[0], alpha_1=b_iv[1])

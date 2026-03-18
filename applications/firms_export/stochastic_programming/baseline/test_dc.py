@@ -9,7 +9,7 @@ from solver import TwoStageSolver
 from oracles import build_oracles
 from dc import DCSolver
 
-with open(Path(__file__).resolve().parent / "test_config.yaml") as f:
+with open(Path(__file__).resolve().parent / "config_test.yaml") as f:
     CFG = yaml.safe_load(f)["test_dc"]
 
 BETA = CFG["beta"]
