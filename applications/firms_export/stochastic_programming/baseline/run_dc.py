@@ -1,4 +1,5 @@
 #!/bin/env python
+import gc
 import sys
 from pathlib import Path
 import yaml
@@ -151,6 +152,9 @@ if __name__ == "__main__":
         print(f"obj={result_mc.final_objective:.6f}  "
               f"iters={result_mc.num_iterations}  time={result_mc.total_time:.1f}s")
     theta0 = base_model.comm_manager.Bcast(theta0)
+
+    del model_mc, base_model
+    gc.collect()
 
     if is_root:
         print(f"\n{'='*60}")
