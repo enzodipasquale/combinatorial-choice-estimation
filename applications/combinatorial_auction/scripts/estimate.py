@@ -67,7 +67,8 @@ def main(config_path):
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
         if rank == 0 and result is not None:
-            suffix = "FE" if app.get("item_modular", "fe") == "fe" else "noFE"
+            config_name = Path(config_path).stem
+            suffix = config_name if config_name != "config" else ("FE" if app.get("item_modular", "fe") == "fe" else "noFE")
             _save(result, config, meta, experiment_dir / f"result_{suffix}.json")
 
     elif mode == "bootstrap":
