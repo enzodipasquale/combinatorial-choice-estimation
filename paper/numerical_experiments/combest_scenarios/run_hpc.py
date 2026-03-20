@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import json
+import argparse
 from pathlib import Path
 from itertools import product
 import yaml
@@ -19,6 +20,11 @@ SCRIPT_DIR = Path(__file__).parent
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--N", type=int, nargs="+", default=None,
+                        help="N values to run. If omitted, runs all from config.")
+    args = parser.parse_args()
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -26,7 +32,7 @@ def main():
         config = yaml.safe_load(f)
 
     grid_M = config["grid"]["M"]
-    grid_N = config["grid"]["N"]
+    grid_N = args.N if args.N else config["grid"]["N"]
     specs = list(config["specifications"].keys())
     n_reps = config["experiment"]["n_replications"]
 
@@ -54,7 +60,7 @@ def main():
 
             if rank == 0:
                 print(f"\n{'='*60}")
-                print(f"Running {spec}, N={N}, M={M}, α={alpha_val}, λ={lambda_val}")
+                print(f"Running {spec}, N={N}, M={M}, \u03b1={alpha_val}, \u03bb={lambda_val}")
                 print(f"{'='*60}", flush=True)
 
             for rep in range(n_reps):
@@ -70,7 +76,7 @@ def main():
                     out = results_dir / f"{spec}_N{N}_M{M}_rep{rep}.json"
                     with open(out, "w") as f:
                         json.dump(result, f, indent=2)
-                    print("✓", flush=True)
+                    print("\u2713", flush=True)
 
             if rank == 0:
                 results = load_replication_results(results_dir, spec, N, M)
