@@ -9,7 +9,7 @@ experiment:
 
 grid:
   J: [2, 10]
-  N: [500, 1000, 2000, 5000]
+  N: [200, 500, 1000, 2000, 5000]
 
 row_generation:
   max_iters: 200
