@@ -123,8 +123,11 @@ def main():
         for J, N in cells:
             run_cell(J, N, K, beta, n_reps, config, results_dir)
 
-    if rank == 0:
-        print("\nDone. Run analyze_results.py locally to generate figures.")
+    # Generate figures and tables if all cells completed
+    if rank == 0 and args.cell_index is None:
+        from paper.numerical_experiments.unit_demand.analyze_results import main as analyze
+        print("\nGenerating figures and tables...")
+        analyze()
 
 
 if __name__ == "__main__":

@@ -1,10 +1,7 @@
 import numpy as np
-import jax
-import jax.numpy as jnp
-from jax.scipy.stats import norm as jnorm
+from scipy.stats import norm
+from scipy.special import logsumexp
 from scipy.optimize import minimize
-
-jax.config.update("jax_enable_x64", True)
 
 
 def _build_diff_operators(J, Sigma):
@@ -25,84 +22,97 @@ def _build_diff_operators(J, Sigma):
     return ops
 
 
-def _ghk_prob(m, L, uniforms):
-    R, D = uniforms.shape
-    z = jnp.zeros((R, D))
-    log_p = jnp.zeros(R)
+def _ghk_log_probs_and_grad(m, dm_dbeta, L, uniforms):
+    """
+    GHK simulator with forward-mode AD for gradient.
+
+    m:         (N_g, D)      differenced mean utilities
+    dm_dbeta:  (N_g, D, K)   Jacobian of m w.r.t. beta
+    L:         (D, D)        Cholesky factor
+    uniforms:  (N_g, R, D)   uniform draws
+
+    Returns:
+        log_P:     (N_g,)    log choice probabilities
+        dlog_P:    (N_g, K)  gradient of log_P w.r.t. beta
+    """
+    N_g, R, D = uniforms.shape
+    K = dm_dbeta.shape[2]
+
+    z = np.zeros((N_g, R, D))
+    dz = np.zeros((N_g, R, D, K))
+    log_p = np.zeros((N_g, R))
+    dlog_p = np.zeros((N_g, R, K))
+
     for d in range(D):
-        eta = z @ L[d]
-        upper = (m[d] - eta) / L[d, d]
-        cdf = jnp.clip(jnorm.cdf(upper), 1e-15, 1.0)
-        log_p = log_p + jnp.log(cdf)
-        z_d = jnorm.ppf(jnp.clip(uniforms[:, d] * cdf, 1e-15, 1 - 1e-15))
-        z = z.at[:, d].set(z_d)
-    return jnp.exp(log_p).mean()
+        # eta_d = sum_{d'<d} L[d,d'] * z[d']
+        eta = np.einsum('nrd,d->nr', z[:, :, :d], L[d, :d])
+        deta = np.einsum('nrdk,d->nrk', dz[:, :, :d, :], L[d, :d])
 
+        # upper_d = (m_d - eta_d) / L[d,d]
+        upper = (m[:, d:d+1] - eta) / L[d, d]
+        dupper = (dm_dbeta[:, d:d+1, :] - deta) / L[d, d]
 
-def estimate_probit_mle(X, shares, Sigma, R=500, seed=42):
-    J, K = X.shape
-    shares_jax = jnp.array(shares)
-    X_jax = jnp.array(X)
+        # Phi(upper), phi(upper)
+        cdf = np.clip(norm.cdf(upper), 1e-15, 1.0)
+        pdf = norm.pdf(upper)
 
-    ops = _build_diff_operators(J, Sigma)
-    rng = np.random.default_rng(seed)
-    Ms = jnp.stack([M for M, L in ops])
-    Ls = jnp.stack([L for M, L in ops])
-    all_uniforms = jnp.stack([rng.uniform(size=(R, J)) for _ in range(J + 1)])
+        # log_p += log Phi(upper)
+        log_p += np.log(cdf)
+        dlog_p += (pdf / cdf)[:, :, None] * dupper
 
-    def neg_ll(beta):
-        V = X_jax @ beta
-        ll = jnp.float64(0.0)
-        for j in range(J + 1):
-            prob = _ghk_prob(Ms[j] @ V, Ls[j], all_uniforms[j])
-            ll = ll + shares_jax[j] * jnp.log(jnp.clip(prob, 1e-300, 1.0))
-        return -ll
+        # z_d = Phi^{-1}(u_d * Phi(upper))
+        a = np.clip(uniforms[:, :, d] * cdf, 1e-15, 1 - 1e-15)
+        z[:, :, d] = norm.ppf(a)
 
-    neg_ll_vg = jax.jit(jax.value_and_grad(neg_ll))
+        # dz_d/dbeta = (u_d * phi(upper) / phi(z_d)) * dupper
+        phi_z = np.clip(norm.pdf(z[:, :, d]), 1e-15, None)
+        dz[:, :, d, :] = ((uniforms[:, :, d] * pdf) / phi_z)[:, :, None] * dupper
 
-    def objective(beta_np):
-        v, g = neg_ll_vg(jnp.array(beta_np))
-        return float(v), np.array(g)
+    # log P_i = logsumexp(log_p_ir) - log(R)
+    log_P = logsumexp(log_p, axis=1) - np.log(R)
 
-    result = minimize(objective, np.zeros(K), method='L-BFGS-B', jac=True)
-    return result.x, result
+    # dlog P_i/dbeta = sum_r w_ir * dlog_p_ir/dbeta
+    # w_ir = softmax weights = exp(log_p_ir) / sum_r' exp(log_p_ir')
+    w = np.exp(log_p - logsumexp(log_p, axis=1, keepdims=True))
+    dlog_P = np.einsum('nr,nrk->nk', w, dlog_p)
+
+    return log_P, dlog_P
 
 
 def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42):
     N, J, K = X.shape
-    X_jax = jnp.array(X)
-
     ops = _build_diff_operators(J, Sigma)
     rng = np.random.default_rng(seed)
-    Ms = jnp.stack([M for M, L in ops])
-    Ls = jnp.stack([L for M, L in ops])
+
+    Ms = [M for M, L in ops]
+    Ls = [L for M, L in ops]
 
     groups = []
     for j in range(J + 1):
         idx = np.where(choices == j)[0]
         if len(idx) > 0:
-            groups.append((
-                j,
-                jnp.array(idx),
-                jnp.array(rng.uniform(size=(len(idx), R, J)))
-            ))
+            groups.append((j, idx, rng.uniform(size=(len(idx), R, J))))
 
-    def neg_ll(beta):
-        ll = jnp.float64(0.0)
-        for j, idx, uniforms in groups:
-            V = X_jax[idx] @ beta
-            m = V @ Ms[j].T
-            probs = jax.vmap(
-                lambda mi, ui: _ghk_prob(mi, Ls[j], ui)
-            )(m, uniforms)
-            ll = ll + jnp.log(jnp.clip(probs, 1e-300, 1.0)).sum()
-        return -ll
+    # Precompute dm/dbeta for each group (does not depend on beta)
+    # m = X[idx] @ beta @ M.T  =>  dm/dbeta[k] = X[idx,:,k] @ M.T
+    group_dm = []
+    for j, idx, _ in groups:
+        group_dm.append(np.einsum('njk,dj->ndk', X[idx], Ms[j]))
 
-    neg_ll_vg = jax.jit(jax.value_and_grad(neg_ll))
+    def neg_ll_and_grad(beta):
+        total_ll = 0.0
+        total_grad = np.zeros(K)
+        for (j, idx, uniforms), dm_dbeta in zip(groups, group_dm):
+            m = X[idx] @ beta @ Ms[j].T
+            log_P, dlog_P = _ghk_log_probs_and_grad(
+                m, dm_dbeta, Ls[j], uniforms)
+            total_ll += log_P.sum()
+            total_grad += dlog_P.sum(axis=0)
+        return -total_ll, -total_grad
 
     def objective(beta_np):
-        v, g = neg_ll_vg(jnp.array(beta_np))
-        return float(v), np.array(g)
+        v, g = neg_ll_and_grad(beta_np)
+        return v, g
 
     result = minimize(objective, np.zeros(K), method='L-BFGS-B', jac=True)
     return result.x, result

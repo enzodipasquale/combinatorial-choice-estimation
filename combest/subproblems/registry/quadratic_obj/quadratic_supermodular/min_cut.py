@@ -6,7 +6,7 @@ from .supermodular_quadratic_obj_base import SupermodularQuadraticObjectiveMixin
 class QuadraticSupermodularMinCutSolver(SupermodularQuadraticObjectiveMixin, SubproblemSolver):
 
     def initialize(self):
-        mask = self.data_manager.id_data["constraint_mask"]
+        mask = self.data_manager.local_data.id_data["constraint_mask"]
         self._solvers = [MinCutSolver(mask[i] if mask is not None else None,
                                       self.dimensions_cfg.n_items)
                          for i in range(self.comm_manager.num_local_agent)]
