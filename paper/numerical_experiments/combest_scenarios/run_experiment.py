@@ -48,11 +48,24 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0, conf
     subproblem_cfg = {"name": subproblem_name}
     subproblem_cfg.update(cfg.get("subproblem", {}))
 
+    rg_cfg = dict(cfg.get("row_generation", {}))
+
+    # Supermodular / quadratic knapsack require lambda >= 0 for the subproblem solver.
+    # Enforce lb=0 on the quadratic (lambda) covariate indices.
+    if spec in ("supermodular", "quadratic_knapsack"):
+        n_cov = dim_cfg["n_covariates"]
+        lambda_indices = comm.bcast(
+            input_data["meta"]["lambda_indices"] if rank == 0 else None, root=0)
+        lbs = dict(rg_cfg.get("theta_bounds", {}).get("lbs", {}))
+        for idx in lambda_indices:
+            lbs[str(idx)] = 0.0
+        rg_cfg.setdefault("theta_bounds", {})["lbs"] = lbs
+
     model = ce.Model()
     model.load_config({
         "dimensions": dim_cfg,
         "subproblem": subproblem_cfg,
-        "row_generation": cfg.get("row_generation", {}),
+        "row_generation": rg_cfg,
     })
     sigma = exp.get("sigma", 1.0)
 
@@ -65,8 +78,16 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0, conf
     model.subproblems.generate_obs_bundles(theta_star)
     model.features.build_local_modular_error_oracle(seed=3 * replication + 2, sigma=sigma)
 
+    # Gurobi timeout callback (speeds up MIP subproblems like QuadraticKnapsackGRB)
+    iteration_callback = None
+    callbacks_cfg = cfg.get("callbacks", {})
+    if callbacks_cfg.get("row_gen"):
+        from combest.estimation.callbacks import adaptive_gurobi_timeout
+        iteration_callback, _ = adaptive_gurobi_timeout(callbacks_cfg["row_gen"])
+
     t0 = time.perf_counter()
-    result = model.point_estimation.n_slack.solve(verbose=False)
+    result = model.point_estimation.n_slack.solve(
+        iteration_callback=iteration_callback, verbose=False)
     runtime = time.perf_counter() - t0
 
     if rank != 0:

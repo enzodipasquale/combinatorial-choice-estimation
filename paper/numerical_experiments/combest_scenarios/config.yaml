@@ -55,3 +55,8 @@ subproblem:
     TimeLimit: 10.0
     OutputFlag: 0
     Threads: 1
+
+callbacks:
+  row_gen:
+    - {iters: 50, timeout: 1.0}
+    - {timeout: 10.0, retire: true}

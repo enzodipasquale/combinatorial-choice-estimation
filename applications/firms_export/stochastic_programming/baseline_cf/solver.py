@@ -1,12 +1,15 @@
 import numpy as np
-from scipy.stats import norm
+from scipy.special import ndtr
 import gurobipy as gp
 from combest.subproblems.solver_base import SubproblemSolver, create_gurobi_model
+
+_SQRT_2PI_INV = 1.0 / np.sqrt(2 * np.pi)
 
 
 def ev2_closed(mu, sigma):
     t = mu / sigma
-    return mu * norm.cdf(t) + sigma * norm.pdf(t)
+    phi_t = _SQRT_2PI_INV * np.exp(-0.5 * t * t)
+    return mu * ndtr(t) + sigma * phi_t
 
 
 class TwoStageSolverCF(SubproblemSolver):
@@ -33,6 +36,12 @@ class TwoStageSolverCF(SubproblemSolver):
         self.C_2 = item_data["C_2"]
         self.C_d_2 = item_data["C_d_2"]
         self.local_problems = []
+
+        # precompute enumeration table (M <= 20)
+        if self.M <= 20:
+            self._all_b = ((np.arange(2**self.M)[:, None]
+                            >> np.arange(self.M)[None, :]) & 1).astype(float)
+            self._switch_all = 1.0 - self._all_b
 
         id_data["policies"] = {
             "b_1_star": np.zeros((n, self.M), dtype=bool),
@@ -66,23 +75,12 @@ class TwoStageSolverCF(SubproblemSolver):
         mu = self._compute_mu(b_1, rev2_d_i, entry_2, C_syn_2)
         return c_1 @ b_1.astype(float) + ev2_closed(mu, self.sigma_2).sum()
 
-    def _solve_b1_enum(self, c_1, rev2_d_i, entry_2, C_syn_2):
-        M = self.M
-        all_b = ((np.arange(2**M)[:, None] >> np.arange(M)[None, :]) & 1).astype(float)
-
-        # first stage: (2^M,)
-        obj_1 = all_b @ c_1
-
-        # mu for all candidates: (2^M, M)
-        switch = 1.0 - all_b
-        syn_term = all_b @ C_syn_2.T
-        mu = rev2_d_i + switch * entry_2 + switch * syn_term
-
-        # second stage: (2^M,)
+    def _solve_b1_enum(self, c_1, rev2_d_i, base_all):
+        obj_1 = self._all_b @ c_1
+        mu = rev2_d_i + base_all
         obj_2 = ev2_closed(mu, self.sigma_2).sum(axis=1)
-
         best = np.argmax(obj_1 + obj_2)
-        return all_b[best] > 0.5
+        return self._all_b[best] > 0.5
 
     def _solve_b1_mip(self, c_1, rev2_d_i, entry_2, C_syn_2):
         M = self.M
@@ -128,14 +126,14 @@ class TwoStageSolverCF(SubproblemSolver):
 
         return np.array(b_1.X) > 0.5
 
-    def _solve_b1(self, c_1, rev2_d_i, entry_2, C_syn_2):
-        if self.M <= 20:
-            return self._solve_b1_enum(c_1, rev2_d_i, entry_2, C_syn_2)
-        return self._solve_b1_mip(c_1, rev2_d_i, entry_2, C_syn_2)
-
     def solve(self, theta):
         rev1, rev2_d, entry, entry_2, C_syn, C_syn_2 = self._unpack_theta(theta)
         pol = self.data_manager.local_data.id_data["policies"]
+
+        # precompute shared part for enumeration: (2^M, M)
+        if self.M <= 20:
+            syn_all = self._all_b @ C_syn_2.T
+            base_all = self._switch_all * (entry_2 + syn_all)
 
         for i in range(len(pol["b_1_star"])):
             b_0 = self.state_chars[i]
@@ -144,7 +142,10 @@ class TwoStageSolverCF(SubproblemSolver):
             mod_1 = rev1[i] + switch_1 * entry + self.eps_1[i]
             c_1 = mod_1 + syn_1
 
-            b_1_star = self._solve_b1(c_1, rev2_d[i], entry_2, C_syn_2)
+            if self.M <= 20:
+                b_1_star = self._solve_b1_enum(c_1, rev2_d[i], base_all)
+            else:
+                b_1_star = self._solve_b1_mip(c_1, rev2_d[i], entry_2, C_syn_2)
             pol["b_1_star"][i] = b_1_star
             pol["mu_V"][i] = self._compute_mu(b_1_star, rev2_d[i], entry_2, C_syn_2)
 

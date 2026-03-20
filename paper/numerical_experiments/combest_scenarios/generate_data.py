@@ -10,8 +10,12 @@ def generate_item_characteristics(M, rho=0.5, seed=None):
     return phi, z, xi
 
 
-def generate_delta_star(phi, beta_star, xi):
-    return phi @ beta_star + xi
+def generate_delta_star(phi, beta_star, xi, target_std=1.0):
+    delta = phi @ beta_star + xi
+    delta = delta - delta.mean()                    # demean
+    if delta.std() > 0:
+        delta = delta / delta.std() * target_std    # normalize spread
+    return delta
 
 
 def generate_gross_substitutes_data(N, M, alpha, lambda_gs, delta_star, phi, z, seed=None):
@@ -78,8 +82,8 @@ def generate_supermodular_data(N, M, alpha, lambda_quad, delta_star, phi, z, see
 def generate_linear_knapsack_data(N, M, alpha, delta_star, phi, z, seed=None):
     rng = np.random.default_rng(seed)
     modular_agent = rng.normal(0, 1, (N, M, 1))
-    weights = rng.uniform(0, 1, M)
-    capacities = rng.uniform(M / 4, M / 2, N)
+    weights = rng.uniform(0.5, 1.5, M)
+    capacities = rng.uniform(0.3 * weights.sum(), 0.5 * weights.sum(), N)
 
     return {
         "id_data": {
@@ -111,8 +115,8 @@ def generate_quadratic_knapsack_data(N, M, alpha, lambda_quad, delta_star, phi, 
             quadratic_item[jp, j, 0] = x_val
 
     modular_agent = rng.normal(0, 1, (N, M, 1))
-    weights = rng.uniform(0, 1, M)
-    capacities = rng.uniform(M / 4, M / 2, N)
+    weights = rng.uniform(0.5, 1.5, M)
+    capacities = rng.uniform(0.3 * weights.sum(), 0.5 * weights.sum(), N)
 
     return {
         "id_data": {
