@@ -1,0 +1,28 @@
+\begin{table}[t]
+\centering
+\caption{Asymptotic efficiency: Combest vs Probit MLE}
+\label{tab:efficiency}
+\begin{tabular}{ll S[table-format=1.3] S[table-format=1.3] S[table-format=1.3] S[table-format=1.3]}
+\toprule
+ & & {$N=500$} & {$N=1000$} & {$N=2000$} & {$N=5000$} \\
+\midrule
+\multicolumn{6}{l}{\textbf{Binary}} \\
+  & Bias (MLE) & 0.0395 & -- & -- & -- \\
+  & Bias (CB) & 0.0752 & -- & -- & -- \\
+  & RMSE (MLE) & 0.0372 & -- & -- & -- \\
+  & RMSE (CB) & 0.0698 & -- & -- & -- \\
+  & ARE & 3.52 & -- & -- & -- \\
+  & Time MLE (s) & 0.87 & -- & -- & -- \\
+  & Time CB (s) & 0.02 & -- & -- & -- \\
+\midrule
+\multicolumn{6}{l}{\textbf{$J=10$}} \\
+  & Bias (MLE) & 0.0308 & -- & -- & -- \\
+  & Bias (CB) & 0.0586 & -- & -- & -- \\
+  & RMSE (MLE) & 0.0489 & -- & -- & -- \\
+  & RMSE (CB) & 0.0443 & -- & -- & -- \\
+  & ARE & 0.82 & -- & -- & -- \\
+  & Time MLE (s) & 66.03 & -- & -- & -- \\
+  & Time CB (s) & 0.02 & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}

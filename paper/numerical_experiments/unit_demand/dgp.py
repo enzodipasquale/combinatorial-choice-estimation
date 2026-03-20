@@ -1,6 +1,40 @@
 import numpy as np
 
 
+def _draw_covariates(rng, shape, rho=0.0):
+    """Draw covariates from N(0, Sigma_X) with equicorrelation rho."""
+    X = rng.normal(0, 1, shape)
+    if rho > 0:
+        K = shape[-1]
+        Sigma_X = (1 - rho) * np.eye(K) + rho * np.ones((K, K))
+        L = np.linalg.cholesky(Sigma_X)
+        X = X @ L.T
+    return X
+
+
+def simulate_probit_individual(N, J, K, beta, Sigma=None, rho=0.0, seed=42):
+    rng = np.random.default_rng(seed)
+    X = _draw_covariates(rng, (N, J, K), rho)
+    if Sigma is None:
+        Sigma = np.eye(J)
+    eps = rng.multivariate_normal(np.zeros(J), Sigma, size=N)
+    V = np.einsum('ijk,k->ij', X, beta)
+    U = np.column_stack([np.zeros(N), V + eps])
+    choices = np.argmax(U, axis=1)
+    return X, choices
+
+
+def simulate_logit_individual(N, J, K, beta, sigma=1.0, rho=0.0, seed=42):
+    rng = np.random.default_rng(seed)
+    X = _draw_covariates(rng, (N, J, K), rho)
+    eps = sigma * rng.gumbel(size=(N, J + 1))
+    V = np.einsum('ijk,k->ij', X, beta)
+    U = np.column_stack([np.zeros(N), V]) + eps
+    choices = np.argmax(U, axis=1)
+    return X, choices
+
+
+# Legacy functions for share-level data
 def simulate_probit(N, J, K, beta, Sigma=None, seed=42):
     rng = np.random.default_rng(seed)
     X = rng.normal(0, 1, (J, K))
@@ -13,18 +47,6 @@ def simulate_probit(N, J, K, beta, Sigma=None, seed=42):
     return X, choices, shares
 
 
-def simulate_probit_individual(N, J, K, beta, Sigma=None, seed=42):
-    rng = np.random.default_rng(seed)
-    X = rng.normal(0, 1, (N, J, K))
-    if Sigma is None:
-        Sigma = np.eye(J)
-    eps = rng.multivariate_normal(np.zeros(J), Sigma, size=N)
-    V = np.einsum('ijk,k->ij', X, beta)
-    U = np.column_stack([np.zeros(N), V + eps])
-    choices = np.argmax(U, axis=1)
-    return X, choices
-
-
 def simulate_logit(N, J, K, beta, sigma=1.0, seed=42):
     rng = np.random.default_rng(seed)
     X = rng.normal(0, 1, (J, K))
@@ -33,13 +55,3 @@ def simulate_logit(N, J, K, beta, sigma=1.0, seed=42):
     choices = np.argmax(V + eps, axis=1)
     shares = np.bincount(choices, minlength=J + 1) / N
     return X, choices, shares
-
-
-def simulate_logit_individual(N, J, K, beta, sigma=1.0, seed=42):
-    rng = np.random.default_rng(seed)
-    X = rng.normal(0, 1, (N, J, K))
-    eps = sigma * rng.gumbel(size=(N, J + 1))
-    V = np.einsum('ijk,k->ij', X, beta)
-    U = np.column_stack([np.zeros(N), V]) + eps
-    choices = np.argmax(U, axis=1)
-    return X, choices
