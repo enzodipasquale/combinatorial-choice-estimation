@@ -47,7 +47,7 @@ if __name__ == "__main__":
         ], axis=-1)
 
         C = syn_chars
-        C_d = syn_chars * dist_home[:, None]
+        C_d = syn_chars * (dist_home[:, None] + dist_home[None, :]) / 2
         quadratic = np.stack([C, C_d], axis=-1)
 
         input_data = {

@@ -47,12 +47,18 @@ def build_context(dataframe, expected_revenue, pairwise_features,
 
     year_to_idx = {y: i for i, y in enumerate(all_years)}
     obs_start = all_years[start_buffer]
-    obs_years = [y for y in all_years if y >= obs_start]
+
+    any_export = obs_kept.any(axis=2)
+    first_export_idx = any_export.argmax(axis=1)
 
     records = []
     for fi in range(len(firms)):
+        entry_year = all_years[first_export_idx[fi]]
+        firm_start = max(entry_year, obs_start)
         inactive = False
-        for y in obs_years:
+        for y in all_years:
+            if y < firm_start:
+                continue
             if inactive:
                 break
             ti = year_to_idx[y]
