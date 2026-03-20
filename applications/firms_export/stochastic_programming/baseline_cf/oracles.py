@@ -1,5 +1,7 @@
 import numpy as np
-from scipy.stats import norm
+from scipy.special import ndtr
+
+_SQRT_2PI_INV = 1.0 / np.sqrt(2 * np.pi)
 
 
 def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
@@ -40,7 +42,7 @@ def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
         b_0 = data.id_data["state_chars"][ids]
         b_1 = bundles.astype(float)
         mu = _get_mu(bundles, ids, data)
-        phi = norm.cdf(mu / sigma_2)
+        phi = ndtr(mu / sigma_2)
 
         x_rev = (np.einsum('nm,nkm->nk', b_1, rev_chars_1[ids])
                  + np.einsum('nm,nkm->nk', phi, rev_chars_2_d[ids]))
@@ -67,7 +69,7 @@ def build_oracles(model, beta=0.0, seed=42, sigma_1=1.0, sigma_2=1.0):
         mu = _get_mu(bundles, ids, data)
 
         e_1 = (eps_1[ids] * b_1).sum(-1)
-        e_2 = (sigma_2 * norm.pdf(mu / sigma_2)).sum(-1)
+        e_2 = (sigma_2 * (_SQRT_2PI_INV * np.exp(-0.5 * (mu / sigma_2)**2))).sum(-1)
 
         return e_1 + e_2
 

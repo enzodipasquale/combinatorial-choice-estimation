@@ -13,7 +13,8 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-print(f"[Rank {rank}] Testing gross substitutes...")
+if rank == 0:
+    print(f"Testing gross substitutes...")
 if rank == 0:
     input_data, theta_star = generate_data('gross_substitutes', N=10, M=10, lambda_val=0.1, seed=42)
     print(f"[Rank {rank}] theta_star shape: {theta_star.shape}")
@@ -52,12 +53,12 @@ if rank == 0:
         sizes = obs.sum(axis=1)
         print(f"[Rank {rank}] Bundle sizes: min={sizes.min()}, max={sizes.max()}, mean={sizes.mean():.1f}")
 
-print(f"[Rank {rank}] Running point estimation...")
+if rank == 0:
+    print(f"Running point estimation...")
 result = model.row_generation.solve(verbose=True)
 
 if rank == 0:
-    print(f"[Rank {rank}] Theta_hat: {result.theta_hat[:3]}")
-    print(f"[Rank {rank}] Theta_star: {theta_star[:3]}")
-    print(f"[Rank {rank}] Error (first 3): {result.theta_hat[:3] - theta_star[:3]}")
-
-print(f"[Rank {rank}] Done.")
+    print(f"Theta_hat: {result.theta_hat[:3]}")
+    print(f"Theta_star: {theta_star[:3]}")
+    print(f"Error (first 3): {result.theta_hat[:3] - theta_star[:3]}")
+    print(f"Done.")
