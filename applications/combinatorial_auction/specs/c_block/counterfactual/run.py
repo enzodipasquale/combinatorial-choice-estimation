@@ -31,19 +31,21 @@ def main(config_path):
             est_result_path=est_path,
             alpha_0=app["alpha_0"],
             alpha_1=app["alpha_1"],
-            modular_regressors=app.get("modular_regressors", ["elig_pop"]),
-            quadratic_regressors=app.get("quadratic_regressors",
-                ["adjacency", "pop_centroid_delta4", "travel_survey", "air_travel"]),
+            modular_regressors=app.get("modular_regressors"),
+            quadratic_regressors=app.get("quadratic_regressors"),
         )
 
-        # inject fixed-parameter bounds from estimation
+        # inject fixed-parameter bounds from estimation (pin beta and gamma)
         bounds = config["row_generation"].setdefault("theta_bounds", {})
         lbs = bounds.setdefault("lbs", {})
         ubs = bounds.setdefault("ubs", {})
-        for i, name in enumerate(app.get("modular_regressors", [])):
+        for i in range(len(meta["beta"])):
+            name = meta["covariate_names"][i]
             lbs[name] = float(meta["beta"][i])
             ubs[name] = float(meta["beta"][i])
-        for i, name in enumerate(app.get("quadratic_regressors", [])):
+        n_quad_off = meta["n_id_mod"] + meta["n_item_mod"]
+        for i in range(len(meta["gamma"])):
+            name = meta["covariate_names"][n_quad_off + i]
             lbs[name] = float(meta["gamma"][i])
             ubs[name] = float(meta["gamma"][i])
 
@@ -71,34 +73,51 @@ def main(config_path):
     import combest as ce
     from combest.estimation.callbacks import adaptive_gurobi_timeout
 
-    model = ce.Model()
-    model.load_config(config)
-    model.data.load_and_distribute_input_data(input_data)
-    model.features.build_quadratic_covariates_from_data()
-
-    # error oracle: BTA errors aggregated via A + structural offset
-    _build_counterfactual_errors(model, meta, app.get("error_seed", 1998))
-
-    model.subproblems.load_solver()
-
     callbacks = config.get("callbacks", {})
-    pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
-    result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
+    config_name = Path(config_path).stem
 
-    if rank == 0 and result is not None:
-        _save(result, config, meta, experiment_dir / "result_counterfactual.json")
+    for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
+        if rank == 0:
+            print(f"\n{'#'*60}")
+            print(f"# Counterfactual: {label}")
+            print(f"{'#'*60}")
+
+        model = ce.Model()
+        model.load_config(config)
+        model.data.load_and_distribute_input_data(input_data)
+        model.features.build_quadratic_covariates_from_data()
+
+        _build_counterfactual_errors(model, meta, app.get("error_seed", 1998),
+                                     error_scaling=app.get("error_scaling"),
+                                     include_xi=include_xi)
+
+        model.subproblems.load_solver()
+
+        pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
+        result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
+
+        if rank == 0 and result is not None:
+            if config_name != "config":
+                out_name = f"result_{config_name}_{label}.json"
+            else:
+                out_name = f"result_counterfactual_{label}.json"
+            _save(result, config, meta, experiment_dir / out_name)
 
 
-def _build_counterfactual_errors(model, meta, seed):
+def _build_counterfactual_errors(model, meta, seed, error_scaling=None, include_xi=True):
     A = meta["A"]
     n_bta = A.shape[1]
-    offset_m = meta["offset_m"]
+    offset_m = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     cm = model.features.comm_manager
+    elig = meta.get("elig")
 
     local_errors = np.zeros((cm.num_local_agent, model.n_items))
     for i, gid in enumerate(cm.agent_ids):
+        obs_id = cm.obs_ids[i]
         rng = np.random.default_rng((seed, gid))
         bta_err = rng.normal(0, 1, n_bta)
+        if error_scaling == "elig" and elig is not None:
+            bta_err *= elig[obs_id]
         local_errors[i] = bta_err @ A.T + offset_m
 
     model.features.local_modular_errors = local_errors
@@ -137,6 +156,8 @@ def _save(result, config, meta, path):
         "iterations": int(result.num_iterations),
         "continental_mta_nums": [int(x) for x in meta["continental_mta_nums"]],
     }
+    if result.u_hat is not None:
+        out["u_hat"] = result.u_hat.tolist()
     json.dump(out, open(path, "w"), indent=2)
     print(f"Saved -> {path}")
 

@@ -10,7 +10,7 @@ def generate_item_characteristics(M, rho=0.5, seed=None):
     return phi, z, xi
 
 
-def generate_delta_star(phi, beta_star, xi, target_std=1.0):
+def generate_delta_star(phi, beta_star, xi, target_std=0.5):
     delta = phi @ beta_star + xi
     delta = delta - delta.mean()                    # demean
     if delta.std() > 0:
