@@ -17,7 +17,7 @@ class OneSlackSolver(RowGenerationSolver):
     # ------------------------------------------------------------------
 
     def _initialize_master(self):
-        theta_coef, u_coef = self.compute_LP_coef(self.local_obs_weights)
+        theta_coef = self.compute_theta_LP_coef(self.local_obs_weights)
 
         if self.comm_manager.is_root():
             self.master_model = self._setup_gurobi_model(self.cfg.master_gurobi_params)
@@ -25,7 +25,7 @@ class OneSlackSolver(RowGenerationSolver):
             theta = self.master_model.addMVar(self.dim.n_covariates,
                                               obj=theta_coef, lb=lb, ub=ub,
                                               name='parameter')
-            u_bar = self.master_model.addVar(lb=0, obj=u_coef, name='utility')
+            u_bar = self.master_model.addVar(lb=0, obj=1.0, name='utility')
             self.master_variables = (theta, u_bar)
             self.master_model.optimize()
             self.slack_counter = {}

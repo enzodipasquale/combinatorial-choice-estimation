@@ -33,21 +33,31 @@ def main(config_path):
             alpha_1=app["alpha_1"],
             modular_regressors=app.get("modular_regressors"),
             quadratic_regressors=app.get("quadratic_regressors"),
+            quadratic_id_regressors=app.get("quadratic_id_regressors"),
         )
 
-        # inject fixed-parameter bounds from estimation (pin beta and gamma)
+        # inject fixed-parameter bounds from estimation (pin beta, gamma_id, gamma_item)
         bounds = config["row_generation"].setdefault("theta_bounds", {})
         lbs = bounds.setdefault("lbs", {})
         ubs = bounds.setdefault("ubs", {})
+
+        # pin beta (id modular)
         for i in range(len(meta["beta"])):
             name = meta["covariate_names"][i]
             lbs[name] = float(meta["beta"][i])
             ubs[name] = float(meta["beta"][i])
-        n_quad_off = meta["n_id_mod"] + meta["n_item_mod"]
-        for i in range(len(meta["gamma"])):
-            name = meta["covariate_names"][n_quad_off + i]
-            lbs[name] = float(meta["gamma"][i])
-            ubs[name] = float(meta["gamma"][i])
+
+        # pin gamma_id (id quadratic) and gamma_item (item quadratic)
+        off = meta["n_id_mod"] + meta["n_item_mod"]
+        for i in range(len(meta["gamma_id"])):
+            name = meta["covariate_names"][off + i]
+            lbs[name] = float(meta["gamma_id"][i])
+            ubs[name] = float(meta["gamma_id"][i])
+        off += meta["n_id_quad"]
+        for i in range(len(meta["gamma_item"])):
+            name = meta["covariate_names"][off + i]
+            lbs[name] = float(meta["gamma_item"][i])
+            ubs[name] = float(meta["gamma_item"][i])
 
         config["dimensions"].update(
             n_obs=meta["n_obs"], n_items=meta["n_items"],
@@ -61,7 +71,10 @@ def main(config_path):
 
         print(f"Counterfactual: {meta['n_obs']} C-block bidders, {meta['n_mtas']} MTAs")
         print(f"  alpha_0={app['alpha_0']:.4f}, alpha_1={app['alpha_1']:.4f}")
-        print(f"  Fixed: beta={meta['beta'].tolist()}, gamma={meta['gamma'].tolist()}")
+        print(f"  Fixed: beta={meta['beta'].tolist()}")
+        if len(meta["gamma_id"]) > 0:
+            print(f"  Fixed: gamma_id={meta['gamma_id'].tolist()}")
+        print(f"  Fixed: gamma_item={meta['gamma_item'].tolist()}")
         print(f"  {meta['covariate_names']}")
     else:
         input_data, meta = None, {}
@@ -75,6 +88,7 @@ def main(config_path):
 
     callbacks = config.get("callbacks", {})
     config_name = Path(config_path).stem
+    result_name = app.get("result_name", "result_counterfactual")
 
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if rank == 0:
@@ -97,10 +111,7 @@ def main(config_path):
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
 
         if rank == 0 and result is not None:
-            if config_name != "config":
-                out_name = f"result_{config_name}_{label}.json"
-            else:
-                out_name = f"result_counterfactual_{label}.json"
+            out_name = f"{result_name}_{label}.json"
             _save(result, config, meta, experiment_dir / out_name)
 
 
@@ -149,6 +160,8 @@ def _save(result, config, meta, path):
         "n_covariates": config["dimensions"]["n_covariates"],
         "n_id_mod": n_id_mod,
         "n_item_mod": n_item_mod,
+        "n_id_quad": app.get("n_id_quad", 0),
+        "n_item_quad": app.get("n_item_quad", 0),
         "alpha_0": app["alpha_0"],
         "alpha_1": app["alpha_1"],
         "converged": bool(result.converged),
