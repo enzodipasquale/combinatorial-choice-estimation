@@ -3,11 +3,15 @@ import sys
 import copy
 import json
 import time
+import warnings
 import argparse
 from pathlib import Path
 import numpy as np
 import yaml
 from mpi4py import MPI
+
+# Suppress spurious BLAS RuntimeWarnings ("divide by zero in matmul")
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*matmul.*")
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))

@@ -12,12 +12,20 @@ def _draw_covariates(rng, shape, rho=0.0):
     return X
 
 
+def _draw_errors(rng, N, J, Sigma):
+    """Draw J-dimensional errors, avoiding BLAS warnings for diagonal Sigma."""
+    diag = np.diag(Sigma)
+    if np.allclose(Sigma, np.diag(diag)):
+        return rng.normal(0, 1, (N, J)) * np.sqrt(diag)
+    return rng.multivariate_normal(np.zeros(J), Sigma, size=N)
+
+
 def simulate_probit_individual(N, J, K, beta, Sigma=None, rho=0.0, seed=42):
     rng = np.random.default_rng(seed)
     X = _draw_covariates(rng, (N, J, K), rho)
     if Sigma is None:
         Sigma = np.eye(J)
-    eps = rng.multivariate_normal(np.zeros(J), Sigma, size=N)
+    eps = _draw_errors(rng, N, J, Sigma)
     V = np.einsum('ijk,k->ij', X, beta)
     U = np.column_stack([np.zeros(N), V + eps])
     choices = np.argmax(U, axis=1)
@@ -40,7 +48,7 @@ def simulate_probit(N, J, K, beta, Sigma=None, seed=42):
     X = rng.normal(0, 1, (J, K))
     if Sigma is None:
         Sigma = np.eye(J)
-    eps = rng.multivariate_normal(np.zeros(J), Sigma, size=N)
+    eps = _draw_errors(rng, N, J, Sigma)
     U = np.column_stack([np.zeros(N), X @ beta + eps])
     choices = np.argmax(U, axis=1)
     shares = np.bincount(choices, minlength=J + 1) / N

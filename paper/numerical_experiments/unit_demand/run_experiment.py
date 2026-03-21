@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 import sys
 import time
+import warnings
 from pathlib import Path
 import numpy as np
 from mpi4py import MPI
+
+# Suppress spurious BLAS RuntimeWarnings ("divide by zero in matmul")
+# that occur with certain OpenBLAS builds — results are unaffected.
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*matmul.*")
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -44,8 +49,10 @@ def run_replication(N, J, K, beta, replication=0, config=None):
 
         t0 = time.perf_counter()
         try:
-            beta_mle, _ = estimate_probit_mle_individual(
-                X, choices, Sigma, R=ghk_draws, seed=seed + 1)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                beta_mle, _ = estimate_probit_mle_individual(
+                    X, choices, Sigma, R=ghk_draws, seed=seed + 1)
         except Exception:
             beta_mle = np.full(K, np.nan)
         runtime_mle = time.perf_counter() - t0
@@ -70,8 +77,10 @@ def run_replication(N, J, K, beta, replication=0, config=None):
     })
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
+    # Pass sigma directly instead of covariance_matrix to avoid
+    # spurious BLAS warnings from Cholesky @ matmul with identity.
     model.features.build_local_modular_error_oracle(
-        seed=3 * replication + 2, covariance_matrix=Sigma)
+        seed=3 * replication + 2, sigma=sigma)
     model.subproblems.load_solver()
 
     t0 = time.perf_counter()
