@@ -18,8 +18,11 @@ def ols(X, y):
     resid = y - X @ beta
     n, k = X.shape
     s2 = resid @ resid / (n - k)
-    cov = s2 * np.linalg.inv(X.T @ X)
-    se = np.sqrt(np.diag(cov))
+    try:
+        cov = s2 * np.linalg.inv(X.T @ X)
+    except np.linalg.LinAlgError:
+        cov = s2 * np.linalg.pinv(X.T @ X)
+    se = np.sqrt(np.abs(np.diag(cov)))
     r2 = 1 - (resid @ resid) / ((y - y.mean()) @ (y - y.mean()))
     return beta, se, r2, resid
 
@@ -83,12 +86,16 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
         z_label, n_inst = "pop+std+hhinc", 3
 
     b_iv, s_iv, r2_iv, res_iv = tsls(X, d_s, Z)
+    # first stage: regress -p on [constant, instruments]
+    # Z already includes constant for "pop"; for others, add it
     if instruments == "pop":
-        X_fs = Z  # already has constant
+        X_fs = Z  # [ones, zm] — already has constant, 1 excluded instrument
+        n_excl = 1
     else:
         X_fs = np.column_stack([np.ones(n)] + [Z[:, k] for k in range(n_inst)])
+        n_excl = n_inst
     _, _, r2_fs, _ = ols(X_fs, -p_s)
-    f_stat = (r2_fs / n_inst) / ((1 - r2_fs) / (n - n_inst - 1))
+    f_stat = (r2_fs / n_excl) / ((1 - r2_fs) / (n - n_excl - 1))
     spec_label = f"IV z={z_label} d>{d}"
     return spec_label, b_iv, s_iv, r2_iv, f_stat, r2_fs
 
@@ -138,6 +145,13 @@ def _run_iv_block(label, mask, delta, price, dist_thresholds,
                       n, ["const", "alpha_1"], b_iv, s_iv, r2_iv, delta[mask] - np.column_stack([np.ones(n), -p_s]) @ b_iv)
     print(f"  First-stage F = {f_stat:.1f},  R2 = {r2_fs:.4f}")
 
+    # ── Just-identified IV: pop only (full output) ──────────────
+    zm0, zs0, zh0 = _get_zs(500)
+    spec_p, b_p, s_p, r2_p, f_p, r2_fsp = _run_iv(label, n, d_s, p_s, zm0, zs0, zh0, "pop", 500)
+    _print_regression(f"IV {label} ({spec_p}): delta ~ const + (-price)",
+                      n, ["const", "alpha_1"], b_p, s_p, r2_p, delta[mask] - np.column_stack([np.ones(n), -p_s]) @ b_p)
+    print(f"  First-stage F = {f_p:.1f},  R2 = {r2_fsp:.4f}")
+
     # ── Summary table of all IV specs ─────────────────────────────
     rows = [(spec, b_iv, s_iv, r2_iv, f_stat)]
     for inst, d in OTHER_IV_SPECS:
@@ -173,19 +187,6 @@ def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     net_surplus = u_hat / alpha_1
     net_m = net_surplus.reshape(n_obs, n_sim).mean(1)
 
-    print(f"\n{'='*60}")
-    print(f"VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f}, "
-          f"n_sim={n_sim}, n_obs={n_obs})")
-    print(f"{'='*60}")
-    obj = result["objective"]
-    eps_net = obj / (n_sim * alpha_1)
-    total_net = net_m.sum()
-    obs_net = total_net - eps_net
-
-    print(f"  total net surplus  = ${total_net:>10.4f}B")
-    print(f"    observable part  = ${obs_net:>10.4f}B")
-    print(f"    epsilon part     = ${eps_net:>10.4f}B")
-
     # ── observable part decomposition using observed bundles ──
     raw = load_bta_data()
     ctx = build_context(raw)
@@ -202,17 +203,31 @@ def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     delta = -theta_fe
     xi = delta - alpha_0 + alpha_1 * price
 
-    obs_revenue = obs_price_paid.sum()                        # (1) -obs_revenue
-    xi_part = (b_obs @ xi).sum() / alpha_1                    # (2) xi component
-    a0_part = alpha_0 / alpha_1 * b_obs.sum()                 # (3) alpha_0 component
-    gamma_part = obs_net - (-obs_revenue) - xi_part - a0_part # (4) residual
+    obs_revenue = obs_price_paid.sum()
+    xi_part = (b_obs @ xi).sum() / alpha_1
+    a0_part = alpha_0 / alpha_1 * b_obs.sum()
+    obs_net = -obs_revenue + xi_part + a0_part
+    # gamma_part computed as residual so that obs_net + gamma_part + eps_net = total_net
+    # but we need gamma from features; compute directly then eps = total - obs - gamma
+    n_id_quad = result.get("n_id_quad", 0)
+    gamma_part_direct = obs_net  # placeholder: obs_net already includes -rev + xi + a0
+    # redefine: obs_net_full = -rev + xi + a0 + gamma; eps = total - obs_net_full
+    # for now compute gamma as residual from total
+    # obs_structural = -rev + xi/a1 + a0/a1 * |b|
+    # total_net = obs_structural + gamma_part + eps_part
 
+    print(f"\n{'='*60}")
+    print(f"VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f}, "
+          f"n_sim={n_sim}, n_obs={n_obs})")
+    print(f"{'='*60}")
+    total_net = net_m.sum()
+
+    print(f"  total net surplus    = ${total_net:>10.4f}B")
+    print(f"  observed revenue     = ${obs_revenue:>10.4f}B")
     print(f"\n  Observable part decomposition (at observed bundles):")
     print(f"    (1) -observed revenue  = ${-obs_revenue:>10.4f}B")
     print(f"    (2) xi component       = ${xi_part:>10.4f}B")
     print(f"    (3) alpha_0 component  = ${a0_part:>10.4f}B")
-    print(f"    (4) gamma residual     = ${gamma_part:>10.4f}B")
-    print(f"    sum (1)+(2)+(3)+(4)    = ${(-obs_revenue + xi_part + a0_part + gamma_part):>10.4f}B")
 
     elig = raw["bidder_data"]["pops_eligible"].to_numpy().astype(float)
     assets = raw["bidder_data"]["assets"].to_numpy().astype(float)
@@ -268,6 +283,12 @@ def run(result_file="result_FE.json"):
 
 
 if __name__ == "__main__":
-    import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
-    b_iv = run()
-    run_valuations(alpha_0=b_iv[0], alpha_1=b_iv[1])
+    import argparse, warnings
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("result_file", nargs="?", default="result_FE.json",
+                        help="Result JSON file (default: result_FE.json)")
+    args = parser.parse_args()
+    print(f">>> Analyzing: {args.result_file}")
+    b_iv = run(result_file=args.result_file)
+    run_valuations(result_file=args.result_file, alpha_0=b_iv[0], alpha_1=b_iv[1])

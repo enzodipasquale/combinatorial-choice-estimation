@@ -13,13 +13,14 @@ from applications.combinatorial_auction.data.prepare import _build_features, _ag
 
 
 def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
-                           modular_regressors=None, quadratic_regressors=None):
+                           modular_regressors=None, quadratic_regressors=None,
+                           quadratic_id_regressors=None):
     """Build MTA-level counterfactual data from C-block BTA estimation."""
     result = json.load(open(est_result_path))
     theta = np.array(result["theta_hat"])
     n_id_mod = result["n_id_mod"]
     n_btas = result["n_btas"]
-    n_id_quad = result.get("n_id_quad", 0)
+    n_id_quad_est = result.get("n_id_quad", 0)
 
     # read regressors from result if not provided
     spec = result.get("specification", {})
@@ -27,12 +28,15 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
         modular_regressors = spec.get("modular", [])
     if quadratic_regressors is None:
         quadratic_regressors = spec.get("quadratic", [])
+    if quadratic_id_regressors is None:
+        quadratic_id_regressors = spec.get("quadratic_id", [])
 
     # extract estimated parameters
     # theta order: id_mod | item_mod(FE) | id_quad | item_quad
     beta = theta[:n_id_mod]
     theta_fe = theta[n_id_mod : n_id_mod + n_btas]
-    gamma = theta[n_id_mod + n_btas + n_id_quad:]     # item_quad only (skip id_quad)
+    gamma_id = theta[n_id_mod + n_btas : n_id_mod + n_btas + n_id_quad_est]
+    gamma_item = theta[n_id_mod + n_btas + n_id_quad_est:]
 
     # recover delta and xi
     raw = load_bta_data()
@@ -58,9 +62,26 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
     c_obs = ctx["c_obs_bundles"].astype(float)
     mta_obs = (c_obs @ A.T > 0).astype(int)
 
-    # item_data
+    # item_data quadratics
     _, Q_mta = _aggregate_quadratics(ctx, quadratic_regressors, A)
     mta_weight = (A @ ctx["weight"].astype(np.float64)).astype(int)
+
+    # id_data quadratics: elig_i * (A @ Q_bta @ A.T) for each feature
+    n_id_quad = len(quadratic_id_regressors)
+    qid_mta = None
+    if quadratic_id_regressors:
+        # each id_quad feature is elig_i * Q_item(j,l)
+        # at MTA level: elig_i * (A @ Q_item @ A.T)
+        elig = ctx["elig"]  # (n_obs,) normalized eligibility
+        # map elig_adjacency -> adjacency, etc.
+        qi2q = {name: i for i, name in enumerate(quadratic_regressors)}
+        layers = []
+        for name in quadratic_id_regressors:
+            base_name = name.replace("elig_", "")
+            q_idx = qi2q[base_name]
+            # Q_mta[:,:,q_idx] is (n_mtas, n_mtas), elig is (n_obs,)
+            layers.append(elig[:, None, None] * Q_mta[None, :, :, q_idx])
+        qid_mta = np.stack(layers, axis=-1).astype(np.float64)  # (n_obs, n_mtas, n_mtas, n_id_quad)
 
     input_data = {
         "id_data": {
@@ -74,11 +95,12 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
             "weight": mta_weight,
         },
     }
+    if qid_mta is not None:
+        input_data["id_data"]["quadratic"] = qid_mta
 
     n_obs = mta_mod.shape[0]
     n_items = n_mtas
     n_item_mod = n_mtas   # FE-style: one param per MTA = price
-    n_id_quad = 0
     n_item_quad = Q_mta.shape[-1]
 
     meta = {
@@ -88,22 +110,26 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
         "n_item_mod": n_item_mod,
         "n_id_quad": n_id_quad,
         "n_item_quad": n_item_quad,
-        "n_covariates": n_id_mod + n_item_mod + n_item_quad,
+        "n_covariates": n_id_mod + n_item_mod + n_id_quad + n_item_quad,
         "n_btas": n_btas,
         "n_mtas": n_mtas,
         "A": A,
         "offset_m": offset_m,
         "offset_m_no_xi": offset_m_no_xi,
         "beta": beta,
-        "gamma": gamma,
+        "gamma_id": gamma_id,
+        "gamma_item": gamma_item,
         "continental_mta_nums": continental_mta_nums(btas),
         "elig": ctx["elig"],
         "covariate_names": {},
     }
 
-    # covariate names: id_modular, then MTA prices (unnamed FEs), then quadratics
+    # covariate names: id_mod | MTA FEs (unnamed) | id_quad | item_quad
     names = {i: n for i, n in enumerate(modular_regressors)}
     off = n_id_mod + n_item_mod
+    for i, n in enumerate(quadratic_id_regressors):
+        names[off + i] = n
+    off += n_id_quad
     for i, n in enumerate(quadratic_regressors):
         names[off + i] = n
     meta["covariate_names"] = names

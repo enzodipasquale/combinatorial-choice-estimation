@@ -83,8 +83,10 @@ def run_replication(N, J, K, beta, replication=0, config=None):
         seed=3 * replication + 2, sigma=sigma)
     model.subproblems.load_solver()
 
+    # Use one-slack formulation: K+1 variables regardless of N*S,
+    # vs n-slack which has N*S variables and becomes intractable.
     t0 = time.perf_counter()
-    result = model.point_estimation.n_slack.solve(verbose=False)
+    result = model.point_estimation.one_slack.solve(verbose=False)
     runtime_combest = time.perf_counter() - t0
 
     if rank != 0:
