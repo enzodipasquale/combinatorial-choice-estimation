@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 import numpy as np
+from mpi4py import MPI
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -21,29 +22,45 @@ def choices_to_bundles(choices, J):
 
 
 def run_replication(N, J, K, beta, replication=0, config=None):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
     cfg = config or {}
     exp = cfg.get("experiment", {})
     sigma = exp.get("sigma", 1.0)
     n_simulations = exp.get("n_simulations", 1)
+    if n_simulations == "match_N":
+        n_simulations = N
     ghk_draws = exp.get("ghk_draws", 200)
     rho = exp.get("covariate_correlation", 0.0)
     seed = replication * 1000 + 42
 
     Sigma = sigma**2 * np.eye(J)
-    X, choices = simulate_probit_individual(N, J, K, beta, Sigma=Sigma, rho=rho, seed=seed)
 
-    # --- MLE ---
-    t0 = time.perf_counter()
-    beta_mle, _ = estimate_probit_mle_individual(
-        X, choices, Sigma, R=ghk_draws, seed=seed + 1)
-    runtime_mle = time.perf_counter() - t0
+    # --- Data generation and MLE on rank 0 only ---
+    if rank == 0:
+        X, choices = simulate_probit_individual(
+            N, J, K, beta, Sigma=Sigma, rho=rho, seed=seed)
 
-    # --- Combest ---
-    obs_bundles = choices_to_bundles(choices, J)
-    input_data = {
-        "id_data": {"modular": X, "obs_bundles": obs_bundles},
-        "item_data": {},
-    }
+        t0 = time.perf_counter()
+        try:
+            beta_mle, _ = estimate_probit_mle_individual(
+                X, choices, Sigma, R=ghk_draws, seed=seed + 1)
+        except Exception:
+            beta_mle = np.full(K, np.nan)
+        runtime_mle = time.perf_counter() - t0
+
+        obs_bundles = choices_to_bundles(choices, J)
+        input_data = {
+            "id_data": {"modular": X, "obs_bundles": obs_bundles},
+            "item_data": {},
+        }
+    else:
+        input_data = None
+        beta_mle = None
+        runtime_mle = None
+
+    # --- Combest (all ranks) ---
     model = ce.Model()
     model.load_config({
         "dimensions": {"n_obs": N, "n_items": J, "n_covariates": K,
@@ -60,6 +77,9 @@ def run_replication(N, J, K, beta, replication=0, config=None):
     t0 = time.perf_counter()
     result = model.point_estimation.n_slack.solve(verbose=False)
     runtime_combest = time.perf_counter() - t0
+
+    if rank != 0:
+        return None
 
     return {
         "beta_mle": beta_mle.tolist(),
