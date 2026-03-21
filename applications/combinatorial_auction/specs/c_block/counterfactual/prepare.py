@@ -13,17 +13,26 @@ from applications.combinatorial_auction.data.prepare import _build_features, _ag
 
 
 def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
-                           modular_regressors, quadratic_regressors):
+                           modular_regressors=None, quadratic_regressors=None):
     """Build MTA-level counterfactual data from C-block BTA estimation."""
     result = json.load(open(est_result_path))
     theta = np.array(result["theta_hat"])
     n_id_mod = result["n_id_mod"]
     n_btas = result["n_btas"]
+    n_id_quad = result.get("n_id_quad", 0)
+
+    # read regressors from result if not provided
+    spec = result.get("specification", {})
+    if modular_regressors is None:
+        modular_regressors = spec.get("modular", [])
+    if quadratic_regressors is None:
+        quadratic_regressors = spec.get("quadratic", [])
 
     # extract estimated parameters
-    beta = theta[:n_id_mod]                          # id_modular (elig_pop, ...)
-    theta_fe = theta[n_id_mod : n_id_mod + n_btas]   # item FEs
-    gamma = theta[n_id_mod + n_btas:]                 # quadratic params
+    # theta order: id_mod | item_mod(FE) | id_quad | item_quad
+    beta = theta[:n_id_mod]
+    theta_fe = theta[n_id_mod : n_id_mod + n_btas]
+    gamma = theta[n_id_mod + n_btas + n_id_quad:]     # item_quad only (skip id_quad)
 
     # recover delta and xi
     raw = load_bta_data()
@@ -39,6 +48,7 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
     mta_sizes = A.sum(1)                              # |m|
     xi_m = A @ xi
     offset_m = mta_sizes * alpha_0 + xi_m             # |m|*alpha_0 + A@xi
+    offset_m_no_xi = mta_sizes * alpha_0              # |m|*alpha_0 only
 
     # id_data: C-block bidder features aggregated to MTA level
     bta_mod = _build_features(MODULAR, modular_regressors, ctx)  # (n_obs, n_btas, n_id_mod)
@@ -83,9 +93,11 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
         "n_mtas": n_mtas,
         "A": A,
         "offset_m": offset_m,
+        "offset_m_no_xi": offset_m_no_xi,
         "beta": beta,
         "gamma": gamma,
         "continental_mta_nums": continental_mta_nums(btas),
+        "elig": ctx["elig"],
         "covariate_names": {},
     }
 

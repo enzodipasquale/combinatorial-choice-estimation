@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import copy
 import json
 import time
 import argparse
@@ -48,7 +49,7 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0, conf
     subproblem_cfg = {"name": subproblem_name}
     subproblem_cfg.update(cfg.get("subproblem", {}))
 
-    rg_cfg = dict(cfg.get("row_generation", {}))
+    rg_cfg = copy.deepcopy(cfg.get("row_generation", {}))
 
     # Supermodular / quadratic knapsack require lambda >= 0 for the subproblem solver.
     # Enforce lb=0 on the quadratic (lambda) covariate indices.
@@ -73,6 +74,23 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0, conf
     model.features.build_quadratic_covariates_from_data()
     model.features.build_local_modular_error_oracle(seed=3 * replication + 1, sigma=sigma)
     model.subproblems.load_solver()
+
+    # Gross substitutes: set find_best_item for O(M²) greedy instead of O(M⁴) naive.
+    # Marginal of adding item j to S: m_j - 2*lambda*|S|, where
+    #   m_j = alpha*x_ij - delta_j + eps_j  (modular value, independent of S).
+    # The penalty -2*lambda*|S| is the same for all candidates, so the best item
+    # is simply argmax(m_j) among items_left.
+    if spec == "gross_substitutes":
+        def _gs_find_best_item(local_id, bundle, items_left, theta, best_val,
+                               local_data, modular_error):
+            M = len(bundle)
+            x_i = local_data.id_data["modular"][local_id, :, 0]
+            m = theta[0] * x_i - theta[1:M + 1] + modular_error
+            candidates = np.where(items_left)[0]
+            best_j = candidates[np.argmax(m[candidates])]
+            new_val = best_val + m[best_j] - 2 * theta[M + 1] * int(bundle.sum())
+            return best_j, new_val
+        model.subproblems.subproblem_solver.find_best_item = _gs_find_best_item
 
     theta_star = comm.bcast(theta_star, root=0)
     model.subproblems.generate_obs_bundles(theta_star)

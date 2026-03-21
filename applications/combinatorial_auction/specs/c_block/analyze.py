@@ -69,7 +69,10 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
     """Run a single IV regression. Returns (spec_label, beta, se, r2, f_stat, r2_fs)."""
     X = np.column_stack([np.ones(n), -p_s])
 
-    if instruments == "pop_hhinc":
+    if instruments == "pop":
+        Z = np.column_stack([np.ones(len(zm)), zm])
+        z_label, n_inst = "pop", 1
+    elif instruments == "pop_hhinc":
         Z = np.column_stack([zm, zh])
         z_label, n_inst = "pop+hhinc", 2
     elif instruments == "pop_std":
@@ -80,7 +83,10 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
         z_label, n_inst = "pop+std+hhinc", 3
 
     b_iv, s_iv, r2_iv, res_iv = tsls(X, d_s, Z)
-    X_fs = np.column_stack([np.ones(n)] + [Z[:, k] for k in range(n_inst)])
+    if instruments == "pop":
+        X_fs = Z  # already has constant
+    else:
+        X_fs = np.column_stack([np.ones(n)] + [Z[:, k] for k in range(n_inst)])
     _, _, r2_fs, _ = ols(X_fs, -p_s)
     f_stat = (r2_fs / n_inst) / ((1 - r2_fs) / (n - n_inst - 1))
     spec_label = f"IV z={z_label} d>{d}"
@@ -91,14 +97,18 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
 # (instruments, dist_threshold_km)
 PREFERRED_IV = ("pop_hhinc", 500)
 OTHER_IV_SPECS = [
+    ("pop",        500),
     ("pop_std",    500),
     ("all",        500),
+    ("pop",       1000),
     ("pop_hhinc", 1000),
     ("pop_std",   1000),
     ("all",       1000),
+    ("pop",       1500),
     ("pop_hhinc", 1500),
     ("pop_std",   1500),
     ("all",       1500),
+    ("pop",       2000),
     ("pop_hhinc", 2000),
     ("pop_std",   2000),
     ("all",       2000),

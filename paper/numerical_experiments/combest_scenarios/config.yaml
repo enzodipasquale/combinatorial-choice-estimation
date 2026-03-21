@@ -9,7 +9,7 @@ specifications:
   gross_substitutes:
     subproblem: Greedy
     max_M: 200
-    alpha: 0.1
+    alpha: 1.0
     lambda:
       20: 0.005
       50: 0.002
@@ -19,7 +19,7 @@ specifications:
   supermodular:
     subproblem: QuadraticSupermodularMinCut
     max_M: 200
-    alpha: 0.1
+    alpha: 1.0
     lambda:
       20: 0.01
       50: 0.005
@@ -27,12 +27,12 @@ specifications:
       200: 0.001
 
   linear_knapsack:
-    alpha: 0.1
+    alpha: 1.0
     subproblem: LinearKnapsackGRB
     max_M: 200
 
   quadratic_knapsack:
-    alpha: 0.1
+    alpha: 1.0
     lambda: 0.05
     subproblem: QuadraticKnapsackGRB
     max_M: 200
