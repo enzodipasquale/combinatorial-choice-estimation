@@ -3,10 +3,11 @@
 HPC entry point for probit efficiency benchmarking.
 
 Usage:
-  mpirun -np 1 python run_hpc.py --cell-index 0   # runs one (J,N) cell
-  mpirun -np 1 python run_hpc.py                    # runs all cells sequentially
+  mpiexec ... python run_hpc.py --N 200    # runs J=2 and J=10 for N=200
+  mpiexec ... python run_hpc.py             # runs all cells sequentially
 
-Designed for SLURM array jobs: each array task handles one cell.
+Designed for per-N SLURM jobs (since n_simulations=N means
+total agents = N*N, requiring different rank counts per N).
 """
 import sys
 import argparse
@@ -46,28 +47,30 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
             n_failed += 1
             continue
 
-        if rank == 0:
-            b_mle = np.array(res["beta_mle"])
-            b_cb = np.array(res["beta_combest"])
+        if rank != 0:
+            continue
 
-            if np.any(np.abs(b_mle) > 50):
-                print(f"  rep {rep}: MLE diverged "
-                      f"(max|beta|={np.abs(b_mle).max():.1f})", flush=True)
-                n_failed += 1
-                continue
+        b_mle = np.array(res["beta_mle"])
+        b_cb = np.array(res["beta_combest"])
 
-            betas_mle.append(b_mle)
-            betas_cb.append(b_cb)
-            times_mle.append(res["runtime_mle"])
-            times_cb.append(res["runtime_combest"])
+        if np.any(np.isnan(b_mle)) or np.any(np.abs(b_mle) > 50):
+            print(f"  rep {rep}: MLE diverged "
+                  f"(max|beta|={np.nanmax(np.abs(b_mle)):.1f})", flush=True)
+            n_failed += 1
+            continue
 
-            if (rep + 1) % 10 == 0:
-                elapsed_mle = res["runtime_mle"]
-                err_mle = np.linalg.norm(b_mle - beta)
-                err_cb = np.linalg.norm(b_cb - beta)
-                print(f"  rep {rep}: mle_err={err_mle:.4f}  "
-                      f"cb_err={err_cb:.4f}  t_mle={elapsed_mle:.1f}s",
-                      flush=True)
+        betas_mle.append(b_mle)
+        betas_cb.append(b_cb)
+        times_mle.append(res["runtime_mle"])
+        times_cb.append(res["runtime_combest"])
+
+        if (rep + 1) % 10 == 0:
+            err_mle = np.linalg.norm(b_mle - beta)
+            err_cb = np.linalg.norm(b_cb - beta)
+            print(f"  rep {rep}: mle_err={err_mle:.4f}  "
+                  f"cb_err={err_cb:.4f}  t_mle={res['runtime_mle']:.1f}s  "
+                  f"t_cb={res['runtime_combest']:.1f}s",
+                  flush=True)
 
     if rank == 0:
         output_path = results_dir / f"probit_J{J}_N{N}.npz"
@@ -85,8 +88,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
                  n_failed=n_failed)
 
         R_valid = len(betas_mle)
-        var_mle = np.var(betas_mle, axis=0).mean()
-        var_cb = np.var(betas_cb, axis=0).mean()
+        var_mle = np.var(betas_mle, axis=0).mean() if R_valid > 1 else 0
+        var_cb = np.var(betas_cb, axis=0).mean() if R_valid > 1 else 0
         are = var_cb / var_mle if var_mle > 0 else np.inf
         print(f"\n  Saved {output_path.name}: R={R_valid}, failed={n_failed}, "
               f"ARE(var)={are:.2f}", flush=True)
@@ -94,6 +97,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--N", type=int, default=None,
+                        help="Run all J values for this N value.")
     parser.add_argument("--cell-index", type=int, default=None,
                         help="Index into the (J, N) grid. If omitted, runs all.")
     args = parser.parse_args()
@@ -116,7 +121,11 @@ def main():
         results_dir.mkdir(parents=True, exist_ok=True)
     MPI.COMM_WORLD.Barrier()
 
-    if args.cell_index is not None:
+    if args.N is not None:
+        # Run all J values for a specific N
+        for J in J_values:
+            run_cell(J, args.N, K, beta, n_reps, config, results_dir)
+    elif args.cell_index is not None:
         J, N = cells[args.cell_index]
         run_cell(J, N, K, beta, n_reps, config, results_dir)
     else:
@@ -124,7 +133,7 @@ def main():
             run_cell(J, N, K, beta, n_reps, config, results_dir)
 
     # Generate figures and tables if all cells completed
-    if rank == 0 and args.cell_index is None:
+    if rank == 0 and args.cell_index is None and args.N is None:
         from paper.numerical_experiments.unit_demand.analyze_results import main as analyze
         print("\nGenerating figures and tables...")
         analyze()
