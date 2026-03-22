@@ -52,7 +52,7 @@ def generate_table_csv(local_stats, hpc_stats, config, output_path):
     with open(output_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Specification", "M", "N",
-                     "Bias α", "RMSE α", "Bias λ", "RMSE λ",
+                     "Bias δ", "RMSE δ", "Bias α", "RMSE α", "Bias λ", "RMSE λ",
                      "Runtime (local)", "Runtime (HPC)"])
         for spec in specs:
             for M in grid_M:
@@ -66,6 +66,8 @@ def generate_table_csv(local_stats, hpc_stats, config, output_path):
                         rt_local = loc.get("runtime", np.nan) if loc else np.nan
                         rt_hpc = hpc.get("runtime", np.nan) if hpc else np.nan
                         w.writerow([spec, M, N,
+                                    fmt(s.get("bias_delta", np.nan)),
+                                    fmt(s.get("rmse_delta", np.nan)),
                                     fmt(s.get("bias_alpha", np.nan)),
                                     fmt(s.get("rmse_alpha", np.nan)),
                                     fmt(s.get("bias_lambda", np.nan)),
@@ -106,6 +108,8 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
 
         has_lambda = config["specifications"][spec].get("lambda") is not None
         rows = [
+            ("Bias $\\delta$", "bias_delta", 3),
+            ("RMSE $\\delta$", "rmse_delta", 3),
             ("Bias $\\alpha$", "bias_alpha", 3),
             ("RMSE $\\alpha$", "rmse_alpha", 3),
         ]
@@ -145,7 +149,7 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
         "\\begin{tablenotes}",
         "\\footnotesize",
         "\\item \\textit{Notes:} Averages over 50 replications. $S = 1$, $\\rho = 0.5$. "
-        "$\\alpha$: modular agent feature coefficient; $\\lambda$: non-modular feature coefficient. "
+        "$\\delta$: item fixed effects; $\\alpha$: modular agent feature coefficient; $\\lambda$: non-modular feature coefficient. "
         "Runtime in seconds (point estimation).",
         "\\end{tablenotes}",
         "\\end{threeparttable}",

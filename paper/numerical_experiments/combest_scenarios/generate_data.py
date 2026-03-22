@@ -104,15 +104,20 @@ def generate_linear_knapsack_data(N, M, alpha, delta_star, phi, z, seed=None):
     }
 
 
-def generate_quadratic_knapsack_data(N, M, alpha, lambda_quad, delta_star, phi, z, seed=None):
+def generate_quadratic_knapsack_data(N, M, alpha, lambda_quad, delta_star, phi, z,
+                                     quadratic_density=0.2, seed=None):
     rng = np.random.default_rng(seed)
 
+    # Sparse quadratic interactions: each pair interacts with probability
+    # `quadratic_density`. Realistic: items interact with a subset of others
+    # (e.g. products in the same category). Density=0.2 keeps the QKP
+    # tractable for Gurobi at M=200 while preserving non-trivial structure.
     quadratic_item = np.zeros((M, M, 1))
     for j in range(M):
         for jp in range(j + 1, M):
-            x_val = rng.binomial(1, 0.5)
-            quadratic_item[j, jp, 0] = x_val
-            quadratic_item[jp, j, 0] = x_val
+            if rng.random() < quadratic_density:
+                quadratic_item[j, jp, 0] = 1.0
+                quadratic_item[jp, j, 0] = 1.0
 
     modular_agent = rng.normal(0, 1, (N, M, 1))
     weights = rng.uniform(0.5, 1.5, M)
