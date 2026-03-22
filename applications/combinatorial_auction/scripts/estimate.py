@@ -139,6 +139,7 @@ def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,
 
 
 def _save(result, config, meta, path):
+    import time as _time
     app = config["application"]
     theta = result.theta_hat
     names = config["dimensions"]["covariate_names"]
@@ -148,18 +149,35 @@ def _save(result, config, meta, path):
         print(f"  {names[idx]}: {theta[int(idx)]:.4f}")
 
     out = {
+        # --- Estimates ---
         "theta_hat": theta.tolist(),
-        "n_items": config["dimensions"]["n_items"],
-        "n_obs": config["dimensions"]["n_obs"],
-        "n_covariates": config["dimensions"]["n_covariates"],
-        "n_id_mod": app["n_id_mod"],
-        "n_id_quad": app["n_id_quad"],
-        "specification": {k: app.get(f"{k}_regressors", []) for k in ["modular", "quadratic", "quadratic_id"]},
-        "dataset": app["dataset"],
-        "item_modular": app.get("item_modular", "fe"),
+        "covariate_names": {str(k): v for k, v in names.items()},
         "converged": bool(result.converged),
         "objective": float(result.final_objective),
         "iterations": int(result.num_iterations),
+        "runtime": float(result.runtime) if hasattr(result, "runtime") else None,
+        # --- Dimensions ---
+        "n_items": config["dimensions"]["n_items"],
+        "n_obs": config["dimensions"]["n_obs"],
+        "n_covariates": config["dimensions"]["n_covariates"],
+        "n_simulations": config["dimensions"].get("n_simulations", 1),
+        # --- Specification ---
+        "dataset": app["dataset"],
+        "item_modular": app.get("item_modular", "fe"),
+        "regressors": {k: app.get(f"{k}_regressors", []) for k in ["modular", "quadratic", "quadratic_id"]},
+        "n_id_mod": app["n_id_mod"],
+        "n_id_quad": app["n_id_quad"],
+        # --- Error oracle ---
+        "error_seed": app.get("error_seed"),
+        "error_scaling": app.get("error_scaling"),
+        "error_correlation": app.get("error_correlation"),
+        # --- Estimation config ---
+        "subproblem": config.get("subproblem", {}),
+        "row_generation": config.get("row_generation", {}),
+        "callbacks": config.get("callbacks", {}),
+        "mode": app.get("mode", "estimation"),
+        # --- Timestamp ---
+        "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     if result.u_hat is not None:
         out["u_hat"] = result.u_hat.tolist()
