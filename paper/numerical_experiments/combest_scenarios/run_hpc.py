@@ -43,47 +43,53 @@ def main():
         stats_dir.mkdir(parents=True, exist_ok=True)
     comm.Barrier()
 
-    for spec in specs:
-        spec_cfg = config["specifications"][spec]
-        max_M = spec_cfg.get("max_M", 200)
-        alpha_cfg, lambda_cfg = spec_cfg.get("alpha"), spec_cfg.get("lambda")
+    # Run smaller M values first across all specs, then M=200 last.
+    # This ensures partial results are usable if the job times out.
+    max_M_first = max(grid_M)
+    m_order = [m for m in grid_M if m < max_M_first] + [max_M_first]
 
-        for M, N in product(grid_M, grid_N):
+    for M in m_order:
+        for spec in specs:
+            spec_cfg = config["specifications"][spec]
+            max_M = spec_cfg.get("max_M", 200)
             if M > max_M:
                 if rank == 0:
                     print(f"Skipping {spec} M={M} (max_M={max_M})")
                 continue
 
+            alpha_cfg = spec_cfg.get("alpha")
+            lambda_cfg = spec_cfg.get("lambda")
             resolve = lambda c, M: c.get(M, c.get(str(M))) if isinstance(c, dict) else c
             alpha_val = resolve(alpha_cfg, M) if isinstance(alpha_cfg, dict) else alpha_cfg
             lambda_val = resolve(lambda_cfg, M) if isinstance(lambda_cfg, dict) else lambda_cfg
 
-            if rank == 0:
-                print(f"\n{'='*60}")
-                print(f"Running {spec}, N={N}, M={M}, \u03b1={alpha_val}, \u03bb={lambda_val}")
-                print(f"{'='*60}", flush=True)
-
-            for rep in range(n_reps):
+            for N in grid_N:
                 if rank == 0:
-                    print(f"  Replication {rep+1}/{n_reps}...", end=" ", flush=True)
+                    print(f"\n{'='*60}")
+                    print(f"Running {spec}, N={N}, M={M}, \u03b1={alpha_val}, \u03bb={lambda_val}")
+                    print(f"{'='*60}", flush=True)
 
-                result = run_replication(
-                    spec, N, M, alpha=alpha_val, lambda_val=lambda_val,
-                    replication=rep, config=config,
-                )
+                for rep in range(n_reps):
+                    if rank == 0:
+                        print(f"  Replication {rep+1}/{n_reps}...", end=" ", flush=True)
 
-                if result is not None:
-                    out = results_dir / f"{spec}_N{N}_M{M}_rep{rep}.json"
-                    with open(out, "w") as f:
-                        json.dump(result, f, indent=2)
-                    print("\u2713", flush=True)
+                    result = run_replication(
+                        spec, N, M, alpha=alpha_val, lambda_val=lambda_val,
+                        replication=rep, config=config,
+                    )
 
-            if rank == 0:
-                results = load_replication_results(results_dir, spec, N, M)
-                stats = compute_statistics(results)
-                with open(stats_dir / f"stats_{spec}_N{N}_M{M}.json", "w") as f:
-                    json.dump(stats, f, indent=2)
-                print(f"  Stats: {stats['n_replications']} reps, runtime={stats['runtime']:.1f}s")
+                    if result is not None:
+                        out = results_dir / f"{spec}_N{N}_M{M}_rep{rep}.json"
+                        with open(out, "w") as f:
+                            json.dump(result, f, indent=2)
+                        print("\u2713", flush=True)
+
+                if rank == 0:
+                    results = load_replication_results(results_dir, spec, N, M)
+                    stats = compute_statistics(results)
+                    with open(stats_dir / f"stats_{spec}_N{N}_M{M}.json", "w") as f:
+                        json.dump(stats, f, indent=2)
+                    print(f"  Stats: {stats['n_replications']} reps, runtime={stats['runtime']:.1f}s")
 
     if rank == 0:
         local_dir = SCRIPT_DIR / "results" / "local"
