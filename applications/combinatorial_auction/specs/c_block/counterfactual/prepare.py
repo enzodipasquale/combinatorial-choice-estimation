@@ -14,7 +14,7 @@ from applications.combinatorial_auction.data.prepare import _build_features, _ag
 
 def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
                            modular_regressors=None, quadratic_regressors=None,
-                           quadratic_id_regressors=None):
+                           quadratic_id_regressors=None, elig_scale=1.0):
     """Build MTA-level counterfactual data from C-block BTA estimation."""
     result = json.load(open(est_result_path))
     theta = np.array(result["theta_hat"])
@@ -87,7 +87,7 @@ def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
         "id_data": {
             "modular": mta_mod,
             "obs_bundles": mta_obs,
-            "capacity": ctx["capacity"],
+            "capacity": (ctx["capacity"] * elig_scale).astype(int),
         },
         "item_data": {
             "modular": -alpha_1 * np.eye(n_mtas, dtype=np.float64),

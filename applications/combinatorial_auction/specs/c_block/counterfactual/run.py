@@ -34,6 +34,7 @@ def main(config_path):
             modular_regressors=app.get("modular_regressors"),
             quadratic_regressors=app.get("quadratic_regressors"),
             quadratic_id_regressors=app.get("quadratic_id_regressors"),
+            elig_scale=app.get("elig_scale", 1.0),
         )
 
         # inject fixed-parameter bounds from estimation (pin beta, gamma_id, gamma_item)
@@ -103,7 +104,8 @@ def main(config_path):
 
         _build_counterfactual_errors(model, meta, app.get("error_seed", 1998),
                                      error_scaling=app.get("error_scaling"),
-                                     include_xi=include_xi)
+                                     include_xi=include_xi,
+                                     error_correlation=app.get("error_correlation"))
 
         model.subproblems.load_solver()
 
@@ -115,18 +117,33 @@ def main(config_path):
             _save(result, config, meta, experiment_dir / out_name)
 
 
-def _build_counterfactual_errors(model, meta, seed, error_scaling=None, include_xi=True):
+def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
+                                  include_xi=True, error_correlation=None):
     A = meta["A"]
     n_bta = A.shape[1]
     offset_m = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     cm = model.features.comm_manager
     elig = meta.get("elig")
 
+    # Cholesky of correlation matrix (if correlated errors)
+    L_corr = None
+    if error_correlation is not None:
+        from applications.combinatorial_auction.data.registries import QUADRATIC
+        from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
+        raw = load_bta_data()
+        ctx = build_context(raw)
+        Q = QUADRATIC[error_correlation](ctx)
+        Sigma = (Q + Q.T) / 2
+        np.fill_diagonal(Sigma, 1.0)
+        L_corr = np.linalg.cholesky(Sigma)
+
     local_errors = np.zeros((cm.num_local_agent, model.n_items))
     for i, gid in enumerate(cm.agent_ids):
         obs_id = cm.obs_ids[i]
         rng = np.random.default_rng((seed, gid))
         bta_err = rng.normal(0, 1, n_bta)
+        if L_corr is not None:
+            bta_err = L_corr @ bta_err
         if error_scaling == "elig" and elig is not None:
             bta_err *= elig[obs_id]
         local_errors[i] = bta_err @ A.T + offset_m

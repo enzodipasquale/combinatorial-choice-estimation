@@ -13,29 +13,36 @@ CBLOCK_DIR = Path(__file__).parent
 POP_THRESHOLD = 500_000
 
 
+def _robust_cov(X, resid):
+    """HC1 heteroscedasticity-robust covariance: (n/(n-k)) * inv(X'X) X'diag(e^2)X inv(X'X)."""
+    n, k = X.shape
+    try:
+        XtXinv = np.linalg.inv(X.T @ X)
+    except np.linalg.LinAlgError:
+        XtXinv = np.linalg.pinv(X.T @ X)
+    meat = (X * resid[:, None]).T @ (X * resid[:, None])
+    return (n / (n - k)) * XtXinv @ meat @ XtXinv
+
+
 def ols(X, y):
     beta = np.linalg.lstsq(X, y, rcond=None)[0]
     resid = y - X @ beta
     n, k = X.shape
-    s2 = resid @ resid / (n - k)
-    try:
-        cov = s2 * np.linalg.inv(X.T @ X)
-    except np.linalg.LinAlgError:
-        cov = s2 * np.linalg.pinv(X.T @ X)
+    cov = _robust_cov(X, resid)
     se = np.sqrt(np.abs(np.diag(cov)))
     r2 = 1 - (resid @ resid) / ((y - y.mean()) @ (y - y.mean()))
     return beta, se, r2, resid
 
 
 def tsls(X, y, Z):
-    """Two-stage least squares. X = [exog | endog], Z = [exog | instruments]."""
+    """Two-stage least squares with HC1 robust SEs."""
     Pz = Z @ np.linalg.lstsq(Z, X, rcond=None)[0]
     beta = np.linalg.lstsq(Pz, y, rcond=None)[0]
     resid = y - X @ beta
-    n, k = X.shape
-    s2 = resid @ resid / (n - k)
-    cov = s2 * np.linalg.inv(Pz.T @ X)
+    # robust cov using projected X (Pz) and structural residuals
+    cov = _robust_cov(Pz, resid)
     se = np.sqrt(np.abs(np.diag(cov)))
+    n, k = X.shape
     r2 = 1 - (resid @ resid) / ((y - y.mean()) @ (y - y.mean()))
     return beta, se, r2, resid
 
