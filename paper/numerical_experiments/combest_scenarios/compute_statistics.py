@@ -45,7 +45,7 @@ def compute_statistics(results):
 
     runtime = float(np.mean([r["runtime"] for r in results]))
 
-    return {
+    stats = {
         "bias_alpha": float(bias_alpha),
         "rmse_alpha": float(rmse_alpha),
         "bias_lambda": float(bias_lambda),
@@ -56,6 +56,17 @@ def compute_statistics(results):
         "n_replications": len(results),
         "avg_at_bound": float(np.mean([r.get("n_at_bound", 0) for r in results])),
     }
+
+    # 2SLS beta statistics (if available)
+    if "beta_2sls" in results[0]:
+        betas = np.array([r["beta_2sls"] for r in results])
+        beta_star = np.array(results[0]["beta_star"])
+        errors = betas - beta_star
+        stats["bias_beta"] = errors.mean(axis=0).tolist()
+        stats["rmse_beta"] = np.sqrt((errors**2).mean(axis=0)).tolist()
+        stats["beta_star"] = beta_star.tolist()
+
+    return stats
 
 
 def main():

@@ -127,9 +127,34 @@ def run_replication(spec, N, M, alpha=None, lambda_val=None, replication=0, conf
     bound_ub = float(rg_cfg.get("theta_bounds", {}).get("ub", 100))
     at_bound = lambda v: (v <= bound_lb + 1.0) | (v >= bound_ub - 1.0)
 
+    # 2SLS: recover structural coefficients beta from delta_hat.
+    # DGP: delta_star = normalize(phi @ beta_star + xi, target_std).
+    # The normalization rescales beta: beta_true = beta_star * (target_std / std_raw).
+    # Instruments: z (exogenous).
+    phi, z = meta["phi"], meta["z"]  # (M, K) each
+    delta_hat = theta_hat[delta_idx]
+    Pz = z @ np.linalg.solve(z.T @ z, z.T)  # projection onto z
+    phi_hat = Pz @ phi                        # first stage
+    beta_2sls = np.linalg.solve(phi_hat.T @ phi_hat, phi_hat.T @ delta_hat)
+
+    # True effective beta: normalization rescales beta by (target_std / std_raw).
+    beta_star_val = exp.get("beta_star", "ones")
+    if beta_star_val == "ones":
+        beta_star_arr = np.ones(phi.shape[1])
+    else:
+        beta_star_arr = np.array(beta_star_val)
+    rho = exp.get("rho", 0.5)
+    xi = (phi[:, 0] - z[:, 0]) / rho  # recover xi from phi = z + rho * xi
+    raw = phi @ beta_star_arr + xi
+    raw_centered = raw - raw.mean()
+    scale = exp.get("target_std", 0.5) / raw_centered.std() if raw_centered.std() > 0 else 1.0
+    beta_star_arr = beta_star_arr * scale  # effective beta after normalization
+
     return {
         "theta_hat": theta_hat.tolist(),
         "theta_star": theta_star.tolist(),
+        "beta_2sls": beta_2sls.tolist(),
+        "beta_star": beta_star_arr.tolist(),
         "runtime": runtime,
         "n_at_bound": int(np.sum(at_bound(theta_hat))),
         "alpha_indices": alpha_idx.tolist(),

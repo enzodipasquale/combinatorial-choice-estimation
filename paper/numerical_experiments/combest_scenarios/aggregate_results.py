@@ -127,6 +127,30 @@ def generate_table_latex(local_stats, hpc_stats, config, output_path):
                     cells.append(fmt(val, dec))
             lines.append(f"{row_label} & " + " & ".join(cells) + " \\\\")
 
+        # 2SLS beta rows (per component)
+        beta_sample = None
+        for M in grid_M:
+            for N in grid_N:
+                s = hpc_stats[spec][M][N] or local_stats[spec][M][N]
+                if s and "beta_star" in s:
+                    beta_sample = s
+                    break
+            if beta_sample:
+                break
+        if beta_sample:
+            K = len(beta_sample["beta_star"])
+            for k in range(K):
+                for stat, label_prefix in [("bias_beta", "Bias"), ("rmse_beta", "RMSE")]:
+                    cells = []
+                    for M in grid_M:
+                        for N in grid_N:
+                            s = hpc_stats[spec][M][N] or local_stats[spec][M][N]
+                            if s and stat in s:
+                                cells.append(fmt(s[stat][k], 3))
+                            else:
+                                cells.append("---")
+                    lines.append(f"{label_prefix} $\\beta_{{{k+1}}}$ & " + " & ".join(cells) + " \\\\")
+
         for rt_label, src_stats in [("Runtime (local)", local_stats), ("Runtime (HPC)", hpc_stats)]:
             cells = []
             has_any = False
