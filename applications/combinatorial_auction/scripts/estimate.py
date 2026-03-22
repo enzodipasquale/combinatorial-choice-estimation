@@ -164,7 +164,7 @@ def _save(result, config, meta, path):
         # --- Specification ---
         "dataset": app["dataset"],
         "item_modular": app.get("item_modular", "fe"),
-        "regressors": {k: app.get(f"{k}_regressors", []) for k in ["modular", "quadratic", "quadratic_id"]},
+        "specification": {k: app.get(f"{k}_regressors", []) for k in ["modular", "quadratic", "quadratic_id"]},
         "n_id_mod": app["n_id_mod"],
         "n_id_quad": app["n_id_quad"],
         # --- Error oracle ---

@@ -108,30 +108,19 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
 
 
 # ── IV spec registry ──────────────────────────────────────────────
-# (instruments, dist_threshold_km)
+# Preferred: avg_pop + avg_hhinc of BTAs > 500km away
 PREFERRED_IV = ("pop_hhinc", 500)
-OTHER_IV_SPECS = [
-    ("pop",        500),
-    ("pop_std",    500),
-    ("all",        500),
-    ("pop",       1000),
-    ("pop_hhinc", 1000),
-    ("pop_std",   1000),
-    ("all",       1000),
-    ("pop",       1500),
-    ("pop_hhinc", 1500),
-    ("pop_std",   1500),
-    ("all",       1500),
-    ("pop",       2000),
-    ("pop_hhinc", 2000),
-    ("pop_std",   2000),
-    ("all",       2000),
-]
+# Other specs available for robustness (uncomment as needed):
+# OTHER_IV_SPECS = [
+#     ("pop", 500), ("pop_std", 500), ("all", 500),
+#     ("pop", 1000), ("pop_hhinc", 1000), ("pop_std", 1000), ("all", 1000),
+#     ("pop", 1500), ("pop_hhinc", 1500), ("pop_std", 1500), ("all", 1500),
+#     ("pop", 2000), ("pop_hhinc", 2000), ("pop_std", 2000), ("all", 2000),
+# ]
 
 
-def _run_iv_block(label, mask, delta, price, dist_thresholds,
-                  iv_pop_mean, iv_pop_std, iv_hhinc_mean):
-    """Run OLS and preferred IV in detail, then summary table of all IV specs."""
+def _run_iv_sample(label, mask, delta, price, iv_pop_mean, iv_pop_std, iv_hhinc_mean):
+    """Run OLS and IV (pop+hhinc, d>500) for a given sample. Returns IV coefficients."""
     n = mask.sum()
     d_s, p_s = delta[mask], price[mask]
 
@@ -141,42 +130,17 @@ def _run_iv_block(label, mask, delta, price, dist_thresholds,
     _print_regression(f"OLS {label}: delta ~ const + (-price)",
                       n, ["const", "alpha_1"], b, s, r2, res)
 
-    # ── Preferred IV (full output) ────────────────────────────────
-    def _get_zs(d):
-        return iv_pop_mean[d][mask], iv_pop_std[d][mask], iv_hhinc_mean[d][mask]
-
-    inst, d = PREFERRED_IV
-    zm, zs, zh = _get_zs(d)
-    spec, b_iv, s_iv, r2_iv, f_stat, r2_fs = _run_iv(label, n, d_s, p_s, zm, zs, zh, inst, d)
-    _print_regression(f"IV {label} ({spec}): delta ~ const + (-price)",
-                      n, ["const", "alpha_1"], b_iv, s_iv, r2_iv, delta[mask] - np.column_stack([np.ones(n), -p_s]) @ b_iv)
+    # ── IV (pop+hhinc, d>500) ─────────────────────────────────────
+    zm, zh = iv_pop_mean[500][mask], iv_hhinc_mean[500][mask]
+    spec, b_iv, s_iv, r2_iv, f_stat, r2_fs = _run_iv(
+        label, n, d_s, p_s, zm, iv_pop_std[500][mask], zh, "pop_hhinc", 500)
+    _print_regression(f"IV {label} (z=pop+hhinc, d>500): delta ~ const + (-price)",
+                      n, ["const", "alpha_1"], b_iv, s_iv, r2_iv,
+                      delta[mask] - X @ b_iv)
     print(f"  First-stage F = {f_stat:.1f},  R2 = {r2_fs:.4f}")
+    print(f"  a0 in dollars = ${b_iv[0]/b_iv[1]*1e3:.1f}M per license")
 
-    # ── Just-identified IV: pop only (full output) ──────────────
-    zm0, zs0, zh0 = _get_zs(500)
-    spec_p, b_p, s_p, r2_p, f_p, r2_fsp = _run_iv(label, n, d_s, p_s, zm0, zs0, zh0, "pop", 500)
-    _print_regression(f"IV {label} ({spec_p}): delta ~ const + (-price)",
-                      n, ["const", "alpha_1"], b_p, s_p, r2_p, delta[mask] - np.column_stack([np.ones(n), -p_s]) @ b_p)
-    print(f"  First-stage F = {f_p:.1f},  R2 = {r2_fsp:.4f}")
-
-    # ── Summary table of all IV specs ─────────────────────────────
-    rows = [(spec, b_iv, s_iv, r2_iv, f_stat)]
-    for inst, d in OTHER_IV_SPECS:
-        zm, zs, zh = _get_zs(d)
-        sp, bi, si, ri, fi, _ = _run_iv(label, n, d_s, p_s, zm, zs, zh, inst, d)
-        rows.append((sp, bi, si, ri, fi))
-
-    S = 24  # spec column width
-    print(f"\n{'='*90}")
-    print(f"All IV specs {label}  (N = {n})")
-    print(f"{'='*90}")
-    print(f"  {'Spec':<{S}} {'a0':>8} {'se':>8} {'t':>7}  {'a1':>8} {'se':>8} {'t':>7}  {'F':>6} {'R2':>6}")
-    print(f"  {'-'*(S+8+8+7+2+8+8+7+2+6+6+4)}")
-    for sp, bi, si, ri, fi in rows:
-        t0, t1 = bi[0]/si[0], bi[1]/si[1]
-        print(f"  {sp:<{S}} {bi[0]:>8.3f} {si[0]:>8.3f} {t0:>7.2f}  {bi[1]:>8.3f} {si[1]:>8.3f} {t1:>7.2f}  {fi:>6.1f} {ri:>6.3f}")
-
-    return b_iv  # preferred IV coefficients: [alpha_0, alpha_1]
+    return b_iv
 
 
 def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
@@ -273,19 +237,22 @@ def run(result_file="result_FE.json"):
     iv_pop_mean, iv_pop_std = _build_distant_stats(pop, geo, dist_thresholds)
     iv_hhinc_mean, _ = _build_distant_stats(hhinc, geo, dist_thresholds)
 
-    # ── Full sample OLS ─────────────────────────────────────────────
-    X_full = np.column_stack([np.ones(n_btas), -price])
-    b, s, r2, res = ols(X_full, delta)
-    _print_regression("OLS full: delta ~ const + (-price)",
-                      n_btas, ["const", "alpha_1"], b, s, r2, res)
-
-    # ── Rural only ──────────────────────────────────────────────────
+    # ── MAIN: Full sample ─────────────────────────────────────────
+    full = np.ones(n_btas, dtype=bool)
     print(f"\n{'#'*60}")
-    print(f"# RURAL (pop90 < {POP_THRESHOLD:,}): {rural.sum()} BTAs")
+    print(f"# MAIN SPECIFICATION: Full sample (N = {n_btas})")
     print(f"{'#'*60}")
-    b_iv = _run_iv_block("rural", rural, delta, price, dist_thresholds,
-                         iv_pop_mean, iv_pop_std, iv_hhinc_mean)
-    return b_iv  # [alpha_0, alpha_1] from preferred IV
+    b_iv_main = _run_iv_sample("full", full, delta, price,
+                                iv_pop_mean, iv_pop_std, iv_hhinc_mean)
+
+    # ── ROBUSTNESS: Rural (pop < 500k) ────────────────────────────
+    print(f"\n{'#'*60}")
+    print(f"# ROBUSTNESS: Rural (pop90 < {POP_THRESHOLD:,}, N = {rural.sum()})")
+    print(f"{'#'*60}")
+    b_iv_rural = _run_iv_sample("rural", rural, delta, price,
+                                 iv_pop_mean, iv_pop_std, iv_hhinc_mean)
+
+    return b_iv_main  # main spec coefficients
 
 
 

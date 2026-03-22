@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import gc
 import sys
 import json
 import argparse
@@ -23,6 +24,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--N", type=int, nargs="+", default=None,
                         help="N values to run. If omitted, runs all from config.")
+    parser.add_argument("--M", type=int, nargs="+", default=None,
+                        help="M values to run. If omitted, runs all from config.")
+    parser.add_argument("--specs", type=str, nargs="+", default=None,
+                        help="Specs to run. If omitted, runs all from config.")
     args = parser.parse_args()
 
     comm = MPI.COMM_WORLD
@@ -31,9 +36,9 @@ def main():
     with open(SCRIPT_DIR / "config.yaml") as f:
         config = yaml.safe_load(f)
 
-    grid_M = config["grid"]["M"]
+    grid_M = args.M if args.M else config["grid"]["M"]
     grid_N = args.N if args.N else config["grid"]["N"]
-    specs = list(config["specifications"].keys())
+    specs = args.specs if args.specs else list(config["specifications"].keys())
     n_reps = config["experiment"]["n_replications"]
 
     results_dir = SCRIPT_DIR / "results" / "raw"
@@ -64,12 +69,30 @@ def main():
             lambda_val = resolve(lambda_cfg, M) if isinstance(lambda_cfg, dict) else lambda_cfg
 
             for N in grid_N:
+                # Skip if all replications already exist
+                existing = [results_dir / f"{spec}_N{N}_M{M}_rep{r}.json"
+                            for r in range(n_reps)]
+                n_done = sum(1 for f in existing if f.exists()) if rank == 0 else 0
+                n_done = comm.bcast(n_done, root=0)
+                if n_done >= n_reps:
+                    if rank == 0:
+                        print(f"\nSkipping {spec} N={N} M={M} ({n_done}/{n_reps} reps done)",
+                              flush=True)
+                    continue
+
                 if rank == 0:
                     print(f"\n{'='*60}")
                     print(f"Running {spec}, N={N}, M={M}, \u03b1={alpha_val}, \u03bb={lambda_val}")
                     print(f"{'='*60}", flush=True)
 
                 for rep in range(n_reps):
+                    # Skip individual reps that already exist
+                    rep_file = results_dir / f"{spec}_N{N}_M{M}_rep{rep}.json"
+                    rep_exists = rep_file.exists() if rank == 0 else False
+                    rep_exists = comm.bcast(rep_exists, root=0)
+                    if rep_exists:
+                        continue
+
                     if rank == 0:
                         print(f"  Replication {rep+1}/{n_reps}...", end=" ", flush=True)
 
@@ -83,6 +106,9 @@ def main():
                         with open(out, "w") as f:
                             json.dump(result, f, indent=2)
                         print("\u2713", flush=True)
+
+                # Free memory between cells
+                gc.collect()
 
                 if rank == 0:
                     results = load_replication_results(results_dir, spec, N, M)
