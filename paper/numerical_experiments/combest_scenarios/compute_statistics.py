@@ -37,8 +37,11 @@ def compute_statistics(results):
             rmse = float(np.sqrt(np.nanmean(np.where(interior, errors**2, np.nan))))
         return bias, rmse
 
+    delta_idx = np.array(results[0].get("delta_indices", []))
+
     bias_alpha, rmse_alpha = param_stats(alpha_idx)
     bias_lambda, rmse_lambda = param_stats(lambda_idx)
+    bias_delta, rmse_delta = param_stats(delta_idx)
 
     runtime = float(np.mean([r["runtime"] for r in results]))
 
@@ -47,6 +50,8 @@ def compute_statistics(results):
         "rmse_alpha": float(rmse_alpha),
         "bias_lambda": float(bias_lambda),
         "rmse_lambda": float(rmse_lambda),
+        "bias_delta": float(bias_delta),
+        "rmse_delta": float(rmse_delta),
         "runtime": runtime,
         "n_replications": len(results),
         "avg_at_bound": float(np.mean([r.get("n_at_bound", 0) for r in results])),

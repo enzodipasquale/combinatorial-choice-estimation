@@ -57,7 +57,8 @@ def main(config_path):
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
     _build_error_oracle(model, app["dataset"], meta, app.get("error_seed", 1998),
-                        error_scaling=app.get("error_scaling"))
+                        error_scaling=app.get("error_scaling"),
+                        error_correlation=app.get("error_correlation"))
     model.subproblems.load_solver()
 
     callbacks = config.get("callbacks", {})
@@ -99,9 +100,19 @@ def main(config_path):
             json.dump(out, open(experiment_dir / "bootstrap_result.json", "w"), indent=2)
 
 
-def _build_error_oracle(model, dataset, meta, seed, error_scaling=None):
+def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,
+                        error_correlation=None):
     if dataset == "c_block":
-        model.features.build_local_modular_error_oracle(seed=seed)
+        cov = None
+        if error_correlation is not None:
+            from applications.combinatorial_auction.data.registries import QUADRATIC
+            from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
+            raw = load_bta_data()
+            ctx = build_context(raw)
+            Q = QUADRATIC[error_correlation](ctx)
+            cov = (Q + Q.T) / 2
+            np.fill_diagonal(cov, 1.0)
+        model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
         if error_scaling == "elig":
             elig = model.data.local_data.id_data['elig']
             model.features.local_modular_errors *= elig[:, None]
