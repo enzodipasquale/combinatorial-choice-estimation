@@ -139,12 +139,11 @@ class EllipsoidConfig(ConfigMixin):
 @dataclass
 class StandardErrorsConfig(ConfigMixin):
     n_simulations: int = 10
-    step_size: float = 0.01
     seed: int = None
     beta_indices: list = None
     error_sigma: float = 1.0
-    rowgen_tol: float = 1e-6
-    rowgen_max_iters: int = 1000
+    rowgen_tol: float = 1e-3
+    rowgen_max_iters: int = 100
     rowgen_min_iters: int = 0
     master_gurobi_params: dict = field(default_factory=dict)
 
