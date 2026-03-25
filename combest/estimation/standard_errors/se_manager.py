@@ -73,8 +73,11 @@ class StandardErrorsManager(SerialBootstrapMixin, DistributedBootstrapMixin):
         alpha = 1 - confidence
         ci_lower = np.percentile(theta_for_stats, 100 * alpha / 2, axis=0)
         ci_upper = np.percentile(theta_for_stats, 100 * (1 - alpha / 2), axis=0)
+        if converged_mask is None:
+            converged_mask = np.ones(len(theta_boots), dtype=bool)
         return BayesianBootstrapResult(
             mean=mean, se=se, t_stats=t_stats, n_samples=n_samples,
             ci_lower=ci_lower, ci_upper=ci_upper,
             confidence=confidence, samples=theta_boots, u_samples=u_boots,
+            converged=converged_mask,
         )

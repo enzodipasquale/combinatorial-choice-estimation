@@ -12,3 +12,4 @@ class BayesianBootstrapResult:
     confidence: float
     samples: np.ndarray = None
     u_samples: np.ndarray = None
+    converged: np.ndarray = None  # bool array, per sample

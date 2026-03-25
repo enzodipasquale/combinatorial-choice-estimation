@@ -106,8 +106,13 @@ def main(config_path):
         if rank == 0 and se is not None:
             config_name = Path(config_path).stem
             boot_suffix = f"_{config_name}" if config_name != "config" else ""
-            out = {"theta_hat": se.theta_hat.tolist(), "se": se.se.tolist(),
-                   "bootstrap_thetas": [t.tolist() for t in se.bootstrap_thetas] if hasattr(se, "bootstrap_thetas") else []}
+            out = {
+                "theta_hat": se.mean.tolist(),
+                "se": se.se.tolist(),
+                "bootstrap_thetas": se.samples.tolist(),
+                "bootstrap_u_hat": se.u_samples.tolist(),
+                "converged": se.converged.tolist(),
+            }
             json.dump(out, open(experiment_dir / f"bootstrap_result{boot_suffix}.json", "w"), indent=2)
 
 
