@@ -74,6 +74,15 @@ def main(config_path):
 
     elif mode == "bootstrap":
         boot_cfg = config.get("bootstrap", {})
+        # merge bootstrap rowgen settings into standard_errors config
+        se_overrides = {}
+        for key in ("rowgen_max_iters", "rowgen_tol", "rowgen_min_iters"):
+            if key in boot_cfg:
+                se_overrides[key] = boot_cfg[key]
+        if se_overrides:
+            se_dict = model.config.standard_errors.__dict__.copy()
+            se_dict.update(se_overrides)
+            model.config.standard_errors = type(model.config.standard_errors)(**se_dict)
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         _, dist_cb = adaptive_gurobi_timeout(callbacks["boot"])
 
