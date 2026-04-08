@@ -12,11 +12,14 @@ from applications.combinatorial_auction.data.registries import MODULAR, QUADRATI
 from applications.combinatorial_auction.data.prepare import _build_features, _aggregate_quadratics
 
 
-def prepare_counterfactual(est_result_path, alpha_0, alpha_1,
+def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
                            modular_regressors=None, quadratic_regressors=None,
                            quadratic_id_regressors=None, elig_scale=1.0):
     """Build MTA-level counterfactual data from C-block BTA estimation."""
-    result = json.load(open(est_result_path))
+    if isinstance(est_result_path_or_dict, dict):
+        result = est_result_path_or_dict
+    else:
+        result = json.load(open(est_result_path_or_dict))
     theta = np.array(result["theta_hat"])
     n_id_mod = result["n_id_mod"]
     n_btas = result["n_btas"]

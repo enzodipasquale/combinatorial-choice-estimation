@@ -112,6 +112,7 @@ def main(config_path):
                 "bootstrap_thetas": se.samples.tolist(),
                 "bootstrap_u_hat": se.u_samples.tolist(),
                 "converged": se.converged.tolist(),
+                "config": config,
             }
             json.dump(out, open(experiment_dir / f"bootstrap_result{boot_suffix}.json", "w"), indent=2)
 

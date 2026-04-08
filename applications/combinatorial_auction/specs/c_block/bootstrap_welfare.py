@@ -63,14 +63,17 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     xi_m = A @ xi
     offset_m = mta_sizes * alpha_0 + xi_m
 
-    # Update input_data with current alpha_1
-    input_data = {
-        "id_data": {k: v.copy() if isinstance(v, np.ndarray) else v
-                     for k, v in input_data_template["id_data"].items()},
-        "item_data": {k: v.copy() if isinstance(v, np.ndarray) else v
-                       for k, v in input_data_template["item_data"].items()},
-    }
-    input_data["item_data"]["modular"] = -alpha_1 * np.eye(n_mtas, dtype=np.float64)
+    # Update input_data with current alpha_1 (only on rank 0; others receive via distribute)
+    if input_data_template is not None:
+        input_data = {
+            "id_data": {k: v.copy() if isinstance(v, np.ndarray) else v
+                         for k, v in input_data_template["id_data"].items()},
+            "item_data": {k: v.copy() if isinstance(v, np.ndarray) else v
+                           for k, v in input_data_template["item_data"].items()},
+        }
+        input_data["item_data"]["modular"] = -alpha_1 * np.eye(n_mtas, dtype=np.float64)
+    else:
+        input_data = None
 
     # Update config with pinned params
     config = json.loads(json.dumps(config_template))
@@ -147,12 +150,13 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("bootstrap_result", help="Path to bootstrap_result.json")
-    parser.add_argument("--est-result", default="result_config_4.json",
-                        help="Point estimate result file (default: result_config_4.json)")
+    parser.add_argument("--boot-config", default=None,
+                        help="YAML config used for this bootstrap run (used to derive spec). "
+                             "Falls back to 'config' field inside bootstrap_result.json.")
     parser.add_argument("--n-sim-cf", type=int, default=5,
                         help="Number of simulations for counterfactual (default: 5)")
-    parser.add_argument("--iv-sample", default="rural", choices=["full", "rural"],
-                        help="IV sample (default: rural)")
+    parser.add_argument("--iv-sample", default="full", choices=["full", "rural"],
+                        help="IV sample (default: full)")
     parser.add_argument("--error-seed", type=int, default=24)
     args = parser.parse_args()
 
@@ -167,14 +171,39 @@ def main():
 
     # ── Load data ──────────────────────────────────────────────
     boot = json.load(open(CBLOCK_DIR / args.bootstrap_result))
-    est = json.load(open(CBLOCK_DIR / args.est_result))
     boot_thetas = [np.array(t) for t in boot["bootstrap_thetas"]]
+    boot_u_hats = [np.array(u) for u in boot["bootstrap_u_hat"]]
     n_boot = len(boot_thetas)
 
-    n_id_mod = est["n_id_mod"]
-    n_btas = est["n_btas"]
-    n_id_quad = est.get("n_id_quad", 0)
-    spec = est.get("specification", est.get("regressors", {}))
+    # Derive spec from --boot-config YAML, or from 'config' field saved in boot JSON
+    import yaml as _yaml
+    if args.boot_config is not None:
+        _cfg = _yaml.safe_load(open(args.boot_config))
+    elif "config" in boot:
+        _cfg = boot["config"]
+    else:
+        raise ValueError("No spec info: pass --boot-config <yaml> or re-run with updated estimate.py that saves config.")
+
+    _app = _cfg["application"]
+    modular_regressors    = _app.get("modular_regressors", ["elig_pop"])
+    quadratic_regressors  = _app.get("quadratic_regressors", [])
+    quadratic_id_regressors = _app.get("quadratic_id_regressors", [])
+    n_id_mod  = len(modular_regressors)
+    n_btas    = 480
+    n_id_quad = len(quadratic_id_regressors)
+
+    # Synthetic est_result dict for prepare_counterfactual (no file needed)
+    est_result_dict = {
+        "theta_hat": boot["theta_hat"],
+        "n_id_mod": n_id_mod,
+        "n_btas": n_btas,
+        "n_id_quad": n_id_quad,
+        "specification": {
+            "modular": modular_regressors,
+            "quadratic": quadratic_regressors,
+            "quadratic_id": quadratic_id_regressors,
+        },
+    }
 
     raw = load_bta_data()
     ctx = build_context(raw)
@@ -190,16 +219,17 @@ def main():
         from applications.combinatorial_auction.specs.c_block.counterfactual.prepare import (
             prepare_counterfactual,
         )
-        # Use point estimate for template structure (alpha values will be overridden)
-        theta_pt = np.array(est["theta_hat"])
+        # Use point estimate theta to build template structure; alpha values overridden per draw
+        theta_pt = np.array(boot["theta_hat"])
         delta_pt = -theta_pt[n_id_mod:n_id_mod + n_btas]
         a0_pt, a1_pt = run_2sls(delta_pt, price_bta, pop, hhinc, geo, args.iv_sample)
 
-        # We need the input_data template and meta from prepare_counterfactual
-        # but we'll override alpha_0, alpha_1, beta, gamma per bootstrap draw
         input_data_template, meta = prepare_counterfactual(
-            est_result_path=str(CBLOCK_DIR / args.est_result),
+            est_result_path_or_dict=est_result_dict,
             alpha_0=a0_pt, alpha_1=a1_pt,
+            modular_regressors=modular_regressors,
+            quadratic_regressors=quadratic_regressors,
+            quadratic_id_regressors=quadratic_id_regressors,
         )
     else:
         input_data_template, meta = None, {}
@@ -226,19 +256,9 @@ def main():
 
     # ── Point estimate ─────────────────────────────────────────
     if rank == 0:
-        theta_pt = np.array(est["theta_hat"])
-        delta_pt = -theta_pt[n_id_mod:n_id_mod + n_btas]
-        a0_pt, a1_pt = run_2sls(delta_pt, price_bta, pop, hhinc, geo, args.iv_sample)
-
-        u_hat_pt = np.array(est["u_hat"])
-        n_obs = est["n_obs"]
-        n_sim_est = len(u_hat_pt) // n_obs
-        bta_surplus_pt = u_hat_pt.reshape(n_obs, n_sim_est).mean(1).sum() / a1_pt
-
+        n_obs = meta["n_obs"]
         print(f"Point estimate: a0={a0_pt:.4f}, a1={a1_pt:.4f}")
-        print(f"  BTA revenue     = ${bta_revenue:.4f}B")
-        print(f"  BTA net surplus = ${bta_surplus_pt:.4f}B")
-        print(f"  BTA welfare     = ${bta_revenue + bta_surplus_pt:.4f}B")
+        print(f"  BTA revenue = ${bta_revenue:.4f}B")
 
     # ── Bootstrap loop ─────────────────────────────────────────
     results = []
@@ -255,15 +275,11 @@ def main():
         # 2SLS
         a0_b, a1_b = run_2sls(delta_b, price_bta, pop, hhinc, geo, args.iv_sample)
 
-        # BTA surplus (from bootstrap u_hat — but we don't have it!)
-        # We only have theta_b, not u_hat_b. Use point estimate u_hat with bootstrap alpha_1.
-        # This is approximate — proper version needs u_hat per bootstrap sample.
-        # For now: BTA surplus uses point estimate u_hat / alpha_1_b
+        # BTA surplus from per-draw u_hat
         if rank == 0:
-            u_hat_pt = np.array(est["u_hat"])
-            n_obs = est["n_obs"]
-            n_sim_est = len(u_hat_pt) // n_obs
-            bta_surplus_b = u_hat_pt.reshape(n_obs, n_sim_est).mean(1).sum() / a1_b
+            u_hat_b = boot_u_hats[b]
+            n_sim_est = len(u_hat_b) // n_obs
+            bta_surplus_b = u_hat_b.reshape(n_obs, n_sim_est).mean(1).sum() / a1_b
 
         # Xi for this bootstrap draw
         xi_b = delta_b - a0_b + a1_b * price_bta

@@ -3,6 +3,7 @@
 import gc
 import sys
 import json
+import argparse
 from pathlib import Path
 import yaml
 from mpi4py import MPI
@@ -16,6 +17,11 @@ SCRIPT_DIR = Path(__file__).parent
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--N", type=int, default=None,
+                        help="If set, only run experiments for this N value")
+    args, _ = parser.parse_known_args()
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -24,6 +30,8 @@ def main():
 
     grid_J = config["grid"]["J"]
     grid_N = config["grid"]["N"]
+    if args.N is not None:
+        grid_N = [args.N]
     specs = ["gross_substitutes", "supermodular"]
     n_reps = config["experiment"]["n_replications"]
 
