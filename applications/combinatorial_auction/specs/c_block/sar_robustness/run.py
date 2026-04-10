@@ -6,7 +6,7 @@ Usage:
     mpirun -n 4 python applications/combinatorial_auction/specs/c_block/sar_robustness/run.py \
         applications/combinatorial_auction/specs/c_block/sar_robustness/configs/config_sar_rho04.yaml
 """
-import json, sys, yaml, argparse
+import gc, json, sys, yaml, argparse
 import numpy as np
 from pathlib import Path
 
@@ -157,8 +157,24 @@ def main(config_path):
         }
         out_path = SAR_DIR / f"results/bootstrap_result_{config_name}.json"
         json.dump(out, open(out_path, "w"), indent=2)
-        if rank == 0:
-            print(f"Saved -> {out_path}")
+        print(f"Saved -> {out_path}")
+
+    # ── Explicit cleanup to avoid memory leaks across sequential runs ──
+    # Dispose Gurobi subproblem models (no built-in cleanup in combest)
+    solver = getattr(model.subproblems, "subproblem_solver", None)
+    if solver is not None:
+        for grb_model in getattr(solver, "local_problems", []):
+            try:
+                grb_model.dispose()
+            except Exception:
+                pass
+
+    del model
+    del input_data
+    del sar_cov
+    if "se" in dir():
+        del se
+    gc.collect()
 
 
 if __name__ == "__main__":

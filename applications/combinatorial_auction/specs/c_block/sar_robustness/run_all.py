@@ -6,7 +6,7 @@ Usage:
     mpiexec --bind-to none <python-wrapper> \
         python /path/to/sar_robustness/run_all.py
 """
-import sys, traceback
+import gc, sys, traceback
 from pathlib import Path
 
 SAR_DIR   = Path(__file__).parent
@@ -44,11 +44,20 @@ for config_path, rho_str in CONFIGS:
             traceback.print_exc()
         failed.append(rho_str)
 
+    # GC pass on all ranks before barrier
+    gc.collect()
+
     # All ranks sync before the next estimation
     if comm is not None:
         comm.Barrier()
 
     if rank == 0:
+        # Current RSS from /proc (Linux); more accurate than ru_maxrss which is peak-only
+        try:
+            rss_mb = int(open("/proc/self/status").read().split("VmRSS:")[1].split()[0]) / 1024
+            print(f"[rank 0] current RSS after rho={rho_str}: {rss_mb:.0f} MB", flush=True)
+        except Exception:
+            pass
         status = "Finished" if rho_str in completed else "FAILED"
         print(f"\n{'='*70}")
         print(f"{status} rho={rho_str}")
