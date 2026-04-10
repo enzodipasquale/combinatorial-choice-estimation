@@ -1,0 +1,46 @@
+dgp:
+  n_firms: 15
+  n_markets: 24
+  n_continents: 3
+  l1_per_continent: [4, 5, 3]
+  l2_per_continent: [5, 5, 5]
+  n_groups_cells: 2
+  n_platforms: 8
+  models_range: [3, 23]
+
+sourcing_coefs:
+  beta_1_D: -0.382
+  beta_1_T: -8.49
+  beta_2_D: -0.112
+  beta_2_T: -8.56
+  beta_2_phi: -0.234
+  eta: 4.0
+
+theta_true:
+  FE_1_As: 0.8
+  FE_1_Eu: 1.0
+  FE_2_As: -0.3
+  FE_2_Eu: -0.3
+  delta_1_Am: 0.30
+  delta_1_As: 0.12
+  delta_1_Eu: 0.54
+  delta_2_Am: 0.16
+  delta_2_As: 0.03
+  delta_2_Eu: 0.18
+  rho_HQ_1: 0.47
+  rho_HQ_2: 0.78
+  rho_xi_1: 3.40
+  rho_xi_2: 2.76
+
+sigma:
+  phi_1: 0.02
+  phi_2: 0.02
+  nu: 0.01
+
+estimation:
+  n_simulations: 20
+  max_iters: 200
+  tolerance: 1.0e-6
+
+monte_carlo:
+  n_replications: 20

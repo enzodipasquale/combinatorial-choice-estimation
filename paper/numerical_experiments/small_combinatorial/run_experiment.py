@@ -18,7 +18,8 @@ from paper.numerical_experiments.combest_scenarios.generate_data import generate
 from paper.numerical_experiments.small_combinatorial.mle import estimate_smle
 
 
-def run_replication(spec, N, J, alpha=None, lambda_val=None, replication=0, config=None):
+def run_replication(spec, N, J, alpha=None, lambda_val=None, replication=0, config=None,
+                    n_simulations=None):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -45,7 +46,8 @@ def run_replication(spec, N, J, alpha=None, lambda_val=None, replication=0, conf
             for k in ("modular", "quadratic") if k in d
         )
         subproblem_name = cfg.get("specifications", {}).get(spec, {}).get("subproblem", "Greedy")
-        dim_cfg = {"n_obs": N, "n_items": J, "n_covariates": n_covariates, "n_simulations": 1}
+        S = n_simulations if n_simulations is not None else 1
+        dim_cfg = {"n_obs": N, "n_items": J, "n_covariates": n_covariates, "n_simulations": S}
     else:
         input_data = theta_star = dim_cfg = subproblem_name = None
 

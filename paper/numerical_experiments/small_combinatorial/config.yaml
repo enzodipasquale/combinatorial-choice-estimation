@@ -4,7 +4,7 @@ experiment:
   sigma: 1.0
   beta_star: ones
   target_std: 0.5
-  mle_draws: 500
+  mle_draws: 5000
 
 specifications:
   gross_substitutes:

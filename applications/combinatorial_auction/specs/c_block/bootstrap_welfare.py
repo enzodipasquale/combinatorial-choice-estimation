@@ -51,7 +51,8 @@ def run_2sls(delta, price, pop, hhinc, geo, sample="full"):
 
 def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
                                xi, input_data_template, meta, config_template,
-                               n_sim_cf, error_seed, error_scaling=None):
+                               n_sim_cf, error_seed, error_scaling=None,
+                               error_correlation=None):
     """Run one counterfactual and return (revenue, net_surplus)."""
     import combest as ce
     from combest.estimation.callbacks import adaptive_gurobi_timeout
@@ -115,11 +116,26 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     # Build errors
     cm = model.features.comm_manager
     elig = meta.get("elig")
+
+    # Cholesky of BTA correlation matrix (same as used in estimation)
+    L_corr = None
+    if error_correlation is not None:
+        from applications.combinatorial_auction.data.registries import QUADRATIC
+        from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
+        raw_data = load_bta_data()
+        ctx_data = build_context(raw_data)
+        Q = QUADRATIC[error_correlation](ctx_data)
+        Sigma = (Q + Q.T) / 2
+        np.fill_diagonal(Sigma, 1.0)
+        L_corr = np.linalg.cholesky(Sigma)
+
     local_errors = np.zeros((cm.num_local_agent, n_mtas))
     for i, gid in enumerate(cm.agent_ids):
         obs_id = cm.obs_ids[i]
         rng = np.random.default_rng((error_seed, gid))
         bta_err = rng.normal(0, 1, n_btas)
+        if L_corr is not None:
+            bta_err = L_corr @ bta_err
         if error_scaling == "elig" and elig is not None:
             bta_err *= elig[obs_id]
         local_errors[i] = bta_err @ A.T + offset_m
@@ -188,6 +204,7 @@ def main():
     modular_regressors    = _app.get("modular_regressors", ["elig_pop"])
     quadratic_regressors  = _app.get("quadratic_regressors", [])
     quadratic_id_regressors = _app.get("quadratic_id_regressors", [])
+    error_correlation     = _app.get("error_correlation", None)
     n_id_mod  = len(modular_regressors)
     n_btas    = 480
     n_id_quad = len(quadratic_id_regressors)
@@ -289,6 +306,7 @@ def main():
             beta_b, gamma_id_b, gamma_item_b, a0_b, a1_b,
             xi_b, input_data_template, meta, cf_config,
             args.n_sim_cf, args.error_seed,
+            error_correlation=error_correlation,
         )
 
         elapsed = time.perf_counter() - t0
