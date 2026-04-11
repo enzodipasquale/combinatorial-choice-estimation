@@ -1,15 +1,17 @@
 import numpy as np
 import gurobipy as gp
 from combest.subproblems.solver_base import SubproblemSolver, create_gurobi_model
-from costs import compute_rev_factor, compute_facility_costs
+from combest.utils import get_logger
+from costs import compute_facility_costs
 from milp import build_milp_shell
+
+logger = get_logger(__name__)
 
 
 THETA_NAMES = [
-    'FE_1_As', 'FE_1_Eu', 'FE_2_As', 'FE_2_Eu',
-    'delta_1_Am', 'delta_1_As', 'delta_1_Eu',
-    'delta_2_Am', 'delta_2_As', 'delta_2_Eu',
-    'rho_HQ_1', 'rho_HQ_2', 'rho_xi_1', 'rho_xi_2',
+    'delta_1', 'delta_2', 'rho_xi_1', 'rho_xi_2',
+    'rho_HQ_1', 'rho_HQ_2', 'rho_d_1', 'rho_d_2',
+    'FE_1', 'FE_2',
 ]
 
 
@@ -29,7 +31,6 @@ class MultiStageSolver(SubproblemSolver):
         n = self.comm_manager.num_local_agent
 
         self.geo = item_data['geo']
-        self.coefs = item_data['sourcing_coefs']
         all_firms = id_data['firms']
         self.obs_ids = self.comm_manager.obs_ids
         self.firms = [all_firms[oid] for oid in self.obs_ids]
@@ -43,15 +44,10 @@ class MultiStageSolver(SubproblemSolver):
         self.y1_size = ng_max * L1
         self.y2_size = P_max * L2
         self.z_size = nm_max * N
-        self._eta_m1_kappa = (self.coefs['eta'] - 1) / abs(self.coefs['beta_2_T'])
-        self._beta_2_phi = self.coefs['beta_2_phi']
 
         self.phi1 = self.data_manager.local_data.errors['phi1']
         self.phi2 = self.data_manager.local_data.errors['phi2']
         self.nu = self.data_manager.local_data.errors['nu']
-
-        self._cont1_masks = [self.geo['cont1'] == c for c in (1, 2)]
-        self._cont2_masks = [self.geo['cont2'] == c for c in (1, 2)]
 
         # Padded shares per firm (indexed by obs_id, not agent)
         n_obs = len(all_firms)
@@ -63,8 +59,6 @@ class MultiStageSolver(SubproblemSolver):
         id_data['policies'] = {
             'x_V': np.zeros((n, nm_max, N, L1, L2)),
             'x_Q': id_data.get('x_Q', np.zeros((n, nm_max, N, L1, L2))),
-            'lin_V': {},
-            'lin_Q': {},
         }
 
         # Build one MILP per UNIQUE firm, reuse across simulations
@@ -98,68 +92,50 @@ class MultiStageSolver(SubproblemSolver):
         self.local_problems = [self._firm_models[int(oid)][0]
                                for oid in unique_obs]
 
-    def _compute_pi_and_grad(self, theta_d):
-        """Compute pi and grad_pi w.r.t. 4 FE params for all obs.
-
-        Returns pi (n_obs, nm_max, N, L1, L2), grad (n_obs, 4, ...), theta_fe (4,).
-        """
-        rf = compute_rev_factor(self.geo, theta_d, self.coefs)
-        rf_t = rf.transpose(2, 0, 1)
-        n_obs = self._shares_pad.shape[0]
-
-        pi = (self._shares_pad[:, :, :, None, None]
-              * self.geo['R_n'][None, None, :, None, None]
-              * rf_t[None, None, :, :, :])
-
-        c = self._eta_m1_kappa
-        bp = self._beta_2_phi
-        grad = np.zeros((n_obs, 4, self.nm_max, self.N, self.L1, self.L2))
-        for k, mask in enumerate(self._cont1_masks):
-            g_k = grad[:, k]
-            g_k[:, :, :, mask, :] = c * bp * pi[:, :, :, mask, :]
-        for k, mask in enumerate(self._cont2_masks):
-            g_k = grad[:, 2 + k]
-            g_k[:, :, :, :, mask] = c * pi[:, :, :, :, mask]
-
-        theta_fe = np.array([theta_d['FE_1_As'], theta_d['FE_1_Eu'],
-                             theta_d['FE_2_As'], theta_d['FE_2_Eu']])
-        return pi, grad, theta_fe
-
-    def _store_linearization(self, key, pi, grad_pi, theta_fe):
-        pol = self.data_manager.local_data.id_data['policies']
-        # Store at agent level by indexing global arrays by obs_ids
-        pol[key] = {'pi': pi[self.obs_ids], 'grad_pi': grad_pi[self.obs_ids],
-                    'theta_fe': theta_fe}
-
     def set_q_linearization(self, theta):
-        theta_d = unpack_theta(theta)
-        pi, grad, theta_fe = self._compute_pi_and_grad(theta_d)
-        self._store_linearization('lin_Q', pi, grad, theta_fe)
+        pass  # x_Q already loaded at init; all params linear, no linearization needed
 
     def solve(self, theta):
         theta_d = unpack_theta(theta)
-        pi_global, grad_global, theta_fe = self._compute_pi_and_grad(theta_d)
-        self._store_linearization('lin_V', pi_global, grad_global, theta_fe)
 
         n_items = self.dimensions_cfg.n_items
         n = self.comm_manager.num_local_agent
         results = np.zeros((n, n_items), dtype=bool)
         pol = self.data_manager.local_data.id_data['policies']
 
+
+        # Distance matrices and FE for pi computation
+        d12 = self.geo['d_12']                                  # (L1, L2)
+        d2m = self.geo['d_2m']                                  # (L2, N)
+        R_n = self.geo['R_n']                                   # (N,)
+
+        fe_1 = np.array([0.0, theta_d.get('FE_1', 0.0)])
+        fe_2 = np.array([0.0, theta_d.get('FE_2', 0.0)])
+
+        # rev_factor (N, L1, L2) — shared across firms
+        rev_factor = (1.0
+                      + fe_1[self.geo['cell_region']][None, :, None]
+                      + fe_2[self.geo['asm_region']][None, None, :]
+                      - theta_d['rho_d_1'] * d12[None, :, :]
+                      - theta_d['rho_d_2'] * d2m.T[:, None, :])
+
         for i in range(n):
             oid = int(self.obs_ids[i])
             firm = self.firms[i]
-            ng = len(firm['ln_xi_1'])
-            P, nm = firm['n_platforms'], firm['n_models']
             mdl, y1, y2, z, x = self._firm_models[oid]
 
-            fc1_r, fc2_r = compute_facility_costs(firm, self.geo, theta_d)
+            # Per-firm pi: s_{m,n} * R_n * rev_factor → (nm_max, N, L1, L2)
+            nm = firm['n_models']
+            P = firm['n_platforms']
+            sR = firm['shares'] * R_n[None, :]                  # (nm, N)
+            pi_i = np.zeros((self.nm_max, self.N, self.L1, self.L2))
+            pi_i[:nm] = sR[:, :, None, None] * rev_factor[None, :, :, :]
+
+            fc1_r, fc2_r = compute_facility_costs(firm, theta_d)  # (1, L1), (P, L2)
             fc1 = np.zeros((self.ng_max, self.L1))
-            fc1[:ng] = fc1_r
+            fc1[:1] = fc1_r
             fc2 = np.zeros((self.P_max, self.L2))
             fc2[:P] = fc2_r
-
-            pi_i = pi_global[oid]
 
             mdl.setObjective(
                 (pi_i + self.nu[i]).ravel() @ x.reshape(-1)

@@ -1,5 +1,5 @@
 #!/bin/env python
-"""Phase 4: DC estimation of all 14 params (4 FE + 10 linear)."""
+"""DC estimation of 10 params (delta, rho_xi, rho_HQ, rho_d, FE)."""
 
 import sys
 import argparse
@@ -16,6 +16,7 @@ from generate_data import generate_synthetic_data
 from solver import MultiStageSolver, flatten_bundle, pack_theta, THETA_NAMES
 from oracles import build_oracles, N_PARAMS
 from dc import DCSolver
+from combest.estimation.callbacks import adaptive_gurobi_timeout
 
 BASE = Path(__file__).resolve().parent
 with open(BASE / 'config.yaml') as f:
@@ -49,8 +50,8 @@ def draw_simulation_errors(model, firms, ng_max, P_max, nm_max, L1, L2, N,
         P = firm['n_platforms']
         nm = firm['n_models']
         rng = np.random.default_rng((err_seed, int(gid)))
-        phi1[i, :ng] = rng.normal(0, sigma['phi_1'], (ng, L1))
-        phi2[i, :P] = rng.normal(0, sigma['phi_2'], (P, L2))
+        phi1[i, :ng] = rng.normal(0, sigma['phi'], (ng, L1))
+        phi2[i, :P] = rng.normal(0, sigma['phi'], (P, L2))
         nu[i, :nm] = rng.normal(0, sigma['nu'], (nm, N, L1, L2))
 
     return phi1, phi2, nu
@@ -60,10 +61,15 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         n_simulations=1, verbose_dc=True):
     geo, firms, bundles, theta_true = generate_synthetic_data(
         seed=seed, dgp=dgp_cfg,
-        sourcing_coefs=CFG['sourcing_coefs'],
+        sourcing_coefs=None,
         theta_true=CFG['theta_true'],
         sigma=CFG['sigma'],
     )
+
+    # Filter out opt-out firms (empty bundles)
+    active_mask = np.array([b['obj'] > 0 for b in bundles])
+    firms = [f for f, a in zip(firms, active_mask) if a]
+    bundles = [b for b, a in zip(bundles, active_mask) if a]
 
     nf = len(firms)
     ng_max = max(len(f['ln_xi_1']) for f in firms)
@@ -86,7 +92,7 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
                 'obs_bundles': obs_bundles, 'firms': firms, 'x_Q': x_Q_global,
             },
             'item_data': {
-                'geo': geo, 'sourcing_coefs': CFG['sourcing_coefs'],
+                'geo': geo,
                 'ng_max': ng_max, 'P_max': P_max, 'nm_max': nm_max,
             },
         }
@@ -102,7 +108,9 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         'row_generation': {
             'max_iters': 200, 'tolerance': 1e-6,
             'theta_bounds': {
-                'lb': -100, 'ub': 100,
+                'lb': 0, 'ub': 10,
+                'lbs': {8: -5, 9: -5},
+                'ubs': {8: 5, 9: 5},
             },
         },
     }
@@ -139,12 +147,19 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         init_label = "theta_true" if np.allclose(theta_init, theta_true_vec) else "custom"
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"  DC estimation (14 params, S={n_simulations}, init={init_label})")
+        logger.info(f"  DC estimation (10 params, S={n_simulations}, init={init_label})")
         logger.info("=" * 60)
+
+    pt_schedule = [
+        {'iters': 20, 'timeout': 5,  'retire': True},
+        {'timeout': 30,              'retire': True},
+    ]
+    pt_callback, _ = adaptive_gurobi_timeout(pt_schedule)
 
     dc = DCSolver(row_gen, solver)
     result = dc.solve(theta_init, max_dc_iters=max_dc_iters,
-                      tol=1e-3, verbose=verbose_dc)
+                      tol=1e-3, verbose=verbose_dc,
+                      iteration_callback=pt_callback)
 
     if model.is_root() and result is not None:
         logger.info("")
@@ -168,24 +183,22 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--n-firms', type=int, default=100)
-    parser.add_argument('--n-markets', type=int, default=6)
-    parser.add_argument('--l-per-cont', type=int, default=2)
+    parser.add_argument('--n-firms', type=int, default=CFG['dgp']['n_firms'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--from-zero', action='store_true')
     parser.add_argument('--max-dc-iters', type=int, default=30)
-    parser.add_argument('--n-simulations', type=int, default=1)
+    parser.add_argument('--n-simulations', type=int,
+                        default=CFG['estimation']['n_simulations'])
     args = parser.parse_args()
 
     dgp = dict(
-        n_firms=args.n_firms, n_markets=args.n_markets, n_continents=3,
-        l1_per_continent=[args.l_per_cont] * 3,
-        l2_per_continent=[args.l_per_cont] * 3,
-        n_groups_cells=2, n_platforms=4,
-        models_range=[3, 8],
+        L1=CFG['dgp']['L1'],
+        L2=CFG['dgp']['L2'],
+        N=CFG['dgp']['N'],
+        n_firms=args.n_firms,
     )
 
-    theta0 = np.zeros(14) if args.from_zero else None
+    theta0 = np.zeros(10) if args.from_zero else None
     run(dgp, seed=args.seed, theta_init=theta0,
         max_dc_iters=args.max_dc_iters,
         n_simulations=args.n_simulations)
