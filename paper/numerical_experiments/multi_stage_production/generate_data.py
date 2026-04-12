@@ -34,11 +34,16 @@ def build_geography(cfg, rng):
 
     R_n = rng.uniform(30, 60, N)
 
-    # Region partition: sort by x-coordinate, bottom half = 0, top half = 1
+    # Region partition: sort by x-coordinate into 3 thirds
+    cell_order = np.argsort(cell_locs[:, 0])
     cell_region = np.zeros(L1, dtype=int)
-    cell_region[np.argsort(cell_locs[:, 0])[L1 // 2:]] = 1    # (L1,)
+    cell_region[cell_order[L1 // 3: 2 * L1 // 3]] = 1
+    cell_region[cell_order[2 * L1 // 3:]] = 2
+
+    asm_order = np.argsort(asm_locs[:, 0])
     asm_region = np.zeros(L2, dtype=int)
-    asm_region[np.argsort(asm_locs[:, 0])[L2 // 2:]] = 1      # (L2,)
+    asm_region[asm_order[L2 // 3: 2 * L2 // 3]] = 1
+    asm_region[asm_order[2 * L2 // 3:]] = 2
 
     return dict(
         L1=L1, L2=L2, n_markets=N,
@@ -51,22 +56,29 @@ def build_geography(cfg, rng):
 # ---- Firms ----
 
 def build_firms(cfg, geo, rng):
-    """Firms: nm~U[1,3] models, ng=1 cell group, P~U[1,nm] platforms."""
+    """Firms with configurable model/platform ranges."""
     nf = cfg['n_firms']
     N = geo['n_markets']
+    nm_lo, nm_hi = cfg.get('models_range', [4, 8])
+    P_max_cap = cfg.get('max_platforms', 5)
+    P_min = cfg.get('min_platforms', 2)
     firms = []
-    for _ in range(nf):
-        nm = int(rng.integers(4, 9))                            # 4-8 models
-        P = int(rng.integers(2, min(nm, 5) + 1))               # 2-5 platforms
+    for i in range(nf):
+        nm = int(rng.integers(nm_lo, nm_hi + 1))
+        P = int(rng.integers(P_min, min(nm, P_max_cap) + 1))
         plat = rng.integers(0, P, nm).astype(int)              # platform assignment per model
 
         shares = np.zeros((nm, N))
         for m in range(nm):
             shares[m] = rng.uniform(0.5, 1.5, N) / 100.0
 
-        hq_coord = rng.uniform(0, 1, (1, 2))
-        d_hq1 = _torus_dist(hq_coord, geo['cell_locs']).ravel()  # (L1,)
-        d_hq2 = _torus_dist(hq_coord, geo['asm_locs']).ravel()   # (L2,)
+        # HQ in firm's assigned region strip (i % 3)
+        hq_region = i % 3
+        hq_x = rng.uniform(hq_region / 3.0, (hq_region + 1) / 3.0)
+        hq_y = rng.uniform(0, 1)
+        hq_coord = np.array([[hq_x, hq_y]])
+        d_hq1 = np.log1p(_torus_dist(hq_coord, geo['cell_locs']).ravel())  # (L1,)
+        d_hq2 = np.log1p(_torus_dist(hq_coord, geo['asm_locs']).ravel())  # (L2,)
 
         firms.append(dict(
             n_models=nm, n_platforms=P,
@@ -79,7 +91,6 @@ def build_firms(cfg, geo, rng):
             d_hq1=d_hq1,                                      # (L1,)
             d_hq2=d_hq2,                                      # (L2,)
             hq_coord=hq_coord.ravel(),                        # (2,) for plotting
-            market_home=np.array([0.5, 0.5]),                  # placeholder for plot_firms.py
         ))
     return firms
 
@@ -87,24 +98,17 @@ def build_firms(cfg, geo, rng):
 # ---- Revenue and costs ----
 
 def compute_pi(firm, geo, theta):
-    """Per-path revenue with region FEs and distance penalties.
+    """Per-path revenue with distance penalties (no FE — FE moved to cost side).
 
-    pi_{m,n,l1,l2} = s_{m,n} * R_n * (1 + fe_1[cell_region[l1]] + fe_2[asm_region[l2]]
-                                         - rho_d_1*d_{l1,l2} - rho_d_2*d_{l2,n})
+    pi_{m,n,l1,l2} = s_{m,n} * R_n * (1 - rho_d_1*d_{l1,l2} - rho_d_2*d_{l2,n})
 
     Returns shape (nm, N, L1, L2).
     """
-    nm = firm['n_models']
     d12 = geo['d_12']                                           # (L1, L2)
     d2m = geo['d_2m']                                           # (L2, N)
 
-    fe_1 = np.array([0.0, theta.get('FE_1', 0.0)])
-    fe_2 = np.array([0.0, theta.get('FE_2', 0.0)])
-
     # rev_factor (N, L1, L2) — shared across models
     rev_factor = (1.0
-                  + fe_1[geo['cell_region']][None, :, None]
-                  + fe_2[geo['asm_region']][None, None, :]
                   - theta['rho_d_1'] * d12[None, :, :]
                   - theta['rho_d_2'] * d2m.T[:, None, :])
 
@@ -114,19 +118,26 @@ def compute_pi(firm, geo, theta):
     return pi
 
 
-def compute_facility_costs(firm, theta):
-    """Cell cost (1, L1) and assembly cost (P, L2).
+def compute_facility_costs(firm, geo, theta):
+    """Cell cost (1, L1) and assembly cost (P, L2) with 3-region FE on cost side.
 
-    fc1 = delta_1 + rho_xi_1 * ln_xi_1[0] + rho_HQ_1 * d_hq1   → (L1,)
-    fc2_p = delta_2 + rho_xi_2 * ln_xi_2[p] + rho_HQ_2 * d_hq2  → (P, L2)
+    fc1[l1] = delta_1 + rho_xi_1*ln_xi_1 + rho_HQ_1*d_hq1[l1] - fe1[region[l1]]
+    fc2[p,l2] = delta_2 + rho_xi_2*ln_xi_2[p] + rho_HQ_2*d_hq2[l2] - fe2[region[l2]]
+
+    fe1 = [0, FE_1_r1, FE_1_r2], fe2 = [0, FE_2_r1, FE_2_r2]
+    Region 0 normalized to zero. Positive FE = lower cost.
     """
-    P = firm['n_platforms']
+    fe1 = np.array([0.0, theta.get('FE_1_r1', 0.0), theta.get('FE_1_r2', 0.0)])
+    fe2 = np.array([0.0, theta.get('FE_2_r1', 0.0), theta.get('FE_2_r2', 0.0)])
+
     fc1 = (theta['delta_1']
            + theta['rho_xi_1'] * firm['ln_xi_1'][0]
-           + theta['rho_HQ_1'] * firm['d_hq1'])               # (L1,)
+           + theta['rho_HQ_1'] * firm['d_hq1']
+           - fe1[geo['cell_region']])                          # (L1,)
     fc2 = (theta['delta_2']
            + theta['rho_xi_2'] * firm['ln_xi_2'][:, None]     # (P, 1)
-           + theta['rho_HQ_2'] * firm['d_hq2'][None, :])      # (1, L2)  → (P, L2)
+           + theta['rho_HQ_2'] * firm['d_hq2'][None, :]       # (1, L2)
+           - fe2[geo['asm_region']][None, :])                  # (1, L2) → (P, L2)
     return fc1[None, :], fc2                                   # (1, L1), (P, L2)
 
 
@@ -190,7 +201,7 @@ def generate_synthetic_data(seed, dgp, sourcing_coefs, theta_true, sigma):
     bundles = []
     for firm in firms:
         pi = compute_pi(firm, geo, theta_true)
-        fc1, fc2 = compute_facility_costs(firm, theta_true)
+        fc1, fc2 = compute_facility_costs(firm, geo, theta_true)
         errors = draw_firm_errors(firm, geo, sigma, rng)
         mdl, y1, y2, z, x = build_firm_milp(
             firm, geo, pi, fc1, fc2, errors, env)
@@ -210,13 +221,15 @@ if __name__ == '__main__':
     with open(Path(__file__).parent / 'config.yaml') as f:
         cfg = yaml.safe_load(f)
 
-    dgp = dict(L1=6, L2=6, N=12, n_firms=100)
+    dgp = cfg['dgp']
     theta_true = cfg['theta_true']
     sigma = cfg['sigma']
 
+    seed = cfg.get('monte_carlo', {}).get('seed', 42)
+
     t0 = time.perf_counter()
     geo, firms, bundles, _ = generate_synthetic_data(
-        seed=42, dgp=dgp, sourcing_coefs=None,
+        seed=seed, dgp=dgp, sourcing_coefs=None,
         theta_true=theta_true, sigma=sigma)
     elapsed = time.perf_counter() - t0
 
@@ -225,10 +238,9 @@ if __name__ == '__main__':
     print(f"d_12 range: [{geo['d_12'].min():.3f}, {geo['d_12'].max():.3f}]")
     print(f"d_2m range: [{geo['d_2m'].min():.3f}, {geo['d_2m'].max():.3f}]")
     print(f"R_n range:  [{geo['R_n'].min():.2f}, {geo['R_n'].max():.2f}]")
-    print(f"Cell regions: {geo['cell_region'].tolist()}  "
-          f"(region 0: {(geo['cell_region']==0).sum()}, region 1: {(geo['cell_region']==1).sum()})")
-    print(f"Asm regions:  {geo['asm_region'].tolist()}  "
-          f"(region 0: {(geo['asm_region']==0).sum()}, region 1: {(geo['asm_region']==1).sum()})")
+    cr, ar = geo['cell_region'], geo['asm_region']
+    print(f"Cell regions: {cr.tolist()}  (r0:{(cr==0).sum()} r1:{(cr==1).sum()} r2:{(cr==2).sum()})")
+    print(f"Asm regions:  {ar.tolist()}  (r0:{(ar==0).sum()} r1:{(ar==1).sum()} r2:{(ar==2).sum()})")
     print(f"Firms: {len(firms)}")
     nm_dist = Counter(f['n_models'] for f in firms)
     P_dist = Counter(f['n_platforms'] for f in firms)

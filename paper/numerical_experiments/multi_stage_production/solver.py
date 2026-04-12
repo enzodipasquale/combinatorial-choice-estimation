@@ -10,8 +10,8 @@ logger = get_logger(__name__)
 
 THETA_NAMES = [
     'delta_1', 'delta_2', 'rho_xi_1', 'rho_xi_2',
-    'rho_HQ_1', 'rho_HQ_2', 'rho_d_1', 'rho_d_2',
-    'FE_1', 'FE_2',
+    'rho_HQ_1', 'rho_HQ_2', 'FE_1_r1', 'FE_1_r2',
+    'FE_2_r1', 'FE_2_r2', 'rho_d_1', 'rho_d_2',
 ]
 
 
@@ -49,22 +49,16 @@ class MultiStageSolver(SubproblemSolver):
         self.phi2 = self.data_manager.local_data.errors['phi2']
         self.nu = self.data_manager.local_data.errors['nu']
 
-        # Padded shares per firm (indexed by obs_id, not agent)
-        n_obs = len(all_firms)
-        self._shares_pad = np.zeros((n_obs, nm_max, N))
-        for f, firm in enumerate(all_firms):
-            nm = firm['n_models']
-            self._shares_pad[f, :nm] = firm['shares']
-
         id_data['policies'] = {
             'x_V': np.zeros((n, nm_max, N, L1, L2)),
             'x_Q': id_data.get('x_Q', np.zeros((n, nm_max, N, L1, L2))),
         }
 
-        # Build one MILP per UNIQUE firm, reuse across simulations
-        unique_obs = np.unique(self.obs_ids)
-        self._firm_models = {}
-        for oid in unique_obs:
+        # Build one MILP per local agent (one per simulation × observation)
+        self.local_problems = []
+        self._agent_vars = []                                  # (y1, y2, z, x) per agent
+        for i in range(n):
+            oid = int(self.obs_ids[i])
             firm = all_firms[oid]
             ng = len(firm['ln_xi_1'])
             P, nm = firm['n_platforms'], firm['n_models']
@@ -86,11 +80,9 @@ class MultiStageSolver(SubproblemSolver):
                 y2[p, :].ub = 0
             mdl.update()
 
-            self._firm_models[int(oid)] = (mdl, y1, y2, z, x)
-
-        # local_problems for update_solver_settings compatibility
-        self.local_problems = [self._firm_models[int(oid)][0]
-                               for oid in unique_obs]
+            mdl.ModelSense = gp.GRB.MINIMIZE
+            self.local_problems.append(mdl)
+            self._agent_vars.append((y1, y2, z, x))
 
     def set_q_linearization(self, theta):
         pass  # x_Q already loaded at init; all params linear, no linearization needed
@@ -103,26 +95,20 @@ class MultiStageSolver(SubproblemSolver):
         results = np.zeros((n, n_items), dtype=bool)
         pol = self.data_manager.local_data.id_data['policies']
 
-
-        # Distance matrices and FE for pi computation
+        # Distance matrices for pi computation (FE moved to cost side)
         d12 = self.geo['d_12']                                  # (L1, L2)
         d2m = self.geo['d_2m']                                  # (L2, N)
         R_n = self.geo['R_n']                                   # (N,)
 
-        fe_1 = np.array([0.0, theta_d.get('FE_1', 0.0)])
-        fe_2 = np.array([0.0, theta_d.get('FE_2', 0.0)])
-
         # rev_factor (N, L1, L2) — shared across firms
         rev_factor = (1.0
-                      + fe_1[self.geo['cell_region']][None, :, None]
-                      + fe_2[self.geo['asm_region']][None, None, :]
                       - theta_d['rho_d_1'] * d12[None, :, :]
                       - theta_d['rho_d_2'] * d2m.T[:, None, :])
 
         for i in range(n):
-            oid = int(self.obs_ids[i])
             firm = self.firms[i]
-            mdl, y1, y2, z, x = self._firm_models[oid]
+            mdl = self.local_problems[i]
+            y1, y2, z, x = self._agent_vars[i]
 
             # Per-firm pi: s_{m,n} * R_n * rev_factor → (nm_max, N, L1, L2)
             nm = firm['n_models']
@@ -131,17 +117,16 @@ class MultiStageSolver(SubproblemSolver):
             pi_i = np.zeros((self.nm_max, self.N, self.L1, self.L2))
             pi_i[:nm] = sR[:, :, None, None] * rev_factor[None, :, :, :]
 
-            fc1_r, fc2_r = compute_facility_costs(firm, theta_d)  # (1, L1), (P, L2)
+            fc1_r, fc2_r = compute_facility_costs(firm, self.geo, theta_d)  # (1, L1), (P, L2)
             fc1 = np.zeros((self.ng_max, self.L1))
             fc1[:1] = fc1_r
             fc2 = np.zeros((self.P_max, self.L2))
             fc2[:P] = fc2_r
 
-            mdl.setObjective(
-                (pi_i + self.nu[i]).ravel() @ x.reshape(-1)
-                - (fc1 + self.phi1[i]).ravel() @ y1.reshape(-1)
-                - (fc2 + self.phi2[i]).ravel() @ y2.reshape(-1),
-                gp.GRB.MAXIMIZE)
+            # Update obj coefficients in-place (preserves warm start)
+            x.Obj = -(pi_i + self.nu[i])                       # negate for minimization
+            y1.Obj = (fc1 + self.phi1[i])
+            y2.Obj = (fc2 + self.phi2[i])
             mdl.optimize()
 
             pol['x_V'][i] = np.asarray(x.X)

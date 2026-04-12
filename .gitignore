@@ -1,6 +1,7 @@
 # Editor settings
 .vscode/
 .cursor/
+.claude/
 .cursorrules
 
 # Virtual environments
@@ -76,3 +77,5 @@ applications/combinatorial_auction/block_c/se_bayesian_bootstrap/_past_checkpoin
 applications/combinatorial_auction/block_c/estimation_results/
 .cache/
 applications/firms_export/_old/
+resources/
+paper/numerical_experiments/multi_stage_production/dgp_cache.pkl

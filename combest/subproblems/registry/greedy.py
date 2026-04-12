@@ -40,8 +40,9 @@ class GreedySolver(SubproblemSolver):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0
+        cache = {}
         while np.any(items_left):
-            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, best_val, self.data_manager.local_data, modular_error)
+            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, best_val, self.data_manager.local_data, modular_error, cache=cache)
             if val <= best_val:
                 break
             bundle[best_item] = True

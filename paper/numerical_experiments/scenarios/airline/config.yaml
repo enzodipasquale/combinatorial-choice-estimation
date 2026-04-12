@@ -1,0 +1,24 @@
+dgp:
+  C: 20
+  N: 30
+  fe_mode: "none"    # "none" or "origin"
+  sigma: 1.0         # std of modular errors nu_{ij}
+
+seeds:
+  dgp: 42
+  error: 1042
+  search: 7
+
+estimation:
+  n_simulations: 1
+  max_iters: 200
+  tolerance: 1.0e-6
+  gurobi_timeout: 30
+
+healthy_dgp:
+  max_candidates: 200
+  theta_gs_range: [0.5, 3.0]
+  theta_mod_range: [-3.0, 3.0]  # log-pop: [0.5, 3.0], distance: [-3.0, -0.5]
+  min_mean_bundle_frac: 0.1
+  max_mean_bundle_frac: 0.5
+  min_std_bundle_frac: 0.05

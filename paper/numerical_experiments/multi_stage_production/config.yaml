@@ -1,20 +1,25 @@
 dgp:
-  L1: 15
+  L1: 12
   L2: 15
-  N: 12
+  N: 24
   n_firms: 15
+  models_range: [4, 8]
+  max_platforms: 5
+  min_platforms: 2
 
 theta_true:
-  delta_1: 0.5
-  delta_2: 0.5
+  delta_1: 0.7
+  delta_2: 0.7
   rho_xi_1: 1.0
   rho_xi_2: 1.0
-  rho_HQ_1: 0.5
-  rho_HQ_2: 0.5
-  rho_d_1: 0.6
-  rho_d_2: 0.6
-  FE_1: 0.2
-  FE_2: 0.2
+  rho_HQ_1: 1.2
+  rho_HQ_2: 1.2
+  FE_1_r1: 1
+  FE_1_r2: 0.5
+  FE_2_r1: 0.5
+  FE_2_r2: 0.6
+  rho_d_1: 0.5
+  rho_d_2: 0.5
 
 sigma:
   phi: 0.2
@@ -22,8 +27,19 @@ sigma:
 
 estimation:
   n_simulations: 1
+  max_dc_iters: 1
   max_iters: 200
   tolerance: 1.0e-6
+  gurobi_timeout_schedule:
+    - iters: 20
+      timeout: 1
+      retire: false
+    - iters: 2
+      timeout: 10
+      retire: false
+    - timeout: 60
+      retire: true
 
 monte_carlo:
+  seed: 42
   n_replications: 1

@@ -66,6 +66,12 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         sigma=CFG['sigma'],
     )
 
+    # Save DGP for plotting (avoid regenerating)
+    import pickle
+    with open(BASE / 'dgp_cache.pkl', 'wb') as f:
+        pickle.dump(dict(geo=geo, firms=firms, bundles=bundles,
+                         theta_true=theta_true, seed=seed), f)
+
     # Filter out opt-out firms (empty bundles)
     active_mask = np.array([b['obj'] > 0 for b in bundles])
     firms = [f for f, a in zip(firms, active_mask) if a]
@@ -109,8 +115,8 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
             'max_iters': 200, 'tolerance': 1e-6,
             'theta_bounds': {
                 'lb': 0, 'ub': 10,
-                'lbs': {8: -5, 9: -5},
-                'ubs': {8: 5, 9: 5},
+                'lbs': {6: -5, 7: -5, 8: -5, 9: -5},
+                'ubs': {6: 5, 7: 5, 8: 5, 9: 5},
             },
         },
     }
@@ -147,13 +153,13 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         init_label = "theta_true" if np.allclose(theta_init, theta_true_vec) else "custom"
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"  DC estimation (10 params, S={n_simulations}, init={init_label})")
+        logger.info(f"  DC estimation ({N_PARAMS} params, S={n_simulations}, init={init_label})")
         logger.info("=" * 60)
 
-    pt_schedule = [
-        {'iters': 20, 'timeout': 5,  'retire': True},
-        {'timeout': 30,              'retire': True},
-    ]
+    pt_schedule = CFG['estimation'].get('gurobi_timeout_schedule', [
+        {'iters': 20, 'timeout': 5, 'retire': True},
+        {'timeout': 30, 'retire': True},
+    ])
     pt_callback, _ = adaptive_gurobi_timeout(pt_schedule)
 
     dc = DCSolver(row_gen, solver)
@@ -184,21 +190,26 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--n-firms', type=int, default=CFG['dgp']['n_firms'])
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int,
+                        default=CFG.get('monte_carlo', {}).get('seed', 42))
     parser.add_argument('--from-zero', action='store_true')
-    parser.add_argument('--max-dc-iters', type=int, default=30)
+    parser.add_argument('--max-dc-iters', type=int,
+                        default=CFG['estimation'].get('max_dc_iters', 30))
     parser.add_argument('--n-simulations', type=int,
                         default=CFG['estimation']['n_simulations'])
     args = parser.parse_args()
 
-    dgp = dict(
-        L1=CFG['dgp']['L1'],
-        L2=CFG['dgp']['L2'],
-        N=CFG['dgp']['N'],
-        n_firms=args.n_firms,
-    )
+    dgp = dict(CFG['dgp'])
+    dgp['n_firms'] = args.n_firms                             # CLI override
 
-    theta0 = np.zeros(10) if args.from_zero else None
+    theta0 = np.zeros(len(THETA_NAMES)) if args.from_zero else None
     run(dgp, seed=args.seed, theta_init=theta0,
         max_dc_iters=args.max_dc_iters,
         n_simulations=args.n_simulations)
+
+    # Regenerate DGP plots (rank 0 only, avoid redundant MPI runs)
+    from mpi4py import MPI
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        import subprocess
+        subprocess.run([sys.executable, str(BASE / 'plot_firms.py')],
+                       cwd=str(BASE), check=False)

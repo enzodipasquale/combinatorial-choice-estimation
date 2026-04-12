@@ -40,12 +40,8 @@ def plot_firm(ax, firm, bun, geo, color_set, linestyle='-', alpha=1.0, label_pre
 
     # HQ
     hq = firm['hq_coord']
-    ax.scatter(hq[0], hq[1], marker='*', s=150, c='black', zorder=5,
-               alpha=alpha)
-    # Market home
-    mh = firm['market_home']
-    ax.scatter(mh[0], mh[1], marker='X', s=100, c=color_set[0], zorder=5,
-               alpha=alpha, edgecolors='black', linewidths=0.5)
+    ax.scatter(hq[0], hq[1], marker='*', s=200, c='black', zorder=5,
+               alpha=alpha, label=f'{label_prefix}HQ')
 
     cell_locs = geo['cell_locs']
     asm_locs = geo['asm_locs']
@@ -75,82 +71,104 @@ def plot_firm(ax, firm, bun, geo, color_set, linestyle='-', alpha=1.0, label_pre
 
 
 def main():
-    dgp = dict(L1=6, L2=6, N=12, n_firms=15)
+    dgp = CFG['dgp']
     theta_true = CFG['theta_true']
     sigma = CFG['sigma']
 
-    geo, firms, bundles, _ = generate_synthetic_data(
-        seed=42, dgp=dgp, sourcing_coefs=None,
-        theta_true=theta_true, sigma=sigma)
+    seed = CFG.get('monte_carlo', {}).get('seed', 42)
+    nf = dgp['n_firms']
 
-    # Select 8 interesting firms (by objective, diverse assemblies)
+    # Load from cache if available, otherwise generate
+    cache_path = BASE / 'dgp_cache.pkl'
+    if cache_path.exists():
+        import pickle
+        with open(cache_path, 'rb') as f:
+            cache = pickle.load(f)
+        geo, firms, bundles = cache['geo'], cache['firms'], cache['bundles']
+        seed = cache.get('seed', seed)
+        nf = len(firms)
+        print(f"Loaded DGP from cache (seed={seed}, N={nf})")
+    else:
+        geo, firms, bundles, _ = generate_synthetic_data(
+            seed=seed, dgp=dgp, sourcing_coefs=None,
+            theta_true=theta_true, sigma=sigma)
+        print(f"Generated DGP (seed={seed}, N={nf})")
+
+    # Select 4 interesting firms (by objective, diverse assemblies)
     candidates = [(i, bundles[i]['y2'].sum(), bundles[i]['obj'])
                   for i in range(len(firms)) if bundles[i]['obj'] > 0]
     candidates.sort(key=lambda x: (-min(x[1], 3), -x[2]))
-    selected = [c[0] for c in candidates[:8]]
-
-    # Pair them up: 2 per panel
-    pairs = [(selected[i], selected[i + 1]) for i in range(0, 8, 2)]
+    selected = [c[0] for c in candidates[:4]]
 
     cell_locs = geo['cell_locs']
     asm_locs = geo['asm_locs']
     mkt_locs = geo['mkt_locs']
 
+    model_colors = ['tab:green', 'tab:orange', 'tab:purple', 'tab:red',
+                    'tab:brown', 'tab:pink', 'tab:olive', 'tab:cyan']
+
     fig, axes = plt.subplots(2, 2, figsize=(13, 13))
     axes_flat = axes.ravel()
 
-    color_sets = [
-        ['tab:green', 'tab:olive', 'darkgreen'],
-        ['tab:red', 'tab:orange', 'darkred'],
-    ]
+    # Compute region boundaries from sorted x-coordinates
+    cell_xs = np.sort(cell_locs[:, 0])
+    asm_xs = np.sort(asm_locs[:, 0])
+    L1, L2 = geo['L1'], geo['L2']
+    # Boundaries between regions: midpoint between last of region k and first of region k+1
+    cell_b1 = (cell_xs[L1 // 3 - 1] + cell_xs[L1 // 3]) / 2
+    cell_b2 = (cell_xs[2 * L1 // 3 - 1] + cell_xs[2 * L1 // 3]) / 2
+    asm_b1 = (asm_xs[L2 // 3 - 1] + asm_xs[L2 // 3]) / 2
+    asm_b2 = (asm_xs[2 * L2 // 3 - 1] + asm_xs[2 * L2 // 3]) / 2
 
-    for panel, (f1, f2) in enumerate(pairs):
+    for panel, fidx in enumerate(selected):
         ax = axes_flat[panel]
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.05, 1.05)
         ax.set_aspect('equal')
 
+        # Region background shading
+        region_colors_bg = ['#d4e6f1', '#fdebd0', '#d5f5e3']  # light blue, orange, green
+        bounds = [0, cell_b1, cell_b2, 1.0]
+        for r in range(3):
+            ax.axvspan(bounds[r], bounds[r + 1], alpha=0.15,
+                       color=region_colors_bg[r], zorder=0)
+
+        # Region boundary lines
+        for bx in [cell_b1, cell_b2]:
+            ax.axvline(bx, color='gray', linewidth=0.8, linestyle='--', alpha=0.5, zorder=0)
+
         # Background: locations
         ax.scatter(mkt_locs[:, 0], mkt_locs[:, 1], c='gray', s=20, zorder=1, alpha=0.5)
-        ax.scatter(cell_locs[:, 0], cell_locs[:, 1], c='blue', s=80, marker='s', zorder=3)
-        ax.scatter(asm_locs[:, 0], asm_locs[:, 1], c='red', s=80, marker='o', zorder=3)
+        ax.scatter(cell_locs[:, 0], cell_locs[:, 1], c='blue', s=60, marker='s', zorder=3)
+        ax.scatter(asm_locs[:, 0], asm_locs[:, 1], c='red', s=60, marker='o', zorder=3)
 
         # Labels
         for l in range(geo['L1']):
-            ax.annotate(f"c{l}", cell_locs[l], fontsize=7, ha='center', va='bottom',
-                        xytext=(0, 5), textcoords='offset points', color='blue')
+            ax.annotate(f"c{l}", cell_locs[l], fontsize=6, ha='center', va='bottom',
+                        xytext=(0, 4), textcoords='offset points', color='blue')
         for l in range(geo['L2']):
-            ax.annotate(f"a{l}", asm_locs[l], fontsize=7, ha='center', va='bottom',
-                        xytext=(0, 5), textcoords='offset points', color='red')
+            ax.annotate(f"a{l}", asm_locs[l], fontsize=6, ha='center', va='bottom',
+                        xytext=(0, 4), textcoords='offset points', color='red')
 
-        # Firm 1 (solid)
-        firm1, bun1 = firms[f1], bundles[f1]
-        info1 = plot_firm(ax, firm1, bun1, geo, color_sets[0], '-', 1.0, f'F{f1}:')
+        firm = firms[fidx]
+        bun = bundles[fidx]
+        info = plot_firm(ax, firm, bun, geo, model_colors, '-', 1.0, '')
 
-        # Firm 2 (dashed)
-        firm2, bun2 = firms[f2], bundles[f2]
-        info2 = plot_firm(ax, firm2, bun2, geo, color_sets[1], '--', 0.8, f'F{f2}:')
-
-        nm1, P1 = firm1['n_models'], firm1['n_platforms']
-        nm2, P2 = firm2['n_models'], firm2['n_platforms']
-        ax.set_title(f"Firm {f1} ({nm1}m/{P1}p, solid) & "
-                     f"Firm {f2} ({nm2}m/{P2}p, dashed)", fontsize=10)
+        nm, P = firm['n_models'], firm['n_platforms']
+        ax.set_title(f"Firm {fidx}: {nm} models, {P} platforms", fontsize=11)
         ax.legend(fontsize=6, loc='lower right', ncol=2)
 
-        print(f"Panel {panel}: Firm {f1} ({nm1}m/{P1}p)")
-        for line in info1:
-            print(line)
-        print(f"  Firm {f2} ({nm2}m/{P2}p)")
-        for line in info2:
+        print(f"Panel {panel}: Firm {fidx} ({nm}m/{P}p)")
+        for line in info:
             print(line)
         print()
 
-    fig.suptitle("Firm facility networks (seed=42, N=15, torus geometry)\n"
-                 "Stars=HQ, X=market home, lines=Euclidean (actual=torus)",
+    fig.suptitle(f"Firm facility networks (seed={seed}, N={nf}, torus geometry)\n"
+                 "Stars=HQ, lines=Euclidean (actual=torus)",
                  fontsize=11)
     plt.tight_layout()
 
-    out_path = BASE / 'firms_seed42.png'
+    out_path = BASE / f'firms_seed{seed}.png'
     fig.savefig(out_path, dpi=150)
     print(f"Saved to {out_path}")
 
@@ -161,17 +179,17 @@ def main():
         for p in range(bun['y2'].shape[0]):
             asm_counts += bun['y2'][p].astype(int)
 
-    colors = ['tab:blue' if geo['asm_region'][l] == 0 else 'tab:orange'
-              for l in range(geo['L2'])]
+    region_colors = {0: 'tab:blue', 1: 'tab:orange', 2: 'tab:green'}
+    colors = [region_colors[geo['asm_region'][l]] for l in range(geo['L2'])]
     bars = ax2.bar(range(geo['L2']), asm_counts, color=colors)
     ax2.set_xlabel('Assembly location')
     ax2.set_ylabel('Total opens (across all firms/platforms)')
-    ax2.set_title(f'Assembly usage histogram (N=15 firms, seed=42)')
+    ax2.set_title(f'Assembly usage histogram (N={nf} firms, seed={seed})')
     ax2.set_xticks(range(geo['L2']))
     ax2.set_xticklabels([f"a{l}\n(r{geo['asm_region'][l]})" for l in range(geo['L2'])])
     plt.tight_layout()
 
-    out_path2 = BASE / 'asm_usage_seed42.png'
+    out_path2 = BASE / f'asm_usage_seed{seed}.png'
     fig2.savefig(out_path2, dpi=150)
     print(f"Saved to {out_path2}")
 
