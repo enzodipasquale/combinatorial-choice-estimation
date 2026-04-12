@@ -1,16 +1,14 @@
 """Run multiple replications with FIXED true theta, varying only errors."""
 
 import sys
-import json
 from pathlib import Path
 import numpy as np
 import yaml
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_data import (generate_data, build_edges, build_geography,
-                           build_covariates, build_hubs, greedy_demand,
-                           n_modular, n_params)
+from generate_data import (generate_data, greedy_demand,
+                           n_shared_covariates, n_params)
 from oracle import make_find_best_item, build_covariates_oracle
 
 import combest as ce
@@ -50,10 +48,12 @@ def run_replications(n_reps=30, base_cfg=None):
     hubs = dgp_data['hubs']
     origin_of = dgp_data['origin_of']
     M = dgp_data['M']
-    n_p = n_params(C, fe_mode)
-    n_mod = n_modular(C, fe_mode)
+    n_p = n_params(C, N, fe_mode)
+    n_shared = n_shared_covariates(C, fe_mode)
 
-    theta_mod = theta_star[:-1]
+    # Unpack theta_star: [theta_rev..., theta_fc_0, ..., theta_fc_{N-1}, theta_gs]
+    theta_rev = theta_star[:n_shared]
+    theta_fc = theta_star[n_shared:n_shared + N]
     theta_gs = theta_star[-1]
 
     logger.info(f"Fixed theta_star = {theta_star}")
@@ -72,7 +72,8 @@ def run_replications(n_reps=30, base_cfg=None):
         obs_bundles = np.zeros((N, M), dtype=bool)
         for i in range(N):
             obs_bundles[i] = greedy_demand(
-                phi, theta_mod, theta_gs, hubs[i], origin_of, errors[i], M)
+                phi, theta_rev, theta_fc[i], theta_gs,
+                hubs[i], origin_of, errors[i], M)
 
         # --- Estimation ---
         model = ce.Model()
@@ -85,13 +86,15 @@ def run_replications(n_reps=30, base_cfg=None):
             'item_data': {
                 'phi': phi,
                 'origin_of': origin_of,
+                'N_firms': N,
             },
         }
 
-        theta_bounds = {
-            'lb': -20, 'ub': 20,
-            'lbs': {0: 0, 1: 0, n_mod: 0},
-        }
+        lbs = {0: 0}
+        for i in range(N):
+            lbs[n_shared + i] = 0
+        lbs[n_shared + N] = 0
+        theta_bounds = {'lb': -20, 'ub': 20, 'lbs': lbs}
 
         model_cfg = {
             'dimensions': {
@@ -117,11 +120,10 @@ def run_replications(n_reps=30, base_cfg=None):
         ld = model.data.local_data
         ld.id_data['hubs'] = [set(h) for h in ld.id_data['hubs']]
 
-        # Fresh simulation errors (independent of DGP errors)
         err_seed = seeds['error'] + rep * 1000
         model.features.build_local_modular_error_oracle(seed=err_seed, sigma=sigma)
 
-        cov_oracle = build_covariates_oracle()
+        cov_oracle = build_covariates_oracle(N)
         model.features.set_covariates_oracle(cov_oracle)
 
         model.subproblems.load_solver(AirlineGreedySolver)
@@ -137,7 +139,7 @@ def run_replications(n_reps=30, base_cfg=None):
                 n_converged += 1
             err_pct = np.abs(result.theta_hat - theta_star) / np.abs(theta_star) * 100
             print(f"  Rep {rep}: converged={result.converged}, "
-                  f"err%=[{', '.join(f'{e:.1f}' for e in err_pct)}]")
+                  f"max_err%={err_pct.max():.1f}%")
 
     t_total = time.perf_counter() - t0
 
@@ -150,34 +152,33 @@ def run_replications(n_reps=30, base_cfg=None):
 
     errors = estimates - theta_star
     bias = errors.mean(axis=0)
-    rmse = np.sqrt((errors ** 2).mean(axis=0))
-    mae_pct = (np.abs(errors) / np.abs(theta_star) * 100).mean(axis=0)
     hat_means = estimates.mean(axis=0)
-    bias_ses = errors.std(axis=0, ddof=1) / np.sqrt(n_ok)
+    hat_ses = estimates.std(axis=0, ddof=1) / np.sqrt(n_ok)
 
-    base_names = ["theta_rev", "theta_fc"]
+    shared_names = ["theta_rev"]
     if fe_mode == "origin":
-        base_names += [f"theta_fe_{j}" for j in range(C)]
-    param_names = base_names + ["theta_gs"]
+        shared_names += [f"theta_fe_{j}" for j in range(C)]
+    fc_names = [f"theta_fc_{i}" for i in range(N)]
+    param_names = shared_names + fc_names + ["theta_gs"]
 
-    print(f"\n{'='*80}")
+    print(f"\n{'='*72}")
     print(f"  N={N}, C={C}, M={M}, {n_ok}/{n_reps} reps, "
           f"{n_converged} converged, {t_total:.1f}s")
-    print(f"{'='*80}")
-    print(f"  {'Param':<14} {'True':>8} {'E[θ̂]':>8} {'Bias':>8} {'SE(bias)':>8} "
-          f"{'RMSE':>8} {'MAE%':>8}")
-    print(f"  {'-'*64}")
+    print(f"{'='*72}")
+    print(f"  {'Param':<14} {'True':>10} {'E[θ̂]':>10} {'SE':>10} {'t':>8}")
+    print(f"  {'-'*52}")
     for j, name in enumerate(param_names):
-        print(f"  {name:<14} {theta_star[j]:>8.4f} {hat_means[j]:>8.4f} "
-              f"{bias[j]:>8.4f} {bias_ses[j]:>8.4f} "
-              f"{rmse[j]:>8.4f} {mae_pct[j]:>7.1f}%")
+        t_stat = hat_means[j] / hat_ses[j] if hat_ses[j] > 0 else float('inf')
+        print(f"  {name:<14} {theta_star[j]:>10.4f} {hat_means[j]:>10.4f} "
+              f"{hat_ses[j]:>10.4f} {t_stat:>8.1f}")
     print()
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--n-reps', type=int, default=30)
+    parser.add_argument('--n-reps', type=int,
+                        default=CFG.get('replications', {}).get('n_reps', 30))
     parser.add_argument('--N', type=int, default=None)
     args = parser.parse_args()
 

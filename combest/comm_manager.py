@@ -1,5 +1,6 @@
 import numpy as np
 from mpi4py import MPI
+import warnings
 
 
 class CommManager:
@@ -30,6 +31,13 @@ class CommManager:
 
     def init_assignment(self, dimensions_cfg):
         self.dimensions_cfg = dimensions_cfg
+        if dimensions_cfg.n_agents < self.comm_size and self.rank == 0:
+            warnings.warn(
+                f"More MPI ranks ({self.comm_size}) than agents "
+                f"({dimensions_cfg.n_agents}). "
+                f"{self.comm_size - dimensions_cfg.n_agents} rank(s) will be idle.",
+                stacklevel=2,
+            )
         splits = np.array_split(np.arange(dimensions_cfg.n_agents), self.comm_size)
         self.agent_ids = splits[self.rank]
         self.agent_counts = np.array([len(s) for s in splits], dtype=np.int64)

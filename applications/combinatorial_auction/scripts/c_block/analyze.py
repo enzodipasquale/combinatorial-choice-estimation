@@ -3,13 +3,12 @@ import json, sys
 import numpy as np
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent
-APP_DIR = SCRIPTS_DIR.parent
-sys.path.insert(0, str(APP_DIR.parent.parent))
+CBLOCK_DIR = Path(__file__).parent
+sys.path.insert(0, str(CBLOCK_DIR.parent.parent.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
 
-CBLOCK_DIR = Path(__file__).parent
+RESULTS_DIR = CBLOCK_DIR / "results"
 POP_THRESHOLD = 500_000
 
 
@@ -124,10 +123,10 @@ def _run_iv_sample(label, mask, delta, price, iv_pop_mean, iv_pop_std, iv_hhinc_
     return b_iv
 
 
-def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
+def run_valuations(result_file=None, alpha_0=None, alpha_1=None):
     if alpha_0 is None or alpha_1 is None:
         raise ValueError("alpha_0 and alpha_1 must be provided (from IV regression)")
-    result = json.load(open(CBLOCK_DIR / result_file))
+    result = json.load(open(result_file))
     u_hat = np.array(result["u_hat"])
     n_obs = result["n_obs"]
     n_agents = len(u_hat)
@@ -188,8 +187,8 @@ def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     _top5("Top 5 by revenues", np.argsort(revenues)[::-1][:5])
 
 
-def run(result_file="result_FE.json"):
-    result = json.load(open(CBLOCK_DIR / result_file))
+def run(result_file=None):
+    result = json.load(open(result_file))
     theta = np.array(result["theta_hat"])
     n_id = result["n_id_mod"]
     n_btas = result["n_btas"]
@@ -227,8 +226,9 @@ if __name__ == "__main__":
     import argparse, warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     parser = argparse.ArgumentParser()
-    parser.add_argument("result_file", nargs="?", default="result_FE.json",
-                        help="Result JSON file (default: result_FE.json)")
+    parser.add_argument("result_file", nargs="?",
+                        default=str(RESULTS_DIR / "boot" / "result.json"),
+                        help="Path to result JSON file")
     args = parser.parse_args()
     print(f">>> Analyzing: {args.result_file}")
     b_iv = run(result_file=args.result_file)

@@ -47,7 +47,7 @@ assert off.max() > 0.1, f"Expected off-diagonal > 0.1 at rho=0.4, got {off.max()
 print("  ✓ Meaningful correlation check passed")
 
 # ── Build model and inject errors ──────────────────────────────────────────
-config_path = Path(__file__).parent / "configs/config_sar_rho04.yaml"
+config_path = Path(__file__).parent.parent / "configs" / "sar_rho04.yaml"
 config = yaml.safe_load(open(config_path))
 
 input_data, meta = prepare(

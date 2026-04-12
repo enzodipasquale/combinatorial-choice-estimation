@@ -4,17 +4,18 @@ import json, sys
 import numpy as np
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent.parent
-APP_DIR = SCRIPTS_DIR.parent
-sys.path.insert(0, str(APP_DIR.parent.parent))
+CBLOCK_DIR = Path(__file__).parent.parent
+sys.path.insert(0, str(CBLOCK_DIR.parent.parent.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, load_aggregation_matrix
 
-CF_DIR = Path(__file__).parent
+RESULTS_DIR = CBLOCK_DIR / "results"
 
 
-def run(result_file="result_counterfactual.json"):
-    result = json.load(open(CF_DIR / result_file))
+def run(result_path=None):
+    if result_path is None:
+        result_path = RESULTS_DIR / "cf" / "result_with_xi.json"
+    result = json.load(open(result_path))
     prices_mta = np.array(result["prices"])
     n_mtas = result["n_mtas"]
     mta_nums = result["continental_mta_nums"]

@@ -9,8 +9,9 @@ Usage:
 import gc, sys, traceback
 from pathlib import Path
 
-SAR_DIR   = Path(__file__).parent
-REPO_ROOT = SAR_DIR.parent.parent.parent.parent.parent
+SAR_DIR    = Path(__file__).parent
+CBLOCK_DIR = SAR_DIR.parent
+REPO_ROOT  = CBLOCK_DIR.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 try:
@@ -22,7 +23,7 @@ except ImportError:
 from applications.combinatorial_auction.scripts.c_block.sar_robustness.run import main
 
 CONFIGS = [
-    (SAR_DIR / "configs" / f"config_sar_rho{suffix}.yaml", rho_str)
+    (CBLOCK_DIR / "configs" / f"sar_rho{suffix}.yaml", rho_str)
     for suffix, rho_str in [("00", "0.0"), ("02", "0.2"), ("04", "0.4"), ("06", "0.6")]
 ]
 

@@ -4,6 +4,10 @@ from combest.utils import get_logger
 
 logger = get_logger(__name__)
 
+
+def _empty_bundles(dimensions_cfg):
+    return np.zeros((0, dimensions_cfg.n_items), dtype=bool)
+
 class SubproblemManager:
 
     def __init__(self, comm_manager, config, data_manager, features_manager):
@@ -49,12 +53,16 @@ class SubproblemManager:
     def initialize_and_solve(self, theta):
         theta = self.comm_manager.Bcast(theta)
         self.initialize_solver()
+        if self.comm_manager.num_local_agent == 0:
+            return _empty_bundles(self.config.dimensions)
         local_bundles = self.subproblem_solver.solve(theta)
         return local_bundles
 
     def solve(self, theta):
         if self.subproblem_solver is None:
             raise ValueError("Solver not initialized")
+        if self.comm_manager.num_local_agent == 0:
+            return _empty_bundles(self.config.dimensions)
         return self.subproblem_solver.solve(theta)
 
     def generate_obs_bundles(self, theta):

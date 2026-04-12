@@ -5,7 +5,7 @@ class SupermodularQuadraticObjectiveMixin(QuadraticObjectiveMixin):
 
     def _build_quadratic_coeff_batch(self, theta):
         Q = super()._build_quadratic_coeff_batch(theta)
-        if Q.min() < -1e-10:
+        if Q.size > 0 and Q.min() < -1e-10:
             raise ValueError(
                 f"Q(theta) has negative entries (min={Q.min():.4f}). "
                 f"Supermodular min-cut requires theta >= 0 for quadratic covariates."

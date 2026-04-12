@@ -47,19 +47,20 @@ def build_hubs(N, C, populations, min_hubs, max_hubs, hub_pool_frac, rng):
 
 
 def build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode):
-    """Build modular covariate matrix phi: (M, n_mod).
+    """Build shared item covariate matrix phi: (M, n_shared).
 
-    Columns (fe_mode="none"):
+    Columns:
       0: gravity revenue = pop_o * pop_d / dist
-      1: -1  (per-route fixed cost indicator)
 
     With fe_mode="origin", origin one-hot columns are appended.
+
+    Firm-specific fixed costs are handled in the covariates oracle,
+    not in phi.
     """
     d = dists[origin_of, dest_of]
     d_safe = np.maximum(d, 1e-6)
     gravity = populations[origin_of] * populations[dest_of] / d_safe
-    fc_indicator = -np.ones(M)
-    phi = np.column_stack([gravity, fc_indicator])
+    phi = gravity[:, None]  # (M, 1)
 
     if fe_mode == "origin":
         origin_fe = np.zeros((M, C))
@@ -69,9 +70,9 @@ def build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode):
     return phi
 
 
-def n_modular(C, fe_mode):
-    """Number of modular covariates (gravity + fixed cost + FEs)."""
-    base = 2  # gravity, -1
+def n_shared_covariates(C, fe_mode):
+    """Number of shared (non-firm-specific) modular covariates."""
+    base = 1  # gravity only
     if fe_mode == "none":
         return base
     elif fe_mode == "origin":
@@ -80,14 +81,16 @@ def n_modular(C, fe_mode):
         raise ValueError(f"Unknown fe_mode: {fe_mode}")
 
 
-def n_params(C, fe_mode):
-    """Total parameters: n_modular + 1 (theta_gs)."""
-    return n_modular(C, fe_mode) + 1
+def n_params(C, N, fe_mode):
+    """Total parameters: n_shared + N (firm FCs) + 1 (theta_gs)."""
+    return n_shared_covariates(C, fe_mode) + N + 1
 
 
-def compute_utility(bundle, phi, theta_mod, theta_gs, hubs_i, origin_of, errors_i):
+def compute_utility(bundle, phi, theta_rev, theta_fc_i, theta_gs, hubs_i,
+                    origin_of, errors_i):
     """Compute utility V_i(b) for a single airline."""
-    modular = (phi[bundle] @ theta_mod).sum() + errors_i[bundle].sum()
+    n_active = bundle.sum()
+    modular = (phi[bundle] @ theta_rev).sum() - theta_fc_i * n_active + errors_i[bundle].sum()
     congestion = 0.0
     if theta_gs > 0:
         for h in hubs_i:
@@ -96,13 +99,24 @@ def compute_utility(bundle, phi, theta_mod, theta_gs, hubs_i, origin_of, errors_
     return modular - theta_gs * congestion
 
 
-def greedy_demand(phi, theta_mod, theta_gs, hubs_i, origin_of, errors_i, M):
+def greedy_demand(phi, theta_rev, theta_fc_i, theta_gs, hubs_i, origin_of,
+                  errors_i, M):
     """Compute optimal bundle via greedy algorithm (GS property).
 
-    Vectorized over items for speed. Returns (M,) bool array.
+    Args:
+        phi:        (M, n_shared) shared covariates (gravity, ...)
+        theta_rev:  (n_shared,) shared covariate coefficients
+        theta_fc_i: scalar, this firm's per-route fixed cost
+        theta_gs:   scalar, congestion penalty
+        hubs_i:     set of hub city indices
+        origin_of:  (M,) origin city per edge
+        errors_i:   (M,) modular errors
+        M:          number of edges
+
+    Returns (M,) bool array. Vectorized over items for speed.
     """
     bundle = np.zeros(M, dtype=bool)
-    base_marginals = phi @ theta_mod + errors_i
+    base_marginals = (phi @ theta_rev).ravel() - theta_fc_i + errors_i
     hub_counts = {h: 0 for h in hubs_i}
 
     while True:
@@ -211,7 +225,7 @@ def search_healthy_theta(dgp_cfg, healthy_cfg, seeds, verbose=True):
     phi = build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode)
     hubs = build_hubs(N, C, populations, min_hubs, max_hubs, hub_pool_frac, rng_dgp)
 
-    n_mod = n_modular(C, fe_mode)
+    n_shared = n_shared_covariates(C, fe_mode)
 
     rng_err = np.random.default_rng(seeds['dgp'] + 999)
     errors = rng_err.normal(0, sigma, (N, M))
@@ -222,15 +236,22 @@ def search_healthy_theta(dgp_cfg, healthy_cfg, seeds, verbose=True):
 
     for trial in range(max_candidates):
         theta_gs = rng_search.uniform(*theta_gs_range)
-        theta_mod = np.zeros(n_mod)
-        theta_mod[0] = rng_search.uniform(*theta_rev_range) * sigma / gravity_std
-        theta_mod[1] = rng_search.uniform(*theta_fc_range) * sigma
+
+        # Shared covariates: [theta_rev, ...origin FEs]
+        theta_rev = np.zeros(n_shared)
+        theta_rev[0] = rng_search.uniform(*theta_rev_range) * sigma / gravity_std
         if fe_mode == "origin":
-            theta_mod[2:] = rng_search.uniform(-1.0, 1.0, C)
+            theta_rev[1:] = rng_search.uniform(-1.0, 1.0, C)
+
+        # Firm-specific fixed costs: one per airline
+        fc_mean = rng_search.uniform(*theta_fc_range) * sigma
+        fc_disp = healthy_cfg.get('theta_fc_dispersion', 0.3)
+        theta_fc = np.abs(rng_search.normal(fc_mean, fc_disp * fc_mean, N))
 
         bundles = []
         for i in range(N):
-            b = greedy_demand(phi, theta_mod, theta_gs, hubs[i], origin_of, errors[i], M)
+            b = greedy_demand(phi, theta_rev, theta_fc[i], theta_gs,
+                              hubs[i], origin_of, errors[i], M)
             bundles.append(b)
 
         ok, diag = check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs,
@@ -254,11 +275,12 @@ def search_healthy_theta(dgp_cfg, healthy_cfg, seeds, verbose=True):
             score += 0.5
 
         if ok:
+            # theta_star = [theta_rev..., theta_fc_0, ..., theta_fc_{N-1}, theta_gs]
+            theta_star = np.concatenate([theta_rev, theta_fc, [theta_gs]])
             if verbose:
                 logger.info(f"  Healthy theta found at trial {trial}: "
-                            f"theta_gs={theta_gs:.3f}, theta_mod={theta_mod}, "
-                            f"diag={diag}")
-            theta_star = np.concatenate([theta_mod, [theta_gs]])
+                            f"theta_rev={theta_rev}, theta_fc={theta_fc}, "
+                            f"theta_gs={theta_gs:.3f}, diag={diag}")
             dgp_data = {
                 "locations": locations, "dists": dists, "populations": populations,
                 "phi": phi, "hubs": hubs, "errors": errors,
@@ -269,7 +291,7 @@ def search_healthy_theta(dgp_cfg, healthy_cfg, seeds, verbose=True):
 
         if score > best_score:
             best_score = score
-            best_theta = np.concatenate([theta_mod, [theta_gs]])
+            best_theta = np.concatenate([theta_rev, theta_fc, [theta_gs]])
             best_bundles = bundles
             best_diag = diag
 

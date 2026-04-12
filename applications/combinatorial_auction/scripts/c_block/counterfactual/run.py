@@ -18,15 +18,24 @@ from applications.combinatorial_auction.scripts.c_block.counterfactual.prepare i
 )
 
 
+CBLOCK_DIR = Path(__file__).resolve().parent.parent
+
+
+def _results_dir(config_path):
+    d = CBLOCK_DIR / "results" / Path(config_path).stem
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def main(config_path):
     config = yaml.safe_load(open(config_path))
-    experiment_dir = Path(config_path).resolve().parent
+    out_dir = _results_dir(config_path)
     app = config["application"]
 
     if rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-        est_path = (experiment_dir / app["est_result"]).resolve()
+        est_path = (CBLOCK_DIR / "results" / app["est_result"]).resolve()
         input_data, meta = prepare_counterfactual(
             est_result_path=est_path,
             alpha_0=app["alpha_0"],
@@ -85,8 +94,6 @@ def main(config_path):
     from combest.estimation.callbacks import adaptive_gurobi_timeout
 
     callbacks = config.get("callbacks", {})
-    config_name = Path(config_path).stem
-    result_name = app.get("result_name", "result_counterfactual")
 
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if rank == 0:
@@ -110,8 +117,7 @@ def main(config_path):
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
 
         if rank == 0 and result is not None:
-            out_name = f"{result_name}_{label}.json"
-            _save(result, config, meta, experiment_dir / out_name)
+            _save(result, config, meta, out_dir / f"result_{label}.json")
 
 
 def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
@@ -171,5 +177,5 @@ def _save(result, config, meta, path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("config", nargs="?", default=str(Path(__file__).parent / "config.yaml"))
+    parser.add_argument("config", nargs="?", default=str(CBLOCK_DIR / "configs" / "cf.yaml"))
     main(parser.parse_args().config)

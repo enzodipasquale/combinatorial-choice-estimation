@@ -317,7 +317,9 @@ def main():
                 "cf_surplus": {"mean": float(cf_surp.mean()), "se": float(cf_surp.std())},
             },
         }
-        outpath = CBLOCK_DIR / "bootstrap_welfare.json"
+        welfare_dir = CBLOCK_DIR / "results" / "welfare"
+        welfare_dir.mkdir(parents=True, exist_ok=True)
+        outpath = welfare_dir / "bootstrap_welfare.json"
         json.dump(out, open(outpath, "w"), indent=2)
         print(f"\nSaved -> {outpath}")
 

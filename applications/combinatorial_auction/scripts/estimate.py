@@ -15,9 +15,15 @@ except ImportError:
 from applications.combinatorial_auction.data.prepare import prepare
 
 
+def _results_dir(config_path):
+    d = Path(config_path).resolve().parent.parent / "results" / Path(config_path).stem
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def main(config_path):
     config = yaml.safe_load(open(config_path))
-    experiment_dir = Path(config_path).resolve().parent
+    out_dir = _results_dir(config_path)
     app = config["application"]
 
     if rank == 0:
@@ -68,9 +74,7 @@ def main(config_path):
         pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
         if rank == 0 and result is not None:
-            config_name = Path(config_path).stem
-            suffix = config_name if config_name != "config" else ("FE" if app.get("item_modular", "fe") == "fe" else "noFE")
-            _save(result, config, meta, experiment_dir / f"result_{suffix}.json")
+            _save(result, config, meta, out_dir / "result.json")
 
     elif mode == "bootstrap":
         boot_cfg = config.get("bootstrap", {})
@@ -99,12 +103,10 @@ def main(config_path):
             pt_estimate_callbacks=(None, pt_cb),
             bootstrap_callback=boot_callback,
             method="bayesian",
-            save_model_dir=str(experiment_dir / f"master_{Path(config_path).stem}"),
-            load_model_dir=str(experiment_dir / f"master_{Path(config_path).stem}"),
+            save_model_dir=str(out_dir / "checkpoints"),
+            load_model_dir=str(out_dir / "checkpoints"),
         )
         if rank == 0 and se is not None:
-            config_name = Path(config_path).stem
-            boot_suffix = f"_{config_name}" if config_name != "config" else ""
             out = {
                 "theta_hat": se.mean.tolist(),
                 "se": se.se.tolist(),
@@ -113,7 +115,8 @@ def main(config_path):
                 "converged": se.converged.tolist(),
                 "config": config,
             }
-            json.dump(out, open(experiment_dir / f"bootstrap_result{boot_suffix}.json", "w"), indent=2)
+            json.dump(out, open(out_dir / "bootstrap_result.json", "w"), indent=2)
+            print(f"Saved -> {out_dir / 'bootstrap_result.json'}")
 
 
 def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,

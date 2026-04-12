@@ -19,10 +19,10 @@ rescaled so that $\text{diag}(\Sigma) = 1$. $W$ is the row-normalized binary adj
 ```bash
 # from repo root
 mpirun -n 4 python applications/combinatorial_auction/scripts/c_block/sar_robustness/run.py \
-    applications/combinatorial_auction/scripts/c_block/sar_robustness/configs/config_sar_rho04.yaml
+    applications/combinatorial_auction/scripts/c_block/configs/sar_rho04.yaml
 ```
 
-Results are saved to `results/bootstrap_result_config_sar_rho04.json`.
+Results are saved to `../results/sar_rho04/bootstrap_result.json`.
 
 ## Launching all four ρ values on HPC
 

@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""
-SAR-error bootstrap estimation runner.
-
-Usage:
-    mpirun -n 4 python applications/combinatorial_auction/scripts/c_block/sar_robustness/run.py \
-        applications/combinatorial_auction/scripts/c_block/sar_robustness/configs/config_sar_rho04.yaml
-"""
+"""SAR-error bootstrap estimation runner."""
 import gc, json, sys, yaml, argparse
 import numpy as np
 from pathlib import Path
 
-SAR_DIR   = Path(__file__).parent
-REPO_ROOT = SAR_DIR.parent.parent.parent.parent.parent
+SAR_DIR    = Path(__file__).parent
+CBLOCK_DIR = SAR_DIR.parent
+REPO_ROOT  = CBLOCK_DIR.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 try:
@@ -23,14 +18,17 @@ except ImportError:
 from applications.combinatorial_auction.data.prepare import prepare
 
 
+def _results_dir(config_path):
+    d = CBLOCK_DIR / "results" / Path(config_path).stem
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def main(config_path):
     config = yaml.safe_load(open(config_path))
+    out_dir = _results_dir(config_path)
     app    = config["application"]
     rho    = float(app["sar_rho"])
-    config_name = Path(config_path).stem
-
-    if rank == 0:
-        (SAR_DIR / "results").mkdir(parents=True, exist_ok=True)
 
     if rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -129,8 +127,8 @@ def main(config_path):
         pt_estimate_callbacks=(None, pt_cb),
         bootstrap_callback=boot_callback,
         method="bayesian",
-        save_model_dir=str(SAR_DIR / f"results/master_{config_name}"),
-        load_model_dir=str(SAR_DIR / f"results/master_{config_name}"),
+        save_model_dir=str(out_dir / "checkpoints"),
+        load_model_dir=str(out_dir / "checkpoints"),
     )
 
     if rank == 0 and se is not None:
@@ -142,9 +140,8 @@ def main(config_path):
             "converged":        se.converged.tolist(),
             "config":           config,
         }
-        out_path = SAR_DIR / f"results/bootstrap_result_{config_name}.json"
-        json.dump(out, open(out_path, "w"), indent=2)
-        print(f"Saved -> {out_path}")
+        json.dump(out, open(out_dir / "bootstrap_result.json", "w"), indent=2)
+        print(f"Saved -> {out_dir / 'bootstrap_result.json'}")
 
     solver = getattr(model.subproblems, "subproblem_solver", None)
     if solver is not None:

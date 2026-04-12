@@ -1,9 +1,5 @@
 import json
 import numpy as np
-from pathlib import Path
-
-SCRIPTS_DIR = Path(__file__).parent.parent.parent
-APP_DIR = SCRIPTS_DIR.parent
 
 from applications.combinatorial_auction.data.loaders import (
     load_bta_data, build_context, load_aggregation_matrix, continental_mta_nums,

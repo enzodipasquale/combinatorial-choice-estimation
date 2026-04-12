@@ -14,7 +14,7 @@ from combest.subproblems.registry.greedy import GreedySolver
 logger = get_logger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_data import generate_data, n_params, n_modular
+from generate_data import generate_data, n_params, n_shared_covariates
 from oracle import make_find_best_item, build_covariates_oracle
 
 BASE = Path(__file__).resolve().parent
@@ -50,8 +50,8 @@ def run(cfg=None):
         dgp_cfg, healthy_cfg, seeds, verbose=is_root)
 
     M = dgp_data['M']
-    n_p = n_params(C, fe_mode)
-    n_mod = n_modular(C, fe_mode)
+    n_p = n_params(C, N, fe_mode)
+    n_shared = n_shared_covariates(C, fe_mode)
 
     if is_root:
         logger.info(f"DGP: C={C}, M={M}, N={N}, fe_mode={fe_mode}, n_params={n_p}")
@@ -67,18 +67,20 @@ def run(cfg=None):
             'item_data': {
                 'phi': dgp_data['phi'],
                 'origin_of': dgp_data['origin_of'],
+                'N_firms': N,
             },
         }
     else:
         input_data = None
 
     # --- Configure model ---
-    # theta = [theta_rev, theta_fc, ..., theta_gs]
-    # theta_rev >= 0 (index 0), theta_fc >= 0 (index 1), theta_gs >= 0 (last)
-    theta_bounds = {
-        'lb': -20, 'ub': 20,
-        'lbs': {0: 0, 1: 0, n_mod: 0},
-    }
+    # theta = [theta_rev..., theta_fc_0, ..., theta_fc_{N-1}, theta_gs]
+    # theta_rev >= 0, all theta_fc >= 0, theta_gs >= 0
+    lbs = {0: 0}  # theta_rev >= 0
+    for i in range(N):
+        lbs[n_shared + i] = 0  # theta_fc_i >= 0
+    lbs[n_shared + N] = 0  # theta_gs >= 0
+    theta_bounds = {'lb': -20, 'ub': 20, 'lbs': lbs}
 
     model_cfg = {
         'dimensions': {
@@ -108,7 +110,7 @@ def run(cfg=None):
     model.features.build_local_modular_error_oracle(seed=seeds['error'], sigma=sigma)
 
     # --- Set covariates oracle ---
-    cov_oracle = build_covariates_oracle()
+    cov_oracle = build_covariates_oracle(N)
     model.features.set_covariates_oracle(cov_oracle)
 
     # --- Load and initialize solver ---
@@ -131,10 +133,11 @@ def run(cfg=None):
         logger.info("=" * 60)
         logger.info(f"  Results (C={C}, M={M}, N={N}, fe_mode={fe_mode})")
         logger.info("=" * 60)
-        base_names = ["theta_rev", "theta_fc"]
+        shared_names = ["theta_rev"]
         if fe_mode == "origin":
-            base_names += [f"theta_fe_{j}" for j in range(C)]
-        param_names = base_names + ["theta_gs"]
+            shared_names += [f"theta_fe_{j}" for j in range(C)]
+        fc_names = [f"theta_fc_{i}" for i in range(N)]
+        param_names = shared_names + fc_names + ["theta_gs"]
         for j, name in enumerate(param_names):
             logger.info(f"  {name:<20} true={theta_star[j]:>8.4f}  "
                         f"hat={theta_hat[j]:>8.4f}  err={error_pct[j]:>6.1f}%")
