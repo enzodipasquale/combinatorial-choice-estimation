@@ -19,10 +19,10 @@ theta_true:
   rho_xi_2: 1.0
   rho_HQ_1: 1.2
   rho_HQ_2: 1.2
-  FE_1_r1: 1
-  FE_1_r2: 0.5
-  FE_2_r1: 0.5
-  FE_2_r2: 0.6
+  FE_1_r1: 0.5
+  FE_1_r2: 0.25
+  FE_2_r1: 0.25
+  FE_2_r2: 0.5
   rho_d_1: 0.5
   rho_d_2: 0.5
 

@@ -129,6 +129,10 @@ def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,
         if error_scaling == "elig":
             elig = model.data.local_data.id_data['elig']
             model.features.local_modular_errors *= elig[:, None]
+        elif error_scaling == "pop":
+            pop = model.data.local_data.item_data['weight'].astype(float)
+            pop = pop / pop.max()
+            model.features.local_modular_errors *= pop[None, :]
         return
 
     A = meta["A"]
