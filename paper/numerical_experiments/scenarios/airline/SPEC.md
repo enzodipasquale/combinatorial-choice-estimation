@@ -68,9 +68,7 @@ if $o \in \mathcal{H}_i$, where $n_o = |\{k \in E : o(k) = o, b_k = 1\}|$. If $o
 
 ## Brute-force verification
 
-At $M \leq 5$ (so $2^M \leq 32$), the agent must verify that the greedy oracle matches brute-force enumeration: for 10 random airlines with random $\theta$ and random errors, greedy utility must equal brute-force utility (within $10^{-8}$).
-
-This check is mandatory and runs as part of the test suite, not just once.
+At $M \leq 5$ (so $2^M \leq 32$), the greedy oracle must match brute-force enumeration: for 10 random airlines with random $\theta$ and random errors, greedy utility must equal brute-force utility (within $10^{-8}$). This check runs as part of the test suite.
 
 ## Estimation
 
@@ -93,4 +91,4 @@ One JSON file `result.json` containing:
 
 ## Pilot size
 
-$N = 30$ airlines, $M$ chosen so smoke tests run in seconds (see AGENT_BRIEF for sizes).
+$N = 30$ airlines, $M$ chosen so smoke tests run in seconds.
