@@ -10,11 +10,11 @@ from combest.utils import get_logger
 logger = get_logger(__name__)
 
 
-def build_geography(C, rng):
+def build_geography(C, pop_log_std, rng):
     """Draw C cities with random locations and log-normal populations."""
     locations = rng.uniform(0, 1, (C, 2))
     dists = np.sqrt(((locations[:, None] - locations[None, :]) ** 2).sum(-1))
-    log_pop = rng.normal(0, 0.5, C)
+    log_pop = rng.normal(0, pop_log_std, C)
     populations = np.exp(log_pop)
     return locations, dists, populations
 
@@ -34,25 +34,32 @@ def build_edges(C):
     return edges, origin_of, dest_of, M
 
 
-def build_hubs(N, C, rng):
-    """Draw hub sets for N airlines. Each airline gets 1-3 hubs."""
+def build_hubs(N, C, populations, min_hubs, max_hubs, hub_pool_frac, rng):
+    """Assign hub sets for N airlines from the largest cities."""
+    hub_pool_size = max(max_hubs, int(C * hub_pool_frac))
+    hub_pool = np.argsort(populations)[-hub_pool_size:]
     hubs = []
     for _ in range(N):
-        n_hubs = rng.integers(1, min(3, C) + 1)  # 1 to min(3, C)
-        hub_set = set(rng.choice(C, size=n_hubs, replace=False).tolist())
+        n_hubs = rng.integers(min_hubs, min(max_hubs, len(hub_pool)) + 1)
+        hub_set = set(rng.choice(hub_pool, size=n_hubs, replace=False).tolist())
         hubs.append(hub_set)
     return hubs
 
 
 def build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode):
-    """Build covariate matrix phi: (M, C_mod).
+    """Build modular covariate matrix phi: (M, n_mod).
 
-    fe_mode="none":   2 covariates: log(pop_o * pop_d), -distance
-    fe_mode="origin": 2 + C covariates: above + origin one-hot
+    Columns (fe_mode="none"):
+      0: gravity revenue = pop_o * pop_d / dist
+      1: -1  (per-route fixed cost indicator)
+
+    With fe_mode="origin", origin one-hot columns are appended.
     """
-    log_pop_product = np.log(populations[origin_of] * populations[dest_of])
-    neg_distance = -dists[origin_of, dest_of]
-    phi = np.column_stack([log_pop_product, neg_distance])
+    d = dists[origin_of, dest_of]
+    d_safe = np.maximum(d, 1e-6)
+    gravity = populations[origin_of] * populations[dest_of] / d_safe
+    fc_indicator = -np.ones(M)
+    phi = np.column_stack([gravity, fc_indicator])
 
     if fe_mode == "origin":
         origin_fe = np.zeros((M, C))
@@ -62,36 +69,24 @@ def build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode):
     return phi
 
 
-def n_covariates(C, fe_mode):
-    """Number of modular covariates (excludes theta_gs)."""
+def n_modular(C, fe_mode):
+    """Number of modular covariates (gravity + fixed cost + FEs)."""
+    base = 2  # gravity, -1
     if fe_mode == "none":
-        return 2
+        return base
     elif fe_mode == "origin":
-        return 2 + C
+        return base + C
     else:
         raise ValueError(f"Unknown fe_mode: {fe_mode}")
 
 
 def n_params(C, fe_mode):
-    """Total number of parameters: C_mod + 1 (for theta_gs)."""
-    return n_covariates(C, fe_mode) + 1
+    """Total parameters: n_modular + 1 (theta_gs)."""
+    return n_modular(C, fe_mode) + 1
 
 
 def compute_utility(bundle, phi, theta_mod, theta_gs, hubs_i, origin_of, errors_i):
-    """Compute utility V_i(b) for a single airline.
-
-    Args:
-        bundle:    (M,) bool
-        phi:       (M, C_mod)
-        theta_mod: (C_mod,)
-        theta_gs:  scalar >= 0
-        hubs_i:    set of hub city indices
-        origin_of: (M,) origin city of each edge
-        errors_i:  (M,) modular errors nu_{ij}
-
-    Returns:
-        scalar utility
-    """
+    """Compute utility V_i(b) for a single airline."""
     modular = (phi[bundle] @ theta_mod).sum() + errors_i[bundle].sum()
     congestion = 0.0
     if theta_gs > 0:
@@ -104,27 +99,20 @@ def compute_utility(bundle, phi, theta_mod, theta_gs, hubs_i, origin_of, errors_
 def greedy_demand(phi, theta_mod, theta_gs, hubs_i, origin_of, errors_i, M):
     """Compute optimal bundle via greedy algorithm (GS property).
 
-    Returns (M,) bool array. Vectorized over items for speed.
+    Vectorized over items for speed. Returns (M,) bool array.
     """
     bundle = np.zeros(M, dtype=bool)
-    # Base modular values (fixed across iterations)
     base_marginals = phi @ theta_mod + errors_i
-
-    # Hub mask: is_hub[j] = True if origin_of[j] is a hub
-    hub_set = set(hubs_i)
-    is_hub = np.array([origin_of[j] in hub_set for j in range(M)])
     hub_counts = {h: 0 for h in hubs_i}
 
     while True:
-        # Compute marginal values for all remaining items
         marginals = base_marginals.copy()
-        # Apply congestion penalty for hub origins
         if theta_gs > 0:
             for h in hubs_i:
                 mask = (~bundle) & (origin_of == h)
                 if mask.any():
                     marginals[mask] -= theta_gs * (2 * hub_counts[h] + 1)
-        marginals[bundle] = -np.inf  # exclude already-selected items
+        marginals[bundle] = -np.inf
 
         best_item = np.argmax(marginals)
         if marginals[best_item] <= 0:
@@ -137,11 +125,16 @@ def greedy_demand(phi, theta_mod, theta_gs, hubs_i, origin_of, errors_i, M):
     return bundle
 
 
-def check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs):
+def check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs, healthy_cfg):
     """Check all healthy-DGP criteria. Returns (ok, diagnostics)."""
     sizes = np.array([b.sum() for b in bundles], dtype=float)
     mean_size = sizes.mean()
     std_size = sizes.std()
+
+    min_mf = healthy_cfg['min_mean_bundle_frac']
+    max_mf = healthy_cfg['max_mean_bundle_frac']
+    min_frac_hub = healthy_cfg['min_frac_with_hub_routes']
+    min_cong_std = healthy_cfg['min_congestion_std']
 
     diag = {
         "mean_bundle_frac": mean_size / M,
@@ -151,20 +144,17 @@ def check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs):
     }
 
     ok = True
-    # Criterion 1: mean bundle size in (0.1M, 0.55M), no empty or full
-    if not (0.1 * M < mean_size < 0.55 * M):
+    if not (min_mf * M < mean_size < max_mf * M):
         ok = False
     if sizes.min() == 0 or sizes.max() == M:
         ok = False
 
-    # Criterion 2: cross-airline heterogeneity in bundle size.
-    # At small M use 0.05*M; at large M scale as 0.01*M (hub-driven
-    # size heterogeneity grows sub-linearly with M).
-    std_threshold = min(0.05 * M, max(0.01 * M, 5.0))
+    # Cross-airline heterogeneity (scales sub-linearly with M)
+    std_threshold = min(0.05 * M, max(0.008 * M, 5.0))
     if std_size < std_threshold:
         ok = False
 
-    # Criterion 3: origin FE identification (only under fe_mode="origin")
+    # Origin FE identification
     if fe_mode == "origin":
         utilization = np.zeros(C)
         for i, b in enumerate(bundles):
@@ -177,63 +167,64 @@ def check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs):
         if utilization.min() <= 0 or utilization.max() >= 1:
             ok = False
 
-    # Criterion 4: congestion variation — theta_gs must be identifiable.
-    # At least 50% of airlines must have >=1 route from a hub, AND
-    # the congestion feature must have std > 0.
+    # Congestion variation
     hub_route_counts = []
     for i, b in enumerate(bundles):
-        cong = 0
-        for h in hubs[i]:
-            n_h = int((b & (origin_of == h)).sum())
-            cong += n_h ** 2
+        cong = sum(int((b & (origin_of == h)).sum()) ** 2 for h in hubs[i])
         hub_route_counts.append(cong)
     hub_route_counts = np.array(hub_route_counts, dtype=float)
     frac_with_hub_routes = (hub_route_counts > 0).mean()
     cong_std = hub_route_counts.std()
     diag["frac_with_hub_routes"] = float(frac_with_hub_routes)
     diag["congestion_std"] = float(cong_std)
-    if frac_with_hub_routes < 0.5 or cong_std < 0.1:
+    if frac_with_hub_routes < min_frac_hub or cong_std < min_cong_std:
         ok = False
 
     diag["healthy"] = ok
     return ok, diag
 
 
-def search_healthy_theta(C, N, fe_mode, sigma, dgp_seed, search_seed,
-                         max_candidates=200, verbose=True):
+def search_healthy_theta(dgp_cfg, healthy_cfg, seeds, verbose=True):
     """Search for a theta* that produces healthy DGP bundles.
 
-    Returns (theta_star, bundles, dgp_data, diagnostics) or raises if not found.
+    Returns (theta_star, bundles, dgp_data, diagnostics) or raises.
     """
-    rng_dgp = np.random.default_rng(dgp_seed)
-    rng_search = np.random.default_rng(search_seed)
+    C = dgp_cfg['C']
+    N = dgp_cfg['N']
+    fe_mode = dgp_cfg['fe_mode']
+    sigma = dgp_cfg['sigma']
+    pop_log_std = dgp_cfg['pop_log_std']
+    hub_pool_frac = dgp_cfg['hub_pool_frac']
+    min_hubs = dgp_cfg['min_hubs']
+    max_hubs = dgp_cfg['max_hubs']
+
+    max_candidates = healthy_cfg['max_candidates']
+    theta_rev_range = healthy_cfg['theta_rev_range']
+    theta_fc_range = healthy_cfg['theta_fc_range']
+    theta_gs_range = healthy_cfg['theta_gs_range']
+
+    rng_dgp = np.random.default_rng(seeds['dgp'])
+    rng_search = np.random.default_rng(seeds['search'])
 
     _, origin_of, dest_of, M = build_edges(C)
-    locations, dists, populations = build_geography(C, rng_dgp)
+    locations, dists, populations = build_geography(C, pop_log_std, rng_dgp)
     phi = build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode)
-    hubs = build_hubs(N, C, rng_dgp)
+    hubs = build_hubs(N, C, populations, min_hubs, max_hubs, hub_pool_frac, rng_dgp)
 
-    C_mod = n_covariates(C, fe_mode)
+    n_mod = n_modular(C, fe_mode)
 
-    # Draw modular errors (fixed for the search)
-    rng_err = np.random.default_rng(dgp_seed + 999)
+    rng_err = np.random.default_rng(seeds['dgp'] + 999)
     errors = rng_err.normal(0, sigma, (N, M))
 
-    # Calibrate search: compute std of each covariate column so we can
-    # scale theta candidates to produce route values of order O(sigma).
-    phi_stds = np.maximum(phi.std(axis=0), 1e-8)
+    gravity_std = max(phi[:, 0].std(), 1e-8)
 
     best_theta, best_bundles, best_diag, best_score = None, None, None, -np.inf
 
     for trial in range(max_candidates):
-        theta_gs = rng_search.uniform(0.5, 5.0)
-        theta_mod = np.zeros(C_mod)
-        # Scale each coefficient so its contribution has std ~ O(sigma).
-        # phi[:,1] = -distance (negative), so theta_mod[1] > 0 makes
-        # longer routes less valuable (distance acts as cost).
-        scale = sigma / phi_stds[:2]
-        theta_mod[0] = rng_search.uniform(0.1, 2.0) * scale[0]   # positive (revenue from pop)
-        theta_mod[1] = rng_search.uniform(0.1, 3.0) * scale[1]   # positive (cost from distance)
+        theta_gs = rng_search.uniform(*theta_gs_range)
+        theta_mod = np.zeros(n_mod)
+        theta_mod[0] = rng_search.uniform(*theta_rev_range) * sigma / gravity_std
+        theta_mod[1] = rng_search.uniform(*theta_fc_range) * sigma
         if fe_mode == "origin":
             theta_mod[2:] = rng_search.uniform(-1.0, 1.0, C)
 
@@ -242,20 +233,17 @@ def search_healthy_theta(C, N, fe_mode, sigma, dgp_seed, search_seed,
             b = greedy_demand(phi, theta_mod, theta_gs, hubs[i], origin_of, errors[i], M)
             bundles.append(b)
 
-        ok, diag = check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs)
+        ok, diag = check_healthy_dgp(bundles, M, N, C, fe_mode, origin_of, hubs,
+                                     healthy_cfg)
 
-        # Score for picking best even if none is strictly healthy
         score = 0.0
         mf = diag["mean_bundle_frac"]
-        sf = diag["std_bundle_frac"]
         if 0.1 < mf < 0.5:
             score += 1.0
         else:
             score -= abs(mf - 0.3)
-        if sf >= 0.05:
+        if diag["std_bundle_frac"] * M >= min(0.05 * M, max(0.008 * M, 5.0)):
             score += 1.0
-        else:
-            score -= (0.05 - sf)
         if diag["min_bundle_size"] > 0:
             score += 0.5
         if diag["max_bundle_size"] < M:
@@ -268,7 +256,8 @@ def search_healthy_theta(C, N, fe_mode, sigma, dgp_seed, search_seed,
         if ok:
             if verbose:
                 logger.info(f"  Healthy theta found at trial {trial}: "
-                            f"theta_gs={theta_gs:.3f}, theta_mod={theta_mod}, diag={diag}")
+                            f"theta_gs={theta_gs:.3f}, theta_mod={theta_mod}, "
+                            f"diag={diag}")
             theta_star = np.concatenate([theta_mod, [theta_gs]])
             dgp_data = {
                 "locations": locations, "dists": dists, "populations": populations,
@@ -290,43 +279,14 @@ def search_healthy_theta(C, N, fe_mode, sigma, dgp_seed, search_seed,
     )
 
 
-def generate_data(C, N, fe_mode, sigma, dgp_seed, search_seed,
-                  max_candidates=200, verbose=True):
+def generate_data(dgp_cfg, healthy_cfg, seeds, verbose=True):
     """Top-level DGP entry point.
 
     Returns:
-        theta_star: (n_params,) true parameter vector [theta_mod | theta_gs]
-        obs_bundles: (N, M) bool observed choices
-        dgp_data: dict with phi, hubs, origin_of, dest_of, errors, etc.
-        diagnostics: dict with healthy-DGP check results
+        theta_star, obs_bundles, dgp_data, diagnostics
     """
     theta_star, bundles, dgp_data, diag = search_healthy_theta(
-        C, N, fe_mode, sigma, dgp_seed, search_seed,
-        max_candidates=max_candidates, verbose=verbose)
+        dgp_cfg, healthy_cfg, seeds, verbose=verbose)
 
     obs_bundles = np.stack(bundles)
     return theta_star, obs_bundles, dgp_data, diag
-
-
-if __name__ == "__main__":
-    # Step 1 check: C=4, N=3, inspect covariates and hubs
-    C, N = 4, 3
-    for fm in ["none", "origin"]:
-        print(f"\n{'='*60}")
-        print(f"  fe_mode = {fm}, C={C}, N={N}")
-        print(f"{'='*60}")
-
-        rng = np.random.default_rng(42)
-        locations, dists, populations = build_geography(C, rng)
-        edges, origin_of, dest_of, M = build_edges(C)
-        phi = build_covariates(C, M, origin_of, dest_of, dists, populations, fm)
-        hubs = build_hubs(N, C, rng)
-
-        print(f"  M = {M} edges")
-        print(f"  phi shape = {phi.shape}  (expected ({M}, {n_covariates(C, fm)}))")
-        print(f"  Populations: {populations}")
-        print(f"  Hubs: {hubs}")
-        print(f"  Covariate matrix (first 5 rows):")
-        print(phi[:5])
-        print(f"  Hub cities all in [0, {C}): ",
-              all(h < C for hs in hubs for h in hs))

@@ -1,4 +1,4 @@
-"""Step 5 verification: custom find_best_item matches standalone greedy + speed test."""
+"""Custom find_best_item matches standalone greedy + speed test."""
 
 import sys
 import time
@@ -12,12 +12,12 @@ from generate_data import build_geography, build_edges, build_covariates, build_
 from oracle import greedy_demand, make_find_best_item
 
 TOL = 1e-8
+POP_LOG_STD = 1.0
 
 
 def _greedy_with_find_best_item(phi, theta_mod, theta_gs, hubs_i, origin_of,
                                  errors_i, M, find_best_item_fn, local_id,
                                  data, modular_error):
-    """Run greedy using the find_best_item interface (standalone, no combest)."""
     theta = np.concatenate([theta_mod, [theta_gs]])
     bundle = np.zeros(M, dtype=bool)
     items_left = np.ones(M, dtype=bool)
@@ -38,7 +38,6 @@ def _greedy_with_find_best_item(phi, theta_mod, theta_gs, hubs_i, origin_of,
 
 
 def _make_mock_data(phi, origin_of, hubs_list):
-    """Create a mock data object mimicking combest LocalData."""
     data = SimpleNamespace()
     data.item_data = {'phi': phi, 'origin_of': origin_of}
     data.id_data = {'hubs': hubs_list}
@@ -47,9 +46,8 @@ def _make_mock_data(phi, origin_of, hubs_list):
 
 @pytest.mark.parametrize("C", [2, 3])
 def test_find_best_item_matches_greedy(C):
-    """At small M, find_best_item greedy == standalone greedy."""
     rng_geo = np.random.default_rng(42)
-    locations, dists, populations = build_geography(C, rng_geo)
+    locations, dists, populations = build_geography(C, POP_LOG_STD, rng_geo)
     edges, origin_of, dest_of, M = build_edges(C)
     phi = build_covariates(C, M, origin_of, dest_of, dists, populations, "none")
 
@@ -59,9 +57,10 @@ def test_find_best_item_matches_greedy(C):
     find_best_item_fn = make_find_best_item()
 
     for t in range(N_THETAS):
-        theta_mod = rng.uniform(-2, 2, phi.shape[1])
+        theta_mod = np.abs(rng.uniform(0.1, 2, phi.shape[1]))
         theta_gs = rng.uniform(0.1, 3.0)
-        hubs_list = build_hubs(N_AIRLINES, C, np.random.default_rng(42 + t))
+        hubs_list = build_hubs(N_AIRLINES, C, populations, 1, 3, 0.5,
+                               np.random.default_rng(42 + t))
         errors = rng.normal(0, 1.0, (N_AIRLINES, M))
         data = _make_mock_data(phi, origin_of, hubs_list)
 
@@ -79,28 +78,25 @@ def test_find_best_item_matches_greedy(C):
 
 
 def test_find_best_item_speed():
-    """At M=110, custom find_best_item should run in reasonable time."""
-    C = 11  # M = 11*10 = 110
+    C = 11  # M = 110
     N = 5
     rng_geo = np.random.default_rng(77)
-    locations, dists, populations = build_geography(C, rng_geo)
+    locations, dists, populations = build_geography(C, POP_LOG_STD, rng_geo)
     edges, origin_of, dest_of, M = build_edges(C)
     phi = build_covariates(C, M, origin_of, dest_of, dists, populations, "none")
-    hubs_list = build_hubs(N, C, np.random.default_rng(77))
+    hubs_list = build_hubs(N, C, populations, 1, 3, 0.5, np.random.default_rng(77))
     errors = rng_geo.normal(0, 1.0, (N, M))
 
-    theta_mod = np.array([1.5, -0.5])
+    theta_mod = np.array([0.5, 0.5])
     theta_gs = 1.5
     find_best_item_fn = make_find_best_item()
     data = _make_mock_data(phi, origin_of, hubs_list)
 
-    # Time the standalone greedy (naive)
     t0 = time.perf_counter()
     for i in range(N):
         greedy_demand(phi, theta_mod, theta_gs, hubs_list[i], origin_of, errors[i], M)
     t_naive = time.perf_counter() - t0
 
-    # Time find_best_item greedy
     t0 = time.perf_counter()
     for i in range(N):
         _greedy_with_find_best_item(
@@ -108,7 +104,5 @@ def test_find_best_item_speed():
             find_best_item_fn, i, data, errors[i])
     t_fbi = time.perf_counter() - t0
 
-    print(f"\nM={M}, N={N}: naive={t_naive:.3f}s, find_best_item={t_fbi:.3f}s, "
-          f"ratio={t_naive/t_fbi:.1f}x")
-
-    assert t_fbi < 30, f"find_best_item too slow: {t_fbi:.1f}s"
+    print(f"\nM={M}, N={N}: naive={t_naive:.3f}s, find_best_item={t_fbi:.3f}s")
+    assert t_fbi < 30

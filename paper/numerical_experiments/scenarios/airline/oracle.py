@@ -199,10 +199,10 @@ if __name__ == "__main__":
     locations, dists, populations = build_geography(C, rng)
     edges, origin_of, dest_of, M = build_edges(C)
     phi = build_covariates(C, M, origin_of, dest_of, dists, populations, "none")
-    hubs = build_hubs(N, C, rng)
+    hubs = build_hubs(N, C, populations, rng)
     errors = rng.normal(0, 1.0, (N, M))
 
-    theta_mod = np.array([1.0, -0.5])
+    theta_mod = np.array([0.5, 0.3])  # [theta_rev, theta_fc]
     theta_gs = 1.0
 
     print(f"C={C}, M={M}, N={N}")

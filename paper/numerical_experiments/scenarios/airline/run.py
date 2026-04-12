@@ -14,7 +14,7 @@ from combest.subproblems.registry.greedy import GreedySolver
 logger = get_logger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_data import generate_data, n_params, n_covariates
+from generate_data import generate_data, n_params, n_modular
 from oracle import make_find_best_item, build_covariates_oracle
 
 BASE = Path(__file__).resolve().parent
@@ -27,9 +27,19 @@ class AirlineGreedySolver(GreedySolver):
     find_best_item = staticmethod(make_find_best_item())
 
 
-def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
-        max_candidates=200, max_iters=200, tolerance=1e-6,
-        gurobi_timeout=30, verbose=True):
+def run(cfg=None):
+    if cfg is None:
+        cfg = CFG
+
+    dgp_cfg = cfg['dgp']
+    seeds = cfg['seeds']
+    est_cfg = cfg['estimation']
+    healthy_cfg = cfg['healthy_dgp']
+
+    C = dgp_cfg['C']
+    N = dgp_cfg['N']
+    fe_mode = dgp_cfg['fe_mode']
+    sigma = dgp_cfg['sigma']
 
     model = ce.Model()
     is_root = model.is_root()
@@ -37,13 +47,11 @@ def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
     # --- DGP ---
     t0 = time.perf_counter()
     theta_star, obs_bundles, dgp_data, dgp_diag = generate_data(
-        C=C, N=N, fe_mode=fe_mode, sigma=sigma,
-        dgp_seed=dgp_seed, search_seed=search_seed,
-        max_candidates=max_candidates, verbose=verbose and is_root)
+        dgp_cfg, healthy_cfg, seeds, verbose=is_root)
 
     M = dgp_data['M']
     n_p = n_params(C, fe_mode)
-    n_mod = n_covariates(C, fe_mode)
+    n_mod = n_modular(C, fe_mode)
 
     if is_root:
         logger.info(f"DGP: C={C}, M={M}, N={N}, fe_mode={fe_mode}, n_params={n_p}")
@@ -65,36 +73,39 @@ def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
         input_data = None
 
     # --- Configure model ---
-    # theta = [theta_mod_0, ..., theta_mod_{n_mod-1}, theta_gs]
-    # theta_gs >= 0 (last parameter)
+    # theta = [theta_rev, theta_fc, ..., theta_gs]
+    # theta_rev >= 0 (index 0), theta_fc >= 0 (index 1), theta_gs >= 0 (last)
     theta_bounds = {
         'lb': -20, 'ub': 20,
-        'lbs': {n_mod: 0},  # theta_gs >= 0
+        'lbs': {0: 0, 1: 0, n_mod: 0},
     }
 
-    cfg = {
+    model_cfg = {
         'dimensions': {
             'n_obs': N, 'n_items': M,
-            'n_covariates': n_p, 'n_simulations': 1,
+            'n_covariates': n_p, 'n_simulations': est_cfg['n_simulations'],
         },
         'subproblem': {
-            'gurobi_params': {'TimeLimit': gurobi_timeout, 'OutputFlag': 0},
+            'gurobi_params': {
+                'TimeLimit': est_cfg['gurobi_timeout'],
+                'OutputFlag': 0,
+            },
         },
         'row_generation': {
-            'max_iters': max_iters,
-            'tolerance': tolerance,
+            'max_iters': est_cfg['max_iters'],
+            'tolerance': est_cfg['tolerance'],
             'theta_bounds': theta_bounds,
         },
     }
-    model.load_config(cfg)
+    model.load_config(model_cfg)
     model.data.load_and_distribute_input_data(input_data)
 
-    # Convert hubs from lists to sets in local data (needed by oracles)
+    # Convert hubs from lists to sets in local data
     ld = model.data.local_data
     ld.id_data['hubs'] = [set(h) for h in ld.id_data['hubs']]
 
     # --- Build simulation errors (FRESH, independent of DGP) ---
-    model.features.build_local_modular_error_oracle(seed=err_seed, sigma=sigma)
+    model.features.build_local_modular_error_oracle(seed=seeds['error'], sigma=sigma)
 
     # --- Set covariates oracle ---
     cov_oracle = build_covariates_oracle()
@@ -107,7 +118,7 @@ def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
     # --- Run estimation ---
     row_gen = model.point_estimation.n_slack
     result = row_gen.solve(initialize_solver=False, initialize_master=True,
-                           verbose=verbose)
+                           verbose=True)
 
     t_total = time.perf_counter() - t0
 
@@ -120,7 +131,10 @@ def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
         logger.info("=" * 60)
         logger.info(f"  Results (C={C}, M={M}, N={N}, fe_mode={fe_mode})")
         logger.info("=" * 60)
-        param_names = [f"theta_mod_{j}" for j in range(n_mod)] + ["theta_gs"]
+        base_names = ["theta_rev", "theta_fc"]
+        if fe_mode == "origin":
+            base_names += [f"theta_fe_{j}" for j in range(C)]
+        param_names = base_names + ["theta_gs"]
         for j, name in enumerate(param_names):
             logger.info(f"  {name:<20} true={theta_star[j]:>8.4f}  "
                         f"hat={theta_hat[j]:>8.4f}  err={error_pct[j]:>6.1f}%")
@@ -154,17 +168,24 @@ def run(C, N, fe_mode, sigma, dgp_seed, search_seed, err_seed,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Airline / GS estimation')
-    parser.add_argument('--C', type=int, default=CFG['dgp']['C'])
-    parser.add_argument('--N', type=int, default=CFG['dgp']['N'])
-    parser.add_argument('--fe-mode', type=str, default=CFG['dgp']['fe_mode'])
-    parser.add_argument('--sigma', type=float, default=CFG['dgp']['sigma'])
-    parser.add_argument('--dgp-seed', type=int, default=CFG['seeds']['dgp'])
-    parser.add_argument('--search-seed', type=int, default=CFG['seeds']['search'])
-    parser.add_argument('--err-seed', type=int, default=CFG['seeds']['error'])
-    parser.add_argument('--max-iters', type=int,
-                        default=CFG['estimation']['max_iters'])
+    parser.add_argument('--C', type=int, default=None)
+    parser.add_argument('--N', type=int, default=None)
+    parser.add_argument('--fe-mode', type=str, default=None)
+    parser.add_argument('--sigma', type=float, default=None)
+    parser.add_argument('--max-hubs', type=int, default=None)
     args = parser.parse_args()
 
-    run(C=args.C, N=args.N, fe_mode=args.fe_mode, sigma=args.sigma,
-        dgp_seed=args.dgp_seed, search_seed=args.search_seed,
-        err_seed=args.err_seed, max_iters=args.max_iters)
+    cfg = CFG.copy()
+    cfg['dgp'] = dict(cfg['dgp'])
+    if args.C is not None:
+        cfg['dgp']['C'] = args.C
+    if args.N is not None:
+        cfg['dgp']['N'] = args.N
+    if args.fe_mode is not None:
+        cfg['dgp']['fe_mode'] = args.fe_mode
+    if args.sigma is not None:
+        cfg['dgp']['sigma'] = args.sigma
+    if args.max_hubs is not None:
+        cfg['dgp']['max_hubs'] = args.max_hubs
+
+    run(cfg)

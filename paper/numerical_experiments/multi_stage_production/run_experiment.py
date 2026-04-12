@@ -59,40 +59,36 @@ def draw_simulation_errors(model, firms, ng_max, P_max, nm_max, L1, L2, N,
 
 def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         n_simulations=1, verbose_dc=True):
-    geo, firms, bundles, theta_true = generate_synthetic_data(
-        seed=seed, dgp=dgp_cfg,
-        sourcing_coefs=None,
-        theta_true=CFG['theta_true'],
-        sigma=CFG['sigma'],
-    )
-
-    # Save DGP for plotting (avoid regenerating)
-    import pickle
-    with open(BASE / 'dgp_cache.pkl', 'wb') as f:
-        pickle.dump(dict(geo=geo, firms=firms, bundles=bundles,
-                         theta_true=theta_true, seed=seed), f)
-
-    # Filter out opt-out firms (empty bundles)
-    active_mask = np.array([b['obj'] > 0 for b in bundles])
-    firms = [f for f, a in zip(firms, active_mask) if a]
-    bundles = [b for b, a in zip(bundles, active_mask) if a]
-
-    nf = len(firms)
-    ng_max = max(len(f['ln_xi_1']) for f in firms)
-    P_max = max(f['n_platforms'] for f in firms)
-    nm_max = max(f['n_models'] for f in firms)
-    L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
-    n_items = ng_max * L1 + P_max * L2 + nm_max * N
-
-    obs_bundles = np.stack([
-        flatten_bundle(bun, ng_max, P_max, nm_max, L1, L2, N)
-        for bun in bundles
-    ])
-    x_Q_global = pad_x_Q(bundles, firms, nm_max, N, L1, L2)
 
     model = ce.Model()
 
+    # Generate DGP on root only (avoids N×ranks Gurobi models)
     if model.is_root():
+        geo, firms, bundles, theta_true = generate_synthetic_data(
+            seed=seed, dgp=dgp_cfg,
+            sourcing_coefs=None,
+            theta_true=CFG['theta_true'],
+            sigma=CFG['sigma'],
+        )
+
+        # Filter out opt-out firms (empty bundles)
+        active_mask = np.array([b['obj'] > 0 for b in bundles])
+        firms = [f for f, a in zip(firms, active_mask) if a]
+        bundles = [b for b, a in zip(bundles, active_mask) if a]
+
+        nf = len(firms)
+        ng_max = max(len(f['ln_xi_1']) for f in firms)
+        P_max = max(f['n_platforms'] for f in firms)
+        nm_max = max(f['n_models'] for f in firms)
+        L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
+        n_items = ng_max * L1 + P_max * L2 + nm_max * N
+
+        obs_bundles = np.stack([
+            flatten_bundle(bun, ng_max, P_max, nm_max, L1, L2, N)
+            for bun in bundles
+        ])
+        x_Q_global = pad_x_Q(bundles, firms, nm_max, N, L1, L2)
+
         input_data = {
             'id_data': {
                 'obs_bundles': obs_bundles, 'firms': firms, 'x_Q': x_Q_global,
@@ -104,6 +100,8 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         }
     else:
         input_data = None
+        geo, firms, theta_true = None, None, None
+        nf, ng_max, P_max, nm_max, L1, L2, N, n_items = [0]*8
 
     cfg = {
         'dimensions': {
@@ -123,8 +121,17 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
     model.load_config(cfg)
     model.data.load_and_distribute_input_data(input_data)
 
-    # Draw FRESH simulation errors (independent of DGP seed)
+    # After distribution, all ranks can read from local_data
     ld = model.data.local_data
+    geo = ld.item_data['geo']
+    firms = ld.id_data['firms']
+    theta_true = CFG['theta_true']
+    ng_max = ld.item_data['ng_max']
+    P_max = ld.item_data['P_max']
+    nm_max = ld.item_data['nm_max']
+    L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
+
+    # Draw FRESH simulation errors (independent of DGP seed)
     phi1, phi2, nu = draw_simulation_errors(
         model, firms, ng_max, P_max, nm_max, L1, L2, N,
         CFG['sigma'], err_seed=seed + 1000)
@@ -207,9 +214,16 @@ if __name__ == '__main__':
         max_dc_iters=args.max_dc_iters,
         n_simulations=args.n_simulations)
 
-    # Regenerate DGP plots (rank 0 only, avoid redundant MPI runs)
-    from mpi4py import MPI
-    if MPI.COMM_WORLD.Get_rank() == 0:
-        import subprocess
-        subprocess.run([sys.executable, str(BASE / 'plot_firms.py')],
-                       cwd=str(BASE), check=False)
+    # Regenerate DGP plots (rank 0 only)
+    try:
+        from mpi4py import MPI
+        is_root = MPI.COMM_WORLD.Get_rank() == 0
+    except ImportError:
+        is_root = True
+    if is_root:
+        try:
+            import subprocess
+            subprocess.run([sys.executable, str(BASE / 'plot_firms.py')],
+                           cwd=str(BASE), check=False)
+        except Exception:
+            pass  # plots are optional
