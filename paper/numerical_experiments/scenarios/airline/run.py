@@ -102,9 +102,10 @@ def run(cfg=None):
     model.load_config(model_cfg)
     model.data.load_and_distribute_input_data(input_data)
 
-    # Convert hubs from lists to sets in local data
+    # Store obs_ids for mapping agent→firm (needed when S>1)
     ld = model.data.local_data
     ld.id_data['hubs'] = [set(h) for h in ld.id_data['hubs']]
+    ld.item_data['obs_ids'] = model.comm_manager.obs_ids
 
     # --- Build simulation errors (FRESH, independent of DGP) ---
     model.features.build_local_modular_error_oracle(seed=seeds['error'], sigma=sigma)

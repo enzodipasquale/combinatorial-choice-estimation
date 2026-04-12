@@ -87,17 +87,26 @@ def main():
         geo, firms, bundles = cache['geo'], cache['firms'], cache['bundles']
         seed = cache.get('seed', seed)
         nf = len(firms)
+        has_bundles = True
         print(f"Loaded DGP from cache (seed={seed}, N={nf})")
     else:
-        geo, firms, bundles, _ = generate_synthetic_data(
+        geo, firms, _, _ = generate_synthetic_data(
             seed=seed, dgp=dgp, sourcing_coefs=None,
             theta_true=theta_true, sigma=sigma)
-        print(f"Generated DGP (seed={seed}, N={nf})")
+        bundles = None
+        has_bundles = False
+        print(f"Generated DGP (seed={seed}, N={nf}) — no solved bundles, "
+              "run estimation first for network plots")
 
-    # Select 4 interesting firms (by objective, diverse assemblies)
-    candidates = [(i, bundles[i]['y2'].sum(), bundles[i]['obj'])
-                  for i in range(len(firms)) if bundles[i]['obj'] > 0]
-    candidates.sort(key=lambda x: (-min(x[1], 3), -x[2]))
+    # Select 4 firms: by objective if bundles available, else by model count
+    if has_bundles:
+        candidates = [(i, bundles[i]['y2'].sum(), bundles[i]['obj'])
+                      for i in range(len(firms)) if bundles[i]['obj'] > 0]
+        candidates.sort(key=lambda x: (-min(x[1], 3), -x[2]))
+    else:
+        candidates = [(i, firms[i]['n_models'], firms[i]['n_platforms'])
+                      for i in range(len(firms))]
+        candidates.sort(key=lambda x: (-x[1], -x[2]))
     selected = [c[0] for c in candidates[:4]]
 
     cell_locs = geo['cell_locs']
@@ -151,17 +160,24 @@ def main():
                         xytext=(0, 4), textcoords='offset points', color='red')
 
         firm = firms[fidx]
-        bun = bundles[fidx]
-        info = plot_firm(ax, firm, bun, geo, model_colors, '-', 1.0, '')
-
         nm, P = firm['n_models'], firm['n_platforms']
-        ax.set_title(f"Firm {fidx}: {nm} models, {P} platforms", fontsize=11)
-        ax.legend(fontsize=6, loc='lower right', ncol=2)
 
-        print(f"Panel {panel}: Firm {fidx} ({nm}m/{P}p)")
-        for line in info:
-            print(line)
-        print()
+        if has_bundles:
+            bun = bundles[fidx]
+            info = plot_firm(ax, firm, bun, geo, model_colors, '-', 1.0, '')
+            print(f"Panel {panel}: Firm {fidx} ({nm}m/{P}p)")
+            for line in info:
+                print(line)
+            print()
+        else:
+            # Just plot HQ location
+            hq = firm['hq_coord']
+            ax.scatter(hq[0], hq[1], marker='*', s=200, c='black', zorder=5)
+            print(f"Panel {panel}: Firm {fidx} ({nm}m/{P}p) — no bundles")
+
+        ax.set_title(f"Firm {fidx}: {nm} models, {P} platforms", fontsize=11)
+        if has_bundles:
+            ax.legend(fontsize=6, loc='lower right', ncol=2)
 
     fig.suptitle(f"Firm facility networks (seed={seed}, N={nf}, torus geometry)\n"
                  "Stars=HQ, lines=Euclidean (actual=torus)",
@@ -172,26 +188,29 @@ def main():
     fig.savefig(out_path, dpi=150)
     print(f"Saved to {out_path}")
 
-    # Assembly usage histogram
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    asm_counts = np.zeros(geo['L2'], dtype=int)
-    for bun in bundles:
-        for p in range(bun['y2'].shape[0]):
-            asm_counts += bun['y2'][p].astype(int)
+    # Assembly usage histogram (only if bundles available)
+    if has_bundles:
+        fig2, ax2 = plt.subplots(figsize=(8, 4))
+        asm_counts = np.zeros(geo['L2'], dtype=int)
+        for bun in bundles:
+            for p in range(bun['y2'].shape[0]):
+                asm_counts += bun['y2'][p].astype(int)
 
-    region_colors = {0: 'tab:blue', 1: 'tab:orange', 2: 'tab:green'}
-    colors = [region_colors[geo['asm_region'][l]] for l in range(geo['L2'])]
-    bars = ax2.bar(range(geo['L2']), asm_counts, color=colors)
-    ax2.set_xlabel('Assembly location')
-    ax2.set_ylabel('Total opens (across all firms/platforms)')
-    ax2.set_title(f'Assembly usage histogram (N={nf} firms, seed={seed})')
-    ax2.set_xticks(range(geo['L2']))
-    ax2.set_xticklabels([f"a{l}\n(r{geo['asm_region'][l]})" for l in range(geo['L2'])])
-    plt.tight_layout()
+        region_colors = {0: 'tab:blue', 1: 'tab:orange', 2: 'tab:green'}
+        colors = [region_colors[geo['asm_region'][l]] for l in range(geo['L2'])]
+        ax2.bar(range(geo['L2']), asm_counts, color=colors)
+        ax2.set_xlabel('Assembly location')
+        ax2.set_ylabel('Total opens (across all firms/platforms)')
+        ax2.set_title(f'Assembly usage histogram (N={nf} firms, seed={seed})')
+        ax2.set_xticks(range(geo['L2']))
+        ax2.set_xticklabels([f"a{l}\n(r{geo['asm_region'][l]})" for l in range(geo['L2'])])
+        plt.tight_layout()
 
-    out_path2 = BASE / f'asm_usage_seed{seed}.png'
-    fig2.savefig(out_path2, dpi=150)
-    print(f"Saved to {out_path2}")
+        out_path2 = BASE / f'asm_usage_seed{seed}.png'
+        fig2.savefig(out_path2, dpi=150)
+        print(f"Saved to {out_path2}")
+    else:
+        print("No solved bundles — skipping assembly usage histogram")
 
 
 if __name__ == '__main__':

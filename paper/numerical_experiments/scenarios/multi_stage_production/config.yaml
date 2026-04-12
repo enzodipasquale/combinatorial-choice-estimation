@@ -4,6 +4,7 @@ dgp:
   N: 24
   n_firms: 15
   models_range: [4, 8]
+  cell_groups_range: [1, 2]
   max_platforms: 5
   min_platforms: 2
   feasibility:

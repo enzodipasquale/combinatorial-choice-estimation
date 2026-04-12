@@ -114,9 +114,10 @@ class MultiStageSolver(SubproblemSolver):
             pi_i = np.zeros((self.nm_max, self.N, self.L1, self.L2))
             pi_i[:nm] = sR[:, :, None, None] * rev_factor[None, :, :, :]
 
-            fc1_r, fc2_r = compute_facility_costs(firm, self.geo, theta_d)  # (1, L1), (P, L2)
+            ng = len(firm['ln_xi_1'])
+            fc1_r, fc2_r = compute_facility_costs(firm, self.geo, theta_d)  # (ng, L1), (P, L2)
             fc1 = np.zeros((self.ng_max, self.L1))
-            fc1[:1] = fc1_r
+            fc1[:ng] = fc1_r
             fc2 = np.zeros((self.P_max, self.L2))
             fc2[:P] = fc2_r
 

@@ -84,11 +84,13 @@ def make_find_best_item():
         if 'base' not in cache:
             phi = data.item_data['phi']
             origin_of = data.item_data['origin_of']
-            hubs_i = data.id_data['hubs'][local_id]
+            obs_ids = data.item_data.get('obs_ids', None)
+            obs_idx = int(obs_ids[local_id]) if obs_ids is not None else local_id
+            hubs_i = data.id_data['hubs'][obs_idx]
             n_shared = phi.shape[1]
 
             theta_rev = theta[:n_shared]
-            theta_fc_i = theta[n_shared + local_id]
+            theta_fc_i = theta[n_shared + obs_idx]
 
             cache['base'] = (phi @ theta_rev).ravel() - theta_fc_i + modular_error
             cache['hub_masks'] = {h: (origin_of == h) for h in hubs_i}
@@ -132,6 +134,7 @@ def build_covariates_oracle(N_firms):
         phi = data.item_data['phi']
         origin_of = data.item_data['origin_of']
         hubs_list = data.id_data['hubs']
+        obs_ids = data.item_data.get('obs_ids', None)
         n_shared = phi.shape[1]
 
         n_agents = bundles.shape[0]
@@ -139,10 +142,11 @@ def build_covariates_oracle(N_firms):
         features = np.zeros((n_agents, n_total))
 
         for i_local, idx in enumerate(ids):
+            obs_idx = int(obs_ids[idx]) if obs_ids is not None else idx
             b = bundles[i_local]
             features[i_local, :n_shared] = phi[b].sum(axis=0) if b.any() else 0.0
-            features[i_local, n_shared + idx] = -float(b.sum())
-            hubs_i = hubs_list[idx]
+            features[i_local, n_shared + obs_idx] = -float(b.sum())
+            hubs_i = hubs_list[obs_idx]
             cong = 0.0
             for h in hubs_i:
                 n_h = int((b & (origin_of == h)).sum())

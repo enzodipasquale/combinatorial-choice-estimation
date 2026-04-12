@@ -33,7 +33,7 @@ seeds:
 
 # --- Estimation ---
 estimation:
-  n_simulations: 1          # S (simulation draws for estimator)
+  n_simulations: 5          # S (simulation draws for estimator)
   max_iters: 200            # row generation max iterations
   tolerance: 1.0e-6         # row generation convergence tolerance
   gurobi_timeout: 30        # Gurobi TimeLimit (seconds)

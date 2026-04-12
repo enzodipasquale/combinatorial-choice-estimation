@@ -25,16 +25,18 @@ def _build_linear_features(firms, geo, ng_max, P_max, nm_max):
     asm_r2 = (geo['asm_region'] == 2)
 
     for f, firm in enumerate(firms):
-        # Cell items: y1[g=0, l1]
-        for l in range(L1):
-            idx = l
-            X[f, idx, 0] = -1.0                             # delta_1
-            X[f, idx, 2] = -firm['ln_xi_1'][0]              # rho_xi_1
-            X[f, idx, 4] = -firm['d_hq1'][l]                # rho_HQ_1
-            if cell_r1[l]:
-                X[f, idx, 6] = +1.0                         # FE_1_r1
-            if cell_r2[l]:
-                X[f, idx, 7] = +1.0                         # FE_1_r2
+        # Cell items: y1[g, l1] for g in range(ng)
+        ng = len(firm['ln_xi_1'])
+        for g in range(ng):
+            for l in range(L1):
+                idx = g * L1 + l
+                X[f, idx, 0] = -1.0                         # delta_1
+                X[f, idx, 2] = -firm['ln_xi_1'][g]          # rho_xi_1 (group-specific)
+                X[f, idx, 4] = -firm['d_hq1'][l]            # rho_HQ_1
+                if cell_r1[l]:
+                    X[f, idx, 6] = +1.0                     # FE_1_r1
+                if cell_r2[l]:
+                    X[f, idx, 7] = +1.0                     # FE_1_r2
 
         # Assembly items: y2[p, l2]
         P = firm['n_platforms']

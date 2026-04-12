@@ -97,6 +97,7 @@ def build_firms(cfg, geo, rng):
     nf = cfg['n_firms']
     N = geo['n_markets']
     nm_lo, nm_hi = cfg.get('models_range', [4, 8])
+    ng_lo, ng_hi = cfg.get('cell_groups_range', [1, 1])
     P_max_cap = cfg.get('max_platforms', 5)
     P_min = cfg.get('min_platforms', 2)
     feas_cfg = cfg.get('feasibility', {})
@@ -105,7 +106,9 @@ def build_firms(cfg, geo, rng):
     firms = []
     for i in range(nf):
         nm = int(rng.integers(nm_lo, nm_hi + 1))
+        ng = int(rng.integers(ng_lo, ng_hi + 1))
         P = int(rng.integers(P_min, min(nm, P_max_cap) + 1))
+        cg = rng.integers(0, ng, nm).astype(int)               # cell group per model
         plat = rng.integers(0, P, nm).astype(int)
 
         # Per-model feasibility
@@ -125,11 +128,11 @@ def build_firms(cfg, geo, rng):
 
         firms.append(dict(
             n_models=nm, n_platforms=P,
-            cell_groups=np.zeros(nm, dtype=int),
+            cell_groups=cg,
             platforms=plat,
             feasible=feas,
             shares=shares,
-            ln_xi_1=np.array([rng.normal(0, 0.5)]),
+            ln_xi_1=rng.normal(0, 0.5, ng),                    # (ng,) one per cell group
             ln_xi_2=rng.normal(0, 0.5, P),
             d_hq1=d_hq1,
             d_hq2=d_hq2,
@@ -173,15 +176,16 @@ def compute_facility_costs(firm, geo, theta):
     fe1 = np.array([0.0, theta.get('FE_1_r1', 0.0), theta.get('FE_1_r2', 0.0)])
     fe2 = np.array([0.0, theta.get('FE_2_r1', 0.0), theta.get('FE_2_r2', 0.0)])
 
+    ng = len(firm['ln_xi_1'])
     fc1 = (theta['delta_1']
-           + theta['rho_xi_1'] * firm['ln_xi_1'][0]
-           + theta['rho_HQ_1'] * firm['d_hq1']
-           - fe1[geo['cell_region']])                          # (L1,)
+           + theta['rho_xi_1'] * firm['ln_xi_1'][:, None]     # (ng, 1)
+           + theta['rho_HQ_1'] * firm['d_hq1'][None, :]       # (1, L1)
+           - fe1[geo['cell_region']][None, :])                 # (1, L1) → (ng, L1)
     fc2 = (theta['delta_2']
            + theta['rho_xi_2'] * firm['ln_xi_2'][:, None]     # (P, 1)
            + theta['rho_HQ_2'] * firm['d_hq2'][None, :]       # (1, L2)
            - fe2[geo['asm_region']][None, :])                  # (1, L2) → (P, L2)
-    return fc1[None, :], fc2                                   # (1, L1), (P, L2)
+    return fc1, fc2                                            # (ng, L1), (P, L2)
 
 
 # ---- Errors ----
