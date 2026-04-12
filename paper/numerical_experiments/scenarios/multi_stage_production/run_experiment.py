@@ -169,25 +169,6 @@ def run(dgp_cfg, seed=42, theta_init=None,
             x_Q_global = x_Q_global[active_mask]
 
         nf = len(firms)
-
-        # Save cache for plotting
-        bundles_for_cache = []
-        for idx in range(nf):
-            b = obs_bundles_global[idx]
-            off = 0
-            y1 = b[off:off + ng_max * L1].reshape(ng_max, L1)
-            off += ng_max * L1
-            y2 = b[off:off + P_max * L2].reshape(P_max, L2)
-            off += P_max * L2
-            z = b[off:off + nm_max * N].reshape(nm_max, N)
-            bundles_for_cache.append(dict(
-                y1=y1, y2=y2, z=z, x=x_Q_global[idx],
-                obj=float(y1.any() or y2.any()),
-            ))
-        import pickle
-        with open(BASE / 'dgp_cache.pkl', 'wb') as f:
-            pickle.dump(dict(geo=geo, firms=firms, bundles=bundles_for_cache,
-                             seed=seed), f)
         input_data = {
             'id_data': {
                 'obs_bundles': obs_bundles_global, 'firms': firms,
