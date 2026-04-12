@@ -3,15 +3,14 @@
 SAR-error bootstrap estimation runner.
 
 Usage:
-    mpirun -n 4 python applications/combinatorial_auction/specs/c_block/sar_robustness/run.py \
-        applications/combinatorial_auction/specs/c_block/sar_robustness/configs/config_sar_rho04.yaml
+    mpirun -n 4 python applications/combinatorial_auction/scripts/c_block/sar_robustness/run.py \
+        applications/combinatorial_auction/scripts/c_block/sar_robustness/configs/config_sar_rho04.yaml
 """
 import gc, json, sys, yaml, argparse
 import numpy as np
 from pathlib import Path
 
 SAR_DIR   = Path(__file__).parent
-# sar_robustness -> c_block -> specs -> combinatorial_auction -> applications -> repo root
 REPO_ROOT = SAR_DIR.parent.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -30,23 +29,20 @@ def main(config_path):
     rho    = float(app["sar_rho"])
     config_name = Path(config_path).stem
 
-    # ── Ensure results/ directory exists ──────────────────────────
     if rank == 0:
         (SAR_DIR / "results").mkdir(parents=True, exist_ok=True)
 
-    # ── Build SAR covariance (rank 0 only, then broadcast) ────────
     if rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
 
         from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-        from applications.combinatorial_auction.specs.c_block.sar_robustness.sar_covariance import (
+        from applications.combinatorial_auction.scripts.c_block.sar_robustness.sar_covariance import (
             build_sar_covariance,
         )
 
         raw = load_bta_data()
         ctx = build_context(raw)
         adj = ctx["bta_adjacency"]
-        # symmetrize and binarize
         adj = ((adj + adj.T) > 0).astype(float)
         np.fill_diagonal(adj, 0)
 
@@ -66,12 +62,8 @@ def main(config_path):
         )
         meta.pop("raw", None)
 
-        # Verify dimensions match
         if sar_cov.shape[0] != meta["n_items"]:
-            raise ValueError(
-                f"SAR covariance shape {sar_cov.shape} != n_items={meta['n_items']}. "
-                "Adjacency matrix and item count mismatch."
-            )
+            raise ValueError(f"SAR cov shape {sar_cov.shape} != n_items={meta['n_items']}")
 
         config["dimensions"].update(
             n_obs=meta["n_obs"], n_items=meta["n_items"],
@@ -99,10 +91,6 @@ def main(config_path):
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
 
-    # Inject SAR covariance — bypasses the existing error_correlation path entirely.
-    # Always pass sar_cov (including at rho=0 where it is the identity).
-    # Criterion 4 requires verifying the Cholesky path is a no-op at rho=0,
-    # not that the iid path matches itself.
     model.features.build_local_modular_error_oracle(
         seed=app.get("error_seed", 2006),
         covariance_matrix=sar_cov,
@@ -113,7 +101,6 @@ def main(config_path):
     callbacks = config.get("callbacks", {})
     boot_cfg  = config.get("bootstrap", {})
 
-    # ── Bootstrap row-gen overrides ────────────────────────────────
     se_overrides = {}
     for key in ("rowgen_max_iters", "rowgen_tol", "rowgen_min_iters"):
         if key in boot_cfg:
@@ -159,8 +146,6 @@ def main(config_path):
         json.dump(out, open(out_path, "w"), indent=2)
         print(f"Saved -> {out_path}")
 
-    # ── Explicit cleanup to avoid memory leaks across sequential runs ──
-    # Dispose Gurobi subproblem models (no built-in cleanup in combest)
     solver = getattr(model.subproblems, "subproblem_solver", None)
     if solver is not None:
         for grb_model in getattr(solver, "local_problems", []):

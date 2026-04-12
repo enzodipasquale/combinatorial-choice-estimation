@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-Bootstrap welfare comparison: BTA vs MTA counterfactual.
-
-For each bootstrap draw b:
-  1. Extract theta_b -> delta_b, beta_b, gamma_b
-  2. Run 2SLS on delta_b -> alpha_0_b, alpha_1_b
-  3. Compute BTA net surplus = sum(u_hat_b) / (n_sim * alpha_1_b)
-  4. Run MTA counterfactual -> CF revenue_b, CF net surplus_b
-  5. Collect all quantities -> compute SEs
-
-Usage:
-  mpirun -n 5 python3 bootstrap_welfare.py bootstrap_result.json [--n-sim-cf 5]
-"""
+"""Bootstrap welfare comparison: BTA vs MTA counterfactual."""
 import json, sys, argparse, time
 import numpy as np
 from pathlib import Path
@@ -23,13 +11,12 @@ sys.path.insert(0, str(APP_DIR.parent.parent))
 from applications.combinatorial_auction.data.loaders import (
     load_bta_data, build_context, load_aggregation_matrix, continental_mta_nums,
 )
-from applications.combinatorial_auction.specs.c_block.analyze import tsls, _build_distant_stats
+from applications.combinatorial_auction.scripts.c_block.analyze import tsls, _build_distant_stats
 
 POP_THRESHOLD = 500_000
 
 
 def run_2sls(delta, price, pop, hhinc, geo, sample="full"):
-    """Run 2SLS on delta ~ a0 - a1*price. Returns (a0, a1)."""
     if sample == "rural":
         mask = pop < POP_THRESHOLD
     else:
@@ -53,7 +40,6 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
                                xi, input_data_template, meta, config_template,
                                n_sim_cf, error_seed, error_scaling=None,
                                error_correlation=None):
-    """Run one counterfactual and return (revenue, net_surplus)."""
     import combest as ce
     from combest.estimation.callbacks import adaptive_gurobi_timeout
 
@@ -64,7 +50,6 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     xi_m = A @ xi
     offset_m = mta_sizes * alpha_0 + xi_m
 
-    # Update input_data with current alpha_1 (only on rank 0; others receive via distribute)
     if input_data_template is not None:
         input_data = {
             "id_data": {k: v.copy() if isinstance(v, np.ndarray) else v
@@ -76,23 +61,19 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     else:
         input_data = None
 
-    # Update config with pinned params
     config = json.loads(json.dumps(config_template))
     bounds = config["row_generation"]["theta_bounds"]
     lbs = bounds.setdefault("lbs", {})
     ubs = bounds.setdefault("ubs", {})
     names = meta["covariate_names"]
 
-    # Pin beta
     for i in range(len(beta)):
         lbs[names[i]] = float(beta[i])
         ubs[names[i]] = float(beta[i])
-    # Pin gamma_id
     off = meta["n_id_mod"] + meta["n_item_mod"]
     for i in range(len(gamma_id)):
         lbs[names[off + i]] = float(gamma_id[i])
         ubs[names[off + i]] = float(gamma_id[i])
-    # Pin gamma_item
     off += meta["n_id_quad"]
     for i in range(len(gamma_item)):
         lbs[names[off + i]] = float(gamma_item[i])
@@ -113,32 +94,14 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
 
-    # Build errors
-    cm = model.features.comm_manager
-    elig = meta.get("elig")
-
-    # Cholesky of BTA correlation matrix (same as used in estimation)
-    L_corr = None
-    if error_correlation is not None:
-        from applications.combinatorial_auction.data.registries import QUADRATIC
-        from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-        raw_data = load_bta_data()
-        ctx_data = build_context(raw_data)
-        Q = QUADRATIC[error_correlation](ctx_data)
-        Sigma = (Q + Q.T) / 2
-        np.fill_diagonal(Sigma, 1.0)
-        L_corr = np.linalg.cholesky(Sigma)
-
-    local_errors = np.zeros((cm.num_local_agent, n_mtas))
-    for i, gid in enumerate(cm.agent_ids):
-        obs_id = cm.obs_ids[i]
-        rng = np.random.default_rng((error_seed, gid))
-        bta_err = rng.normal(0, 1, n_btas)
-        if L_corr is not None:
-            bta_err = L_corr @ bta_err
-        if error_scaling == "elig" and elig is not None:
-            bta_err *= elig[obs_id]
-        local_errors[i] = bta_err @ A.T + offset_m
+    from applications.combinatorial_auction.data.errors import (
+        build_cholesky_factor, build_counterfactual_errors,
+    )
+    L_corr = build_cholesky_factor(error_correlation)
+    local_errors = build_counterfactual_errors(
+        model.features.comm_manager, n_btas, A, offset_m, error_seed,
+        elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
+    )
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
     model.features._error_oracle_takes_data = False
@@ -152,7 +115,6 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     if result is None:
         return None, None
 
-    # Extract results
     prices = result.theta_hat[meta["n_id_mod"]:meta["n_id_mod"] + meta["n_item_mod"]]
     revenue = prices.sum()
     u_hat = result.u_hat
@@ -185,7 +147,6 @@ def main():
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-    # ── Load data ──────────────────────────────────────────────
     boot = json.load(open(CBLOCK_DIR / args.bootstrap_result))
     boot_thetas = [np.array(t) for t in boot["bootstrap_thetas"]]
     boot_u_hats = [np.array(u) for u in boot["bootstrap_u_hat"]]
@@ -231,9 +192,8 @@ def main():
     b_obs = ctx["c_obs_bundles"]
     bta_revenue = (b_obs @ price_bta).sum()
 
-    # ── Prepare counterfactual template (once) ─────────────────
     if rank == 0:
-        from applications.combinatorial_auction.specs.c_block.counterfactual.prepare import (
+        from applications.combinatorial_auction.scripts.c_block.counterfactual.prepare import (
             prepare_counterfactual,
         )
         # Use point estimate theta to build template structure; alpha values overridden per draw
@@ -271,13 +231,11 @@ def main():
         },
     }
 
-    # ── Point estimate ─────────────────────────────────────────
     if rank == 0:
         n_obs = meta["n_obs"]
         print(f"Point estimate: a0={a0_pt:.4f}, a1={a1_pt:.4f}")
         print(f"  BTA revenue = ${bta_revenue:.4f}B")
 
-    # ── Bootstrap loop ─────────────────────────────────────────
     results = []
     for b in range(n_boot):
         t0 = time.perf_counter()
@@ -322,7 +280,6 @@ def main():
                   f"BTA_S={bta_surplus_b:.2f}, CF_R={cf_rev_b:.2f}, "
                   f"CF_S={cf_surplus_b:.2f}  ({elapsed:.1f}s)")
 
-    # ── Summary ────────────────────────────────────────────────
     if rank == 0 and results:
         bta_surp = np.array([r["bta_surplus"] for r in results])
         bta_welf = np.array([r["bta_revenue"] + r["bta_surplus"] for r in results])

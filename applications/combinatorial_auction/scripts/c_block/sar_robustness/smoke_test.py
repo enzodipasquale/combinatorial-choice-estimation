@@ -7,7 +7,7 @@ Verifies that:
   - At rho=0 the errors match iid errors (Cholesky of identity is a no-op)
 
 Usage:
-    python applications/combinatorial_auction/specs/c_block/sar_robustness/smoke_test.py
+    python applications/combinatorial_auction/scripts/c_block/sar_robustness/smoke_test.py
 """
 import sys, numpy as np
 from pathlib import Path
@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore")
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
 from applications.combinatorial_auction.data.prepare import prepare
-from applications.combinatorial_auction.specs.c_block.sar_robustness.sar_covariance import build_sar_covariance
+from applications.combinatorial_auction.scripts.c_block.sar_robustness.sar_covariance import build_sar_covariance
 
 import yaml, combest as ce
 

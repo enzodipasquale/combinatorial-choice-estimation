@@ -3,8 +3,8 @@ import json, sys
 import numpy as np
 from pathlib import Path
 
-SPECS_DIR = Path(__file__).parent.parent
-APP_DIR = SPECS_DIR.parent
+SCRIPTS_DIR = Path(__file__).parent.parent
+APP_DIR = SCRIPTS_DIR.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
@@ -14,7 +14,6 @@ POP_THRESHOLD = 500_000
 
 
 def _robust_cov(X, resid):
-    """HC1 heteroscedasticity-robust covariance: (n/(n-k)) * inv(X'X) X'diag(e^2)X inv(X'X)."""
     n, k = X.shape
     try:
         XtXinv = np.linalg.inv(X.T @ X)
@@ -35,11 +34,9 @@ def ols(X, y):
 
 
 def tsls(X, y, Z):
-    """Two-stage least squares with HC1 robust SEs."""
     Pz = Z @ np.linalg.lstsq(Z, X, rcond=None)[0]
     beta = np.linalg.lstsq(Pz, y, rcond=None)[0]
     resid = y - X @ beta
-    # robust cov using projected X (Pz) and structural residuals
     cov = _robust_cov(Pz, resid)
     se = np.sqrt(np.abs(np.diag(cov)))
     n, k = X.shape
@@ -60,7 +57,6 @@ def _print_regression(title, n, col_names, beta, se, r2, resid):
 
 
 def _build_distant_stats(var, geo, dist_thresholds):
-    """For each BTA j, compute mean and std of var at BTAs farther than d."""
     means, stds = {}, {}
     for d in dist_thresholds:
         M = np.zeros(len(var))
@@ -76,7 +72,6 @@ def _build_distant_stats(var, geo, dist_thresholds):
 
 
 def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
-    """Run a single IV regression. Returns (spec_label, beta, se, r2, f_stat, r2_fs)."""
     X = np.column_stack([np.ones(n), -p_s])
 
     if instruments == "pop":
@@ -93,8 +88,6 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
         z_label, n_inst = "pop+std+hhinc", 3
 
     b_iv, s_iv, r2_iv, res_iv = tsls(X, d_s, Z)
-    # first stage: regress -p on [constant, instruments]
-    # Z already includes constant for "pop"; for others, add it
     if instruments == "pop":
         X_fs = Z  # [ones, zm] — already has constant, 1 excluded instrument
         n_excl = 1
@@ -107,30 +100,18 @@ def _run_iv(label, n, d_s, p_s, zm, zs, zh, instruments, d):
     return spec_label, b_iv, s_iv, r2_iv, f_stat, r2_fs
 
 
-# ── IV spec registry ──────────────────────────────────────────────
-# Preferred: avg_pop + avg_hhinc of BTAs > 500km away
 PREFERRED_IV = ("pop_hhinc", 500)
-# Other specs available for robustness (uncomment as needed):
-# OTHER_IV_SPECS = [
-#     ("pop", 500), ("pop_std", 500), ("all", 500),
-#     ("pop", 1000), ("pop_hhinc", 1000), ("pop_std", 1000), ("all", 1000),
-#     ("pop", 1500), ("pop_hhinc", 1500), ("pop_std", 1500), ("all", 1500),
-#     ("pop", 2000), ("pop_hhinc", 2000), ("pop_std", 2000), ("all", 2000),
-# ]
 
 
 def _run_iv_sample(label, mask, delta, price, iv_pop_mean, iv_pop_std, iv_hhinc_mean):
-    """Run OLS and IV (pop+hhinc, d>500) for a given sample. Returns IV coefficients."""
     n = mask.sum()
     d_s, p_s = delta[mask], price[mask]
 
-    # ── OLS ───────────────────────────────────────────────────────
     X = np.column_stack([np.ones(n), -p_s])
     b, s, r2, res = ols(X, d_s)
     _print_regression(f"OLS {label}: delta ~ const + (-price)",
                       n, ["const", "alpha_1"], b, s, r2, res)
 
-    # ── IV (pop+hhinc, d>500) ─────────────────────────────────────
     zm, zh = iv_pop_mean[500][mask], iv_hhinc_mean[500][mask]
     spec, b_iv, s_iv, r2_iv, f_stat, r2_fs = _run_iv(
         label, n, d_s, p_s, zm, iv_pop_std[500][mask], zh, "pop_hhinc", 500)
@@ -144,9 +125,6 @@ def _run_iv_sample(label, mask, delta, price, iv_pop_mean, iv_pop_std, iv_hhinc_
 
 
 def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
-    """
-    Net surplus ($B) = u_hat / alpha_1
-    """
     if alpha_0 is None or alpha_1 is None:
         raise ValueError("alpha_0 and alpha_1 must be provided (from IV regression)")
     result = json.load(open(CBLOCK_DIR / result_file))
@@ -158,7 +136,6 @@ def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     net_surplus = u_hat / alpha_1
     net_m = net_surplus.reshape(n_obs, n_sim).mean(1)
 
-    # ── observable part decomposition using observed bundles ──
     raw = load_bta_data()
     ctx = build_context(raw)
     price = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9
@@ -178,14 +155,6 @@ def run_valuations(result_file="result_FE.json", alpha_0=None, alpha_1=None):
     xi_part = (b_obs @ xi).sum() / alpha_1
     a0_part = alpha_0 / alpha_1 * b_obs.sum()
     obs_net = -obs_revenue + xi_part + a0_part
-    # gamma_part computed as residual so that obs_net + gamma_part + eps_net = total_net
-    # but we need gamma from features; compute directly then eps = total - obs - gamma
-    n_id_quad = result.get("n_id_quad", 0)
-    gamma_part_direct = obs_net  # placeholder: obs_net already includes -rev + xi + a0
-    # redefine: obs_net_full = -rev + xi + a0 + gamma; eps = total - obs_net_full
-    # for now compute gamma as residual from total
-    # obs_structural = -rev + xi/a1 + a0/a1 * |b|
-    # total_net = obs_structural + gamma_part + eps_part
 
     print(f"\n{'='*60}")
     print(f"VALUATIONS  (a0={alpha_0:.4f}, a1={alpha_1:.4f}, "
@@ -237,7 +206,6 @@ def run(result_file="result_FE.json"):
     iv_pop_mean, iv_pop_std = _build_distant_stats(pop, geo, dist_thresholds)
     iv_hhinc_mean, _ = _build_distant_stats(hhinc, geo, dist_thresholds)
 
-    # ── MAIN: Full sample ─────────────────────────────────────────
     full = np.ones(n_btas, dtype=bool)
     print(f"\n{'#'*60}")
     print(f"# MAIN SPECIFICATION: Full sample (N = {n_btas})")
@@ -245,7 +213,6 @@ def run(result_file="result_FE.json"):
     b_iv_main = _run_iv_sample("full", full, delta, price,
                                 iv_pop_mean, iv_pop_std, iv_hhinc_mean)
 
-    # ── ROBUSTNESS: Rural (pop < 500k) ────────────────────────────
     print(f"\n{'#'*60}")
     print(f"# ROBUSTNESS: Rural (pop90 < {POP_THRESHOLD:,}, N = {rural.sum()})")
     print(f"{'#'*60}")

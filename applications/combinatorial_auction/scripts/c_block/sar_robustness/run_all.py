@@ -19,7 +19,7 @@ try:
 except ImportError:
     comm, rank = None, 0
 
-from applications.combinatorial_auction.specs.c_block.sar_robustness.run import main
+from applications.combinatorial_auction.scripts.c_block.sar_robustness.run import main
 
 CONFIGS = [
     (SAR_DIR / "configs" / f"config_sar_rho{suffix}.yaml", rho_str)

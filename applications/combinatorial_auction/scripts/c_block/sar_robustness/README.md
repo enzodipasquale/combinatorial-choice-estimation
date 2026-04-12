@@ -18,8 +18,8 @@ rescaled so that $\text{diag}(\Sigma) = 1$. $W$ is the row-normalized binary adj
 
 ```bash
 # from repo root
-mpirun -n 4 python applications/combinatorial_auction/specs/c_block/sar_robustness/run.py \
-    applications/combinatorial_auction/specs/c_block/sar_robustness/configs/config_sar_rho04.yaml
+mpirun -n 4 python applications/combinatorial_auction/scripts/c_block/sar_robustness/run.py \
+    applications/combinatorial_auction/scripts/c_block/sar_robustness/configs/config_sar_rho04.yaml
 ```
 
 Results are saved to `results/bootstrap_result_config_sar_rho04.json`.
@@ -27,7 +27,7 @@ Results are saved to `results/bootstrap_result_config_sar_rho04.json`.
 ## Launching all four ρ values on HPC
 
 ```bash
-bash applications/combinatorial_auction/specs/c_block/sar_robustness/launch_all.sh
+bash applications/combinatorial_auction/scripts/c_block/sar_robustness/launch_all.sh
 ```
 
 Adapt the sbatch flags in `launch_all.sh` to match your cluster's partition/account as needed.

@@ -5,8 +5,6 @@ Firms: nm~U[1,3] models, ng=1 cell group, P~U[1,nm] platforms.
 """
 
 import numpy as np
-import gurobipy as gp
-from milp import build_milp_shell
 
 
 # ---- Geography ----
@@ -141,7 +139,7 @@ def compute_facility_costs(firm, geo, theta):
     return fc1[None, :], fc2                                   # (1, L1), (P, L2)
 
 
-# ---- MILP ----
+# ---- Errors ----
 
 def draw_firm_errors(firm, geo, sigma, rng):
     """Errors for a firm with ng=1, P platforms, nm models."""
@@ -154,62 +152,20 @@ def draw_firm_errors(firm, geo, sigma, rng):
     )
 
 
-def build_firm_milp(firm, geo, pi, fc1, fc2, errors, env):
-    """fc1: (1, L1), fc2: (P, L2). pi: (nm, N, L1, L2)."""
-    N, L1, L2 = geo['n_markets'], geo['L1'], geo['L2']
-    nm, P = firm['n_models'], firm['n_platforms']
-
-    mdl = gp.Model(env=env)
-    y1, y2, z, x = build_milp_shell(
-        mdl, 1, P, nm, N, L1, L2,
-        firm['feasible'], firm['cell_groups'], firm['platforms'])
-
-    mdl.setObjective(
-        (pi + errors['nu']).ravel() @ x.reshape(-1)
-        - (fc1 + errors['phi1']).ravel() @ y1.reshape(-1)
-        - (fc2 + errors['phi2']).ravel() @ y2.reshape(-1),
-        gp.GRB.MAXIMIZE)
-
-    return mdl, y1, y2, z, x
-
-
-def extract_solution(mdl, y1, y2, z, x, errors):
-    return dict(
-        y1=np.asarray(y1.X) > 0.5,
-        y2=np.asarray(y2.X) > 0.5,
-        z=np.asarray(z.X) > 0.5,
-        x=np.asarray(x.X),
-        obj=mdl.ObjVal,
-        phi1=errors['phi1'],
-        phi2=errors['phi2'],
-        nu=errors['nu'],
-    )
-
-
 # ---- Main entry ----
 
 def generate_synthetic_data(seed, dgp, sourcing_coefs, theta_true, sigma):
-    """Public API — sourcing_coefs accepted for signature compatibility but unused."""
+    """Generate geography, firms, and DGP errors. No Gurobi — solving is done via combest."""
     rng = np.random.default_rng(seed)
     geo = build_geography(dgp, rng)
     firms = build_firms(dgp, geo, rng)
 
-    env = gp.Env(empty=True)
-    env.setParam('OutputFlag', 0)
-    env.start()
-
-    bundles = []
+    # Draw DGP errors per firm
+    dgp_errors = []
     for firm in firms:
-        pi = compute_pi(firm, geo, theta_true)
-        fc1, fc2 = compute_facility_costs(firm, geo, theta_true)
-        errors = draw_firm_errors(firm, geo, sigma, rng)
-        mdl, y1, y2, z, x = build_firm_milp(
-            firm, geo, pi, fc1, fc2, errors, env)
-        mdl.optimize()
-        bundles.append(extract_solution(mdl, y1, y2, z, x, errors))
-    env.dispose()
+        dgp_errors.append(draw_firm_errors(firm, geo, sigma, rng))
 
-    return geo, firms, bundles, theta_true
+    return geo, firms, dgp_errors, theta_true
 
 
 if __name__ == '__main__':

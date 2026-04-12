@@ -13,7 +13,7 @@ try:
 except ImportError:
     comm, rank = None, 0
 
-from applications.combinatorial_auction.specs.c_block.counterfactual.prepare import (
+from applications.combinatorial_auction.scripts.c_block.counterfactual.prepare import (
     prepare_counterfactual,
 )
 
@@ -37,18 +37,15 @@ def main(config_path):
             elig_scale=app.get("elig_scale", 1.0),
         )
 
-        # inject fixed-parameter bounds from estimation (pin beta, gamma_id, gamma_item)
         bounds = config["row_generation"].setdefault("theta_bounds", {})
         lbs = bounds.setdefault("lbs", {})
         ubs = bounds.setdefault("ubs", {})
 
-        # pin beta (id modular)
         for i in range(len(meta["beta"])):
             name = meta["covariate_names"][i]
             lbs[name] = float(meta["beta"][i])
             ubs[name] = float(meta["beta"][i])
 
-        # pin gamma_id (id quadratic) and gamma_item (item quadratic)
         off = meta["n_id_mod"] + meta["n_item_mod"]
         for i in range(len(meta["gamma_id"])):
             name = meta["covariate_names"][off + i]
@@ -119,35 +116,15 @@ def main(config_path):
 
 def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
                                   include_xi=True, error_correlation=None):
-    A = meta["A"]
-    n_bta = A.shape[1]
-    offset_m = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
-    cm = model.features.comm_manager
-    elig = meta.get("elig")
-
-    # Cholesky of correlation matrix (if correlated errors)
-    L_corr = None
-    if error_correlation is not None:
-        from applications.combinatorial_auction.data.registries import QUADRATIC
-        from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-        raw = load_bta_data()
-        ctx = build_context(raw)
-        Q = QUADRATIC[error_correlation](ctx)
-        Sigma = (Q + Q.T) / 2
-        np.fill_diagonal(Sigma, 1.0)
-        L_corr = np.linalg.cholesky(Sigma)
-
-    local_errors = np.zeros((cm.num_local_agent, model.n_items))
-    for i, gid in enumerate(cm.agent_ids):
-        obs_id = cm.obs_ids[i]
-        rng = np.random.default_rng((seed, gid))
-        bta_err = rng.normal(0, 1, n_bta)
-        if L_corr is not None:
-            bta_err = L_corr @ bta_err
-        if error_scaling == "elig" and elig is not None:
-            bta_err *= elig[obs_id]
-        local_errors[i] = bta_err @ A.T + offset_m
-
+    from applications.combinatorial_auction.data.errors import (
+        build_cholesky_factor, build_counterfactual_errors,
+    )
+    offset = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
+    L_corr = build_cholesky_factor(error_correlation)
+    local_errors = build_counterfactual_errors(
+        model.features.comm_manager, meta["A"].shape[1], meta["A"], offset,
+        seed, elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
+    )
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
     model.features._error_oracle_takes_data = False

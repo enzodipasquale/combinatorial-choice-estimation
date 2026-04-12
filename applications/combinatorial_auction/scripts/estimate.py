@@ -74,7 +74,6 @@ def main(config_path):
 
     elif mode == "bootstrap":
         boot_cfg = config.get("bootstrap", {})
-        # merge bootstrap rowgen settings into standard_errors config
         se_overrides = {}
         for key in ("rowgen_max_iters", "rowgen_tol", "rowgen_min_iters"):
             if key in boot_cfg:
@@ -120,15 +119,9 @@ def main(config_path):
 def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,
                         error_correlation=None):
     if dataset == "c_block":
-        cov = None
-        if error_correlation is not None:
-            from applications.combinatorial_auction.data.registries import QUADRATIC
-            from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-            raw = load_bta_data()
-            ctx = build_context(raw)
-            Q = QUADRATIC[error_correlation](ctx)
-            cov = (Q + Q.T) / 2
-            np.fill_diagonal(cov, 1.0)
+        from applications.combinatorial_auction.data.errors import build_cholesky_factor
+        L = build_cholesky_factor(error_correlation)
+        cov = L @ L.T if L is not None else None
         model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
         if error_scaling == "elig":
             elig = model.data.local_data.id_data['elig']
@@ -166,34 +159,28 @@ def _save(result, config, meta, path):
         print(f"  {names[idx]}: {theta[int(idx)]:.4f}")
 
     out = {
-        # --- Estimates ---
         "theta_hat": theta.tolist(),
         "covariate_names": {str(k): v for k, v in names.items()},
         "converged": bool(result.converged),
         "objective": float(result.final_objective),
         "iterations": int(result.num_iterations),
         "runtime": float(result.runtime) if hasattr(result, "runtime") else None,
-        # --- Dimensions ---
         "n_items": config["dimensions"]["n_items"],
         "n_obs": config["dimensions"]["n_obs"],
         "n_covariates": config["dimensions"]["n_covariates"],
         "n_simulations": config["dimensions"].get("n_simulations", 1),
-        # --- Specification ---
         "dataset": app["dataset"],
         "item_modular": app.get("item_modular", "fe"),
         "specification": {k: app.get(f"{k}_regressors", []) for k in ["modular", "quadratic", "quadratic_id"]},
         "n_id_mod": app["n_id_mod"],
         "n_id_quad": app["n_id_quad"],
-        # --- Error oracle ---
         "error_seed": app.get("error_seed"),
         "error_scaling": app.get("error_scaling"),
         "error_correlation": app.get("error_correlation"),
-        # --- Estimation config ---
         "subproblem": config.get("subproblem", {}),
         "row_generation": config.get("row_generation", {}),
         "callbacks": config.get("callbacks", {}),
         "mode": app.get("mode", "estimation"),
-        # --- Timestamp ---
         "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     if result.u_hat is not None:
