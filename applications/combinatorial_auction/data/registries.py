@@ -62,6 +62,21 @@ def _(ctx): return ctx["elig"][:, None] * ctx["imwl"][None, :]
 @modular("elig_price")
 def _(ctx): return ctx["elig"][:, None] * ctx["price"][None, :]
 
+@modular("assets_pop")
+def _(ctx): return ctx["assets"][:, None] * ctx["pop"][None, :]
+
+@modular("designated_pop")
+def _(ctx): return ctx["designated"][:, None] * ctx["pop"][None, :]
+
+@modular("designated_elig_pop")
+def _(ctx): return (ctx["designated"] * ctx["elig"])[:, None] * ctx["pop"][None, :]
+
+@modular("log_dist_hq")
+def _(ctx):
+    geo = ctx["geo_distance"]
+    hq = ctx["hq_bta_idx"]
+    return np.log1p(geo[hq])
+
 # quadratic regressors: (ctx) -> (n_items, n_items)
 
 @quadratic("adjacency")
@@ -72,6 +87,9 @@ def _(ctx): return _pop_centroid(ctx, delta=2)
 
 @quadratic("pop_centroid_delta4")
 def _(ctx): return _pop_centroid(ctx, delta=4)
+
+@quadratic("pop_centroid_00")
+def _(ctx): return _pop_centroid(ctx, delta=0)
 
 @quadratic("travel_survey")
 def _(ctx):

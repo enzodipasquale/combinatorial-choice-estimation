@@ -26,6 +26,11 @@ def load_bta_data():
     form175 = form175.rename(columns={0: "bidder_num_fox", 1: "assets", 2: "revenues", 3: "eligibility_form175"})
     bidder_data = bidder_data.merge(form175, on="bidder_num_fox")
 
+    extra = pd.read_csv(DATASETS_DIR / "bidder_data.csv")[["bidder_num_fox", "bta", "Applicant_Status"]]
+    extra = extra.rename(columns={"bta": "hq_bta"})
+    extra["designated"] = extra["Applicant_Status"].notna().astype(int)
+    bidder_data = bidder_data.merge(extra[["bidder_num_fox", "hq_bta", "designated"]], on="bidder_num_fox")
+
     # DCR/DCC swap
     m190, m234 = bidder_data["bidder_num_fox"] == 190, bidder_data["bidder_num_fox"] == 234
     bidder_data.loc[m190, "bidder_num_fox"] = 234
@@ -61,6 +66,12 @@ def build_context(raw):
 
     weight = np.round(pop // WEIGHT_ROUNDING_TICK).astype(int)
     capacity = np.round(elig // WEIGHT_ROUNDING_TICK).astype(int)
+    assets = bidder["assets"].to_numpy().astype(float)
+    designated = bidder["designated"].to_numpy().astype(float)
+
+    bta_nums = bta["bta"].astype(int).values
+    bta_idx = {b: i for i, b in enumerate(bta_nums)}
+    hq_bta_idx = np.array([bta_idx.get(int(h), 0) for h in bidder["hq_bta"]])
 
     return dict(
         weight=weight, capacity=capacity,
@@ -73,6 +84,9 @@ def build_context(raw):
         density=bta["density"].to_numpy().astype(float) / bta["density"].max(),
         imwl=bta["imwl"].to_numpy().astype(float) / bta["imwl"].max(),
         price=bta["bid"].to_numpy().astype(float) / 1e9,
+        assets=assets / assets.max(),
+        designated=designated,
+        hq_bta_idx=hq_bta_idx,
     )
 
 

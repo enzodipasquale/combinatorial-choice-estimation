@@ -84,9 +84,6 @@ class MultiStageSolver(SubproblemSolver):
             self.local_problems.append(mdl)
             self._agent_vars.append((y1, y2, z, x))
 
-    def set_q_linearization(self, theta):
-        pass  # x_Q already loaded at init; all params linear, no linearization needed
-
     def solve(self, theta):
         theta_d = unpack_theta(theta)
 

@@ -6,6 +6,10 @@ dgp:
   models_range: [4, 8]
   max_platforms: 5
   min_platforms: 2
+  feasibility:
+    global_range: [10, 12]
+    regional_range: [4, 7]
+    global_prob: 0.5
 
 theta_true:
   delta_1: 0.7
@@ -27,7 +31,6 @@ sigma:
 
 estimation:
   n_simulations: 1
-  max_dc_iters: 1
   max_iters: 200
   tolerance: 1.0e-6
   gurobi_timeout_schedule:

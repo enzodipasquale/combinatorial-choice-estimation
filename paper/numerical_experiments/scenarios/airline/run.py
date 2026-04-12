@@ -117,47 +117,58 @@ def run(cfg=None):
     model.subproblems.load_solver(AirlineGreedySolver)
     model.subproblems.initialize_solver()
 
-    # --- Run estimation ---
-    row_gen = model.point_estimation.n_slack
-    result = row_gen.solve(initialize_solver=False, initialize_master=True,
-                           verbose=True)
+    # --- Point estimation ---
+    se_result = model.standard_errors.compute_bootstrap(
+        num_bootstrap=est_cfg.get('num_bootstrap', 100),
+        seed=seeds.get('bootstrap', 999),
+        method='bayesian',
+        verbose=True,
+    )
 
     t_total = time.perf_counter() - t0
 
     # --- Report ---
-    if is_root and result is not None:
-        theta_hat = result.theta_hat
+    if is_root and se_result is not None:
+        theta_hat = se_result.mean
+        theta_se = se_result.se
+        t_stats = se_result.t_stats
         error_pct = np.abs(theta_hat - theta_star) / np.abs(theta_star) * 100
 
         logger.info("")
-        logger.info("=" * 60)
+        logger.info("=" * 80)
         logger.info(f"  Results (C={C}, M={M}, N={N}, fe_mode={fe_mode})")
-        logger.info("=" * 60)
+        logger.info("=" * 80)
         shared_names = ["theta_rev"]
         if fe_mode == "origin":
             shared_names += [f"theta_fe_{j}" for j in range(C)]
         fc_names = [f"theta_fc_{i}" for i in range(N)]
         param_names = shared_names + fc_names + ["theta_gs"]
+        logger.info(f"  {'Param':<20} {'True':>8} {'Est':>8} {'SE':>8} "
+                    f"{'t':>8} {'Err%':>7}")
+        logger.info(f"  {'-'*59}")
         for j, name in enumerate(param_names):
-            logger.info(f"  {name:<20} true={theta_star[j]:>8.4f}  "
-                        f"hat={theta_hat[j]:>8.4f}  err={error_pct[j]:>6.1f}%")
+            logger.info(f"  {name:<20} {theta_star[j]:>8.4f} {theta_hat[j]:>8.4f} "
+                        f"{theta_se[j]:>8.4f} {t_stats[j]:>8.1f} "
+                        f"{error_pct[j]:>6.1f}%")
         logger.info(f"")
-        logger.info(f"  Converged: {result.converged}")
-        logger.info(f"  Row-gen iterations: {result.num_iterations}")
+        logger.info(f"  Bootstrap samples: {se_result.n_samples}")
         logger.info(f"  Runtime: {t_total:.1f}s")
 
         # --- Write result.json ---
         out = {
             'theta_true': theta_star.tolist(),
             'theta_hat': theta_hat.tolist(),
+            'theta_se': theta_se.tolist(),
+            't_stats': t_stats.tolist(),
             'error_pct': error_pct.tolist(),
+            'ci_lower': se_result.ci_lower.tolist(),
+            'ci_upper': se_result.ci_upper.tolist(),
             'n_cities': C,
             'n_edges': M,
             'n_airlines': N,
             'fe_mode': fe_mode,
+            'n_bootstrap': se_result.n_samples,
             'runtime_seconds': round(t_total, 2),
-            'row_generation_iters': result.num_iterations,
-            'converged': result.converged,
             'dgp_healthy_check': dgp_diag,
         }
         out_path = BASE / 'results' / 'result.json'
@@ -166,7 +177,7 @@ def run(cfg=None):
             json.dump(out, f, indent=2)
         logger.info(f"  Result written to {out_path}")
 
-    return result
+    return se_result
 
 
 if __name__ == '__main__':

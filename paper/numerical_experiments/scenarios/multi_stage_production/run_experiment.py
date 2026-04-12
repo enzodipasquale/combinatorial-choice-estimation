@@ -1,5 +1,5 @@
 #!/bin/env python
-"""DC estimation of 12 params (delta, rho_xi, rho_HQ, FE_3reg, rho_d)."""
+"""Row generation estimation for multi-stage production (linear parametrization)."""
 
 import sys
 import argparse
@@ -15,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_data import generate_synthetic_data, draw_firm_errors
 from solver import MultiStageSolver, flatten_bundle, pack_theta, THETA_NAMES
 from oracles import build_oracles, N_PARAMS
-from dc import DCSolver
 from combest.estimation.callbacks import adaptive_gurobi_timeout
 
 BASE = Path(__file__).resolve().parent
@@ -68,8 +67,8 @@ def load_dgp_errors(model, dgp_errors, ng_max, P_max, nm_max, L1, L2, N):
     return phi1, phi2, nu
 
 
-def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
-        n_simulations=1, verbose_dc=True):
+def run(dgp_cfg, seed=42, theta_init=None,
+        n_simulations=1, verbose=True):
 
     model = ce.Model()
 
@@ -91,9 +90,9 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
 
         input_data = {
             'id_data': {
-                'obs_bundles': np.zeros((nf, n_items), dtype=bool),  # placeholder
+                'obs_bundles': np.zeros((nf, n_items), dtype=bool),
                 'firms': firms, 'dgp_errors': dgp_errors,
-                'x_Q': np.zeros((nf, nm_max, N, L1, L2)),           # placeholder
+                'x_Q': np.zeros((nf, nm_max, N, L1, L2)),
             },
             'item_data': {
                 'geo': geo,
@@ -105,7 +104,7 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         nf, n_items = 0, 0
 
     # --- Phase 1: Solve DGP at theta_true using combest (S=1) ---
-    dgp_cfg_combest = {
+    dgp_combest_cfg = {
         'dimensions': {
             'n_obs': nf, 'n_items': n_items,
             'n_covariates': N_PARAMS, 'n_simulations': 1,
@@ -120,10 +119,9 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
             },
         },
     }
-    model.load_config(dgp_cfg_combest)
+    model.load_config(dgp_combest_cfg)
     model.data.load_and_distribute_input_data(input_data)
 
-    # Read distributed data
     ld = model.data.local_data
     geo = ld.item_data['geo']
     firms = ld.id_data['firms']
@@ -135,14 +133,12 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
     L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
     n_items = ng_max * L1 + P_max * L2 + nm_max * N
 
-    # Load DGP errors and solve at theta_true to get observed bundles
     phi1_dgp, phi2_dgp, nu_dgp = load_dgp_errors(
         model, dgp_errors, ng_max, P_max, nm_max, L1, L2, N)
     ld.errors['phi1'] = phi1_dgp
     ld.errors['phi2'] = phi2_dgp
     ld.errors['nu'] = nu_dgp
 
-    # Need oracles for the solver (even though we only solve once)
     cov_oracle, err_oracle = build_oracles(
         model, geo, firms, ng_max, P_max, nm_max)
     model.features.set_covariates_oracle(cov_oracle)
@@ -153,21 +149,16 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
 
     theta_true_vec = pack_theta(theta_true)
 
-    # Solve at theta_true to generate observed bundles
     if model.is_root():
         logger.info("Generating observed bundles at theta_true via combest solver...")
     obs_bundles_local = model.subproblems.subproblem_solver.solve(theta_true_vec)
 
-    # Gather observed bundles and x_Q on root, redistribute
     comm = model.comm_manager
     obs_bundles_global = comm.Gatherv_by_row(obs_bundles_local)
-    x_V = ld.id_data['policies']['x_V']
-    x_Q_local = x_V.copy()  # at theta_true, x_V IS x_Q
+    x_Q_local = ld.id_data['policies']['x_V'].copy()
     x_Q_global = comm.Gatherv_by_row(x_Q_local)
 
-    # Filter opt-outs and reload
     if model.is_root():
-        # Check for opt-outs (firms with no active facilities)
         active_mask = obs_bundles_global.any(axis=1)
         n_active = active_mask.sum()
         if n_active < len(firms):
@@ -178,13 +169,10 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
             x_Q_global = x_Q_global[active_mask]
 
         nf = len(firms)
-        n_items = ng_max * L1 + P_max * L2 + nm_max * N
-
         input_data = {
             'id_data': {
                 'obs_bundles': obs_bundles_global, 'firms': firms,
-                'dgp_errors': dgp_errors,
-                'x_Q': x_Q_global,
+                'dgp_errors': dgp_errors, 'x_Q': x_Q_global,
             },
             'item_data': {
                 'geo': geo,
@@ -195,7 +183,7 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         input_data = None
         nf = 0
 
-    # --- Phase 2: Estimation with n_simulations ---
+    # --- Phase 2: Row generation estimation ---
     est_cfg = {
         'dimensions': {
             'n_obs': nf, 'n_items': n_items,
@@ -203,7 +191,8 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         },
         'subproblem': {},
         'row_generation': {
-            'max_iters': 200, 'tolerance': 1e-6,
+            'max_iters': CFG['estimation'].get('max_iters', 200),
+            'tolerance': CFG['estimation'].get('tolerance', 1e-6),
             'theta_bounds': {
                 'lb': 0, 'ub': 10,
                 'lbs': {6: -5, 7: -5, 8: -5, 9: -5},
@@ -212,7 +201,6 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         },
     }
 
-    # Re-initialize model for estimation
     model2 = ce.Model()
     model2.load_config(est_cfg)
     model2.data.load_and_distribute_input_data(input_data)
@@ -225,7 +213,6 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
     nm_max = ld2.item_data['nm_max']
     L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
 
-    # Draw FRESH simulation errors
     phi1, phi2, nu = draw_errors(
         model2, firms, ng_max, P_max, nm_max, L1, L2, N,
         CFG['sigma'], err_seed=seed + 1000)
@@ -241,10 +228,8 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
     model2.subproblems.load_solver(MultiStageSolver)
     model2.subproblems.initialize_solver()
 
-    solver = model2.subproblems.subproblem_solver
     row_gen = model2.point_estimation.n_slack
 
-    # DC solve
     if theta_init is None:
         theta_init = theta_true_vec
 
@@ -252,7 +237,7 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
         init_label = "theta_true" if np.allclose(theta_init, theta_true_vec) else "custom"
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"  DC estimation ({N_PARAMS} params, S={n_simulations}, init={init_label})")
+        logger.info(f"  Row generation ({N_PARAMS} params, S={n_simulations}, init={init_label})")
         logger.info("=" * 60)
 
     pt_schedule = CFG['estimation'].get('gurobi_timeout_schedule', [
@@ -261,10 +246,11 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
     ])
     pt_callback, _ = adaptive_gurobi_timeout(pt_schedule)
 
-    dc = DCSolver(row_gen, solver)
-    result = dc.solve(theta_init, max_dc_iters=max_dc_iters,
-                      tol=1e-3, verbose=verbose_dc,
-                      iteration_callback=pt_callback)
+    result = row_gen.solve(
+        initialize_solver=False,
+        initialize_master=True,
+        iteration_callback=pt_callback,
+        verbose=verbose)
 
     if model2.is_root() and result is not None:
         logger.info("")
@@ -279,8 +265,8 @@ def run(dgp_cfg, seed=42, theta_init=None, max_dc_iters=30,
             err_pct = 100 * (est_val - true_val) / abs(true_val) if true_val != 0 else float('nan')
             logger.info(f"  {name:<15} {true_val:>10.4f} {est_val:>10.4f} {err_pct:>9.1f}%")
         logger.info(f"")
-        logger.info(f"  DC converged: {result.converged}  "
-                    f"DC iters: {result.num_iterations}  "
+        logger.info(f"  Converged: {result.converged}  "
+                    f"Iters: {result.num_iterations}  "
                     f"Time: {result.total_time:.1f}s")
 
     return result
@@ -292,30 +278,13 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int,
                         default=CFG.get('monte_carlo', {}).get('seed', 42))
     parser.add_argument('--from-zero', action='store_true')
-    parser.add_argument('--max-dc-iters', type=int,
-                        default=CFG['estimation'].get('max_dc_iters', 30))
     parser.add_argument('--n-simulations', type=int,
                         default=CFG['estimation']['n_simulations'])
     args = parser.parse_args()
 
     dgp = dict(CFG['dgp'])
-    dgp['n_firms'] = args.n_firms                             # CLI override
+    dgp['n_firms'] = args.n_firms
 
     theta0 = np.zeros(len(THETA_NAMES)) if args.from_zero else None
     run(dgp, seed=args.seed, theta_init=theta0,
-        max_dc_iters=args.max_dc_iters,
         n_simulations=args.n_simulations)
-
-    # Regenerate DGP plots (rank 0 only)
-    try:
-        from mpi4py import MPI
-        is_root = MPI.COMM_WORLD.Get_rank() == 0
-    except ImportError:
-        is_root = True
-    if is_root:
-        try:
-            import subprocess
-            subprocess.run([sys.executable, str(BASE / 'plot_firms.py')],
-                           cwd=str(BASE), check=False)
-        except Exception:
-            pass  # plots are optional

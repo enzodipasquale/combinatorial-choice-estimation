@@ -1,6 +1,11 @@
-"""Run multiple replications with FIXED true theta, varying only errors."""
+"""Run multiple replications with FIXED true theta, varying only errors.
+
+Produces a publication-quality table: True, Mean, Bias, SE, RMSE, MAE%.
+Saves results to results/replications.json.
+"""
 
 import sys
+import json
 from pathlib import Path
 import numpy as np
 import yaml
@@ -51,42 +56,38 @@ def run_replications(n_reps=30, base_cfg=None):
     n_p = n_params(C, N, fe_mode)
     n_shared = n_shared_covariates(C, fe_mode)
 
-    # Unpack theta_star: [theta_rev..., theta_fc_0, ..., theta_fc_{N-1}, theta_gs]
     theta_rev = theta_star[:n_shared]
     theta_fc = theta_star[n_shared:n_shared + N]
-    theta_gs = theta_star[-1]
+    theta_gs_val = theta_star[-1]
 
-    logger.info(f"Fixed theta_star = {theta_star}")
-    logger.info(f"Running {n_reps} replications (varying errors only)")
+    logger.info(f"Fixed theta* = {theta_star}")
+    logger.info(f"C={C}, M={M}, N={N}, n_params={n_p}, n_reps={n_reps}")
 
     all_theta_hat = []
-    n_converged = 0
+    all_converged = []
+    all_iters = []
     t0 = time.perf_counter()
 
     for rep in range(n_reps):
-        # --- Draw fresh DGP errors for this replication ---
-        rng_dgp_err = np.random.default_rng(seeds['dgp'] + 999 + rep)
+        # DGP errors: tuple seed guarantees no collision with
+        # the healthy-theta search (seeds['dgp'] + 999) or sim errors.
+        rng_dgp_err = np.random.default_rng((seeds['dgp'], 77777, rep))
         errors = rng_dgp_err.normal(0, sigma, (N, M))
 
-        # Compute observed bundles at theta_star with these errors
         obs_bundles = np.zeros((N, M), dtype=bool)
         for i in range(N):
             obs_bundles[i] = greedy_demand(
-                phi, theta_rev, theta_fc[i], theta_gs,
+                phi, theta_rev, theta_fc[i], theta_gs_val,
                 hubs[i], origin_of, errors[i], M)
 
-        # --- Estimation ---
         model = ce.Model()
-
         input_data = {
             'id_data': {
                 'obs_bundles': obs_bundles,
                 'hubs': [list(h) for h in hubs],
             },
             'item_data': {
-                'phi': phi,
-                'origin_of': origin_of,
-                'N_firms': N,
+                'phi': phi, 'origin_of': origin_of, 'N_firms': N,
             },
         }
 
@@ -94,7 +95,6 @@ def run_replications(n_reps=30, base_cfg=None):
         for i in range(N):
             lbs[n_shared + i] = 0
         lbs[n_shared + N] = 0
-        theta_bounds = {'lb': -20, 'ub': 20, 'lbs': lbs}
 
         model_cfg = {
             'dimensions': {
@@ -111,7 +111,7 @@ def run_replications(n_reps=30, base_cfg=None):
             'row_generation': {
                 'max_iters': est_cfg['max_iters'],
                 'tolerance': est_cfg['tolerance'],
-                'theta_bounds': theta_bounds,
+                'theta_bounds': {'lb': -20, 'ub': 20, 'lbs': lbs},
             },
         }
         model.load_config(model_cfg)
@@ -120,11 +120,10 @@ def run_replications(n_reps=30, base_cfg=None):
         ld = model.data.local_data
         ld.id_data['hubs'] = [set(h) for h in ld.id_data['hubs']]
 
-        err_seed = seeds['error'] + rep * 1000
+        # Simulation errors: tuple seed, independent of DGP errors
+        err_seed = (seeds['error'], 88888, rep)
         model.features.build_local_modular_error_oracle(seed=err_seed, sigma=sigma)
-
-        cov_oracle = build_covariates_oracle(N)
-        model.features.set_covariates_oracle(cov_oracle)
+        model.features.set_covariates_oracle(build_covariates_oracle(N))
 
         model.subproblems.load_solver(AirlineGreedySolver)
         model.subproblems.initialize_solver()
@@ -135,11 +134,12 @@ def run_replications(n_reps=30, base_cfg=None):
 
         if result is not None:
             all_theta_hat.append(result.theta_hat.copy())
-            if result.converged:
-                n_converged += 1
+            all_converged.append(result.converged)
+            all_iters.append(result.num_iterations)
             err_pct = np.abs(result.theta_hat - theta_star) / np.abs(theta_star) * 100
-            print(f"  Rep {rep}: converged={result.converged}, "
-                  f"max_err%={err_pct.max():.1f}%")
+            print(f"  Rep {rep:>3d}/{n_reps}: converged={result.converged}, "
+                  f"iters={result.num_iterations:>3d}, "
+                  f"max_err={err_pct.max():.1f}%")
 
     t_total = time.perf_counter() - t0
 
@@ -147,31 +147,86 @@ def run_replications(n_reps=30, base_cfg=None):
         print("No successful replications!")
         return
 
+    # --- Compute statistics ---
     estimates = np.array(all_theta_hat)
     n_ok = len(estimates)
+    n_converged = sum(all_converged)
 
-    errors = estimates - theta_star
-    bias = errors.mean(axis=0)
+    deviations = estimates - theta_star
     hat_means = estimates.mean(axis=0)
-    hat_ses = estimates.std(axis=0, ddof=1) / np.sqrt(n_ok)
+    hat_stds = estimates.std(axis=0, ddof=1)
+    hat_ses = hat_stds / np.sqrt(n_ok)
+    bias = deviations.mean(axis=0)
+    bias_ses = deviations.std(axis=0, ddof=1) / np.sqrt(n_ok)
+    rmse = np.sqrt((deviations ** 2).mean(axis=0))
+    mae_pct = (np.abs(deviations) / np.abs(theta_star) * 100).mean(axis=0)
+    median_ae_pct = np.median(np.abs(deviations) / np.abs(theta_star) * 100, axis=0)
 
+    # --- Parameter names ---
     shared_names = ["theta_rev"]
     if fe_mode == "origin":
         shared_names += [f"theta_fe_{j}" for j in range(C)]
     fc_names = [f"theta_fc_{i}" for i in range(N)]
     param_names = shared_names + fc_names + ["theta_gs"]
 
-    print(f"\n{'='*72}")
-    print(f"  N={N}, C={C}, M={M}, {n_ok}/{n_reps} reps, "
-          f"{n_converged} converged, {t_total:.1f}s")
-    print(f"{'='*72}")
-    print(f"  {'Param':<14} {'True':>10} {'E[θ̂]':>10} {'SE':>10} {'t':>8}")
-    print(f"  {'-'*52}")
+    # --- Print table ---
+    W = 80
+    print(f"\n{'=' * W}")
+    print(f"  MONTE CARLO RESULTS")
+    print(f"  C={C} cities, M={M} routes, N={N} airlines, "
+          f"{n_p} parameters, S={est_cfg['n_simulations']}")
+    print(f"  {n_ok}/{n_reps} replications, {n_converged} converged, "
+          f"{t_total:.0f}s total ({t_total/n_ok:.1f}s/rep)")
+    print(f"  Mean row-gen iterations: {np.mean(all_iters):.1f}")
+    print(f"{'=' * W}")
+    header = (f"  {'Param':<14} {'True':>8} {'Mean':>8} {'Bias':>8} "
+              f"{'SE':>8} {'RMSE':>8} {'MAE%':>7} {'MdAE%':>7}")
+    print(header)
+    print(f"  {'-' * (len(header) - 2)}")
+
     for j, name in enumerate(param_names):
-        t_stat = hat_means[j] / hat_ses[j] if hat_ses[j] > 0 else float('inf')
-        print(f"  {name:<14} {theta_star[j]:>10.4f} {hat_means[j]:>10.4f} "
-              f"{hat_ses[j]:>10.4f} {t_stat:>8.1f}")
+        print(f"  {name:<14} {theta_star[j]:>8.4f} {hat_means[j]:>8.4f} "
+              f"{bias[j]:>+8.4f} {hat_ses[j]:>8.4f} "
+              f"{rmse[j]:>8.4f} {mae_pct[j]:>6.1f}% {median_ae_pct[j]:>6.1f}%")
+
+    print(f"  {'-' * (len(header) - 2)}")
+
+    # Summary row for firm FCs
+    fc_bias = bias[n_shared:n_shared + N]
+    fc_rmse = rmse[n_shared:n_shared + N]
+    fc_mae = mae_pct[n_shared:n_shared + N]
+    fc_mdae = median_ae_pct[n_shared:n_shared + N]
+    fc_se = hat_ses[n_shared:n_shared + N]
+    print(f"  {'avg(fc)':<14} {'':>8} {'':>8} "
+          f"{fc_bias.mean():>+8.4f} {fc_se.mean():>8.4f} "
+          f"{fc_rmse.mean():>8.4f} {fc_mae.mean():>6.1f}% {fc_mdae.mean():>6.1f}%")
     print()
+
+    # --- Save to JSON ---
+    out = {
+        'config': {
+            'C': C, 'M': M, 'N': N, 'fe_mode': fe_mode, 'sigma': sigma,
+            'n_params': n_p, 'n_reps': n_ok, 'n_converged': n_converged,
+            'n_simulations': est_cfg['n_simulations'],
+            'runtime_total_s': round(t_total, 1),
+            'runtime_per_rep_s': round(t_total / n_ok, 2),
+            'mean_iters': round(float(np.mean(all_iters)), 1),
+        },
+        'theta_true': theta_star.tolist(),
+        'param_names': param_names,
+        'mean': hat_means.tolist(),
+        'bias': bias.tolist(),
+        'se': hat_ses.tolist(),
+        'rmse': rmse.tolist(),
+        'mae_pct': mae_pct.tolist(),
+        'median_ae_pct': median_ae_pct.tolist(),
+        'dgp_healthy_check': dgp_diag,
+    }
+    out_path = BASE / 'results' / 'replications.json'
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, 'w') as f:
+        json.dump(out, f, indent=2)
+    print(f"  Saved to {out_path}")
 
 
 if __name__ == '__main__':

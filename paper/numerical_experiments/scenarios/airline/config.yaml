@@ -29,6 +29,7 @@ seeds:
   dgp: 42                  # geography, populations, hubs
   error: 1042              # simulation errors (estimation)
   search: 7                # healthy-theta search
+  bootstrap: 999            # bootstrap weight draws
 
 # --- Estimation ---
 estimation:
@@ -36,6 +37,7 @@ estimation:
   max_iters: 200            # row generation max iterations
   tolerance: 1.0e-6         # row generation convergence tolerance
   gurobi_timeout: 30        # Gurobi TimeLimit (seconds)
+  num_bootstrap: 100        # Bayesian bootstrap samples for SEs
 
 # --- Healthy-DGP search ---
 # True theta is found by random search over these ranges,

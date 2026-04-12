@@ -43,28 +43,73 @@ def build_geography(cfg, rng):
     asm_region[asm_order[L2 // 3: 2 * L2 // 3]] = 1
     asm_region[asm_order[2 * L2 // 3:]] = 2
 
+    mkt_order = np.argsort(mkt_locs[:, 0])
+    mkt_region = np.zeros(N, dtype=int)
+    mkt_region[mkt_order[N // 3: 2 * N // 3]] = 1
+    mkt_region[mkt_order[2 * N // 3:]] = 2
+
     return dict(
         L1=L1, L2=L2, n_markets=N,
         cell_locs=cell_locs, asm_locs=asm_locs, mkt_locs=mkt_locs,
         d_12=d_12, d_2m=d_2m, R_n=R_n,
-        cell_region=cell_region, asm_region=asm_region,
+        cell_region=cell_region, asm_region=asm_region, mkt_region=mkt_region,
     )
 
 
 # ---- Firms ----
 
+def _draw_feasible_markets(nm, N, mkt_region, feas_cfg, rng):
+    """Draw per-model feasibility masks with two tiers and regional coverage."""
+    global_prob = feas_cfg.get('global_prob', 1.0)
+    gl_lo, gl_hi = feas_cfg.get('global_range', [N, N])
+    rg_lo, rg_hi = feas_cfg.get('regional_range', [4, 7])
+
+    feas = np.zeros((nm, N), dtype=bool)
+    regions = [np.where(mkt_region == r)[0] for r in range(3)]
+
+    for m in range(nm):
+        is_global = rng.random() < global_prob
+        k = int(rng.integers(gl_lo, gl_hi + 1)) if is_global \
+            else int(rng.integers(rg_lo, rg_hi + 1))
+        k = min(k, N)
+
+        # Guarantee ≥1 market from each region
+        chosen = []
+        for reg_mkts in regions:
+            if len(reg_mkts) > 0:
+                chosen.append(rng.choice(reg_mkts))
+        chosen = list(set(chosen))
+
+        # Fill remaining slots from unchosen markets
+        remaining = np.setdiff1d(np.arange(N), chosen)
+        n_extra = max(0, k - len(chosen))
+        if n_extra > 0 and len(remaining) > 0:
+            extra = rng.choice(remaining, size=min(n_extra, len(remaining)), replace=False)
+            chosen.extend(extra.tolist())
+
+        feas[m, chosen] = True
+
+    return feas
+
+
 def build_firms(cfg, geo, rng):
-    """Firms with configurable model/platform ranges."""
+    """Firms with configurable model/platform ranges and per-model feasibility."""
     nf = cfg['n_firms']
     N = geo['n_markets']
     nm_lo, nm_hi = cfg.get('models_range', [4, 8])
     P_max_cap = cfg.get('max_platforms', 5)
     P_min = cfg.get('min_platforms', 2)
+    feas_cfg = cfg.get('feasibility', {})
+    mkt_region = geo['mkt_region']
+
     firms = []
     for i in range(nf):
         nm = int(rng.integers(nm_lo, nm_hi + 1))
         P = int(rng.integers(P_min, min(nm, P_max_cap) + 1))
-        plat = rng.integers(0, P, nm).astype(int)              # platform assignment per model
+        plat = rng.integers(0, P, nm).astype(int)
+
+        # Per-model feasibility
+        feas = _draw_feasible_markets(nm, N, mkt_region, feas_cfg, rng)
 
         shares = np.zeros((nm, N))
         for m in range(nm):
@@ -75,20 +120,20 @@ def build_firms(cfg, geo, rng):
         hq_x = rng.uniform(hq_region / 3.0, (hq_region + 1) / 3.0)
         hq_y = rng.uniform(0, 1)
         hq_coord = np.array([[hq_x, hq_y]])
-        d_hq1 = np.log1p(_torus_dist(hq_coord, geo['cell_locs']).ravel())  # (L1,)
-        d_hq2 = np.log1p(_torus_dist(hq_coord, geo['asm_locs']).ravel())  # (L2,)
+        d_hq1 = np.log1p(_torus_dist(hq_coord, geo['cell_locs']).ravel())
+        d_hq2 = np.log1p(_torus_dist(hq_coord, geo['asm_locs']).ravel())
 
         firms.append(dict(
             n_models=nm, n_platforms=P,
-            cell_groups=np.zeros(nm, dtype=int),               # ng=1: all models in group 0
+            cell_groups=np.zeros(nm, dtype=int),
             platforms=plat,
-            feasible=np.ones((nm, N), dtype=bool),
-            shares=shares,                                     # (nm, N)
-            ln_xi_1=np.array([rng.normal(0, 0.5)]),           # (1,) one cell group
-            ln_xi_2=rng.normal(0, 0.5, P),                    # (P,) one per platform
-            d_hq1=d_hq1,                                      # (L1,)
-            d_hq2=d_hq2,                                      # (L2,)
-            hq_coord=hq_coord.ravel(),                        # (2,) for plotting
+            feasible=feas,
+            shares=shares,
+            ln_xi_1=np.array([rng.normal(0, 0.5)]),
+            ln_xi_2=rng.normal(0, 0.5, P),
+            d_hq1=d_hq1,
+            d_hq2=d_hq2,
+            hq_coord=hq_coord.ravel(),
         ))
     return firms
 
@@ -184,7 +229,7 @@ if __name__ == '__main__':
     seed = cfg.get('monte_carlo', {}).get('seed', 42)
 
     t0 = time.perf_counter()
-    geo, firms, bundles, _ = generate_synthetic_data(
+    geo, firms, dgp_errors, _ = generate_synthetic_data(
         seed=seed, dgp=dgp, sourcing_coefs=None,
         theta_true=theta_true, sigma=sigma)
     elapsed = time.perf_counter() - t0
@@ -194,9 +239,10 @@ if __name__ == '__main__':
     print(f"d_12 range: [{geo['d_12'].min():.3f}, {geo['d_12'].max():.3f}]")
     print(f"d_2m range: [{geo['d_2m'].min():.3f}, {geo['d_2m'].max():.3f}]")
     print(f"R_n range:  [{geo['R_n'].min():.2f}, {geo['R_n'].max():.2f}]")
-    cr, ar = geo['cell_region'], geo['asm_region']
-    print(f"Cell regions: {cr.tolist()}  (r0:{(cr==0).sum()} r1:{(cr==1).sum()} r2:{(cr==2).sum()})")
-    print(f"Asm regions:  {ar.tolist()}  (r0:{(ar==0).sum()} r1:{(ar==1).sum()} r2:{(ar==2).sum()})")
+    cr, ar, mr = geo['cell_region'], geo['asm_region'], geo['mkt_region']
+    print(f"Cell regions:   (r0:{(cr==0).sum()} r1:{(cr==1).sum()} r2:{(cr==2).sum()})")
+    print(f"Asm regions:    (r0:{(ar==0).sum()} r1:{(ar==1).sum()} r2:{(ar==2).sum()})")
+    print(f"Market regions: (r0:{(mr==0).sum()} r1:{(mr==1).sum()} r2:{(mr==2).sum()})")
     print(f"Firms: {len(firms)}")
     nm_dist = Counter(f['n_models'] for f in firms)
     P_dist = Counter(f['n_platforms'] for f in firms)
@@ -204,33 +250,12 @@ if __name__ == '__main__':
     print(f"Platforms dist: {dict(sorted(P_dist.items()))}")
     print()
 
-    # Objective stats
-    objs = [b['obj'] for b in bundles]
-    print(f"Objective: min={min(objs):.2f}  mean={np.mean(objs):.2f}  max={max(objs):.2f}")
-
-    # Market entry distribution — count distinct markets per firm (across all models)
-    mkts_per_firm = []
-    for bun in bundles:
-        entered = set()
-        for m in range(bun['z'].shape[0]):
-            entered.update(np.where(bun['z'][m])[0])
-        mkts_per_firm.append(len(entered))
-    print(f"Distinct markets entered per firm: min={min(mkts_per_firm)}  "
-          f"mean={np.mean(mkts_per_firm):.1f}  max={max(mkts_per_firm)}")
-
-    # Per-firm summary
-    n_active = sum(1 for b in bundles if b['obj'] > 0)
-    avg_cells = np.mean([b['y1'].sum() for b in bundles])
-    avg_asms = np.mean([b['y2'].sum() for b in bundles])
-    print(f"Active firms (obj>0): {n_active}/{len(firms)}")
-    print(f"Avg cells: {avg_cells:.1f}  avg asms: {avg_asms:.1f}")
-
-    # Assembly usage per platform
-    asm_counts = np.zeros(geo['L2'], dtype=int)
-    for bun in bundles:
-        for p in range(bun['y2'].shape[0]):
-            asm_counts += bun['y2'][p].astype(int)
-    print(f"\nAssembly usage (total opens across all firms/platforms):")
-    for l in range(geo['L2']):
-        bar = '#' * min(asm_counts[l], 80)
-        print(f"  asm {l} (region {geo['asm_region'][l]}): {asm_counts[l]:3d}  {bar}")
+    # Feasibility stats
+    feas_sizes = []
+    for firm in firms:
+        for m in range(firm['n_models']):
+            feas_sizes.append(firm['feasible'][m].sum())
+    feas_sizes = np.array(feas_sizes)
+    print(f"Feasibility (markets per model): min={feas_sizes.min()} "
+          f"mean={feas_sizes.mean():.1f} max={feas_sizes.max()}")
+    print(f"  Size distribution: {dict(sorted(Counter(feas_sizes).items()))}")
