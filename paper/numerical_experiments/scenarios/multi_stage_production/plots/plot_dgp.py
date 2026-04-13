@@ -185,6 +185,315 @@ def plot_networks(geo, firms, bundles, seed, nf):
     print(f"Saved {out}")
 
 
+PARAM_NAMES = [
+    'delta_1', 'delta_2', 'rho_xi_1', 'rho_xi_2',
+    'rho_HQ_1', 'rho_HQ_2', 'FE_1_r1', 'FE_1_r2',
+    'FE_2_r1', 'FE_2_r2', 'rho_d_1', 'rho_d_2',
+]
+
+PARAM_BOUNDS = {
+    'lb': [0]*6 + [-5]*4 + [0]*2,
+    'ub': [10]*6 + [5]*4 + [10]*2,
+}
+
+
+def _region_counts(bundles, y_key, region_arr, nf):
+    """(nf, 3) count of opens per firm per region."""
+    counts = np.zeros((nf, 3))
+    for i in range(nf):
+        y = bundles[i][y_key]
+        for g in range(y.shape[0]):
+            for l in range(y.shape[1]):
+                if y[g, l]:
+                    counts[i, region_arr[l]] += 1
+    return counts
+
+
+def _build_covariates(active, firms, bundles, geo):
+    """Build (n_active, 12) covariate matrix from observed bundles."""
+    L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
+    cr, ar = geo['cell_region'], geo['asm_region']
+    d12, d2m, R_n = geo['d_12'], geo['d_2m'], geo['R_n']
+    n = len(active)
+    Phi = np.zeros((n, 12))
+
+    for idx, i in enumerate(active):
+        firm = firms[i]
+        bun = bundles[i]
+        y1, y2, x_val = bun['y1'], bun['y2'], bun['x']
+        ng, P, nm = y1.shape[0], y2.shape[0], firm['n_models']
+
+        for g in range(ng):
+            for l in range(L1):
+                if y1[g, l]:
+                    Phi[idx, 0] -= 1.0                          # delta_1
+                    Phi[idx, 2] -= firm['ln_xi_1'][g]            # rho_xi_1
+                    Phi[idx, 4] -= firm['d_hq1'][l]              # rho_HQ_1
+                    if cr[l] == 1: Phi[idx, 6] += 1.0           # FE_1_r1
+                    if cr[l] == 2: Phi[idx, 7] += 1.0           # FE_1_r2
+
+        for p in range(P):
+            for l in range(L2):
+                if y2[p, l]:
+                    Phi[idx, 1] -= 1.0                          # delta_2
+                    Phi[idx, 3] -= firm['ln_xi_2'][p]            # rho_xi_2
+                    Phi[idx, 5] -= firm['d_hq2'][l]              # rho_HQ_2
+                    if ar[l] == 1: Phi[idx, 8] += 1.0           # FE_2_r1
+                    if ar[l] == 2: Phi[idx, 9] += 1.0           # FE_2_r2
+
+        for m in range(nm):
+            sR = firm['shares'][m, :] * R_n
+            Phi[idx, 10] -= (sR[:, None, None] * d12[None, :, :] * x_val[m]).sum()
+            Phi[idx, 11] -= (sR[:, None, None] * d2m.T[:, None, :] * x_val[m]).sum()
+
+    return Phi
+
+
+def _compute_vif(Phi):
+    """Variance inflation factors: VIF_j = 1 / (1 - R^2_j)."""
+    K = Phi.shape[1]
+    vif = np.full(K, np.inf)
+    for j in range(K):
+        y = Phi[:, j]
+        X = np.delete(Phi, j, axis=1)
+        if y.std() == 0:
+            continue
+        X = np.column_stack([np.ones(len(y)), X])
+        beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        resid = y - X @ beta
+        ss_res = (resid ** 2).sum()
+        ss_tot = ((y - y.mean()) ** 2).sum()
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 1.0
+        vif[j] = 1.0 / (1.0 - r2) if r2 < 1.0 else np.inf
+    return vif
+
+
+def diagnose_identification(geo, firms, bundles, theta_true):
+    """Comprehensive identification diagnostics for the 12-parameter model."""
+    nf = len(firms)
+    L1, L2, N = geo['L1'], geo['L2'], geo['n_markets']
+    cr, ar = geo['cell_region'], geo['asm_region']
+    R_n = geo['R_n']
+    d12, d2m = geo['d_12'], geo['d_2m']
+
+    sep = '=' * 65
+    print(f"\n{sep}")
+    print('  DGP IDENTIFICATION DIAGNOSTICS')
+    print(sep)
+
+    # ---- [1] Active firms ----
+    active_mask = np.array([b['obj'] > 0 for b in bundles])
+    active = np.where(active_mask)[0]
+    n_act = len(active)
+    print(f"\n[1] Active firms: {n_act}/{nf}  (opt-out: {nf - n_act})")
+    if n_act < 12:
+        print('    !! CRITICAL: fewer active firms than parameters (12)')
+    elif n_act < 20:
+        print(f'    ! Warning: thin sample ({n_act} obs for 12 params)')
+
+    # ---- [2] Cell region distribution ----
+    cell_counts = _region_counts(bundles, 'y1', cr, nf)
+    print(f'\n[2] Cell opens by region')
+    for r in range(3):
+        tot = int(cell_counts[active, r].sum())
+        nf_r = int((cell_counts[active, r] > 0).sum())
+        print(f'    r{r}: {tot:3d} opens  ({nf_r} firms)')
+    total_cells = cell_counts[active].sum()
+    if total_cells > 0:
+        print(f'    Baseline (r0) share: {cell_counts[active, 0].sum() / total_cells:.1%}')
+    if cell_counts[active, 0].sum() == 0:
+        print('    !! CRITICAL: zero cells in r0 -> delta_1 collinear with FE_1_r1 + FE_1_r2')
+    for r in [1, 2]:
+        if cell_counts[active, r].sum() == 0:
+            print(f'    !! CRITICAL: zero cells in r{r} -> FE_1_r{r} unidentified')
+
+    # ---- [3] Assembly region distribution ----
+    asm_counts = _region_counts(bundles, 'y2', ar, nf)
+    print(f'\n[3] Assembly opens by region')
+    for r in range(3):
+        tot = int(asm_counts[active, r].sum())
+        nf_r = int((asm_counts[active, r] > 0).sum())
+        print(f'    r{r}: {tot:3d} opens  ({nf_r} firms)')
+    total_asms = asm_counts[active].sum()
+    if total_asms > 0:
+        print(f'    Baseline (r0) share: {asm_counts[active, 0].sum() / total_asms:.1%}')
+    if asm_counts[active, 0].sum() == 0:
+        print('    !! CRITICAL: zero assemblies in r0 -> delta_2 collinear with FE_2_r1 + FE_2_r2')
+    for r in [1, 2]:
+        if asm_counts[active, r].sum() == 0:
+            print(f'    !! CRITICAL: zero assemblies in r{r} -> FE_2_r{r} unidentified')
+
+    # ---- [4] delta vs FE-sum collinearity ----
+    print(f'\n[4] delta vs FE-sum collinearity (r0 opens per firm)')
+    for label, counts in [('Cells (delta_1)', cell_counts), ('Asm (delta_2)', asm_counts)]:
+        r0 = counts[active, 0]
+        total = counts[active].sum(axis=1)
+        frac_r0 = r0 / np.maximum(total, 1)
+        print(f'    {label}:')
+        print(f'      r0 opens: min={r0.min():.0f}  mean={r0.mean():.1f}  max={r0.max():.0f}  '
+              f'std={r0.std():.2f}')
+        print(f'      r0 fraction per firm: mean={frac_r0.mean():.2f}  std={frac_r0.std():.2f}')
+        n_zero_r0 = (r0 == 0).sum()
+        if n_zero_r0 == n_act:
+            print(f'      !! CRITICAL: ALL firms have zero r0 opens -> exact collinearity')
+        elif n_zero_r0 > n_act * 0.7:
+            print(f'      ! Warning: {n_zero_r0}/{n_act} firms have zero r0 opens')
+
+    # ---- [5] Within-firm region diversification ----
+    print(f'\n[5] Within-firm region diversification')
+    for label, counts in [('cell', cell_counts), ('assembly', asm_counts)]:
+        n_regions = np.array([(counts[i] > 0).sum() for i in active])
+        dist = {k: int((n_regions == k).sum()) for k in range(4) if (n_regions == k).sum()}
+        print(f'    {label}: regions per firm = {dist}')
+        if (n_regions <= 1).all():
+            print(f'    ! Warning: no firm opens {label}s in >1 region')
+
+    # ---- [6] HQ-region x facility-region cross-tab ----
+    print(f'\n[6] HQ-region x facility-region cross-tab')
+    for label, counts in [('cell', cell_counts), ('assembly', asm_counts)]:
+        print(f'    {label} opens:  {"HQ_r0":>6}  {"HQ_r1":>6}  {"HQ_r2":>6}')
+        for fac_r in range(3):
+            row = []
+            for hq_r in range(3):
+                hq_firms = [i for i in active if i % 3 == hq_r]
+                row.append(int(counts[hq_firms, fac_r].sum()))
+            print(f'      fac_r{fac_r}:  {row[0]:6d}  {row[1]:6d}  {row[2]:6d}')
+
+    # ---- [7] Covariate matrix ----
+    print(f'\n[7] Covariate matrix Phi ({n_act} x 12)')
+    Phi = _build_covariates(active, firms, bundles, geo)
+
+    rank = np.linalg.matrix_rank(Phi)
+    print(f'    Rank: {rank}')
+    if rank < 12:
+        print(f'    !! CRITICAL: rank deficient ({rank} < 12)')
+
+    sv = np.linalg.svd(Phi, compute_uv=False)
+    cond = sv[0] / sv[-1] if sv[-1] > 0 else float('inf')
+    print(f'    Condition number: {cond:.1f}')
+    print(f'    Singular values:')
+    for j in range(len(sv)):
+        flag = ' <- near-zero' if sv[j] < 1e-6 * sv[0] else ''
+        print(f'      sv_{j+1:2d} = {sv[j]:.4e}{flag}')
+
+    # ---- [8] Per-column variation ----
+    print(f'\n[8] Per-parameter covariate variation')
+    print(f'    {"Param":<12} {"mean":>9} {"std":>9} {"min":>9} {"max":>9}')
+    print(f'    {"-"*50}')
+    for j in range(12):
+        col = Phi[:, j]
+        print(f'    {PARAM_NAMES[j]:<12} {col.mean():>9.4f} {col.std():>9.4f} '
+              f'{col.min():>9.4f} {col.max():>9.4f}')
+        if col.std() < 1e-8:
+            print(f'    !! CRITICAL: {PARAM_NAMES[j]} has zero variation')
+
+    # ---- [9] Critical pairwise correlations ----
+    print(f'\n[9] Critical pairwise correlations')
+    pairs = [
+        (0, 6, 'delta_1   vs FE_1_r1'),
+        (0, 7, 'delta_1   vs FE_1_r2'),
+        (1, 8, 'delta_2   vs FE_2_r1'),
+        (1, 9, 'delta_2   vs FE_2_r2'),
+        (0, 2, 'delta_1   vs rho_xi_1'),
+        (1, 3, 'delta_2   vs rho_xi_2'),
+        (0, 4, 'delta_1   vs rho_HQ_1'),
+        (1, 5, 'delta_2   vs rho_HQ_2'),
+        (4, 6, 'rho_HQ_1  vs FE_1_r1'),
+        (4, 7, 'rho_HQ_1  vs FE_1_r2'),
+        (5, 8, 'rho_HQ_2  vs FE_2_r1'),
+        (5, 9, 'rho_HQ_2  vs FE_2_r2'),
+        (10, 11, 'rho_d_1   vs rho_d_2'),
+        (6, 7, 'FE_1_r1   vs FE_1_r2'),
+        (8, 9, 'FE_2_r1   vs FE_2_r2'),
+    ]
+    for a, b, label in pairs:
+        sa, sb = Phi[:, a].std(), Phi[:, b].std()
+        if sa > 0 and sb > 0:
+            r = np.corrcoef(Phi[:, a], Phi[:, b])[0, 1]
+            flag = ' <- HIGH' if abs(r) > 0.9 else (' <- moderate' if abs(r) > 0.7 else '')
+            print(f'    {label}  r = {r:+.3f}{flag}')
+        else:
+            print(f'    {label}  (degenerate)')
+
+    # ---- [10] VIF ----
+    print(f'\n[10] Variance inflation factors')
+    vif = _compute_vif(Phi)
+    for j in range(12):
+        flag = ' <- HIGH' if vif[j] > 10 else ''
+        v_str = f'{vif[j]:.1f}' if np.isfinite(vif[j]) else 'inf'
+        print(f'    {PARAM_NAMES[j]:<12} VIF = {v_str:>8}{flag}')
+
+    # ---- [11] Distance covariate diagnostics ----
+    print(f'\n[11] Distance covariate diagnostics')
+    for j, name in [(10, 'rho_d_1'), (11, 'rho_d_2')]:
+        col = Phi[:, j]
+        nz = col[col != 0]
+        if len(nz) > 1:
+            cv = nz.std() / abs(nz.mean()) if abs(nz.mean()) > 0 else float('inf')
+            print(f'    {name}: CV = {cv:.3f}  (n_nonzero = {len(nz)})')
+        else:
+            print(f'    {name}: insufficient variation')
+    if Phi[:, 10].std() > 0 and Phi[:, 11].std() > 0:
+        r = np.corrcoef(Phi[:, 10], Phi[:, 11])[0, 1]
+        print(f'    rho_d_1 vs rho_d_2 correlation: {r:+.3f}')
+
+    # ---- [12] Quality shock diagnostics ----
+    print(f'\n[12] Quality shock (xi) diagnostics')
+    xi1 = np.concatenate([firms[i]['ln_xi_1'] for i in active])
+    xi2 = np.concatenate([firms[i]['ln_xi_2'] for i in active])
+    print(f'    xi_1 (cells):      n={len(xi1):3d}  std={xi1.std():.3f}  '
+          f'range=[{xi1.min():.3f}, {xi1.max():.3f}]')
+    print(f'    xi_2 (assemblies): n={len(xi2):3d}  std={xi2.std():.3f}  '
+          f'range=[{xi2.min():.3f}, {xi2.max():.3f}]')
+
+    # ---- [13] Bundle diversity ----
+    print(f'\n[13] Bundle diversity')
+    n_cells = cell_counts[active].sum(axis=1)
+    n_asms = asm_counts[active].sum(axis=1)
+    n_entries = np.array([bundles[i]['z'].sum() for i in active])
+    print(f'    Cells per firm:     min={n_cells.min():.0f}  mean={n_cells.mean():.1f}  '
+          f'max={n_cells.max():.0f}')
+    print(f'    Asm per firm:       min={n_asms.min():.0f}  mean={n_asms.mean():.1f}  '
+          f'max={n_asms.max():.0f}')
+    print(f'    Market entries:     min={n_entries.min():.0f}  mean={n_entries.mean():.1f}  '
+          f'max={n_entries.max():.0f}')
+
+    # ---- [14] theta_true vs bounds ----
+    print(f'\n[14] theta_true vs estimation bounds')
+    lb = PARAM_BOUNDS['lb']
+    ub = PARAM_BOUNDS['ub']
+    for j, name in enumerate(PARAM_NAMES):
+        val = theta_true[name]
+        span = ub[j] - lb[j]
+        near_lb = (val - lb[j]) / span < 0.10
+        near_ub = (ub[j] - val) / span < 0.10
+        if near_lb:
+            print(f'    ! Warning: {name} = {val:.3f} near lower bound {lb[j]}')
+        if near_ub:
+            print(f'    ! Warning: {name} = {val:.3f} near upper bound {ub[j]}')
+    else:
+        # only print if no warnings fired
+        pass
+    if not any(
+        (theta_true[name] - lb[j]) / (ub[j] - lb[j]) < 0.10 or
+        (ub[j] - theta_true[name]) / (ub[j] - lb[j]) < 0.10
+        for j, name in enumerate(PARAM_NAMES)
+    ):
+        print('    All parameters comfortably in interior')
+
+    # ---- [15] Firm structure heterogeneity ----
+    print(f'\n[15] Firm structure heterogeneity')
+    nms = np.array([firms[i]['n_models'] for i in active])
+    Ps = np.array([firms[i]['n_platforms'] for i in active])
+    ngs = np.array([len(firms[i]['ln_xi_1']) for i in active])
+    print(f'    Models per firm:    min={nms.min()}  max={nms.max()}  unique={len(np.unique(nms))}')
+    print(f'    Platforms per firm: min={Ps.min()}  max={Ps.max()}  unique={len(np.unique(Ps))}')
+    print(f'    Cell groups/firm:   min={ngs.min()}  max={ngs.max()}  unique={len(np.unique(ngs))}')
+
+    print(f'\n{sep}\n')
+    return Phi
+
+
 def main():
     dgp = CFG['dgp']
     theta_true = CFG['theta_true']
@@ -202,6 +511,7 @@ def main():
     if n_empty:
         print(f"WARNING: {n_empty} firms chose empty bundles (obj <= 0)")
 
+    diagnose_identification(geo, firms, bundles, theta_true)
     plot_facility_usage(geo, firms, bundles, seed, nf)
     plot_networks(geo, firms, bundles, seed, nf)
 

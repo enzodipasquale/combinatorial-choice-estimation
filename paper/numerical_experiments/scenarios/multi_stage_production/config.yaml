@@ -27,8 +27,8 @@ theta_true:
   rho_d_2: 0.3
 
 sigma:
-  phi: 0.2
-  nu: 0.05
+  phi: 0.3
+  nu: 0.3
 
 estimation:
   n_simulations: 1
