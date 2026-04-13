@@ -9,7 +9,7 @@ dgp:
   min_platforms: 2
   feasibility:
     global_range: [10, 12]
-    regional_range: [4, 7]
+    regional_range: [4, 10]
     global_prob: 0.5
 
 theta_true:

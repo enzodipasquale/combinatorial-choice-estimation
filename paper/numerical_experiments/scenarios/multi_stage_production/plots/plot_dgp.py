@@ -100,6 +100,7 @@ def plot_facility_usage(geo, firms, bundles, seed, nf):
         ax.set_title(title)
         ax.set_xticks(x_pos)
         ax.set_xticklabels([str(i) for i in range(nf)], fontsize=7)
+        ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         ax.legend(fontsize=7)
 
         # Mark firms with zero opens
