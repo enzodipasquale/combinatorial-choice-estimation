@@ -77,6 +77,14 @@ def _(ctx):
     hq = ctx["hq_bta_idx"]
     return np.log1p(geo[hq])
 
+@modular("elig_log_dist_hq")
+def _(ctx):
+    return ctx["elig"][:, None] * MODULAR["log_dist_hq"](ctx)
+
+@modular("designated_log_dist_hq")
+def _(ctx):
+    return ctx["designated"][:, None] * MODULAR["log_dist_hq"](ctx)
+
 # quadratic regressors: (ctx) -> (n_items, n_items)
 
 @quadratic("adjacency")

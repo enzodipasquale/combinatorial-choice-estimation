@@ -13,18 +13,18 @@ dgp:
     global_prob: 0.5
 
 theta_true:
-  delta_1: 0.7
-  delta_2: 0.7
+  delta_1: .5
+  delta_2: 1.2
   rho_xi_1: 1.0
   rho_xi_2: 1.0
   rho_HQ_1: 1.2
   rho_HQ_2: 1.2
-  FE_1_r1: 0.5
-  FE_1_r2: 0.25
-  FE_2_r1: 0.25
-  FE_2_r2: 0.5
-  rho_d_1: 0.5
-  rho_d_2: 0.5
+  FE_1_r1: 0.8    # Asia: strong cell advantage
+  FE_1_r2: 0.3    # Europe: moderate cell advantage
+  FE_2_r1: 0.4    # Asia: moderate assembly advantage
+  FE_2_r2: 0.4    # Europe: moderate assembly advantage
+  rho_d_1: 0.3
+  rho_d_2: 0.3
 
 sigma:
   phi: 0.2
