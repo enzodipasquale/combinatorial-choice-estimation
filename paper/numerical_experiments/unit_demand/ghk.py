@@ -79,7 +79,8 @@ def _ghk_log_probs_and_grad(m, dm_dbeta, L, uniforms):
     return log_P, dlog_P
 
 
-def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42):
+def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42,
+                                    beta0=None):
     N, J, K = X.shape
     ops = _build_diff_operators(J, Sigma)
     rng = np.random.default_rng(seed)
@@ -93,8 +94,6 @@ def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42):
         if len(idx) > 0:
             groups.append((j, idx, rng.uniform(size=(len(idx), R, J))))
 
-    # Precompute dm/dbeta for each group (does not depend on beta)
-    # m = X[idx] @ beta @ M.T  =>  dm/dbeta[k] = X[idx,:,k] @ M.T
     group_dm = []
     for j, idx, _ in groups:
         group_dm.append(np.einsum('njk,dj->ndk', X[idx], Ms[j]))
@@ -110,9 +109,15 @@ def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42):
             total_grad += dlog_P.sum(axis=0)
         return -total_ll, -total_grad
 
-    def objective(beta_np):
-        v, g = neg_ll_and_grad(beta_np)
-        return v, g
+    if beta0 is None:
+        beta0 = np.zeros(K)
 
-    result = minimize(objective, np.zeros(K), method='L-BFGS-B', jac=True)
+    result = minimize(neg_ll_and_grad, beta0, method='L-BFGS-B', jac=True)
+
+    if not result.success:
+        alt = minimize(neg_ll_and_grad, np.zeros(K), method='L-BFGS-B',
+                       jac=True)
+        if alt.fun < result.fun:
+            result = alt
+
     return result.x, result

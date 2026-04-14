@@ -31,8 +31,8 @@ dgp:
   max_nnz_per_item: 15        # hard ceiling: nnz(Q) <= max_nnz_per_item * M
   weight_lo: 0.5              # item weights ~ U(weight_lo, weight_hi)
   weight_hi: 1.5
-  capacity_frac_lo: 0.3       # capacity W_i ~ U(frac_lo * sum_w, frac_hi * sum_w)
-  capacity_frac_hi: 0.5
+  capacity_frac_lo: 0.15      # capacity W_i ~ U(frac_lo * sum_w, frac_hi * sum_w)
+  capacity_frac_hi: 0.60
   sigma: 1.0                  # std of modular errors nu_ij
   # BLP data generation
   K_phi: 3                    # dimension of item characteristics phi
@@ -58,8 +58,9 @@ solver:
   OutputFlag: 0
 
 healthy_dgp:
-  max_candidates: 50
+  max_candidates: 100
   lambda_range: [0.01, 0.15]
+  alpha_range: [0.05, 0.5]        # search over alpha too
   delta_scale_range: [0.3, 0.8]   # rescale delta std
   # Thresholds (from SPEC)
   min_mean_bundle_frac: 0.15

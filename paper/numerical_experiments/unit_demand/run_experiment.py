@@ -16,6 +16,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import combest as ce
 from paper.numerical_experiments.unit_demand.dgp import simulate_probit_individual
 from paper.numerical_experiments.unit_demand.ghk import estimate_probit_mle_individual
+from paper.numerical_experiments.unit_demand.logit import estimate_logit_mle_individual
 
 
 def choices_to_bundles(choices, J):
@@ -47,15 +48,24 @@ def run_replication(N, J, K, beta, replication=0, config=None):
         X, choices = simulate_probit_individual(
             N, J, K, beta, Sigma=Sigma, rho=rho, seed=seed)
 
+        # Logit warm start for probit MLE
+        try:
+            beta0, _ = estimate_logit_mle_individual(X, choices)
+        except Exception:
+            beta0 = None
+
         t0 = time.perf_counter()
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
-                beta_mle, _ = estimate_probit_mle_individual(
-                    X, choices, Sigma, R=ghk_draws, seed=seed + 1)
+                beta_mle, mle_result = estimate_probit_mle_individual(
+                    X, choices, Sigma, R=ghk_draws, seed=seed + 1,
+                    beta0=beta0)
         except Exception:
             beta_mle = np.full(K, np.nan)
+            mle_result = None
         runtime_mle = time.perf_counter() - t0
+        mle_converged = mle_result is not None and mle_result.success
 
         obs_bundles = choices_to_bundles(choices, J)
         input_data = {
@@ -97,4 +107,5 @@ def run_replication(N, J, K, beta, replication=0, config=None):
         "beta_combest": result.theta_hat.tolist(),
         "runtime_mle": runtime_mle,
         "runtime_combest": runtime_combest,
+        "mle_converged": mle_converged,
     }

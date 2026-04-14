@@ -29,14 +29,20 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
+    exp = config["experiment"]
+    n_simulations = exp.get("n_simulations", 1)
+    if n_simulations == "match_N":
+        n_simulations = N
+
     if rank == 0:
         print(f"\n{'='*60}")
-        print(f"J={J}, N={N}, {n_reps} replications")
+        print(f"J={J}, N={N}, S={n_simulations}, {n_reps} replications")
         print(f"{'='*60}", flush=True)
 
     betas_mle, betas_cb = [], []
     times_mle, times_cb = [], []
     n_failed = 0
+    n_mle_not_converged = 0
 
     for rep in range(n_reps):
         try:
@@ -58,6 +64,9 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
                   f"(max|beta|={np.nanmax(np.abs(b_mle)):.1f})", flush=True)
             n_failed += 1
             continue
+
+        if not res.get("mle_converged", True):
+            n_mle_not_converged += 1
 
         betas_mle.append(b_mle)
         betas_cb.append(b_cb)
@@ -83,16 +92,20 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
                  time_cb=np.array(times_cb),
                  beta_star=beta,
                  J=J, N=N, K=K,
-                 sigma=config["experiment"]["sigma"],
-                 rho=config["experiment"]["covariate_correlation"],
-                 n_failed=n_failed)
+                 n_simulations=n_simulations,
+                 sigma=exp["sigma"],
+                 rho=exp["covariate_correlation"],
+                 ghk_draws=exp.get("ghk_draws", 200),
+                 n_failed=n_failed,
+                 n_mle_not_converged=n_mle_not_converged)
 
         R_valid = len(betas_mle)
-        var_mle = np.var(betas_mle, axis=0).mean() if R_valid > 1 else 0
-        var_cb = np.var(betas_cb, axis=0).mean() if R_valid > 1 else 0
+        var_mle = np.var(betas_mle, axis=0, ddof=1).mean() if R_valid > 1 else 0
+        var_cb = np.var(betas_cb, axis=0, ddof=1).mean() if R_valid > 1 else 0
         are = var_cb / var_mle if var_mle > 0 else np.inf
         print(f"\n  Saved {output_path.name}: R={R_valid}, failed={n_failed}, "
-              f"ARE(var)={are:.2f}", flush=True)
+              f"mle_not_converged={n_mle_not_converged}, ARE(var)={are:.2f}",
+              flush=True)
 
 
 def main():

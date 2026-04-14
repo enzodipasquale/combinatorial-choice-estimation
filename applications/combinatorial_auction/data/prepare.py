@@ -62,6 +62,8 @@ def prepare(dataset, modular_regressors, quadratic_regressors,
 
 
 def _build_features(registry, names, ctx):
+    if not names:
+        return None
     return np.stack([registry[name](ctx) for name in names], axis=-1).astype(np.float64)
 
 
@@ -101,7 +103,11 @@ def _c_block(raw, ctx, mod_names, quad_names, qid_names):
     mod = _build_features(MODULAR, mod_names, ctx)
     quad = _build_features(QUADRATIC, quad_names, ctx)
     qid = _build_features(QUADRATIC_ID, qid_names, ctx) if qid_names else None
+    n_obs = len(raw["bidder_data"])
     n_items = len(raw["bta_data"])
+
+    if mod is None:
+        mod = np.zeros((n_obs, n_items, 0), dtype=np.float64)
 
     id_data = {
         "modular": mod,

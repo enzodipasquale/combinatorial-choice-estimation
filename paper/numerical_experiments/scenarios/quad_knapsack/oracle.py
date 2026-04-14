@@ -78,17 +78,26 @@ def solve_qkp_gurobi(x_i, delta, Q_dense, lambda_, alpha, errors_i,
 
 
 def twosls_smoke_test(delta_star, phi, z, beta_star):
-    """Run 2SLS on delta_star = phi @ beta + xi, using z as instruments.
+    """Run 2SLS on delta_star = const + phi @ beta + xi, using z as instruments.
 
+    Includes a constant since delta is demeaned but phi is not.
     Returns (beta_hat, max_abs_error).
     """
-    # First stage: phi = z @ Pi + residual  =>  Pi = (z'z)^{-1} z' phi
-    ZtZ_inv = np.linalg.inv(z.T @ z)
-    Pi_hat = ZtZ_inv @ z.T @ phi
-    phi_hat = z @ Pi_hat
+    M = phi.shape[0]
+    ones = np.ones((M, 1))
 
-    # Second stage: delta = phi_hat @ beta + error
-    beta_hat = np.linalg.lstsq(phi_hat, delta_star, rcond=None)[0]
+    # Augment with constant: [1, phi] instrumented by [1, z]
+    z_aug = np.hstack([ones, z])
+    phi_aug = np.hstack([ones, phi])
+
+    # First stage: phi_aug = z_aug @ Pi + residual
+    ZtZ_inv = np.linalg.inv(z_aug.T @ z_aug)
+    Pi_hat = ZtZ_inv @ z_aug.T @ phi_aug
+    phi_hat = z_aug @ Pi_hat
+
+    # Second stage: delta = phi_hat @ [const, beta] + error
+    coefs = np.linalg.lstsq(phi_hat, delta_star, rcond=None)[0]
+    beta_hat = coefs[1:]  # skip constant
     max_err = float(np.abs(beta_hat - beta_star).max())
 
     return beta_hat, max_err

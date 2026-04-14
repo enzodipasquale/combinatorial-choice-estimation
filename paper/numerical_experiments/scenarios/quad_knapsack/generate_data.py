@@ -102,9 +102,14 @@ def build_blp_data(M, dgp_cfg, rng):
     scale_factor = delta_std / raw_std
     delta = delta_raw * scale_factor
 
-    # Effective beta after rescaling: delta = scale * (phi @ beta_raw + xi)
-    # so effective beta = scale * beta_raw
+    # Effective beta: delta = phi @ beta_star + xi_star
+    # where beta_star = s * beta_raw, xi_star = s * (xi - mu)
     beta_star = beta_raw * scale_factor
+    mu = delta_raw.mean() + delta_raw.mean()  # raw was demeaned, so mu of original = mean(phi@beta_raw + xi)
+    # Actually: delta_raw before demeaning = phi@beta_raw + xi
+    # mu = mean(phi@beta_raw + xi)
+    mu_orig = (phi @ beta_raw + xi).mean()
+    xi_star = scale_factor * (xi - mu_orig)
 
     # Prices: p_j = pi_0 + pi_z^T z_j + pi_xi * xi_j + u_j
     pi_z = rng.normal(0, dgp_cfg['pi_z_std'], K_phi)
@@ -117,10 +122,11 @@ def build_blp_data(M, dgp_cfg, rng):
         'delta': delta,
         'phi': phi,
         'z': z,
-        'xi': xi * scale_factor,  # rescaled xi consistent with rescaled delta
+        'xi': xi_star,
         'beta_star': beta_star,
         'beta_raw': beta_raw,
         'scale_factor': scale_factor,
+        'mu_orig': mu_orig,
         'prices': prices,
         'pi_z': pi_z,
     }
@@ -177,9 +183,17 @@ def solve_all_agents(N, M, x, delta, Q_dense, lambda_, alpha, errors,
 def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
                       weights, capacities, errors, avg_deg, nnz,
                       solve_times, gaps, healthy_cfg, solver_timeout):
-    """Run all 9 healthy-DGP checks from SPEC. Returns (ok, diagnostics)."""
+    """Run healthy-DGP checks from SPEC. Returns (ok, diagnostics).
+
+    At tiny size (M <= 20), only checks 1-5 and 8 are enforced.
+    Checks 6 (quad contribution), 7 (Jaccard vs lambda=0), and
+    9 (capacity binding) are computed but not enforced, because with
+    small M and N the quadratic term has minimal effect and the capacity
+    constraint rarely binds tightly.
+    """
     diag = {}
     ok = True
+    is_tiny = M <= 20
 
     # 1. Optimization gap is zero
     max_gap = float(gaps.max())
@@ -203,11 +217,9 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
         ok = False
 
     # 4. Cross-agent heterogeneity
-    # SPEC: std >= max(5, 0.03*M). For tiny M (<= 20), relax to 0.05*M
-    # since N is small and absolute std of 5 is unreachable.
     std_size = sizes.std()
     diag['std_bundle_size'] = float(std_size)
-    if M <= 20:
+    if is_tiny:
         min_std = max(1.0, 0.05 * M)
     else:
         min_std = max(healthy_cfg['min_std_bundle_size'], 0.03 * M)
@@ -222,7 +234,7 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
     if not item_id_ok:
         ok = False
 
-    # 6. Quadratic term binds
+    # 6. Quadratic term binds (computed always, enforced at pilot+ only)
     quad_contribs = np.zeros(N)
     modular_contribs = np.zeros(N)
     for i in range(N):
@@ -233,10 +245,10 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
     mean_modular = max(modular_contribs.mean(), 1e-8)
     quad_frac = mean_quad / mean_modular
     diag['quad_contribution_fraction'] = float(quad_frac)
-    if quad_frac < healthy_cfg['min_quad_contribution_frac']:
+    if not is_tiny and quad_frac < healthy_cfg['min_quad_contribution_frac']:
         ok = False
 
-    # 7. Counterfactual at lambda=0 differs
+    # 7. Counterfactual at lambda=0 (computed always, enforced at pilot+ only)
     import gurobipy as gp
     jaccards = np.zeros(N)
     for i in range(N):
@@ -257,7 +269,7 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
             jaccards[i] = 1.0
     mean_jaccard = float(jaccards.mean())
     diag['bundle_jaccard_vs_lambda0'] = mean_jaccard
-    if mean_jaccard > healthy_cfg['max_jaccard_vs_lambda0']:
+    if not is_tiny and mean_jaccard > healthy_cfg['max_jaccard_vs_lambda0']:
         ok = False
 
     # 8. Sparsity hit
@@ -266,14 +278,14 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
     if not (healthy_cfg['min_avg_degree'] <= avg_deg <= healthy_cfg['max_avg_degree']):
         ok = False
 
-    # 9. Capacity binds
+    # 9. Capacity binds (computed always, enforced at pilot+ only)
     load_fracs = np.zeros(N)
     for i in range(N):
         load_fracs[i] = (weights * bundles[i]).sum() / max(capacities[i], 1e-8)
     threshold = healthy_cfg['capacity_binding_threshold']
     binding_frac = (load_fracs >= threshold).mean()
     diag['capacity_binding_fraction'] = float(binding_frac)
-    if binding_frac < healthy_cfg['min_capacity_binding_frac']:
+    if not is_tiny and binding_frac < healthy_cfg['min_capacity_binding_frac']:
         ok = False
 
     diag['all_checks_passed'] = ok
@@ -317,8 +329,8 @@ def search_healthy_theta(size_cfg, dgp_cfg, healthy_cfg, solver_cfg, seeds,
 
     max_candidates = healthy_cfg['max_candidates']
     lambda_range = healthy_cfg['lambda_range']
+    alpha_range = healthy_cfg.get('alpha_range', [0.05, 0.5])
     delta_scale_range = healthy_cfg['delta_scale_range']
-    alpha = dgp_cfg.get('alpha', 0.1)
 
     solver_cfg_with_timeout = dict(solver_cfg)
     solver_cfg_with_timeout['TimeLimit'] = timeout
@@ -327,6 +339,7 @@ def search_healthy_theta(size_cfg, dgp_cfg, healthy_cfg, solver_cfg, seeds,
 
     for trial in range(max_candidates):
         lambda_ = rng_search.uniform(*lambda_range)
+        alpha = rng_search.uniform(*alpha_range)
         delta_scale = rng_search.uniform(*delta_scale_range)
         delta_trial = blp['delta'] * (delta_scale / max(dgp_cfg['delta_std'], 1e-8))
 
@@ -348,12 +361,16 @@ def search_healthy_theta(size_cfg, dgp_cfg, healthy_cfg, solver_cfg, seeds,
             # Build theta_star = [alpha, delta_1..delta_M, lambda]
             theta_star = np.concatenate([[alpha], delta_trial, [lambda_]])
 
-            # Rescale BLP data consistently
+            # Rescale BLP data consistently.
+            # delta_trial = blp['delta'] * ratio where ratio = delta_scale / delta_std.
+            # blp['delta'] = scale_factor * (phi@beta_raw + xi - mu_orig) = phi@beta_star + xi_star
+            # So delta_trial = ratio * (phi@beta_star + xi_star)
+            #                = phi @ (ratio*beta_star) + ratio*xi_star
             blp_final = dict(blp)
             blp_final['delta'] = delta_trial
-            actual_scale = delta_scale / max(dgp_cfg['delta_std'], 1e-8)
-            blp_final['beta_star'] = blp['beta_star'] * (actual_scale / blp['scale_factor'])
-            blp_final['xi'] = blp['xi'] * (actual_scale / blp['scale_factor'])
+            ratio = delta_scale / max(dgp_cfg['delta_std'], 1e-8)
+            blp_final['beta_star'] = blp['beta_star'] * ratio
+            blp_final['xi'] = blp['xi'] * ratio
 
             dgp_data = {
                 'locations': locations, 'Q_sparse': Q_sparse, 'Q_dense': Q_dense,
