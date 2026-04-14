@@ -2,7 +2,7 @@
 
 **Scenario 3 of the numerical experiments.** Showcases that `combest` scales to parameter vectors of size $M+2$ with a quadratic knapsack demand oracle, matching the size of the FCC combinatorial auction application ($N \approx 250$, $M \approx 500$).
 
-**Scope of this pilot.** The agent generates the DGP, solves each agent's QKP exactly at $\theta^\star$ to produce observed bundles, and verifies the DGP is healthy. **No estimation is run in this pilot.** Row-generation estimation is a large HPC job launched separately once the DGP is validated.
+**Scope of this pilot.** Generate the DGP, solve each agent's QKP exactly at $\theta^\star$ to produce observed bundles, and verify the DGP is healthy. **No estimation is run in this pilot.** Row-generation estimation is a separate HPC job.
 
 ## Economic framing
 
@@ -34,11 +34,11 @@ DGP recipe for $\delta^\star$:
 2. Set raw $\delta_j = \phi_j^\top \beta^\star + \xi_j$, then demean and rescale to std = 0.5. The rescaling implicitly rescales $\beta^\star$; save the effective $\beta^\star$ so the downstream 2SLS recovers it exactly.
 3. Draw a "price" $p_j = \pi_0 + \pi_z^\top z_j + \pi_\xi \xi_j + u_j$ with $\pi_\xi > 0$ so 2SLS has a bite. The pilot doesn't exercise 2SLS beyond a smoke test.
 
-**Agent responsibility in the pilot:** generate and save $\delta^\star, p, \phi, z, \xi, \beta^\star$ so a later 2SLS can recover $\beta^\star$ at machine precision when given $\hat\delta = \delta^\star$. Smoke test: run the 2SLS on $\delta^\star$ itself, check $\hat\beta = \beta^\star$ up to numerical tolerance.
+The pilot generates and saves $\delta^\star, p, \phi, z, \xi, \beta^\star$ so a later 2SLS can recover $\beta^\star$ at machine precision when given $\hat\delta = \delta^\star$. Smoke test: run 2SLS on $\delta^\star$ itself, check $\hat\beta = \beta^\star$ up to numerical tolerance.
 
 ## Sparse quadratic structure — critical design choice
 
-**This determines whether the pilot succeeds.** We need exact optimization with **MIPGap = 0**. Gurobi can close the gap fast only if $Q$ is sparse and structured. Dense random $Q$ does not scale; the old supermodular scenario at $M=200$ struggled for this reason.
+Exact optimization (`MIPGap = 0`) requires $Q$ to be sparse and structured. Dense random $Q$ does not scale; the old supermodular scenario at $M=200$ struggled for this reason.
 
 ### Structure — geographic adjacency
 
@@ -76,7 +76,7 @@ $x_{ij} \sim \mathcal{N}(0, 1)$ i.i.d. Single coefficient $\alpha$.
 
 $$\theta^\star = (\alpha^\star, \delta_1^\star, \ldots, \delta_M^\star, \lambda^\star) \in \mathbb{R}^{M+2}, \qquad \lambda^\star \geq 0.$$
 
-Defaults (agent can tune during healthy search):
+Defaults (tunable during healthy search):
 
 - $\alpha^\star = 0.1$
 - $\delta^\star$: mean 0, std 0.5, constructed as above
@@ -92,11 +92,11 @@ Defaults (agent can tune during healthy search):
 | Pilot | 30 | 50 | Healthy DGP validation. Full diagnostic suite. |
 | Intermediate | 100 | 200 | Optional stress test of sparsity design if pilot is clean. |
 
-**Not in scope for agent:** $N=250, M=500$ showcase.
+Showcase size ($N=250, M=500$) is HPC-only.
 
 ## Healthy-DGP conditions
 
-Agent runs these checks and aborts if any fail. Log all diagnostics either way.
+Abort if any check fails. Log all diagnostics either way.
 
 1. **Optimization gap is zero.** Every per-agent QKP solves with `MIPGap = 0` within the per-agent time budget. If any agent hits the time limit with nonzero gap, DGP is unhealthy.
 
@@ -120,9 +120,9 @@ On failure, light random search over $\lambda^\star$ and rescaling of $\delta^\s
 
 ## Solver requirements
 
-- **`combest`'s `QuadraticKnapsackGRB` solver.** Do not roll your own.
+- Uses `combest`'s `QuadraticKnapsackGRB` solver.
 - `MIPGap = 0` mandatory. `TimeLimit` per subproblem from size table above.
-- **Any subproblem returning with positive gap = unhealthy DGP.** Do not accept near-optimal solutions.
+- Any subproblem returning with positive gap = unhealthy DGP.
 - Brute-force verification at $M = 15$: exact match against exhaustive enumeration for $\geq 3$ random agents.
 
 ## Deliverable
@@ -173,12 +173,6 @@ On failure, light random search over $\lambda^\star$ and rescaling of $\delta^\s
 
 Also a log file with per-agent solve times, gaps, bundle diagnostics.
 
-## What the agent does NOT do
+## Out of scope for the pilot
 
-- No row-generation estimation.
-- No bootstrap.
-- No $M=500$ runs.
-- No HPC job submission.
-- No edits to `combest/` core.
-
-The pilot validates that **exactly** this DGP can be generated and solved cleanly at $(N=30, M=50)$ with the sparsity and healthy conditions above. If it can, scaling to $(N=250, M=500)$ on HPC is compute, not design.
+Row-generation estimation, bootstrap, $M=500$ runs, and HPC job submission. The pilot validates that the DGP can be generated and solved cleanly at $(N=30, M=50)$ with the sparsity and healthy conditions above. Scaling to $(N=250, M=500)$ on HPC is compute, not design.
