@@ -11,29 +11,7 @@ sys.path.insert(0, str(APP_DIR.parent.parent))
 from applications.combinatorial_auction.data.loaders import (
     load_bta_data, build_context, load_aggregation_matrix, continental_mta_nums,
 )
-from applications.combinatorial_auction.scripts.c_block.analyze import tsls, _build_distant_stats
-
-POP_THRESHOLD = 500_000
-
-
-def run_2sls(delta, price, pop, hhinc, geo, sample="full"):
-    if sample == "rural":
-        mask = pop < POP_THRESHOLD
-    else:
-        mask = np.ones(len(pop), dtype=bool)
-
-    n = mask.sum()
-    d_s, p_s = delta[mask], price[mask]
-
-    zm = np.array([pop[geo[j] > 500].mean() if (geo[j] > 500).any() else 0
-                    for j in range(len(pop))])[mask]
-    zh = np.array([hhinc[geo[j] > 500].mean() if (geo[j] > 500).any() else 0
-                    for j in range(len(hhinc))])[mask]
-
-    X = np.column_stack([np.ones(n), -p_s])
-    Z = np.column_stack([zm, zh])
-    b_iv, _, _, _ = tsls(X, d_s, Z)
-    return b_iv[0], b_iv[1]  # alpha_0, alpha_1
+from applications.combinatorial_auction.data.iv import load_iv_instruments, run_2sls as _run_2sls
 
 
 def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
@@ -133,8 +111,6 @@ def main():
                              "Falls back to 'config' field inside bootstrap_result.json.")
     parser.add_argument("--n-sim-cf", type=int, default=5,
                         help="Number of simulations for counterfactual (default: 5)")
-    parser.add_argument("--iv-sample", default="full", choices=["full", "rural"],
-                        help="IV sample (default: full)")
     parser.add_argument("--error-seed", type=int, default=24)
     args = parser.parse_args()
 
@@ -185,12 +161,10 @@ def main():
 
     raw = load_bta_data()
     ctx = build_context(raw)
-    pop = raw["bta_data"]["pop90"].to_numpy().astype(float)
-    hhinc = raw["bta_data"]["hhinc35k"].to_numpy().astype(float)
     price_bta = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9
-    geo = raw["geo_distance"]
     b_obs = ctx["c_obs_bundles"]
     bta_revenue = (b_obs @ price_bta).sum()
+    zm, _, zh = load_iv_instruments(raw)
 
     if rank == 0:
         from applications.combinatorial_auction.scripts.c_block.counterfactual.prepare import (
@@ -199,7 +173,7 @@ def main():
         # Use point estimate theta to build template structure; alpha values overridden per draw
         theta_pt = np.array(boot["theta_hat"])
         delta_pt = -theta_pt[n_id_mod:n_id_mod + n_btas]
-        a0_pt, a1_pt = run_2sls(delta_pt, price_bta, pop, hhinc, geo, args.iv_sample)
+        a0_pt, a1_pt, _, _, _ = _run_2sls(delta_pt, price_bta, zm, zh)
 
         input_data_template, meta = prepare_counterfactual(
             est_result_path_or_dict=est_result_dict,
@@ -248,7 +222,7 @@ def main():
         gamma_item_b = theta_b[n_id_mod + n_btas + n_id_quad:]
 
         # 2SLS
-        a0_b, a1_b = run_2sls(delta_b, price_bta, pop, hhinc, geo, args.iv_sample)
+        a0_b, a1_b, _, _, _ = _run_2sls(delta_b, price_bta, zm, zh)
 
         # BTA surplus from per-draw u_hat
         if rank == 0:
@@ -309,7 +283,6 @@ def main():
         # Save
         out = {
             "n_boot": len(results),
-            "iv_sample": args.iv_sample,
             "results": results,
             "summary": {
                 "bta_surplus": {"mean": float(bta_surp.mean()), "se": float(bta_surp.std())},

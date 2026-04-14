@@ -85,6 +85,14 @@ def _(ctx):
 def _(ctx):
     return ctx["designated"][:, None] * MODULAR["log_dist_hq"](ctx)
 
+@modular("log_dist_hq_pop")
+def _(ctx):
+    return MODULAR["log_dist_hq"](ctx) * ctx["pop"][None, :]
+
+@modular("elig_log_dist_hq_pop")
+def _(ctx):
+    return ctx["elig"][:, None] * MODULAR["log_dist_hq_pop"](ctx)
+
 # quadratic regressors: (ctx) -> (n_items, n_items)
 
 @quadratic("adjacency")
@@ -119,6 +127,9 @@ def _(ctx): return ctx["elig"][:, None, None] * _pop_centroid(ctx, delta=2)[None
 
 @quadratic_id("elig_pop_centroid_delta4")
 def _(ctx): return ctx["elig"][:, None, None] * _pop_centroid(ctx, delta=4)[None, :, :]
+
+@quadratic_id("elig_pop_centroid_00")
+def _(ctx): return ctx["elig"][:, None, None] * _pop_centroid(ctx, delta=0)[None, :, :]
 
 @quadratic_id("elig_travel_survey")
 def _(ctx): return ctx["elig"][:, None, None] * QUADRATIC["travel_survey"](ctx)[None, :, :]
