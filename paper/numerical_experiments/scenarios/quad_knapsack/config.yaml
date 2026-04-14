@@ -1,0 +1,77 @@
+# ============================================================
+# Quadratic knapsack with BLP inversion — pilot configuration
+#
+# Agents choose bundles b in {0,1}^M under capacity constraint:
+#   V_i(b) = alpha * sum_j x_ij b_j
+#            - sum_j delta_j b_j
+#            + lambda * sum_{j<j'} Q_{jj'} b_j b_{j'}
+#            + sum_j nu_ij b_j
+#   s.t.  sum_j w_j b_j <= W_i
+#
+# Sparse geographic adjacency Q with avg degree ~8.
+# Parameters: theta = (alpha, delta_1..delta_M, lambda), K = M+2.
+# ============================================================
+
+sizes:
+  tiny:
+    N: 10
+    M: 15
+    gurobi_timeout: 10        # generous for brute-force comparison
+  pilot:
+    N: 30
+    M: 50
+    gurobi_timeout: 1
+  intermediate:
+    N: 100
+    M: 200
+    gurobi_timeout: 5
+
+dgp:
+  avg_degree: 8               # target mean degree of adjacency graph
+  max_nnz_per_item: 15        # hard ceiling: nnz(Q) <= max_nnz_per_item * M
+  weight_lo: 0.5              # item weights ~ U(weight_lo, weight_hi)
+  weight_hi: 1.5
+  capacity_frac_lo: 0.3       # capacity W_i ~ U(frac_lo * sum_w, frac_hi * sum_w)
+  capacity_frac_hi: 0.5
+  sigma: 1.0                  # std of modular errors nu_ij
+  # BLP data generation
+  K_phi: 3                    # dimension of item characteristics phi
+  rho: 0.5                    # endogeneity: phi = z + rho * xi
+  delta_std: 0.5              # target std of delta after demeaning + rescaling
+  # Price equation
+  pi_0: 1.0
+  pi_z_std: 0.5               # pi_z ~ N(0, pi_z_std) per component
+  pi_xi: 0.3                  # endogenous price component
+  price_noise_std: 0.2        # u_j ~ N(0, price_noise_std)
+
+defaults:
+  alpha: 0.1
+  lambda: 0.05
+
+seeds:
+  dgp: 42
+  error: 1042
+  search: 7
+
+solver:
+  MIPGap: 0                   # exact solutions required
+  OutputFlag: 0
+
+healthy_dgp:
+  max_candidates: 50
+  lambda_range: [0.01, 0.15]
+  delta_scale_range: [0.3, 0.8]   # rescale delta std
+  # Thresholds (from SPEC)
+  min_mean_bundle_frac: 0.15
+  max_mean_bundle_frac: 0.45
+  min_std_bundle_size: 5       # also enforced as max(5, 0.03*M)
+  item_identification: true    # every item in >=1 and absent from >=1 bundle
+  min_quad_contribution_frac: 0.10
+  max_jaccard_vs_lambda0: 0.85
+  min_capacity_binding_frac: 0.80
+  capacity_binding_threshold: 0.95  # binding if sum(w*b) >= threshold * W_i
+  min_avg_degree: 4
+  max_avg_degree: 12
+
+brute_force:
+  n_agents_verify: 3          # how many agents to verify at tiny size
