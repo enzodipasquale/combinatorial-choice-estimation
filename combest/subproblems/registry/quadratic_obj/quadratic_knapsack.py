@@ -9,12 +9,15 @@ class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
         weights = self.data_manager.local_data.item_data['weight']
         capacities = self.data_manager.local_data.id_data['capacity']
         masks = self.data_manager.local_data.id_data.get("item_mask")
+        self._zero_capacity = []
         self.local_problems = []
         for local_id in range(self.comm_manager.num_local_agent):
+            cap = capacities[local_id]
+            self._zero_capacity.append(cap <= 0)
             model = create_gurobi_model(self.subproblem_cfg)
             ub = masks[local_id].astype(float) if masks is not None else 1.0
             B = model.addMVar(self.dimensions_cfg.n_items, vtype=gp.GRB.BINARY, ub=ub, name='bundle')
-            model.addConstr(weights @ B <= capacities[local_id])
+            model.addConstr(weights @ B <= max(cap, 0))
             model.update()
             self.local_problems.append(model)
 
@@ -23,6 +26,8 @@ class QuadraticKnapsackGRBSolver(QuadraticObjectiveMixin, SubproblemSolver):
         Q_all = self._build_quadratic_coeff_batch(theta)
         results = np.zeros((len(self.local_problems), self.dimensions_cfg.n_items), dtype=bool)
         for i, model in enumerate(self.local_problems):
+            if self._zero_capacity[i]:
+                continue
             model.setMObjective(Q_all[i], L_all[i], 0.0, sense=gp.GRB.MAXIMIZE)
             model.optimize()
             try:

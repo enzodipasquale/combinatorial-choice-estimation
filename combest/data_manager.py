@@ -49,7 +49,15 @@ class DataManager:
         root_data = input_data if self.comm_manager.is_root() else {"id_data": {}, "item_data": {}}
         id_data_full, id_meta = self.comm_manager.bcast_dict(root_data["id_data"], return_metadata=True)
         obs_ids = self.comm_manager.obs_ids
-        local_id = {k: v[obs_ids] if isinstance(v, np.ndarray) else v for k, v in id_data_full.items()}
+        sim_ids = self.comm_manager.agent_ids // self.dimensions_cfg.n_obs
+        local_id = {}
+        for k, v in id_data_full.items():
+            if not isinstance(v, np.ndarray):
+                local_id[k] = v
+            elif v.ndim == 2 and v.shape == (self.dimensions_cfg.n_obs, self.dimensions_cfg.n_simulations):
+                local_id[k] = v[obs_ids, sim_ids]
+            else:
+                local_id[k] = v[obs_ids]
         del id_data_full
 
         item_data, item_meta = self.comm_manager.bcast_dict(root_data["item_data"], return_metadata=True)

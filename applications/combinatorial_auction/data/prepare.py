@@ -1,14 +1,15 @@
 import numpy as np
 from .registries import MODULAR, QUADRATIC, QUADRATIC_ID, WEIGHT_ROUNDING_TICK
 from .loaders import (load_bta_data, build_context, load_aggregation_matrix,
-                      continental_mta_nums, load_ab_data)
+                      continental_mta_nums, load_ab_data, load_round_capacities)
 
 AB_ELIG_BANDWIDTH = 30.0
 
 
 def prepare(dataset, modular_regressors, quadratic_regressors,
             quadratic_id_regressors=(), item_modular="fe",
-            separate_ab_quadratics=False):
+            separate_ab_quadratics=False,
+            capacity_mode="initial", n_simulations=None, capacity_seed=42):
     raw = load_bta_data()
     ctx = build_context(raw)
     fn = {"c_block": _c_block, "ab_block": _ab_block, "joint": _joint}[dataset]
@@ -16,6 +17,10 @@ def prepare(dataset, modular_regressors, quadratic_regressors,
     input_data, meta = fn(raw, ctx, modular_regressors, quadratic_regressors, quadratic_id_regressors, **kwargs)
     if item_modular == "price":
         _apply_price(input_data, raw, meta, dataset)
+
+    if capacity_mode == "round" and dataset == "c_block" and n_simulations is not None:
+        input_data["id_data"]["capacity"] = load_round_capacities(
+            raw["bidder_data"], n_simulations, seed=capacity_seed)
 
     # dimensions
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
