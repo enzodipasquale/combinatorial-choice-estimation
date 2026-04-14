@@ -3,8 +3,6 @@ application:
     item_modular: fe
     mode: bootstrap
     error_seed: 2006
-    capacity_mode: round
-    capacity_seed: 42
     modular_regressors:
         - elig_pop
         - assets_pop
