@@ -8,9 +8,8 @@ Numerical experiments for the JMP, organized per-scenario. Each scenario is an i
 scenarios/
 ├── README.md                 # this file
 ├── airline/                  # GS, custom find_best_item greedy
-├── firms_export/             # supermodular, graph-cut oracle
-├── auction/                  # structured quadratic knapsack + BLP inversion
-└── multi_sourcing/           # multi-stage MILP (status: DONE, see applications/firms_export/)
+├── multi_stage_production/   # multi-stage MILP
+└── quad_knapsack/            # structured quadratic knapsack + BLP inversion
 ```
 
 ## Per-scenario contents
@@ -26,10 +25,9 @@ Every scenario folder contains:
 
 | Scenario | Status | Notes |
 |---|---|---|
-| airline | **pilot** | Simplest oracle (greedy), used to validate the pattern. |
-| firms_export | not started | Depends on airline pilot pattern. |
-| auction | not started | Only scenario with BLP-style inversion. Targets $M \approx 500$ with structured quadratic. |
-| multi_sourcing | done | Lives at `applications/firms_export/`. Linear parametrization; DC version is WIP and out of scope for the JMP. |
+| airline | **pilot** | Simplest oracle (greedy), validates the pattern. |
+| multi_stage_production | pilot | Multi-stage MILP. Linear parametrization; DC version is WIP. |
+| quad_knapsack | pilot | Quadratic knapsack + BLP inversion. Targets $M \approx 500$. |
 
 ## Design principles
 
