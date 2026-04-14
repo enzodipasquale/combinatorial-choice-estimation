@@ -37,7 +37,6 @@ def main(config_path):
             separate_ab_quadratics=app.get("separate_ab_quadratics", False),
             capacity_mode=app.get("capacity_mode", "initial"),
             n_simulations=config["dimensions"].get("n_simulations"),
-            capacity_seed=app.get("capacity_seed", 42),
         )
         meta.pop("raw", None)
 

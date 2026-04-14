@@ -119,39 +119,49 @@ def continental_mta_nums(btas):
     return sorted(df[df["BTA"].astype(int).isin(btas)]["MTA"].astype(int).unique())
 
 
-def load_round_capacities(bidder_data, n_simulations, seed=42):
-    """Build (n_obs, S) capacity matrix by sampling rounds uniformly.
+def load_round_capacities(bidder_data, n_simulations):
+    """Build (n_obs, S) capacity matrix with equally spaced rounds.
 
-    For each (bidder, simulation), draw a round uniformly from [1, max_round]
-    and use the bidder's eligibility at that round. If the bidder was inactive
-    at the drawn round, capacity is 0.
+    Simulation s uses round floor(1 + s * (max_round - 1) / (S - 1)),
+    so sim 0 = round 1, sim S-1 = last round, others equally spaced.
 
-    max_elig in the CSV is in MHz-pop units (= pops_eligible * 30 for C-block).
-    We convert to the same units as pops_eligible before applying WEIGHT_ROUNDING_TICK.
+    To stay on the same scale as baseline capacity (pops_eligible // TICK),
+    we use the decay ratio: cap[i,s] = baseline_cap[i] * max_elig[i,r] / max_elig[i,1].
     """
-    CBLOCK_BANDWIDTH = 30.0
-    elig = pd.read_csv(RAW_DIR / "cblock-eligibility.csv")
-    max_round = elig["round_num"].max()
+    elig_df = pd.read_csv(RAW_DIR / "cblock-eligibility.csv")
+    max_round = elig_df["round_num"].max()
     n_obs = len(bidder_data)
 
     swap = {190: 234, 234: 190}
-    elig_lookup = elig.set_index(["bidder_num_fox", "round_num"])["max_elig"]
+    elig_lookup = elig_df.set_index(["bidder_num_fox", "round_num"])["max_elig"]
 
-    rng = np.random.default_rng(seed)
-    rounds = rng.integers(1, max_round + 1, size=(n_obs, n_simulations))
+    if n_simulations == 1:
+        rounds = [1]
+    else:
+        rounds = [int(np.round(1 + s * (max_round - 1) / (n_simulations - 1)))
+                  for s in range(n_simulations)]
+
+    baseline_cap = np.round(
+        bidder_data["pops_eligible"].to_numpy().astype(float) // WEIGHT_ROUNDING_TICK
+    ).astype(int)
+
     capacity = np.zeros((n_obs, n_simulations), dtype=int)
-
     for i in range(n_obs):
-        fox_swapped = int(bidder_data.iloc[i]["bidder_num_fox"])
-        fox_orig = swap.get(fox_swapped, fox_swapped)
-        for s in range(n_simulations):
-            r = rounds[i, s]
+        fox_orig = swap.get(int(bidder_data.iloc[i]["bidder_num_fox"]),
+                            int(bidder_data.iloc[i]["bidder_num_fox"]))
+        try:
+            elig_r1 = elig_lookup.loc[(fox_orig, 1)]
+        except KeyError:
+            continue
+        if elig_r1 <= 0:
+            continue
+        for s, r in enumerate(rounds):
             try:
-                raw_elig = elig_lookup.loc[(fox_orig, r)]
-                pops_elig = raw_elig / CBLOCK_BANDWIDTH
-                capacity[i, s] = int(np.round(pops_elig // WEIGHT_ROUNDING_TICK))
+                elig_r = elig_lookup.loc[(fox_orig, r)]
             except KeyError:
                 capacity[i, s] = 0
+                continue
+            capacity[i, s] = int(np.round(baseline_cap[i] * elig_r / elig_r1))
 
     return capacity
 

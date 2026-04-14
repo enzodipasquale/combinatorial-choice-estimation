@@ -9,7 +9,7 @@ AB_ELIG_BANDWIDTH = 30.0
 def prepare(dataset, modular_regressors, quadratic_regressors,
             quadratic_id_regressors=(), item_modular="fe",
             separate_ab_quadratics=False,
-            capacity_mode="initial", n_simulations=None, capacity_seed=42):
+            capacity_mode="initial", n_simulations=None):
     raw = load_bta_data()
     ctx = build_context(raw)
     fn = {"c_block": _c_block, "ab_block": _ab_block, "joint": _joint}[dataset]
@@ -20,7 +20,7 @@ def prepare(dataset, modular_regressors, quadratic_regressors,
 
     if capacity_mode == "round" and dataset == "c_block" and n_simulations is not None:
         input_data["id_data"]["capacity"] = load_round_capacities(
-            raw["bidder_data"], n_simulations, seed=capacity_seed)
+            raw["bidder_data"], n_simulations)
 
     # dimensions
     n_obs, n_items = input_data["id_data"]["obs_bundles"].shape
