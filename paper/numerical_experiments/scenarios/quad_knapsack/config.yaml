@@ -63,7 +63,7 @@ solver:
 
 healthy_dgp:
   max_candidates: 100
-  lambda_range: [0.01, 0.15]
+  lambda_range: [0.02, 0.30]
   alpha_range: [0.05, 0.5]        # search over alpha too
   delta_scale_range: [0.3, 0.8]   # rescale delta std
   # Thresholds (from SPEC)

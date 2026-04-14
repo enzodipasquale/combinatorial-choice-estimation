@@ -103,11 +103,8 @@ def build_blp_data(M, dgp_cfg, rng):
     delta = delta_raw * scale_factor
 
     # Effective beta: delta = phi @ beta_star + xi_star
-    # where beta_star = s * beta_raw, xi_star = s * (xi - mu)
+    # where beta_star = s * beta_raw, xi_star = s * (xi - mu_orig)
     beta_star = beta_raw * scale_factor
-    mu = delta_raw.mean() + delta_raw.mean()  # raw was demeaned, so mu of original = mean(phi@beta_raw + xi)
-    # Actually: delta_raw before demeaning = phi@beta_raw + xi
-    # mu = mean(phi@beta_raw + xi)
     mu_orig = (phi @ beta_raw + xi).mean()
     xi_star = scale_factor * (xi - mu_orig)
 
@@ -157,10 +154,12 @@ def solve_all_agents(N, M, x, delta, Q_dense, lambda_, alpha, errors,
         # Capacity constraint
         model.addConstr(weights @ b <= capacities[i])
 
-        # Objective: alpha * x_i^T b - delta^T b + lambda * b^T Q b + errors_i^T b
+        # Objective: alpha * x_i^T b - delta^T b
+        #            + lambda * sum_{j<j'} Q_{jj'} b_j b_{j'} + errors_i^T b
+        # Gurobi computes b^T Q b = 2 * sum_{j<j'}, so pass 0.5 * lambda * Q.
         linear = alpha * x[i] - delta + errors[i]
         model.setMObjective(
-            Q=lambda_ * Q_dense,
+            Q=0.5 * lambda_ * Q_dense,
             c=linear,
             constant=0.0,
             sense=gp.GRB.MAXIMIZE
@@ -235,11 +234,12 @@ def check_healthy_dgp(bundles, N, M, Q_dense, x, delta, lambda_, alpha,
         ok = False
 
     # 6. Quadratic term binds (computed always, enforced at pilot+ only)
+    # Quadratic contribution: lambda * sum_{j<j'} Q b_j b_{j'} = 0.5 * lambda * b^T Q b
     quad_contribs = np.zeros(N)
     modular_contribs = np.zeros(N)
     for i in range(N):
         b = bundles[i].astype(float)
-        quad_contribs[i] = lambda_ * b @ Q_dense @ b
+        quad_contribs[i] = 0.5 * lambda_ * b @ Q_dense @ b
         modular_contribs[i] = abs((alpha * x[i] - delta)[bundles[i]].sum())
     mean_quad = quad_contribs.mean()
     mean_modular = max(modular_contribs.mean(), 1e-8)

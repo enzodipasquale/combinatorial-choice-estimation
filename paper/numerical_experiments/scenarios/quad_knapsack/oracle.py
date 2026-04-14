@@ -11,10 +11,14 @@ from itertools import product as cartesian_product
 
 
 def compute_utility(bundle, x_i, delta, Q_dense, lambda_, alpha, errors_i):
-    """Full utility V_i(b) for one agent (ignoring capacity — for evaluation)."""
+    """Full utility V_i(b) for one agent (ignoring capacity — for evaluation).
+
+    Quadratic term: lambda * sum_{j<j'} Q_{jj'} b_j b_{j'} = 0.5 * lambda * b^T Q b
+    (factor 0.5 because Q is symmetric with zero diagonal).
+    """
     b = bundle.astype(float)
     modular = alpha * x_i[bundle].sum() - delta[bundle].sum() + errors_i[bundle].sum()
-    quadratic = lambda_ * b @ Q_dense @ b
+    quadratic = 0.5 * lambda_ * b @ Q_dense @ b
     return modular + quadratic
 
 
@@ -57,9 +61,11 @@ def solve_qkp_gurobi(x_i, delta, Q_dense, lambda_, alpha, errors_i,
     b = model.addMVar(M, vtype=gp.GRB.BINARY, name='b')
     model.addConstr(weights @ b <= capacity_i)
 
+    # Quadratic term: lambda * sum_{j<j'} Q_{jj'} b_j b_{j'}.
+    # Gurobi computes b^T Q b = 2 * sum_{j<j'}, so pass 0.5 * lambda * Q.
     linear = alpha * x_i - delta + errors_i
     model.setMObjective(
-        Q=lambda_ * Q_dense,
+        Q=0.5 * lambda_ * Q_dense,
         c=linear,
         constant=0.0,
         sense=gp.GRB.MAXIMIZE

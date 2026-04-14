@@ -1,7 +1,7 @@
-"""End-to-end DGP pilot for quadratic knapsack / auction scenario.
+"""DGP generation and validation for the quadratic knapsack / auction scenario.
 
 No estimation is run. The deliverable is:
-  1. Healthy DGP at pilot size (N=30, M=50).
+  1. Healthy DGP at showcase size (N=250, M=500).
   2. Brute-force verification at tiny size (N=10, M=15).
   3. 2SLS smoke test on delta_star.
   4. result.json + data artifacts.
@@ -155,7 +155,9 @@ def run(cfg=None, size_name='pilot'):
 
     class NumpyEncoder(json.JSONEncoder):
         def default(self, obj):
-            if isinstance(obj, (np.bool_, np.integer)):
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            if isinstance(obj, np.integer):
                 return int(obj)
             if isinstance(obj, np.floating):
                 return float(obj)
@@ -174,7 +176,7 @@ def run(cfg=None, size_name='pilot'):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Quadratic knapsack DGP pilot')
-    parser.add_argument('--size', type=str, default='pilot',
+    parser.add_argument('--size', type=str, default='showcase',
                         choices=['tiny', 'pilot', 'intermediate', 'showcase'])
     args = parser.parse_args()
     run(size_name=args.size)
