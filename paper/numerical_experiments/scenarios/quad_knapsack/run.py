@@ -175,6 +175,6 @@ def run(cfg=None, size_name='pilot'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Quadratic knapsack DGP pilot')
     parser.add_argument('--size', type=str, default='pilot',
-                        choices=['tiny', 'pilot', 'intermediate'])
+                        choices=['tiny', 'pilot', 'intermediate', 'showcase'])
     args = parser.parse_args()
     run(size_name=args.size)

@@ -70,8 +70,8 @@ def run_grid(J_values, N_values, K, beta, n_reps, config):
             bias_cb = np.mean(betas_cb - beta, axis=0)
 
             # Variance
-            var_mle = np.var(betas_mle, axis=0)
-            var_cb = np.var(betas_cb, axis=0)
+            var_mle = np.var(betas_mle, axis=0, ddof=1)
+            var_cb = np.var(betas_cb, axis=0, ddof=1)
 
             # Scalar summaries
             avg_mse_mle = mse_mle.mean()

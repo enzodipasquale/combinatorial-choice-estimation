@@ -25,6 +25,10 @@ sizes:
     N: 100
     M: 200
     gurobi_timeout: 5
+  showcase:
+    N: 250
+    M: 500
+    gurobi_timeout: 30
 
 dgp:
   avg_degree: 8               # target mean degree of adjacency graph
