@@ -1,0 +1,35 @@
+# ============================================================
+# Bootstrap estimation config — quadratic knapsack / auction
+#
+# Row-generation estimation with BLP-style item fixed effects.
+# K = M + 2 parameters: theta = (alpha, delta_1..delta_M, lambda).
+# ============================================================
+
+size: showcase          # which size block from config.yaml
+
+estimation:
+  n_simulations: 5      # S (simulation draws per agent)
+  max_iters: 300        # row generation iterations (point estimate)
+  tolerance: 1.0e-6     # convergence tolerance
+
+bootstrap:
+  num_samples: 150
+  seed: 7777
+  rowgen_tol: 0.001     # looser tolerance for bootstrap replications
+  rowgen_max_iters: 250
+
+callbacks:
+  row_gen:
+    - {iters: 30, timeout: 5}
+    - {iters: 10, timeout: 30, retire: false}
+    - {timeout: 120, retire: true}
+  boot:
+    - {iters: 30, timeout: 5}
+    - {iters: 10, timeout: 30, retire: true}
+    - {iters: 30, timeout: 5, retire: true}
+    - {iters: 10, timeout: 30, retire: true}
+    - {iters: 30, timeout: 5, retire: true}
+    - {iters: 10, timeout: 30, retire: true}
+  boot_strip:
+    percentile: 95
+    hard_threshold: 5000

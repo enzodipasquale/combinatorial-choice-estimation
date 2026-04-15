@@ -26,6 +26,9 @@ def main(config_path):
 
     if rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
+        from applications.combinatorial_auction.data.loaders import load_bta_data
+        raw = load_bta_data()
+
         input_data, meta = prepare(
             dataset=app["dataset"],
             modular_regressors=app.get("modular_regressors", []),
@@ -34,6 +37,14 @@ def main(config_path):
             item_modular=app.get("item_modular", "fe"),
         )
         meta.pop("raw", None)
+
+        if app.get("winners_only"):
+            from data_utils import filter_winners, last_round_capacity
+            input_data, keep = filter_winners(input_data)
+            meta["n_obs"] = input_data["id_data"]["obs_bundles"].shape[0]
+            if app.get("capacity_source") == "last_round":
+                input_data["id_data"]["capacity"] = last_round_capacity(raw["bidder_data"], keep)
+            print(f"  filtered to {meta['n_obs']} winners")
 
         config["dimensions"].update(
             n_obs=meta["n_obs"], n_items=meta["n_items"],
@@ -118,5 +129,5 @@ def main(config_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("config", nargs="?", default=str(ZERO_DIR / "config.yaml"))
+    parser.add_argument("config", nargs="?", default=str(ZERO_DIR / "baseline.yaml"))
     main(parser.parse_args().config)
