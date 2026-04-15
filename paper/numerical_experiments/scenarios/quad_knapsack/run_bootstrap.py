@@ -85,6 +85,13 @@ def main(boot_config_path):
 
         obs_bundles = dgp['obs_bundles']       # (N, M) bool
         x = dgp['x_modular']                   # (N, M)
+
+        # Verify data matches the requested size
+        assert obs_bundles.shape == (N, M), \
+            f"obs_bundles shape {obs_bundles.shape} != ({N}, {M}). " \
+            f"Re-run: python run.py --size {size_name}"
+        assert len(theta_star) == K, \
+            f"theta_star length {len(theta_star)} != K={K}"
         weights = dgp['weights']               # (M,)
         capacities = dgp['capacities']         # (N,)
         Q_dense = dgp['Q_sparse'].toarray()    # (M, M)
