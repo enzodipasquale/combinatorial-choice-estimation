@@ -24,7 +24,7 @@ row_generation:
     master_gurobi_params:
         Method: 0
     theta_bounds:
-        lb: 0
+        lb: -200
         ub: 2000
         lbs:
             elig_pop: -2000

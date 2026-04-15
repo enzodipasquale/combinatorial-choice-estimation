@@ -61,13 +61,17 @@ class FeaturesManager:
         vals = self.covariates_oracle_individual(bundle, idx) @ theta + self.error_oracle_individual(bundle, idx)
         return vals.ravel()[0] if np.ndim(idx) == 0 else vals
 
-    def build_local_modular_error_oracle(self, seed=42, covariance_matrix=None, sigma = 1):
+    def build_local_modular_error_oracle(self, seed=42, covariance_matrix=None,
+                                         sigma=1, distribution='normal'):
         n_local = self.comm_manager.num_local_agent
         n_items = self.dimensions_cfg.n_items
         self.local_modular_errors = np.zeros((n_local, n_items))
         for i, global_id in enumerate(self.comm_manager.agent_ids):
             rng = np.random.default_rng((seed, global_id))
-            self.local_modular_errors[i] = rng.normal(0, sigma, n_items)
+            if distribution == 'gumbel':
+                self.local_modular_errors[i] = sigma * rng.gumbel(0, 1, n_items)
+            else:
+                self.local_modular_errors[i] = rng.normal(0, sigma, n_items)
         if covariance_matrix is not None:
             if covariance_matrix.ndim == 2:
                 L = np.linalg.cholesky(covariance_matrix)

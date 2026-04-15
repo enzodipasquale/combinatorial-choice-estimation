@@ -1,0 +1,23 @@
+experiment:
+  n_replications: 200
+  K: 3
+  beta_star: [1.0, -0.5, 0.5]
+  sigma: 1.0
+  n_simulations: match_N
+  covariate_correlation: 0.5
+
+grid:
+  J: [2, 10]
+  N: [200, 500, 1000]
+
+row_generation:
+  max_iters: 200
+  tolerance: 0.01
+  theta_bounds:
+    lb: -10
+    ub: 10
+
+subproblem:
+  gurobi_params:
+    OutputFlag: 0
+    Threads: 1

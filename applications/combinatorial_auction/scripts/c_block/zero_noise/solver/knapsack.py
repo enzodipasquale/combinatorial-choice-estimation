@@ -120,3 +120,8 @@ class ZeroNoiseKnapsack:
 
     def build_linear_and_quadratic_coef(self, theta):
         return self._build_linear(theta), self._build_quadratic(theta)
+
+    def update_solver_settings(self, settings_dict):
+        for model in self.local_problems:
+            for param, value in settings_dict.items():
+                model.setParam(param, value)
