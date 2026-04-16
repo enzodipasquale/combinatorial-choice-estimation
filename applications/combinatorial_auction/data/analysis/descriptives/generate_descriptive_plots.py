@@ -62,7 +62,7 @@ def figure_heterogeneity(raw, ctx):
              label="Winners", edgecolor="white", linewidth=0.4, zorder=3)
     ax1.set_xscale("log")
     ax1.xaxis.set_major_formatter(FuncFormatter(_pop_formatter))
-    ax1.set_xlabel("Initial eligibility (population)", fontsize=9, family="serif")
+    ax1.set_xlabel("Eligibility", fontsize=9, family="serif")
     ax1.set_ylabel("Number of bidders", fontsize=9, family="serif")
     ax1.legend(fontsize=8, frameon=False, loc="upper right")
     _style_ax(ax1)
