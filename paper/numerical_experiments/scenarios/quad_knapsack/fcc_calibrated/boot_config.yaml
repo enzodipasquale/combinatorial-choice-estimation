@@ -1,0 +1,38 @@
+# Bootstrap estimation — FCC-calibrated quadratic knapsack
+# K = M + 7 = 507 parameters
+
+size: showcase
+
+estimation:
+  n_simulations: 10
+  max_iters: 300
+  tolerance: 1.0e-6
+
+bootstrap:
+  num_samples: 150
+  seed: 7777
+  rowgen_tol: 0.001
+  rowgen_max_iters: 270
+
+callbacks:
+  row_gen:
+    - {iters: 50, timeout: 1.0}
+    - {timeout: 5.0, retire: true}
+  boot:
+    - {iters: 10, timeout: 1.0}
+    - {iters: 2, timeout: 5.0, retire: true}
+    - {iters: 10, timeout: 1.0}
+    - {iters: 2, timeout: 5.0, retire: true}
+    - {iters: 10, timeout: 1.0}
+    - {iters: 20, timeout: 1.0, retire: true}
+    - {iters: 20, timeout: 1.0, retire: true}
+    - {iters: 2, timeout: 5.0, retire: true}
+    - {iters: 20, timeout: 1.0, retire: true}
+    - {iters: 2, timeout: 5.0, retire: true}
+    - {iters: 20, timeout: 1.0, retire: true}
+    - {iters: 2, timeout: 5.0, retire: true}
+    - {iters: 20, timeout: 1.0, retire: true}
+    - {iters: 2, timeout: 5.0, retire: true}
+  boot_strip:
+    percentile: 95
+    hard_threshold: 5000

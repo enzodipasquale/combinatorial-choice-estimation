@@ -69,7 +69,8 @@ class FeaturesManager:
         for i, global_id in enumerate(self.comm_manager.agent_ids):
             rng = np.random.default_rng((seed, global_id))
             if distribution == 'gumbel':
-                self.local_modular_errors[i] = sigma * rng.gumbel(0, 1, n_items)
+                raw = rng.gumbel(0, 1, n_items + 1)
+                self.local_modular_errors[i] = sigma * (raw[1:] - raw[0])
             else:
                 self.local_modular_errors[i] = rng.normal(0, sigma, n_items)
         if covariance_matrix is not None:

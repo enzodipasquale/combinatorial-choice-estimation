@@ -34,6 +34,8 @@ def run_replication(N, J, K, beta, replication=0, config=None):
     n_simulations = exp.get("n_simulations", 1)
     if n_simulations == "match_N":
         n_simulations = N
+    elif n_simulations == "sqrt_N":
+        n_simulations = int(np.sqrt(N))
     rho = exp.get("covariate_correlation", 0.0)
     seed = replication * 1000 + 42
 

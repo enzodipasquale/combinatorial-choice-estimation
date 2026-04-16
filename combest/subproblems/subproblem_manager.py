@@ -67,7 +67,7 @@ class SubproblemManager:
 
     def generate_obs_bundles(self, theta):
         local_bundles = self.initialize_and_solve(theta)
-        self.data_manager.local_data.id_data["obs_bundles"] = local_bundles.astype(bool)
+        self.data_manager.local_data.id_data["obs_bundles"] = local_bundles
         obs_bundles = self.comm_manager.Gatherv_by_row(local_bundles, row_counts=self.comm_manager.agent_counts)
         return obs_bundles
 

@@ -30,6 +30,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
     n_simulations = exp.get("n_simulations", 1)
     if n_simulations == "match_N":
         n_simulations = N
+    elif n_simulations == "sqrt_N":
+        n_simulations = int(np.sqrt(N))
 
     if rank == 0:
         print(f"\n{'='*60}")

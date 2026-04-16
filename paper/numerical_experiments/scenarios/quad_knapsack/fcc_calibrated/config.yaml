@@ -1,0 +1,101 @@
+# ============================================================
+# FCC-calibrated quadratic knapsack — configuration
+#
+# Synthetic DGP matching the economic structure of the FCC
+# C-block spectrum auction (Fox & Bajari 2013).
+#
+# Item weights and agent capacities drawn from lognormals
+# calibrated to real auction data. Modular features replicate
+# the 6-regressor specification from the application.
+#
+# theta = (theta_mod_1..6, delta_1..delta_M, lambda)
+# K = M + 7
+# ============================================================
+
+sizes:
+  tiny:
+    N: 10
+    M: 15
+    gurobi_timeout: 10
+  pilot:
+    N: 30
+    M: 50
+    gurobi_timeout: 5
+  showcase:
+    N: 250
+    M: 500
+    gurobi_timeout: 60
+
+# --- Item attributes (BTA-like) ---
+items:
+  pop_log_mu: 5.5             # lognormal location for population
+  pop_log_sigma: 1.3          # lognormal scale (heavy right tail)
+  pop_min: 27                 # real min (Lihue-scale BTA)
+  pop_max: 18100              # real max (NYC-scale BTA)
+
+# --- Agent attributes (bidder-like) ---
+agents:
+  cap_log_mu: 6.0             # lognormal location for capacity
+  cap_log_sigma: 1.8          # very skewed
+  cap_min: 27                 # can afford at least the lightest item
+  assets_log_mu: -1.0         # assets lognormal (after normalization to [0,1])
+  assets_log_sigma: 1.5
+  assets_zero_prob: 0.08      # 8% have zero assets (real: 7.5%)
+
+# --- Geography ---
+geo:
+  avg_degree: 10              # real BTA adjacency avg_degree ~ 11
+  max_nnz_per_item: 20
+
+# --- BLP data generation ---
+blp:
+  K_phi: 3
+  rho: 0.5
+  delta_std: 0.5
+  pi_0: 1.0
+  pi_z_std: 0.5
+  pi_xi: 0.3
+  price_noise_std: 0.2
+
+sigma: 1.0                    # std of modular errors
+
+seeds:
+  dgp: 42
+  error: 1042
+  search: 7
+
+# --- Healthy-DGP search ---
+healthy_dgp:
+  max_candidates: 200
+  modular_ranges:
+    elig_pop: [50, 500]
+    assets_pop: [10, 200]
+    log_dist_hq: [-1.0, -0.01]
+    elig_log_dist_hq: [-50, -1]
+    log_dist_hq_pop: [-100, -1]
+    elig_log_dist_hq_pop: [-5000, -100]
+  lambda_range: [0.1, 5.0]
+  delta_scale_range: [0.2, 1.0]
+  # Thresholds adapted for sparse bundles
+  min_mean_bundle_frac: 0.005     # ~2-3 items at M=500
+  max_mean_bundle_frac: 0.15
+  min_std_bundle_size: 1
+  max_unidentified_frac: 0.50     # allow up to 50% of items never chosen
+  min_quad_contribution_frac: 0    # sparse bundles: quadratic weakly identified
+  max_jaccard_vs_lambda0: 1.0     # not enforced: sparse Q + sparse bundles
+  min_capacity_binding_frac: 0.30  # many small agents won't bind
+  capacity_binding_threshold: 0.95
+  min_avg_degree: 4
+  max_avg_degree: 16
+
+solver:
+  MIPGap: 0
+  OutputFlag: 0
+
+modular_regressor_names:
+  - elig_pop
+  - assets_pop
+  - log_dist_hq
+  - elig_log_dist_hq
+  - log_dist_hq_pop
+  - elig_log_dist_hq_pop

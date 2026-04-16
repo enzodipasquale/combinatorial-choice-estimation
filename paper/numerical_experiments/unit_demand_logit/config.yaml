@@ -3,7 +3,7 @@ experiment:
   K: 3
   beta_star: [1.0, -0.5, 0.5]
   sigma: 1.0
-  n_simulations: match_N
+  n_simulations: sqrt_N
   covariate_correlation: 0.5
 
 grid:
