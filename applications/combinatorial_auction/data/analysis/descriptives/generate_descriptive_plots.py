@@ -80,9 +80,8 @@ def figure_heterogeneity(raw, ctx):
     elig = bidder["pops_eligible"].values.copy()
     is_winner = c_obs.any(axis=1)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-
     # ── Panel A: eligibility distribution ────────────────────────────────────
+    fig1, ax1 = plt.subplots(figsize=(8, 4.5))
     log_bins = np.logspace(np.log10(elig.min() * 0.9), np.log10(elig.max() * 1.1), 25)
     ax1.hist(elig[~is_winner], bins=log_bins, color=SLATE, alpha=0.40,
              label="Non-winners", edgecolor="white", linewidth=0.4, zorder=2)
@@ -94,10 +93,12 @@ def figure_heterogeneity(raw, ctx):
     ax1.set_ylabel("Number of bidders", fontsize=9, family="serif")
     ax1.legend(fontsize=8, frameon=False, loc="upper right")
     _style_ax(ax1)
-    ax1.text(0.02, 0.95, "(a)", transform=ax1.transAxes,
-             fontsize=10, fontweight="bold", va="top", family="serif")
+    fig1.tight_layout()
+    fig1.savefig(OUT_DIR / "fig_heterogeneity_hist.png", dpi=DPI, bbox_inches="tight")
+    plt.close(fig1)
 
     # ── Panel B: assortative matching ────────────────────────────────────────
+    fig2, ax2 = plt.subplots(figsize=(8, 4.5))
     pkg_pop = c_obs @ pop90
     w = is_winner & (pkg_pop > 0)
     log_e = np.log(elig[w])
@@ -115,15 +116,12 @@ def figure_heterogeneity(raw, ctx):
     ax2.set_ylabel("log(winning package population)", fontsize=9, family="serif")
     ax2.legend(fontsize=8, frameon=False, loc="upper left")
     _style_ax(ax2)
-    ax2.text(0.02, 0.95, "(b)", transform=ax2.transAxes,
-             fontsize=10, fontweight="bold", va="top", family="serif")
+    fig2.tight_layout()
+    fig2.savefig(OUT_DIR / "fig_heterogeneity_scatter.png", dpi=DPI, bbox_inches="tight")
+    plt.close(fig2)
 
     corr = np.corrcoef(log_e, log_p)[0, 1]
     n_binding = (pkg_pop[w] > elig[w] * 0.9).sum()
-
-    fig.tight_layout(w_pad=3)
-    fig.savefig(OUT_DIR / "fig_heterogeneity.png", dpi=DPI, bbox_inches="tight")
-    plt.close(fig)
 
     print("=== Figure 1: Heterogeneity ===")
     print(f"  Bidders: {len(bidder)} total, {is_winner.sum()} winners")
