@@ -194,6 +194,49 @@ def figure_heterogeneity_last_round(raw, ctx):
     print()
 
 
+def figure_elig_vs_pop(raw, ctx):
+    """Scatter of log(initial eligibility) vs log(winning package pop), all bidders."""
+    bidder = raw["bidder_data"]
+    pop90 = raw["bta_data"]["pop90"].values
+    c_obs = ctx["c_obs_bundles"]
+    elig = bidder["pops_eligible"].values.copy()
+    pkg_pop = c_obs @ pop90
+    is_winner = c_obs.any(axis=1)
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+
+    # non-winners sit at pkg_pop=0, plot them along the bottom as a rug
+    ax.scatter(np.log(elig[~is_winner]),
+               np.full((~is_winner).sum(), np.log(pop90.min()) - 0.8),
+               s=15, alpha=0.35, color=SLATE, marker="|", zorder=2,
+               label="Non-winners")
+
+    w = is_winner & (pkg_pop > 0)
+    ax.scatter(np.log(elig[w]), np.log(pkg_pop[w]),
+               s=30, alpha=0.6, color=NAVY, zorder=3, label="Winners")
+
+    lim_lo = np.log(elig.min()) - 0.5
+    lim_hi = np.log(elig.max()) + 0.5
+    ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi], ls="--", color=SLATE, lw=1,
+            zorder=2, label="45° line")
+    ax.set_xlim(lim_lo, lim_hi)
+    ax.set_xlabel("log(initial eligibility)", fontsize=9, family="serif")
+    ax.set_ylabel("log(winning package population)", fontsize=9, family="serif")
+    ax.legend(fontsize=8, frameon=False, loc="upper left")
+    _style_ax(ax)
+
+    corr = np.corrcoef(np.log(elig[w]), np.log(pkg_pop[w]))[0, 1]
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_elig_vs_pop.png", dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+    print("=== Figure: Eligibility vs Package Population (all bidders) ===")
+    print(f"  Total bidders: {len(bidder)}, winners: {is_winner.sum()}, non-winners: {(~is_winner).sum()}")
+    print(f"  Correlation (winners, log-log): {corr:.3f}")
+    print()
+
+
 def _pairwise_distances_within_packages(c_obs, dist, winners_idx):
     """Return array of all within-package pairwise distances for given bidders."""
     all_dists = []
@@ -276,6 +319,7 @@ def main():
     ctx = build_context(raw)
     figure_heterogeneity(raw, ctx)
     figure_heterogeneity_last_round(raw, ctx)
+    figure_elig_vs_pop(raw, ctx)
     figure_clustering(ctx)
     print(f"Figures saved to {OUT_DIR}")
 
