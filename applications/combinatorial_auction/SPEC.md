@@ -6,10 +6,10 @@ Structural estimation of demand and welfare from the FCC C-block spectrum auctio
 
 ```
 data/
-    loaders.py          Raw data loading, context construction, aggregation matrices
+    loaders.py          Raw data loading, context construction, aggregation matrices,
+                        winner filtering, last-round capacity, Cholesky factor
     prepare.py          Feature construction for estimation (modular, quadratic, quadratic_id)
     registries.py       Feature registry with decorator-based registration
-    errors.py           Error covariance (Cholesky factor for SAR/correlated errors)
     iv.py               IV regression utilities (OLS, 2SLS, BLP instruments)
     analysis/           Descriptive plots and maps
     datasets/           Raw CSV data (Fox-Bajari replication archive)
@@ -19,9 +19,9 @@ scripts/
 
     c_block/
         configs/            YAML experiment configurations
-        second_stage/    Second-stage analysis (runs after estimation)
+        second_stage/       Second-stage analysis (runs after estimation)
             compute.py              Per-draw IV + surplus decomposition from bootstrap results
-            tables.py               LaTeX-style output tables
+            tables.py               Output tables
             bootstrap_welfare.py    Counterfactual welfare comparison per bootstrap draw (MPI)
             __main__.py             Entry: python -m ...second_stage [specs]
         counterfactual/     MTA-level counterfactual equilibrium
@@ -37,7 +37,7 @@ scripts/
 ## Pipeline
 
 1. **Estimate**: `mpirun -n N python scripts/estimate.py configs/boot.yaml`
-2. **Post-estimation tables**: `python -m scripts.c_block.second_stage boot boot_3`
+2. **Second-stage tables**: `python -m scripts.c_block.second_stage boot boot_3`
 3. **Counterfactual**: `mpirun -n N python scripts/c_block/counterfactual/run.py configs/cf_boot.yaml`
 4. **Bootstrap welfare**: `mpirun -n N python scripts/c_block/second_stage/bootstrap_welfare.py results/boot/bootstrap_result.json`
 
