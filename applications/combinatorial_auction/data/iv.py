@@ -65,3 +65,124 @@ def run_2sls(delta, price, zm, zh):
     Z = np.column_stack([zm, zh])
     b, se, r2, _ = tsls(X, delta, Z)
     return b[0], b[1], se[0], se[1], r2
+
+
+def load_blp_instruments(raw, pop_threshold=500_000):
+    """Build BLP-style instruments: characteristics of other BTAs in same MTA.
+
+    Returns (blp_arrays dict, rural mask, percapin array) for the continental BTAs
+    in the same order as raw['bta_data'].
+    """
+    import pandas as pd
+    from pathlib import Path
+
+    DATA = Path(__file__).parent / "datasets" / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
+    census = pd.read_csv(DATA / "cntysv2000_census-bta-may2009.csv", encoding="latin-1")
+    bta_mta = census[["BTA", "MTA"]].dropna().copy()
+    bta_mta.columns = ["bta", "mta"]
+    bta_mta["bta"] = bta_mta["bta"].astype(int)
+    bta_mta["mta"] = bta_mta["mta"].astype(int)
+
+    bta_data = pd.read_csv(DATA / "btadata_2004_03_12_1.csv")
+    bta_stats = pd.read_csv(DATA / "btastatsexport.csv")
+    df = bta_data[["bta", "pop90", "percapin", "hhinc35k", "density", "imwl"]].merge(
+        bta_stats[["bta", "grow9099"]], on="bta"
+    ).merge(bta_mta, on="bta")
+
+    bta_order = raw["bta_data"]["bta"].values
+    cont_set = set(bta_order)
+    df = df[df["bta"].isin(cont_set)].reset_index(drop=True)
+
+    blp_vars = ["pop90", "percapin", "density", "hhinc35k", "grow9099", "imwl"]
+    for var in blp_vars:
+        s = df.groupby("mta")[var].transform("sum")
+        c = df.groupby("mta")[var].transform("count")
+        df[f"blp_{var}"] = (s - df[var]) / (c - 1)
+
+    blp_cols = [f"blp_{v}" for v in blp_vars]
+    arrays = {}
+    for col in blp_cols + ["percapin"]:
+        d = dict(zip(df["bta"], df[col]))
+        arrays[col] = np.array([d.get(b, np.nan) for b in bta_order])
+
+    pop = raw["bta_data"]["pop90"].to_numpy().astype(float)
+    rural = pop < pop_threshold
+
+    return arrays, rural
+
+
+def run_2sls_blp(delta, price, raw, pop_threshold=500_000):
+    """2SLS with BLP instruments, pop+percapin controls, rural sample.
+
+    delta ~ const + pop + percapin + (-price)
+    Endogenous: pop, price.  Excluded IVs: BLP characteristics of other BTAs in same MTA.
+
+    Returns dict with a0, a1, b_pop, b_percapin, se's, r2, n.
+    """
+    arrays, rural = load_blp_instruments(raw, pop_threshold)
+
+    pop = raw["bta_data"]["pop90"].to_numpy().astype(float)
+    percapin = arrays["percapin"]
+    blp_cols = [f"blp_{v}" for v in ["pop90", "percapin", "density", "hhinc35k", "grow9099", "imwl"]]
+
+    valid = rural.copy()
+    for c in blp_cols:
+        valid &= ~np.isnan(arrays[c])
+    valid &= ~np.isnan(percapin)
+    n = valid.sum()
+
+    d, p = delta[valid], price[valid]
+    pop_v, inc_v = pop[valid], percapin[valid]
+
+    X = np.column_stack([np.ones(n), pop_v, inc_v, -p])
+    z_excl = np.column_stack([arrays[c][valid] for c in blp_cols])
+    Z = np.column_stack([np.ones(n), inc_v, z_excl])
+
+    b, se, r2, resid = tsls(X, d, Z)
+
+    return {
+        "a0": b[0], "a1": b[3], "b_pop": b[1], "b_percapin": b[2],
+        "se_a0": se[0], "se_a1": se[3], "se_pop": se[1], "se_percapin": se[2],
+        "r2": r2, "n": n,
+        "demand_controls": {"pop90": b[1], "percapin": b[2]},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Unified dispatch: call these from post-estimation and counterfactual code
+# ---------------------------------------------------------------------------
+
+def second_stage(delta, price, raw, zm, zh, use_blp):
+    """Run 2SLS and return a standardised result dict.
+
+    Returns dict with keys: a0, a1, se_a0, se_a1, r2, demand_controls.
+    demand_controls is None for the simple IV, dict for BLP.
+    """
+    if use_blp:
+        blp = run_2sls_blp(delta, price, raw)
+        return {
+            "a0": blp["a0"], "a1": blp["a1"],
+            "se_a0": blp["se_a0"], "se_a1": blp["se_a1"],
+            "r2": blp["r2"],
+            "demand_controls": blp["demand_controls"],
+        }
+    a0, a1, se0, se1, r2 = run_2sls(delta, price, zm, zh)
+    return {
+        "a0": a0, "a1": a1,
+        "se_a0": se0, "se_a1": se1,
+        "r2": r2,
+        "demand_controls": None,
+    }
+
+
+def compute_xi(delta, price, a0, a1, demand_controls, bta_data):
+    """Recover xi from the structural equation.
+
+    delta_j = a0 + Z_j'gamma - a1*price_j + xi_j
+    => xi_j = delta_j - a0 - Z_j'gamma + a1*price_j
+    """
+    xi = delta - a0 + a1 * price
+    if demand_controls:
+        for var, coeff in demand_controls.items():
+            xi -= coeff * bta_data[var].to_numpy().astype(float)
+    return xi

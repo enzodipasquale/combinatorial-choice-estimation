@@ -30,7 +30,7 @@ and per-stage facility costs, with the region fixed effects moved to the **cost 
 
 $$c^k_{i,g_k,\ell_k}(\theta) = \delta^k + \rho^{\xi,k} \tilde\xi_{i,g_k} + \rho^{HQ,k} D^{HQ}_{i,\ell_k} - \mathrm{FE}^k_{r(\ell_k)}.$$
 
-Stochastic heterogeneity (modular, observed by firm):
+Heterogeneity (modular, observed by firm):
 
 $$\varepsilon_i(b) = \sum_{m,n,\ell_1,\ell_2} \nu_{i,m,n,\ell_1,\ell_2} x_{i,m,n,\ell_1,\ell_2} - \sum_{g_1,\ell_1} \tilde\phi^1_{i,g_1,\ell_1} y^1_{i,g_1,\ell_1} - \sum_{g_2,\ell_2} \tilde\phi^2_{i,g_2,\ell_2} y^2_{i,g_2,\ell_2}.$$
 

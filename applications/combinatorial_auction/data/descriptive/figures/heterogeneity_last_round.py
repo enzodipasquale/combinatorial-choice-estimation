@@ -6,10 +6,10 @@ from matplotlib.ticker import FuncFormatter
 from pathlib import Path
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-from applications.combinatorial_auction.data.analysis.style import (
+from applications.combinatorial_auction.data.descriptive.style import (
     NAVY, SLATE, DPI, style_ax, pop_formatter,
 )
-from applications.combinatorial_auction.data.analysis.helpers import last_round_eligibility_pop
+from applications.combinatorial_auction.data.descriptive.helpers import last_round_eligibility_pop
 
 OUT = Path(__file__).parent.parent / "output"
 

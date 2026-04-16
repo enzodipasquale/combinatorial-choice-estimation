@@ -1,27 +1,11 @@
+"""Counterfactual error construction for MTA-level estimation."""
 import numpy as np
-
-
-def build_cholesky_factor(error_correlation):
-    """Build Cholesky factor from a QUADRATIC registry entry name, or return None."""
-    if error_correlation is None:
-        return None
-    from .registries import QUADRATIC
-    from .loaders import load_bta_data, build_context
-    raw = load_bta_data()
-    ctx = build_context(raw)
-    Q = QUADRATIC[error_correlation](ctx)
-    Sigma = (Q + Q.T) / 2
-    np.fill_diagonal(Sigma, 1.0)
-    return np.linalg.cholesky(Sigma)
 
 
 def build_counterfactual_errors(comm_manager, n_btas, A, offset, seed,
                                 elig=None, error_scaling=None,
                                 L_corr=None, pop=None):
-    """Build local modular errors for counterfactual MTA-level estimation.
-
-    Returns (local_errors, oracle_fn, oracle_takes_data).
-    """
+    """Build local modular errors for counterfactual MTA-level estimation."""
     n_items = A.shape[0]
     local_errors = np.zeros((comm_manager.num_local_agent, n_items))
     for i, gid in enumerate(comm_manager.agent_ids):

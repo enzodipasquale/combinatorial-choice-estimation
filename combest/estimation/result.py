@@ -17,10 +17,19 @@ class RowGenerationEstimationResult:
     total_time: float = None
     final_n_violations: int = None
     u_hat: np.ndarray = None
+    n_obs: int = None
+    n_simulations: int = None
+    xbar: np.ndarray = None
     timing: dict = field(default_factory=dict)
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+
+    def welfare_decomposition(self):
+        agent_surplus = self.u_hat.reshape(self.n_obs, self.n_simulations).mean(axis=1)
+        contributions = self.theta_hat * self.xbar
+        entropy = self.final_objective / self.n_simulations
+        return agent_surplus, contributions, entropy
 
     def log_summary(self, parameters_to_log=None, covariate_labels=None, label_width=12):
         idx = parameters_to_log if parameters_to_log is not None else range(len(self.theta_hat))

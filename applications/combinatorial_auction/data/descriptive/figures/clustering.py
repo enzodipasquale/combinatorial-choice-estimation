@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context
-from applications.combinatorial_auction.data.analysis.style import (
+from applications.combinatorial_auction.data.descriptive.style import (
     NAVY, GOLD, DPI, style_ax,
 )
-from applications.combinatorial_auction.data.analysis.helpers import (
+from applications.combinatorial_auction.data.descriptive.helpers import (
     pairwise_distances_within_packages, null_pairwise_distances,
 )
 

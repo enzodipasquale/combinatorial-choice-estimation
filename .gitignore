@@ -57,6 +57,10 @@ debug/
 debug_se/
 experiments/
 paper/small_scale/
+paper/numerical_experiments/small_combinatorial/
+paper/numerical_experiments/registry_scenarios/
+paper/numerical_experiments/scenarios/portfolio/
+applications/portfolio/
 benchmark_warmstart.py
 applications/combinatorial_auction/counterfactuals
 paper/numerical_experiments/large_scale/results
@@ -72,10 +76,14 @@ bundled_choice_estimation.pdf
 requirements_HPC.txt
 applications/**/config*.yaml
 applications/combinatorial_auction/data/maps/
+applications/combinatorial_auction/data/datasets/bta_map_data/
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/checkpoints
 applications/combinatorial_auction/block_c/se_bayesian_bootstrap/_past_checkpoints
 applications/combinatorial_auction/block_c/estimation_results/
 .cache/
 applications/firms_export/_old/
+**/_old/
+**/INSTRUCTIONS.md
+**/README.md
 resources/
 **/multi_stage_production/dgp_cache.pkl

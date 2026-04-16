@@ -10,7 +10,8 @@ from applications.combinatorial_auction.data.prepare import _build_features, _ag
 
 def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
                            modular_regressors=None, quadratic_regressors=None,
-                           quadratic_id_regressors=None, elig_scale=1.0):
+                           quadratic_id_regressors=None, elig_scale=1.0,
+                           demand_controls=None):
     """Build MTA-level counterfactual data from C-block BTA estimation."""
     if isinstance(est_result_path_or_dict, dict):
         result = est_result_path_or_dict
@@ -42,7 +43,15 @@ def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
     ctx = build_context(raw)
     price_bta = raw["bta_data"]["bid"].to_numpy().astype(float) / 1e9
     delta = -theta_fe                                 # delta_j = -theta_j^FE
-    xi = delta - alpha_0 + alpha_1 * price_bta        # xi_j = delta_j - alpha_0 + alpha_1*p_j
+
+    # xi_j = delta_j - alpha_0 - Z_j'gamma + alpha_1*p_j
+    # where Z_j'gamma are demand-side controls (e.g. pop, percapin)
+    controls_contribution = np.zeros(n_btas)
+    if demand_controls:
+        bta_df = raw["bta_data"]
+        for var_name, coeff in demand_controls.items():
+            controls_contribution += coeff * bta_df[var_name].to_numpy().astype(float)
+    xi = delta - alpha_0 - controls_contribution + alpha_1 * price_bta
 
     # aggregation
     btas = raw["bta_data"]["bta"].values.astype(int)
@@ -50,8 +59,9 @@ def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
     n_mtas = A.shape[0]
     mta_sizes = A.sum(1)                              # |m|
     xi_m = A @ xi
-    offset_m = mta_sizes * alpha_0 + xi_m             # |m|*alpha_0 + A@xi
-    offset_m_no_xi = mta_sizes * alpha_0              # |m|*alpha_0 only
+    controls_m = A @ controls_contribution            # sum of Z_j'gamma within each MTA
+    offset_m = mta_sizes * alpha_0 + controls_m + xi_m  # |m|*alpha_0 + A@(Z'gamma) + A@xi
+    offset_m_no_xi = mta_sizes * alpha_0 + controls_m   # |m|*alpha_0 + A@(Z'gamma)
 
     # id_data: C-block bidder features aggregated to MTA level
     bta_mod = _build_features(MODULAR, modular_regressors, ctx)  # (n_obs, n_btas, n_id_mod)

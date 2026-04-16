@@ -216,6 +216,9 @@ class RowGenerationSolver:
             total_time=total_time,
             final_n_violations=final_info.get('n_violations', 0),
             u_hat=self._result_u_hat(),
+            n_obs=self.dim.n_obs,
+            n_simulations=self.dim.n_simulations,
+            xbar=-np.array(self.master_variables[0].Obj) / self.dim.n_simulations,
             timing=(pricing_times, master_times),
             warnings=[])
 

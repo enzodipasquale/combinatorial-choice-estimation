@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from applications.combinatorial_auction.data.analysis.helpers import RAW_DIR
+from applications.combinatorial_auction.data.descriptive.helpers import RAW_DIR
 
 
 def load():

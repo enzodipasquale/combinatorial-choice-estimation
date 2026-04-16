@@ -8,7 +8,7 @@ from matplotlib import colormaps
 from pathlib import Path
 
 from applications.combinatorial_auction.data.loaders import load_bta_data, build_context, DATASETS_DIR
-from applications.combinatorial_auction.data.analysis.style import NAVY, SLATE, DPI, style_ax
+from applications.combinatorial_auction.data.descriptive.style import NAVY, SLATE, DPI, style_ax
 
 MAP_FILE = DATASETS_DIR / "bta_map_data" / "bta.mif"
 OUT = Path(__file__).parent.parent / "output"

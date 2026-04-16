@@ -4,14 +4,16 @@ import json, sys, argparse, time
 import numpy as np
 from pathlib import Path
 
-CBLOCK_DIR = Path(__file__).parent
+CBLOCK_DIR = Path(__file__).parent.parent
 APP_DIR = CBLOCK_DIR.parent.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import (
     load_bta_data, build_context, load_aggregation_matrix, continental_mta_nums,
 )
-from applications.combinatorial_auction.data.iv import load_iv_instruments, run_2sls as _run_2sls
+from applications.combinatorial_auction.data.iv import (
+    load_iv_instruments, second_stage, compute_xi,
+)
 
 
 def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
@@ -72,8 +74,9 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
 
-    from applications.combinatorial_auction.data.errors import (
-        build_cholesky_factor, build_counterfactual_errors,
+    from applications.combinatorial_auction.data.loaders import build_cholesky_factor
+    from applications.combinatorial_auction.scripts.c_block.counterfactual.errors import (
+        build_counterfactual_errors,
     )
     L_corr = build_cholesky_factor(error_correlation)
     local_errors = build_counterfactual_errors(
@@ -166,14 +169,17 @@ def main():
     bta_revenue = (b_obs @ price_bta).sum()
     zm, _, zh = load_iv_instruments(raw)
 
+    error_scaling = _app.get("error_scaling")
+    use_blp = error_scaling == "pop"
+
     if rank == 0:
         from applications.combinatorial_auction.scripts.c_block.counterfactual.prepare import (
             prepare_counterfactual,
         )
-        # Use point estimate theta to build template structure; alpha values overridden per draw
         theta_pt = np.array(boot["theta_hat"])
         delta_pt = -theta_pt[n_id_mod:n_id_mod + n_btas]
-        a0_pt, a1_pt, _, _, _ = _run_2sls(delta_pt, price_bta, zm, zh)
+        iv_pt = second_stage(delta_pt, price_bta, raw, zm, zh, use_blp)
+        a0_pt, a1_pt = iv_pt["a0"], iv_pt["a1"]
 
         input_data_template, meta = prepare_counterfactual(
             est_result_path_or_dict=est_result_dict,
@@ -181,6 +187,7 @@ def main():
             modular_regressors=modular_regressors,
             quadratic_regressors=quadratic_regressors,
             quadratic_id_regressors=quadratic_id_regressors,
+            demand_controls=iv_pt["demand_controls"],
         )
     else:
         input_data_template, meta = None, {}
@@ -221,17 +228,16 @@ def main():
         gamma_id_b = theta_b[n_id_mod + n_btas:n_id_mod + n_btas + n_id_quad]
         gamma_item_b = theta_b[n_id_mod + n_btas + n_id_quad:]
 
-        # 2SLS
-        a0_b, a1_b, _, _, _ = _run_2sls(delta_b, price_bta, zm, zh)
+        iv_b = second_stage(delta_b, price_bta, raw, zm, zh, use_blp)
+        a0_b, a1_b = iv_b["a0"], iv_b["a1"]
 
-        # BTA surplus from per-draw u_hat
         if rank == 0:
             u_hat_b = boot_u_hats[b]
             n_sim_est = len(u_hat_b) // n_obs
             bta_surplus_b = u_hat_b.reshape(n_obs, n_sim_est).mean(1).sum() / a1_b
 
-        # Xi for this bootstrap draw
-        xi_b = delta_b - a0_b + a1_b * price_bta
+        xi_b = compute_xi(delta_b, price_bta, a0_b, a1_b,
+                          iv_b["demand_controls"], raw["bta_data"])
 
         # Run counterfactual
         cf_rev_b, cf_surplus_b = run_single_counterfactual(

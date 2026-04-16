@@ -44,6 +44,7 @@ def main(config_path):
             quadratic_regressors=app.get("quadratic_regressors"),
             quadratic_id_regressors=app.get("quadratic_id_regressors"),
             elig_scale=app.get("elig_scale", 1.0),
+            demand_controls=app.get("demand_controls"),
         )
 
         bounds = config["row_generation"].setdefault("theta_bounds", {})
@@ -122,8 +123,9 @@ def main(config_path):
 
 def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
                                   include_xi=True, error_correlation=None):
-    from applications.combinatorial_auction.data.errors import (
-        build_cholesky_factor, build_counterfactual_errors,
+    from applications.combinatorial_auction.data.loaders import build_cholesky_factor
+    from applications.combinatorial_auction.scripts.c_block.counterfactual.errors import (
+        build_counterfactual_errors,
     )
     offset = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     L_corr = build_cholesky_factor(error_correlation)

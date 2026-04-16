@@ -44,9 +44,7 @@ def main(config_path):
         meta.pop("raw", None)
 
         if app.get("winners_only"):
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).parent / "c_block" / "zero_noise"))
-            from data_utils import filter_winners, last_round_capacity
+            from applications.combinatorial_auction.data.loaders import filter_winners, last_round_capacity
             input_data, keep = filter_winners(input_data)
             meta["n_obs"] = input_data["id_data"]["obs_bundles"].shape[0]
             if app.get("capacity_source") == "last_round":
@@ -130,6 +128,12 @@ def main(config_path):
                 "converged": se.converged.tolist(),
                 "config": config,
             }
+            # xbar from point estimate (saved earlier in result.json)
+            pt_path = out_dir / "result.json"
+            if pt_path.exists():
+                _pt = json.load(open(pt_path))
+                if "xbar" in _pt:
+                    out["xbar"] = _pt["xbar"]
             json.dump(out, open(out_dir / "bootstrap_result.json", "w"), indent=2)
             print(f"Saved -> {out_dir / 'bootstrap_result.json'}")
 
@@ -137,7 +141,7 @@ def main(config_path):
 def _build_error_oracle(model, dataset, meta, seed, error_scaling=None,
                         error_correlation=None):
     if dataset == "c_block":
-        from applications.combinatorial_auction.data.errors import build_cholesky_factor
+        from applications.combinatorial_auction.data.loaders import build_cholesky_factor
         L = build_cholesky_factor(error_correlation)
         cov = L @ L.T if L is not None else None
         model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
@@ -207,6 +211,8 @@ def _save(result, config, meta, path):
     }
     if result.u_hat is not None:
         out["u_hat"] = result.u_hat.tolist()
+    if result.xbar is not None:
+        out["xbar"] = result.xbar.tolist()
     for k in ["n_btas", "n_mtas", "n_obs_c", "n_obs_ab", "continental_mta_nums"]:
         if k in meta:
             out[k] = [int(x) for x in meta[k]] if isinstance(meta[k], (list, np.ndarray)) and k == "continental_mta_nums" else meta[k]

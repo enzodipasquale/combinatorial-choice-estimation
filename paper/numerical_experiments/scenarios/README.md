@@ -9,7 +9,8 @@ scenarios/
 ├── README.md                 # this file
 ├── airline/                  # GS, custom find_best_item greedy
 ├── multi_stage_production/   # multi-stage MILP
-└── quad_knapsack/            # structured quadratic knapsack + BLP inversion
+├── quad_knapsack/            # structured quadratic knapsack + BLP inversion
+└── portfolio/                # portfolio optimization scenario
 ```
 
 ## Per-scenario contents
@@ -17,6 +18,7 @@ scenarios/
 Every scenario folder contains:
 
 - `SPEC.md` — economics and math. Source of truth for the scenario's DGP, utility function, oracle, and deliverable.
+- `INSTRUCTIONS.md` — implementation/run instructions (when present).
 - `config.yaml` — run parameters.
 - `generate_data.py`, `oracle.py`, `run.py`, `tests/` — the code.
 - `results/result.json` — the deliverable.

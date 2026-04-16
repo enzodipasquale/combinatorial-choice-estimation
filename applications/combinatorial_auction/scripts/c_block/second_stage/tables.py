@@ -55,7 +55,7 @@ def table_iv(results):
     W = 30
     col_w = 20
 
-    print(f"  TABLE 2: SECOND-STAGE IV (pop+hhinc, d>500km)")
+    print(f"  TABLE 2: SECOND-STAGE IV")
     print(f"  {'='*(W + (col_w+2)*len(specs))}")
     print(f"  {'':<{W}}" + "".join(f"  {s:>{col_w}}" for s in specs))
     print(f"  {'-'*(W + (col_w+2)*len(specs))}")
@@ -135,6 +135,12 @@ def table_surplus(results):
     _row("  delta", lambda r, s: _col(r, "fe_total") / a1_cache[s])
     _row("    n*a0/a1", lambda r, s: _col(r, "a0_part") / a1_cache[s])
     _row("    -revenue", lambda r, s: -_col(r, "price_part") / a1_cache[s])
+    # controls_part present only for pop-scaled specs
+    has_controls = any("controls_part" in results[s][0][0] and results[s][0][0]["controls_part"] != 0
+                       for s in specs if results[s][0])
+    if has_controls:
+        _row("    controls/a1", lambda r, s: _col(r, "controls_part") / a1_cache[s]
+             if "controls_part" in results[s][0][0] else np.zeros(len(results[s][0])))
     _row("    sum xi/a1", lambda r, s: _col(r, "xi_part") / a1_cache[s])
 
     print(f"  {'-'*(W + (col_w+2)*len(specs))}")
