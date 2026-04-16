@@ -1,0 +1,26 @@
+application:
+    mode: estimation
+    error_seed: 24
+    alpha_0: -2.170725
+    alpha_1: 84.774985
+    est_result: boot/result.json
+dimensions:
+    n_simulations: 5
+subproblem:
+    name: QuadraticKnapsackGRB
+    gurobi_params:
+        TimeLimit: 1.0
+
+row_generation:
+    max_iters: 200
+    tolerance: .01
+    master_gurobi_params:
+        Method: 0
+    theta_bounds:
+        lb: 0
+        ub: 1.0
+
+callbacks:
+    row_gen:
+        - {iters: 50, timeout: 1.0}
+        - {timeout: 10.0, retire: true}

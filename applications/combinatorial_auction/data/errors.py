@@ -17,7 +17,7 @@ def build_cholesky_factor(error_correlation):
 
 def build_counterfactual_errors(comm_manager, n_btas, A, offset, seed,
                                 elig=None, error_scaling=None,
-                                L_corr=None):
+                                L_corr=None, pop=None):
     """Build local modular errors for counterfactual MTA-level estimation.
 
     Returns (local_errors, oracle_fn, oracle_takes_data).
@@ -32,5 +32,7 @@ def build_counterfactual_errors(comm_manager, n_btas, A, offset, seed,
             bta_err = L_corr @ bta_err
         if error_scaling == "elig" and elig is not None:
             bta_err *= elig[obs_id]
+        elif error_scaling == "pop" and pop is not None:
+            bta_err *= pop
         local_errors[i] = bta_err @ A.T + offset
     return local_errors

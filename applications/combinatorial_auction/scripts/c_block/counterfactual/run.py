@@ -37,7 +37,7 @@ def main(config_path):
 
         est_path = (CBLOCK_DIR / "results" / app["est_result"]).resolve()
         input_data, meta = prepare_counterfactual(
-            est_result_path=est_path,
+            est_result_path_or_dict=est_path,
             alpha_0=app["alpha_0"],
             alpha_1=app["alpha_1"],
             modular_regressors=app.get("modular_regressors"),
@@ -127,9 +127,17 @@ def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
     )
     offset = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     L_corr = build_cholesky_factor(error_correlation)
+    # pop scaling: need BTA-level pop normalized
+    pop = None
+    if error_scaling == "pop":
+        from applications.combinatorial_auction.data.loaders import load_bta_data
+        raw = load_bta_data()
+        pop = raw["bta_data"]["pop90"].to_numpy().astype(float)
+        pop = pop / pop.sum()
     local_errors = build_counterfactual_errors(
         model.features.comm_manager, meta["A"].shape[1], meta["A"], offset,
         seed, elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
+        pop=pop,
     )
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)

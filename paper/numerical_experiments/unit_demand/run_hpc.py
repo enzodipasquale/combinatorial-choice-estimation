@@ -3,11 +3,10 @@
 HPC entry point for probit efficiency benchmarking.
 
 Usage:
-  mpiexec ... python run_hpc.py --N 200    # runs J=2 and J=10 for N=200
-  mpiexec ... python run_hpc.py             # runs all cells sequentially
-
-Designed for per-N SLURM jobs (since n_simulations=N means
-total agents = N*N, requiring different rank counts per N).
+  mpiexec ... python run_hpc.py --s-mode match_n --N 200
+  mpiexec ... python run_hpc.py --s-mode one --N 200
+  mpiexec ... python run_hpc.py --s-mode sqrt_n --N 500
+  mpiexec ... python run_hpc.py  # defaults: s-mode=match_n, all cells
 """
 import sys
 import argparse
@@ -23,6 +22,22 @@ from paper.numerical_experiments.unit_demand.run_experiment import run_replicati
 
 SCRIPT_DIR = Path(__file__).parent
 
+S_MODE_TO_CONFIG = {
+    "one": 1,
+    "sqrt_n": "match_sqrt_N",
+    "match_n": "match_N",
+}
+
+
+def resolve_n_simulations(s_mode, N):
+    """Return the integer n_simulations for display/logging."""
+    raw = S_MODE_TO_CONFIG[s_mode]
+    if raw == "match_N":
+        return N
+    elif raw == "match_sqrt_N":
+        return int(np.ceil(np.sqrt(N)))
+    return raw
+
 
 def run_cell(J, N, K, beta, n_reps, config, results_dir):
     """Run all replications for one (J, N) cell, save raw .npz."""
@@ -33,6 +48,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
     n_simulations = exp.get("n_simulations", 1)
     if n_simulations == "match_N":
         n_simulations = N
+    elif n_simulations == "match_sqrt_N":
+        n_simulations = int(np.ceil(np.sqrt(N)))
 
     if rank == 0:
         print(f"\n{'='*60}")
@@ -113,11 +130,17 @@ def main():
     parser.add_argument("--N", type=int, default=None,
                         help="Run all J values for this N value.")
     parser.add_argument("--cell-index", type=int, default=None,
-                        help="Index into the (J, N) grid. If omitted, runs all.")
+                        help="Index into the (J, N) grid.")
+    parser.add_argument("--s-mode", type=str, default="match_n",
+                        choices=["one", "sqrt_n", "match_n"],
+                        help="Simulation count: one (S=1), sqrt_n, match_n (S=N).")
     args = parser.parse_args()
 
     with open(SCRIPT_DIR / "config.yaml") as f:
         config = yaml.safe_load(f)
+
+    # Override n_simulations based on --s-mode
+    config["experiment"]["n_simulations"] = S_MODE_TO_CONFIG[args.s_mode]
 
     exp = config["experiment"]
     beta = np.array(exp["beta_star"])
@@ -128,14 +151,14 @@ def main():
 
     cells = [(J, N) for J in J_values for N in N_values]
 
-    results_dir = SCRIPT_DIR / "results" / "raw"
+    # Namespaced output directory
+    results_dir = SCRIPT_DIR / "results" / "raw" / args.s_mode
     rank = MPI.COMM_WORLD.Get_rank()
     if rank == 0:
         results_dir.mkdir(parents=True, exist_ok=True)
     MPI.COMM_WORLD.Barrier()
 
     if args.N is not None:
-        # Run all J values for a specific N
         for J in J_values:
             run_cell(J, args.N, K, beta, n_reps, config, results_dir)
     elif args.cell_index is not None:
@@ -144,12 +167,6 @@ def main():
     else:
         for J, N in cells:
             run_cell(J, N, K, beta, n_reps, config, results_dir)
-
-    # Generate figures and tables if all cells completed
-    if rank == 0 and args.cell_index is None and args.N is None:
-        from paper.numerical_experiments.unit_demand.analyze_results import main as analyze
-        print("\nGenerating figures and tables...")
-        analyze()
 
 
 if __name__ == "__main__":
