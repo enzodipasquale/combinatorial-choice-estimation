@@ -1,11 +1,13 @@
 """Generate descriptive figures for FCC C-block PCS auction slides.
 
 Produces:
-  fig_heterogeneity.png — bidder eligibility distribution + assortative matching
-  fig_clustering.png    — within-package distance ECDF (observed vs null)
+  fig_heterogeneity.png            — bidder eligibility distribution + assortative matching (initial)
+  fig_heterogeneity_last_round.png — same, using last-round eligibility
+  fig_clustering.png               — within-package distance ECDF (observed vs null)
 """
 
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -43,6 +45,32 @@ def _pop_formatter(x, _):
     if x >= 1e3:
         return f"{x / 1e3:.0f}K"
     return f"{x:.0f}"
+
+
+RAW_DIR = Path(__file__).parents[2] / "datasets" / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
+
+
+def _last_round_eligibility_pop(bidder_data):
+    """Last-round eligibility in population units (before knapsack rescaling)."""
+    elig_df = pd.read_csv(RAW_DIR / "cblock-eligibility.csv")
+    swap = {190: 234, 234: 190}
+    baseline = bidder_data["pops_eligible"].to_numpy().astype(float)
+    n = len(bidder_data)
+    out = np.copy(baseline)
+    for i in range(n):
+        fox_swapped = int(bidder_data.iloc[i]["bidder_num_fox"])
+        fox_orig = swap.get(fox_swapped, fox_swapped)
+        sub = elig_df[(elig_df["bidder_num_fox"] == fox_orig) & (elig_df["max_elig"] > 0)]
+        if len(sub) == 0:
+            continue
+        last = sub.sort_values("round_num").iloc[-1]
+        r1_rows = elig_df[(elig_df["bidder_num_fox"] == fox_orig) & (elig_df["round_num"] == 1)]
+        if len(r1_rows) == 0:
+            continue
+        r1 = r1_rows["max_elig"].iloc[0]
+        if r1 > 0:
+            out[i] = baseline[i] * last["max_elig"] / r1
+    return out
 
 
 def figure_heterogeneity(raw, ctx):
@@ -102,6 +130,67 @@ def figure_heterogeneity(raw, ctx):
     print(f"  Eligibility range: {elig.min():,.0f} – {elig.max():,.0f}")
     print(f"  Correlation(log elig, log pkg pop): {corr:.3f}")
     print(f"  Winners within 10% of constraint: {n_binding}/{w.sum()}")
+    print()
+
+
+def figure_heterogeneity_last_round(raw, ctx):
+    bidder = raw["bidder_data"]
+    pop90 = raw["bta_data"]["pop90"].values
+    c_obs = ctx["c_obs_bundles"]
+    elig = _last_round_eligibility_pop(bidder)
+    is_winner = c_obs.any(axis=1)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+    # ── Panel A: last-round eligibility distribution ─────────────────────────
+    log_bins = np.logspace(np.log10(elig[elig > 0].min() * 0.9),
+                           np.log10(elig.max() * 1.1), 25)
+    ax1.hist(elig[~is_winner], bins=log_bins, color=SLATE, alpha=0.40,
+             label="Non-winners", edgecolor="white", linewidth=0.4, zorder=2)
+    ax1.hist(elig[is_winner], bins=log_bins, color=NAVY, alpha=0.85,
+             label="Winners", edgecolor="white", linewidth=0.4, zorder=3)
+    ax1.set_xscale("log")
+    ax1.xaxis.set_major_formatter(FuncFormatter(_pop_formatter))
+    ax1.set_xlabel("Eligibility (last active round)", fontsize=9, family="serif")
+    ax1.set_ylabel("Number of bidders", fontsize=9, family="serif")
+    ax1.legend(fontsize=8, frameon=False, loc="upper right")
+    _style_ax(ax1)
+    ax1.text(0.02, 0.95, "(a)", transform=ax1.transAxes,
+             fontsize=10, fontweight="bold", va="top", family="serif")
+
+    # ── Panel B: assortative matching (last-round) ───────────────────────────
+    pkg_pop = c_obs @ pop90
+    w = is_winner & (pkg_pop > 0) & (elig > 0)
+    log_e = np.log(elig[w])
+    log_p = np.log(pkg_pop[w])
+
+    ax2.scatter(log_e, log_p, s=30, alpha=0.6, color=NAVY, zorder=3)
+
+    lim_lo = min(log_e.min(), log_p.min()) - 0.3
+    lim_hi = max(log_e.max(), log_p.max()) + 0.3
+    ax2.plot([lim_lo, lim_hi], [lim_lo, lim_hi], ls="--", color=SLATE, lw=1,
+             zorder=2, label="eligibility constraint")
+    ax2.set_xlim(lim_lo, lim_hi)
+    ax2.set_ylim(lim_lo, lim_hi)
+    ax2.set_xlabel("log(eligibility, last round)", fontsize=9, family="serif")
+    ax2.set_ylabel("log(winning package population)", fontsize=9, family="serif")
+    ax2.legend(fontsize=8, frameon=False, loc="upper left")
+    _style_ax(ax2)
+    ax2.text(0.02, 0.95, "(b)", transform=ax2.transAxes,
+             fontsize=10, fontweight="bold", va="top", family="serif")
+
+    corr = np.corrcoef(log_e, log_p)[0, 1]
+    n_above = (pkg_pop[w] > elig[w]).sum()
+
+    fig.tight_layout(w_pad=3)
+    fig.savefig(OUT_DIR / "fig_heterogeneity_last_round.png", dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+    print("=== Figure 1b: Heterogeneity (last-round eligibility) ===")
+    print(f"  Bidders: {len(bidder)} total, {is_winner.sum()} winners")
+    print(f"  Last-round elig range (winners): {elig[is_winner].min():,.0f} – {elig[is_winner].max():,.0f}")
+    print(f"  Correlation(log elig, log pkg pop): {corr:.3f}")
+    print(f"  Winners above constraint: {n_above}/{w.sum()}")
     print()
 
 
@@ -186,6 +275,7 @@ def main():
     raw = load_bta_data()
     ctx = build_context(raw)
     figure_heterogeneity(raw, ctx)
+    figure_heterogeneity_last_round(raw, ctx)
     figure_clustering(ctx)
     print(f"Figures saved to {OUT_DIR}")
 
