@@ -124,20 +124,27 @@ def main(config_path):
 def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
                                   include_xi=True, error_correlation=None):
     from applications.combinatorial_auction.data.loaders import build_cholesky_factor
-    from applications.combinatorial_auction.scripts.c_block.counterfactual.errors import (
-        build_counterfactual_errors,
-    )
     offset = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     L_corr = build_cholesky_factor(error_correlation)
     pop = None
     if error_scaling == "pop":
-        w = meta["bta_weight"]
-        pop = w / w.sum()
-    local_errors = build_counterfactual_errors(
-        model.features.comm_manager, meta["A"].shape[1], meta["A"], offset,
-        seed, elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
-        pop=pop,
-    )
+        pop = meta["bta_pop"]
+
+    A = meta["A"]
+    n_btas, n_items = A.shape[1], A.shape[0]
+    cm = model.features.comm_manager
+    local_errors = np.zeros((cm.num_local_agent, n_items))
+    for i, gid in enumerate(cm.agent_ids):
+        rng = np.random.default_rng((seed, gid))
+        bta_err = rng.normal(0, 1, n_btas)
+        if L_corr is not None:
+            bta_err = L_corr @ bta_err
+        if error_scaling == "elig" and meta.get("elig") is not None:
+            bta_err *= meta["elig"][cm.obs_ids[i]]
+        elif error_scaling == "pop" and pop is not None:
+            bta_err *= pop
+        local_errors[i] = bta_err @ A.T + offset
+
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
     model.features._error_oracle_takes_data = False

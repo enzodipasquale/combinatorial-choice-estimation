@@ -75,19 +75,25 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
     model.features.build_quadratic_covariates_from_data()
 
     from applications.combinatorial_auction.data.loaders import build_cholesky_factor
-    from applications.combinatorial_auction.scripts.c_block.counterfactual.errors import (
-        build_counterfactual_errors,
-    )
     L_corr = build_cholesky_factor(error_correlation)
     pop = None
     if error_scaling == "pop":
-        w = meta["bta_weight"]
-        pop = w / w.sum()
-    local_errors = build_counterfactual_errors(
-        model.features.comm_manager, n_btas, A, offset_m, error_seed,
-        elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
-        pop=pop,
-    )
+        pop = meta["bta_pop"]
+
+    cm = model.features.comm_manager
+    n_items = A.shape[0]
+    local_errors = np.zeros((cm.num_local_agent, n_items))
+    for i, gid in enumerate(cm.agent_ids):
+        rng = np.random.default_rng((error_seed, gid))
+        bta_err = rng.normal(0, 1, n_btas)
+        if L_corr is not None:
+            bta_err = L_corr @ bta_err
+        if error_scaling == "elig" and meta.get("elig") is not None:
+            bta_err *= meta["elig"][cm.obs_ids[i]]
+        elif error_scaling == "pop" and pop is not None:
+            bta_err *= pop
+        local_errors[i] = bta_err @ A.T + offset_m
+
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
     model.features._error_oracle_takes_data = False

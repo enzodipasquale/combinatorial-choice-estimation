@@ -132,7 +132,7 @@ def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
         "gamma_item": gamma_item,
         "continental_mta_nums": continental_mta_nums(btas),
         "elig": ctx["elig"],
-        "bta_weight": ctx["weight"].astype(float),
+        "bta_pop": ctx["pop"],
         "covariate_names": {},
     }
 
