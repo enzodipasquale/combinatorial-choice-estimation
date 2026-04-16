@@ -1,6 +1,6 @@
 """Print post-estimation tables for preferred specifications."""
 import numpy as np
-from .compute import run_all, PREFERRED
+from .compute import run_all
 
 
 def _col(rows, key):

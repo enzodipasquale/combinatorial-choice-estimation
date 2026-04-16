@@ -65,7 +65,7 @@ def run_spec(config_stem, raw=None, ctx=None, price=None, b_obs=None,
     qid_names = app.get("quadratic_id_regressors", [])
     all_names = mod_names + qid_names + quad_names
     n_id_mod = len(mod_names)
-    n_btas = 480
+    n_btas = b_obs.shape[1]
     n_id_quad = len(qid_names)
     use_blp = app.get("error_scaling") == "pop"
 

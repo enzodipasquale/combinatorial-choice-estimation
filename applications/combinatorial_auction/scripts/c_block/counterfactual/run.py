@@ -129,13 +129,10 @@ def _build_counterfactual_errors(model, meta, seed, error_scaling=None,
     )
     offset = meta["offset_m"] if include_xi else meta["offset_m_no_xi"]
     L_corr = build_cholesky_factor(error_correlation)
-    # pop scaling: need BTA-level pop normalized
     pop = None
     if error_scaling == "pop":
-        from applications.combinatorial_auction.data.loaders import load_bta_data
-        raw = load_bta_data()
-        pop = raw["bta_data"]["pop90"].to_numpy().astype(float)
-        pop = pop / pop.sum()
+        w = meta["bta_weight"]
+        pop = w / w.sum()
     local_errors = build_counterfactual_errors(
         model.features.comm_manager, meta["A"].shape[1], meta["A"], offset,
         seed, elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,

@@ -9,10 +9,10 @@ APP_DIR = CBLOCK_DIR.parent.parent
 sys.path.insert(0, str(APP_DIR.parent.parent))
 
 from applications.combinatorial_auction.data.loaders import (
-    load_bta_data, build_context, load_aggregation_matrix, continental_mta_nums,
+    load_bta_data, build_context,
 )
 from applications.combinatorial_auction.data.iv import (
-    load_iv_instruments, second_stage, compute_xi,
+    load_iv_instruments, second_stage,
 )
 
 
@@ -79,9 +79,14 @@ def run_single_counterfactual(beta, gamma_id, gamma_item, alpha_0, alpha_1,
         build_counterfactual_errors,
     )
     L_corr = build_cholesky_factor(error_correlation)
+    pop = None
+    if error_scaling == "pop":
+        w = meta["bta_weight"]
+        pop = w / w.sum()
     local_errors = build_counterfactual_errors(
         model.features.comm_manager, n_btas, A, offset_m, error_seed,
         elig=meta.get("elig"), error_scaling=error_scaling, L_corr=L_corr,
+        pop=pop,
     )
     model.features.local_modular_errors = local_errors
     model.features._error_oracle = lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
@@ -236,14 +241,16 @@ def main():
             n_sim_est = len(u_hat_b) // n_obs
             bta_surplus_b = u_hat_b.reshape(n_obs, n_sim_est).mean(1).sum() / a1_b
 
-        xi_b = compute_xi(delta_b, price_bta, a0_b, a1_b,
-                          iv_b["demand_controls"], raw["bta_data"])
+        # For the CF offset, use simple xi (no controls subtraction) so that
+        # offset_m = mta_sizes*a0 + A@xi = A@delta + a1*A@price, invariant to
+        # the controls decomposition used in the second-stage regression.
+        xi_b = delta_b - a0_b + a1_b * price_bta
 
-        # Run counterfactual
         cf_rev_b, cf_surplus_b = run_single_counterfactual(
             beta_b, gamma_id_b, gamma_item_b, a0_b, a1_b,
             xi_b, input_data_template, meta, cf_config,
             args.n_sim_cf, args.error_seed,
+            error_scaling=error_scaling,
             error_correlation=error_correlation,
         )
 

@@ -112,12 +112,13 @@ def load_blp_instruments(raw, pop_threshold=500_000):
 
 
 def run_2sls_blp(delta, price, raw, pop_threshold=500_000):
-    """2SLS with BLP instruments, pop+percapin controls, rural sample.
+    """2SLS with BLP instruments, pop control, rural sample.
 
-    delta ~ const + pop + percapin + (-price)
-    Endogenous: pop, price.  Excluded IVs: BLP characteristics of other BTAs in same MTA.
+    delta ~ const + pop + (-price)
+    Endogenous: pop, price.
+    Excluded IVs: percapin + BLP characteristics of other BTAs in same MTA.
 
-    Returns dict with a0, a1, b_pop, b_percapin, se's, r2, n.
+    Returns dict with a0, a1, b_pop, se's, r2, n, demand_controls.
     """
     arrays, rural = load_blp_instruments(raw, pop_threshold)
 
@@ -134,17 +135,17 @@ def run_2sls_blp(delta, price, raw, pop_threshold=500_000):
     d, p = delta[valid], price[valid]
     pop_v, inc_v = pop[valid], percapin[valid]
 
-    X = np.column_stack([np.ones(n), pop_v, inc_v, -p])
-    z_excl = np.column_stack([arrays[c][valid] for c in blp_cols])
-    Z = np.column_stack([np.ones(n), inc_v, z_excl])
+    X = np.column_stack([np.ones(n), pop_v, -p])
+    z_excl = np.column_stack([inc_v] + [arrays[c][valid] for c in blp_cols])
+    Z = np.column_stack([np.ones(n), z_excl])
 
     b, se, r2, resid = tsls(X, d, Z)
 
     return {
-        "a0": b[0], "a1": b[3], "b_pop": b[1], "b_percapin": b[2],
-        "se_a0": se[0], "se_a1": se[3], "se_pop": se[1], "se_percapin": se[2],
+        "a0": b[0], "a1": b[2], "b_pop": b[1],
+        "se_a0": se[0], "se_a1": se[2], "se_pop": se[1],
         "r2": r2, "n": n,
-        "demand_controls": {"pop90": b[1], "percapin": b[2]},
+        "demand_controls": {"pop90": b[1]},
     }
 
 

@@ -67,9 +67,11 @@ def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
     bta_mod = _build_features(MODULAR, modular_regressors, ctx)  # (n_obs, n_btas, n_id_mod)
     mta_mod = np.einsum('ijk,mj->imk', bta_mod, A)              # (n_obs, n_mtas, n_id_mod)
 
-    # obs_bundles: aggregate C-block choices to MTA level
-    c_obs = ctx["c_obs_bundles"].astype(float)
-    mta_obs = (c_obs @ A.T > 0).astype(int)
+    # obs_bundles: each MTA counted exactly once (not aggregated from BTA choices)
+    n_obs_total = mta_mod.shape[0]
+    mta_obs = np.zeros((n_obs_total, n_mtas), dtype=int)
+    for m in range(n_mtas):
+        mta_obs[m % n_obs_total, m] = 1
 
     # item_data quadratics
     _, Q_mta = _aggregate_quadratics(ctx, quadratic_regressors, A)
@@ -130,6 +132,7 @@ def prepare_counterfactual(est_result_path_or_dict, alpha_0, alpha_1,
         "gamma_item": gamma_item,
         "continental_mta_nums": continental_mta_nums(btas),
         "elig": ctx["elig"],
+        "bta_weight": ctx["weight"].astype(float),
         "covariate_names": {},
     }
 
