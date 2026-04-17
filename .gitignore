@@ -31,6 +31,7 @@ run_with_timeout.sh
 *.bas
 *.err
 *.json
+!results/**/*.json
 *.slurm
 *.npz
 
