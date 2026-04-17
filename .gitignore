@@ -89,4 +89,6 @@ applications/firms_export/_old/
 resources/
 **/multi_stage_production/dgp_cache.pkl
 slides/
-CLAUDE.mdlegacy_results/
+CLAUDE.md
+legacy_results/
+applications/combinatorial_auction/results/
