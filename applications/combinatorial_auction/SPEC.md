@@ -21,7 +21,6 @@ pipeline/
     second_stage/       2SLS, welfare decomposition, pretty tables
     counterfactual/     BTA→MTA aggregation, CF equilibrium solve (with_xi and
                         no_xi), bootstrap welfare, CF-vs-observed analysis
-    spatial_correlated/ loops over ρ ∈ {0.0, 0.2, 0.4, 0.6}; calls estimate.py
 
 configs/                <spec>.yaml — one per experiment
 results/                <spec>/ with result.json, bootstrap_result.json,
