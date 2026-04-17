@@ -68,7 +68,6 @@ def decompose(spec_stem, *, configs_dir=CONFIGS, results_dir=RESULTS):
         modular_regressors       = app.get("modular_regressors", []),
         quadratic_regressors     = app.get("quadratic_regressors", []),
         quadratic_id_regressors  = app.get("quadratic_id_regressors", []),
-        item_modular             = app.get("item_modular", "fe"),
         winners_only             = app.get("winners_only", False),
         capacity_source          = app.get("capacity_source", "initial"),
     )

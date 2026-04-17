@@ -9,8 +9,7 @@ Returns (input_data, meta):
           n_covariates, covariate_names}
 
 Covariate ordering along the final axis (matches combest θ layout):
-  [ modular_regressors | item_modular (FE or price) |
-    quadratic_id_regressors | quadratic_regressors ]
+  [ modular_regressors | item_FE | quadratic_id_regressors | quadratic_regressors ]
 """
 import numpy as np
 
@@ -23,7 +22,6 @@ def prepare(
     quadratic_regressors,
     quadratic_id_regressors=(),
     *,
-    item_modular="fe",                  # "fe" | "price"
     winners_only=False,
     capacity_source="initial",          # "initial" | "last_round"
 ):
@@ -40,13 +38,8 @@ def prepare(
     if mod_id is None:
         mod_id = np.zeros((n_obs, n_items, 0), dtype=np.float64)
 
-    # item_modular: FE (identity of items) or item price.
-    if item_modular == "fe":
-        item_mod = -np.eye(n_items, dtype=np.float64)
-    elif item_modular == "price":
-        item_mod = -ctx["price"][:, None]
-    else:
-        raise ValueError(f"item_modular must be 'fe' or 'price', got {item_modular!r}")
+    # Item-level fixed effects: one coefficient per item (n_items columns, -I).
+    item_mod = -np.eye(n_items, dtype=np.float64)
 
     id_data = {
         "modular":     mod_id,
@@ -77,7 +70,7 @@ def prepare(
             f"capacity_source={capacity_source!r} requires winners_only=True"
         )
 
-    # Dimensions + covariate names.
+    # Dimensions + covariate names. Item FEs are unnamed — one per item.
     n_obs       = input_data["id_data"]["obs_bundles"].shape[0]
     n_id_mod    = mod_id.shape[-1]
     n_item_mod  = item_mod.shape[-1]
@@ -85,10 +78,7 @@ def prepare(
     n_item_quad = quad.shape[-1]    if quad     is not None else 0
 
     names = {i: n for i, n in enumerate(modular_regressors)}
-    off = n_id_mod
-    if item_modular == "price":
-        names[off] = "price"
-    off += n_item_mod
+    off = n_id_mod + n_item_mod
     for i, n in enumerate(quadratic_id_regressors):
         names[off + i] = n
     off += n_id_quad

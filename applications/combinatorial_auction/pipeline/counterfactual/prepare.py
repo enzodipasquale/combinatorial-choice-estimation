@@ -75,7 +75,6 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
         modular_regressors       = mod_names,
         quadratic_regressors     = quad_names,
         quadratic_id_regressors  = qid_names,
-        item_modular             = app.get("item_modular", "fe"),
     )
     raw = load_raw()
     ctx = build_context(raw)

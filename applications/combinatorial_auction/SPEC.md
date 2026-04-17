@@ -74,7 +74,7 @@ All stages key off the spec name (= config file stem = results subdirectory).
 | `boot_pop_scaling` | same as boot | ε_ij × pop_j | BLP IV (rural) |
 | `boot_pop_scaling_large` | + assets_pop, pop_centroid_00, elig_* | ε_ij × pop_j | BLP IV |
 | `boot_pop_scaling_winners` | winners-only bidders | ε_ij × pop_j | BLP IV |
-| `boot_pop_scaling_winners_item_only` | winners-only + `item_modular: price` | ε_ij × pop_j | BLP IV |
+| `boot_pop_scaling_winners_item_only` | winners-only, item-level quadratics only | ε_ij × pop_j | BLP IV |
 | `boot_pop_scaling_winners_item_only_large` | above + extended covariates | ε_ij × pop_j | BLP IV |
 | `spatial_correlated_rho0{0,2,4,6}` | same as boot | SAR with ρ ∈ {0, .2, .4, .6} | simple IV |
 

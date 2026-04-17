@@ -6,7 +6,6 @@ Usage:  mpirun -n N python -m applications.combinatorial_auction.pipeline.estima
 Config keys (application block):
     mode                'estimation' | 'bootstrap'
     modular_regressors / quadratic_regressors / quadratic_id_regressors  (lists)
-    item_modular        'fe' | 'price'
     winners_only        bool
     capacity_source     'initial' | 'last_round'
     error_seed, error_correlation, spatial_rho, error_scaling  (see pipeline.errors)
@@ -50,7 +49,6 @@ def _prepare_inputs(app):
         modular_regressors       = app.get("modular_regressors", []),
         quadratic_regressors     = app.get("quadratic_regressors", []),
         quadratic_id_regressors  = app.get("quadratic_id_regressors", []),
-        item_modular             = app.get("item_modular", "fe"),
         winners_only             = app.get("winners_only", False),
         capacity_source          = app.get("capacity_source", "initial"),
     )
@@ -190,8 +188,7 @@ def main(config_path):
     if _rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
         input_data, meta, cov, pop_vec = _prepare_inputs(app)
-        print(f"c_block ({app.get('item_modular','fe')}): "
-              f"{meta['n_obs']} obs, {meta['n_items']} items, "
+        print(f"{meta['n_obs']} obs, {meta['n_items']} items, "
               f"{meta['n_covariates']} cov")
     else:
         input_data = meta = cov = pop_vec = None

@@ -1,6 +1,4 @@
 application:
-    dataset: c_block
-    item_modular: fe
     mode: bootstrap
     error_seed: 2006
     spatial_rho: 0.6
