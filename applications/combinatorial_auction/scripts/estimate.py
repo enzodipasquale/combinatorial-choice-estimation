@@ -68,6 +68,9 @@ def main(config_path):
     else:
         input_data = meta = cov = pop_vec = None
 
+    # combest.data_manager.load_and_distribute_input_data is rank-0-only by
+    # design (non-root replaces its arg with an empty skeleton), so we don't
+    # broadcast input_data here.
     if _comm is not None:
         config, meta, cov, pop_vec = _comm.bcast((config, meta, cov, pop_vec), root=0)
 
