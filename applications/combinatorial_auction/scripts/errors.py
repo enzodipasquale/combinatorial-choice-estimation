@@ -5,7 +5,7 @@ rank 0 and broadcast them before every rank calls `install`.
 
 Config keys consumed (from the `application` block):
     error_seed          (int, required)
-    error_correlation   (str | null)    Name of a QUADRATIC feature whose
+    error_correlation   (str | null)    Name of a QUADRATIC covariate whose
                                          normalized version is used as a
                                          correlation matrix (Cholesky).
     spatial_rho         (float | null)  Σ = (I−ρW)⁻¹(I−ρW)⁻ᵀ over symmetrized,
@@ -60,7 +60,7 @@ def covariance(ctx, app):
 def pop_vector(ctx):
     """Return the normalized per-BTA pop vector used for error_scaling='pop'.
 
-    This is the same ctx['pop'] that appears in the elig_pop feature and in
+    This is the same ctx['pop'] that appears in the elig_pop covariate and in
     any pop-centroid quadratic — guaranteed consistent because it's a single
     reference into the shared context.
     """

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from .features import WEIGHT_ROUNDING_TICK, QUADRATIC
+from .covariates import WEIGHT_ROUNDING_TICK, QUADRATIC
 
 DATASETS = Path(__file__).parent / "datasets"
 RAW = DATASETS / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
@@ -96,11 +96,11 @@ def load_raw():
 
 
 def build_context(raw):
-    """Normalized, derived quantities keyed by feature-registry names.
+    """Normalized, derived quantities keyed by covariate-registry names.
 
     Convention: pop_j and elig_i are both divided by the continental total
     population, so (elig_i * pop_j) is dimensionless and pop-scaled errors
-    share the same scale as the elig_pop feature.
+    share the same scale as the elig_pop covariate.
     """
     btas, bidders = raw["bta_data"], raw["bidder_data"]
     pop90 = btas["pop90"].to_numpy(dtype=float)
@@ -117,7 +117,7 @@ def build_context(raw):
         # integer capacities / weights for the combinatorial solver
         weight   = np.round(pop90 // WEIGHT_ROUNDING_TICK).astype(int),
         capacity = np.round(elig  // WEIGHT_ROUNDING_TICK).astype(int),
-        # normalized (same pop_sum divisor → consistent across features & errors)
+        # normalized (same pop_sum divisor → consistent across covariates & errors)
         pop = pop90 / pop_sum,
         elig = elig / pop_sum,
         pop_sum = pop_sum,
@@ -192,15 +192,15 @@ def last_round_capacity(bidder_data, keep_mask=None):
     return out
 
 
-def cholesky_factor(ctx, feature_name):
+def cholesky_factor(ctx, covariate_name):
     """Cholesky factor L of Σ = Q + Q.T normalized to unit diagonal, where
-    Q is the QUADRATIC feature with `feature_name`. Returns None if name is None.
+    Q is the QUADRATIC covariate with `covariate_name`. Returns None if name is None.
 
     Raises np.linalg.LinAlgError if the resulting matrix is not PSD — this is
     a hard error; no silent fallback (see SPEC.md on error-model rigor)."""
-    if feature_name is None:
+    if covariate_name is None:
         return None
-    Q = QUADRATIC[feature_name](ctx)
+    Q = QUADRATIC[covariate_name](ctx)
     Sigma = (Q + Q.T) / 2
     np.fill_diagonal(Sigma, 1.0)
     return np.linalg.cholesky(Sigma)

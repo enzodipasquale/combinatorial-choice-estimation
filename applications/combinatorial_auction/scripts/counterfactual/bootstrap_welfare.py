@@ -24,7 +24,7 @@ except ImportError:
 
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
 from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls
-from applications.combinatorial_auction.scripts import errors as E
+from applications.combinatorial_auction.scripts import errors
 from applications.combinatorial_auction.scripts.counterfactual.run import solve_cf
 
 
@@ -52,7 +52,7 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         ctx = build_context(raw)
         price = raw["bta_data"]["bid"].to_numpy(dtype=float) / 1e9
         bta_revenue = float((ctx["c_obs_bundles"] @ price).sum())
-        bta_cov = E.covariance(ctx, app)
+        bta_cov = errors.covariance(ctx, app)
     else:
         boot_thetas = boot_u_hats = price = bta_revenue = bta_cov = None
 

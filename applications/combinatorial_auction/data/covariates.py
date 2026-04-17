@@ -1,10 +1,10 @@
-"""Feature registry for the combinatorial auction.
+"""Covariate registry for the combinatorial auction.
 
 Three registries:
-- MODULAR: per-(obs, item) linear features, signature ctx -> (n_obs, n_items).
-- QUADRATIC: per-(item, item) interaction features shared across obs,
+- MODULAR: per-(obs, item) linear covariates, signature ctx -> (n_obs, n_items).
+- QUADRATIC: per-(item, item) interaction covariates shared across obs,
   signature ctx -> (n_items, n_items).
-- QUADRATIC_ID: per-(obs, item, item) interaction features,
+- QUADRATIC_ID: per-(obs, item, item) interaction covariates,
   signature ctx -> (n_obs, n_items, n_items).
 
 Column ordering in input_data mirrors the lists passed to prepare().
@@ -141,7 +141,7 @@ QUADRATIC_ID.update({
 
 
 def build(registry, names, ctx):
-    """Stack a list of features into a (..., len(names)) float64 array.
+    """Stack a list of covariates into a (..., len(names)) float64 array.
     Returns None if `names` is empty so callers can branch on presence."""
     if not names:
         return None

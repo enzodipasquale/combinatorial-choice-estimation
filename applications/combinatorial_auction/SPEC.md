@@ -12,11 +12,11 @@ data/
     datasets/           raw CSV inputs (do not edit)
     loaders.py          raw I/O, continental filter, context, aggregation matrix,
                         winner filtering, last-round capacity, Cholesky factor
-    features.py         MODULAR / QUADRATIC / QUADRATIC_ID registries
+    covariates.py         MODULAR / QUADRATIC / QUADRATIC_ID registries
     prepare.py          input_data + meta for combest
 
 scripts/
-    errors.py           error oracles (iid, feature-correlated, SAR,
+    errors.py           error oracles (iid, covariate-correlated, SAR,
                         pop/elig scaling, BTA→MTA aggregated oracle for CF)
     estimate.py         MPI entry: point estimation and bootstrap
     second_stage/       2SLS (iv.py), welfare decomposition (compute.py), tables
@@ -37,7 +37,7 @@ legacy_results/         pre-rebuild estimation outputs (gitignored)
 ## Stages
 
 1. **Estimate.** One MPI entry for point estimation and bootstrap, covering
-   every error model (iid, feature-correlated, SAR, pop/elig scaled):
+   every error model (iid, covariate-correlated, SAR, pop/elig scaled):
    ```
    mpirun -n N python -m applications.combinatorial_auction.scripts.estimate \
        applications/combinatorial_auction/configs/<spec>.yaml
@@ -82,7 +82,7 @@ application:
     winners_only:                   bool       (default false)
     capacity_source:                'initial' | 'last_round'   (default 'initial')
     error_seed:                     int
-    error_correlation:              feature name or null
+    error_correlation:              covariate name or null
     spatial_rho:                    float or null   (SAR; mutually exclusive with error_correlation)
     error_scaling:                  'pop' | 'elig' | null
 
@@ -120,7 +120,7 @@ report the same α₀/α₁ for the same θ.
 
 - Prices and revenues in $B (BTA bid column divided by 1e9).
 - `pop_j` and `elig_i` are both normalized by continental `pop_sum`; pop-scaled
-  errors and the `elig_pop` feature therefore share the same scale.
+  errors and the `elig_pop` covariate therefore share the same scale.
 - Continental filter (drop AK/HI/PR/Guam/etc.) is applied once in `data.loaders.load_raw`.
 - CF offset: `mta_sizes · α₀ + A · Z'γ [ + A · ξ ]`; the `A · ξ` term toggles
   `with_xi` vs `no_xi`. Both variants are algebraically `A · δ + α₁ · A · p`.

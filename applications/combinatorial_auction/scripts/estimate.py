@@ -31,7 +31,7 @@ except ImportError:
 
 from applications.combinatorial_auction.data.prepare import prepare
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
-from applications.combinatorial_auction.scripts import errors as E
+from applications.combinatorial_auction.scripts import errors
 
 
 def _results_dir(config_path, kind):
@@ -55,8 +55,8 @@ def _prepare_inputs(app):
         capacity_source          = app.get("capacity_source", "initial"),
     )
     ctx = build_context(load_raw())
-    cov = E.covariance(ctx, app)
-    pop_vec = E.pop_vector(ctx) if app.get("error_scaling") == "pop" else None
+    cov = errors.covariance(ctx, app)
+    pop_vec = errors.pop_vector(ctx) if app.get("error_scaling") == "pop" else None
     return input_data, meta, cov, pop_vec
 
 
@@ -78,7 +78,7 @@ def _build_model(config, input_data, meta, cov, pop_vec):
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
 
-    E.install(model, seed=app["error_seed"], cov=cov,
+    errors.install(model, seed=app["error_seed"], cov=cov,
               scaling=app.get("error_scaling"), pop=pop_vec)
 
     model.subproblems.load_solver()

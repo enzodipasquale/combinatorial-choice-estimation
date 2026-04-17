@@ -1,4 +1,4 @@
-"""Feature construction for C-block estimation.
+"""Covariate construction for C-block estimation.
 
 Returns (input_data, meta):
   input_data = {
@@ -13,7 +13,7 @@ Covariate ordering along the final axis (matches combest θ layout):
 """
 import numpy as np
 
-from .features import MODULAR, QUADRATIC, QUADRATIC_ID, build
+from .covariates import MODULAR, QUADRATIC, QUADRATIC_ID, build
 from .loaders import load_raw, build_context, filter_winners, last_round_capacity
 
 

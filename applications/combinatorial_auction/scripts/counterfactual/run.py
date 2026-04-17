@@ -29,7 +29,7 @@ from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls
 from applications.combinatorial_auction.scripts.counterfactual.prepare import (
     prepare_counterfactual, freeze_bounds,
 )
-from applications.combinatorial_auction.scripts import errors as E
+from applications.combinatorial_auction.scripts import errors
 
 # Solver settings for every CF run. The estimation spec drives regressors and
 # error model; the CF's own 2SLS knobs live in the counterfactual: config block.
@@ -75,7 +75,7 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls, bta_cov,
     model.load_config(config)
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
-    E.install_aggregated(
+    errors.install_aggregated(
         model, seed=CF_ERROR_SEED, A=cf["A"], bta_cov=bta_cov,
         offset=cf["offset_m"] if include_xi else cf["offset_m_no_xi"],
         scaling=app.get("error_scaling"), pop=cf["pop"], elig=cf["elig"],
@@ -128,7 +128,7 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         theta = np.array(json.load(open(pt_path))["theta_hat"])
         raw = load_raw()
         a0, a1, dc = _derive_alphas(theta, raw, est_app)
-        bta_cov = E.covariance(build_context(raw), est_app)
+        bta_cov = errors.covariance(build_context(raw), est_app)
         print(f"Counterfactual[{spec}]: α₀={a0:.6f}  α₁={a1:.4f}  controls={dc}")
     else:
         theta = bta_cov = a0 = a1 = dc = None

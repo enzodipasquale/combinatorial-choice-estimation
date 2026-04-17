@@ -11,7 +11,7 @@ For each bootstrap draw b:
 δ is additively decomposed as α₀-part + price-part + controls-part + ξ-part;
 each piece is reported so Table 3 can display the structural composition.
 
-Features are never re-built here — x̄ is assembled from the arrays
+Covariates are never re-built here — x̄ is assembled from the arrays
 `data.prepare()` already produced.
 """
 import json, yaml

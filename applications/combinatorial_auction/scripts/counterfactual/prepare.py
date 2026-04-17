@@ -1,7 +1,7 @@
 """BTA → MTA aggregation for the counterfactual.
 
 Everything here consumes the BTA-level `input_data` produced by
-`data.prepare()` and the BTA-level `context`; no feature is re-built from the
+`data.prepare()` and the BTA-level `context`; no covariate is re-built from the
 registry, so the registry is the single source of truth.
 
 The counterfactual model has one observation per MTA and lets combest re-solve
@@ -31,8 +31,8 @@ def _aggregate(input_data_bta, A):
     # (n_mta, n_mta, K_quad): Q_mta[m,n,k] = Σ_{j,l} A[m,j] A[n,l] Q[j,l,k]
     Q_mta = (np.einsum("mj,jlk,nl->mnk", A, Qb, A) if Qb is not None else None)
 
-    # (n_obs, n_mta, n_mta, K_qid) — each qid feature is elig_i * (A Q A^T)
-    # By construction (see data/features.py) qid_bta[i,j,l,k] = elig_i * Q_k[j,l].
+    # (n_obs, n_mta, n_mta, K_qid) — each qid covariate is elig_i * (A Q A^T)
+    # By construction (see data/covariates.py) qid_bta[i,j,l,k] = elig_i * Q_k[j,l].
     # So the aggregated form is qid_mta[i,m,n,k] = elig_i * Q_mta[m,n,k].
     # Implemented as: aggregate the first-layer quadratic (per i) via A.
     qid_mta = None
@@ -70,7 +70,7 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     quad_names = app.get("quadratic_regressors", [])
     qid_names  = app.get("quadratic_id_regressors", [])
 
-    # Single source of truth: BTA-level features.
+    # Single source of truth: BTA-level covariates.
     bta_data, bta_meta = prepare(
         modular_regressors       = mod_names,
         quadratic_regressors     = quad_names,
@@ -103,7 +103,7 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     offset_m       = mta_sizes * alpha_0 + A_controls + A @ xi
     offset_m_no_xi = mta_sizes * alpha_0 + A_controls
 
-    # Aggregate BTA-level features to MTA level.
+    # Aggregate BTA-level covariates to MTA level.
     mod_mta, qid_mta, Q_mta, mta_weight = _aggregate(bta_data, A)
 
     # obs_bundles: synthetic — each MTA appears in one row.
