@@ -75,3 +75,4 @@ HPC/
 
 # Firms export cache (binary, too big for GitHub)
 applications/firms_export/data/.cache/
+hpc/
