@@ -1,14 +1,11 @@
-"""BTA (license) descriptive statistics table (LaTeX)."""
-
+"""BTA (license) descriptives table (LaTeX)."""
 import numpy as np
-from pathlib import Path
 
-from applications.combinatorial_auction.data.loaders import load_bta_data
-
-OUT = Path(__file__).parent.parent / "output"
+from applications.combinatorial_auction.data.loaders import load_raw
+from applications.combinatorial_auction.data.descriptive import OUT_TAB
 
 
-def _fmt(x, kind="num"):
+def _fmt(x, kind):
     if np.isnan(x):
         return "--"
     if kind == "int":
@@ -17,62 +14,47 @@ def _fmt(x, kind="num"):
         return f"{x / 1e3:,.0f}"
     if kind == "m":
         return f"{x / 1e6:,.1f}"
-    if kind == "usd":
-        return f"\\${x:,.0f}"
+    if kind == "pct":
+        return f"{x * 100:.1f}\\%"
     return f"{x:,.2f}"
 
 
-def _stats(x):
-    x = np.asarray(x, dtype=float)
-    x = x[~np.isnan(x)]
-    return dict(
-        mean=np.mean(x), median=np.median(x),
-        q25=np.quantile(x, 0.25), q75=np.quantile(x, 0.75),
-        lo=np.min(x), hi=np.max(x),
-    )
+def _stats_row(label, vals, kind):
+    v = np.asarray(vals, dtype=float)
+    v = v[~np.isnan(v)]
+    mean, med = np.mean(v), np.median(v)
+    q25, q75 = np.quantile(v, 0.25), np.quantile(v, 0.75)
+    lo, hi = np.min(v), np.max(v)
+    return (f"{label} & {_fmt(mean, kind)} & {_fmt(med, kind)} & "
+            f"{_fmt(q25, kind)} & {_fmt(q75, kind)} & "
+            f"{_fmt(lo, kind)} & {_fmt(hi, kind)} \\\\")
 
 
 def build_table():
-    raw = load_bta_data()
-    bta = raw["bta_data"]
-
+    bta = load_raw()["bta_data"]
     pop = bta["pop90"].values
     bid = bta["bid"].values
-    percapin = bta["percapin"].values
-    density = bta["density"].values
-    hhinc35k = bta["hhinc35k"].values
 
-    def row(label, vals, kind):
-        s = _stats(vals)
-        return (f"{label} & {_fmt(s['mean'], kind)} & {_fmt(s['median'], kind)} "
-                f"& {_fmt(s['q25'], kind)} & {_fmt(s['q75'], kind)} "
-                f"& {_fmt(s['lo'], kind)} & {_fmt(s['hi'], kind)} \\\\")
-
-    lines = [
+    rows = [
         r"\begin{tabular}{l cccccc}",
         r"\toprule",
         r" & Mean & Median & p25 & p75 & Min & Max \\",
         r"\midrule",
-        row("Population 1990 (K)", pop, "k"),
-        row("Winning bid (\\$M)", bid, "m"),
-        row("Per-capita income (\\$)", percapin, "int"),
-        row("Density (pop / km$^2$)", density, "int"),
-        r"Share HH income $<$ \$35K & " + " & ".join(
-            [f"{v * 100:.1f}\\%" for v in [
-                _stats(hhinc35k)[k] for k in ("mean", "median", "q25", "q75", "lo", "hi")
-            ]]
-        ) + r" \\",
+        _stats_row("Population 1990 (K)",          pop, "k"),
+        _stats_row("Winning bid (\\$M)",           bid, "m"),
+        _stats_row("Per-capita income (\\$)",      bta["percapin"].values, "int"),
+        _stats_row("Density (pop / km$^2$)",       bta["density"].values, "int"),
+        _stats_row("Share HH income $<$ \\$35K",   bta["hhinc35k"].values, "pct"),
         r"\midrule",
-        f"Number of BTAs (continental) & \\multicolumn{{6}}{{c}}{{{len(bta):,}}} \\\\",
-        f"Total winning bids & \\multicolumn{{6}}{{c}}{{\\${bid.sum() / 1e9:,.2f}B}} \\\\",
-        f"Total population 1990 & \\multicolumn{{6}}{{c}}{{{pop.sum() / 1e6:,.1f}M}} \\\\",
+        rf"Number of BTAs (continental) & \multicolumn{{6}}{{c}}{{{len(bta):,}}} \\",
+        rf"Total winning bids & \multicolumn{{6}}{{c}}{{\${bid.sum() / 1e9:,.2f}B}} \\",
+        rf"Total population 1990 & \multicolumn{{6}}{{c}}{{{pop.sum() / 1e6:,.1f}M}} \\",
         r"\bottomrule",
         r"\end{tabular}",
     ]
-
-    tex = "\n".join(lines) + "\n"
-    (OUT / "tab_btas.tex").write_text(tex)
-    print(f"  tab_btas.tex written ({len(lines)} lines)")
+    tex = "\n".join(rows) + "\n"
+    (OUT_TAB / "tab_btas.tex").write_text(tex)
+    print(f"  tab_btas.tex ({len(bta)} BTAs, ${bid.sum() / 1e9:.2f}B total)")
     return tex
 
 

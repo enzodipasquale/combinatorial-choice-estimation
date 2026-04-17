@@ -2,14 +2,13 @@
 """Eligibility evolution during the C-block auction."""
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
-from applications.combinatorial_auction.data.descriptive.helpers import RAW_DIR
+from applications.combinatorial_auction.data.loaders import RAW
 
 
 def load():
-    elig = pd.read_csv(RAW_DIR / "cblock-eligibility.csv")
-    bidders = pd.read_csv(RAW_DIR / "biddercblk_03_28_2004_pln.csv")
+    elig = pd.read_csv(RAW / "cblock-eligibility.csv")
+    bidders = pd.read_csv(RAW / "biddercblk_03_28_2004_pln.csv")
     bidders = bidders[bidders["bidder_num"] != 9999]
     return elig, bidders
 
