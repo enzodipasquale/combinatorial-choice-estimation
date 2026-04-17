@@ -1,97 +1,75 @@
-"""MTA map: dissolve BTA geometries into Major Trading Areas."""
+"""MTA-level map figures: boundaries, BTA overlay, and MTA vs BTA contrast."""
 
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from pathlib import Path
 
-from applications.combinatorial_auction.data.loaders import load_bta_data, DATASETS_DIR
-from applications.combinatorial_auction.data.descriptive.style import NAVY, SLATE, DPI, style_ax
+from applications.combinatorial_auction.data.descriptive.style import NAVY, SLATE, DPI
+from applications.combinatorial_auction.data.descriptive.maps import load_bta_gdf, load_mta_gdf
 
-MAP_FILE = DATASETS_DIR / "bta_map_data" / "bta.mif"
-RAW_DIR = DATASETS_DIR / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 OUT = Path(__file__).parent.parent / "output"
 
-BBOX = (-125, 24, -66, 50)
 
+def plot_boundaries():
+    """Plain MTA boundary map with labels at centroids."""
+    mta = load_mta_gdf()
 
-def _build_mta_geodata():
-    """Dissolve BTA polygons into MTAs using the census crosswalk."""
-    gdf = gpd.read_file(MAP_FILE)
-    gdf["bta"] = gdf["bta"].astype(int)
+    fig, ax = plt.subplots(figsize=(14, 8.5))
+    mta.plot(ax=ax, facecolor="white", edgecolor=NAVY, linewidth=1.1)
 
-    xwalk = pd.read_csv(RAW_DIR / "cntysv2000_census-bta-may2009.csv", encoding="latin-1")
-    xwalk = xwalk[["BTA", "MTA", "MTA Market Name"]].drop_duplicates()
-    xwalk = xwalk.rename(columns={"BTA": "bta", "MTA": "mta", "MTA Market Name": "mta_name"})
-    xwalk["bta"] = pd.to_numeric(xwalk["bta"], errors="coerce")
-    xwalk["mta"] = pd.to_numeric(xwalk["mta"], errors="coerce")
-    xwalk = xwalk.dropna(subset=["bta", "mta"])
-    xwalk["bta"] = xwalk["bta"].astype(int)
-    xwalk["mta"] = xwalk["mta"].astype(int)
-
-    gdf = gdf.merge(xwalk[["bta", "mta", "mta_name"]], on="bta", how="left")
-    gdf = gdf.dropna(subset=["mta"])
-
-    # Dissolve BTAs into MTAs
-    mta_gdf = gdf.dissolve(by="mta", as_index=False)
-
-    # Keep MTA name (take first)
-    names = xwalk.drop_duplicates("mta").set_index("mta")["mta_name"]
-    mta_gdf["mta_name"] = mta_gdf["mta"].map(names)
-
-    return mta_gdf
-
-
-def plot_mta_boundaries():
-    """Plain MTA boundary map with labels."""
-    mta_gdf = _build_mta_geodata()
-
-    # Continental filter
-    minx, miny, maxx, maxy = BBOX
-    cont = mta_gdf.cx[minx:maxx, miny:maxy].copy()
-
-    fig, ax = plt.subplots(figsize=(14, 9))
-    cont.plot(ax=ax, facecolor="white", edgecolor=NAVY, linewidth=1.2)
-
-    # Label each MTA at its centroid
-    for _, row in cont.iterrows():
-        pt = row.geometry.representative_point()
-        name = row["mta_name"]
-        if pd.isna(name):
+    for _, row in mta.iterrows():
+        if pd.isna(row["mta_name"]):
             continue
-        # Shorten long names
-        short = name.strip()[:20]
-        ax.annotate(short, xy=(pt.x, pt.y), fontsize=4, ha="center", va="center",
+        pt = row.geometry.representative_point()
+        short = row["mta_name"].strip().split(",")[0][:22]
+        ax.annotate(short, xy=(pt.x, pt.y), fontsize=5.5, ha="center", va="center",
                     family="serif", color=SLATE)
 
     ax.axis("off")
     fig.tight_layout()
     fig.savefig(OUT / "fig_mta_boundaries.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"  MTA boundary map: {len(cont)} continental MTAs")
+    print(f"  fig_mta_boundaries: {len(mta)} continental MTAs")
 
 
-def plot_mta_bta_overlay():
-    """MTA boundaries (thick) overlaid on BTA boundaries (thin)."""
-    mta_gdf = _build_mta_geodata()
-    bta_gdf = gpd.read_file(MAP_FILE)
+def plot_vs_bta():
+    """High-contrast MTA/BTA comparison: MTAs colored, BTAs hairline inside.
 
-    minx, miny, maxx, maxy = BBOX
-    cont_mta = mta_gdf.cx[minx:maxx, miny:maxy]
-    cont_bta = bta_gdf.cx[minx:maxx, miny:maxy]
+    Communicates at a glance: a coarse MTA market contains many fine BTAs.
+    """
+    bta = load_bta_gdf()
+    mta = load_mta_gdf()
 
-    fig, ax = plt.subplots(figsize=(14, 9))
-    cont_bta.plot(ax=ax, facecolor="white", edgecolor=SLATE, linewidth=0.2, alpha=0.5)
-    cont_mta.plot(ax=ax, facecolor="none", edgecolor=NAVY, linewidth=1.5)
+    # Distinct but muted fill colors for MTAs
+    cmap = colormaps["tab20"]
+    n = len(mta)
+    mta = mta.reset_index(drop=True)
+    mta["_color"] = [cmap(i % 20) for i in range(n)]
+    # Lighten
+    mta["_fill"] = mta["_color"].apply(lambda c: (c[0], c[1], c[2], 0.30))
+
+    fig, ax = plt.subplots(figsize=(14, 8.5))
+    mta.plot(ax=ax, color=mta["_fill"].tolist(), edgecolor=NAVY, linewidth=1.4,
+             zorder=1)
+    # BTA subdivision lines on top
+    bta.plot(ax=ax, facecolor="none", edgecolor="black", linewidth=0.25,
+             alpha=0.55, zorder=2)
 
     ax.axis("off")
+
+    # Corner caption in the figure itself (small, unobtrusive)
+    ax.text(0.02, 0.03,
+            f"{len(mta)} MTAs (colored)  ·  {len(bta)} BTAs (thin lines)",
+            transform=ax.transAxes, fontsize=9, family="serif", color=SLATE)
+
     fig.tight_layout()
-    fig.savefig(OUT / "fig_mta_bta_overlay.png", dpi=DPI, bbox_inches="tight")
+    fig.savefig(OUT / "fig_mta_vs_bta.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"  MTA/BTA overlay: {len(cont_mta)} MTAs, {len(cont_bta)} BTAs")
+    print(f"  fig_mta_vs_bta: {len(mta)} MTAs over {len(bta)} BTAs")
 
 
 if __name__ == "__main__":
-    plot_mta_boundaries()
-    plot_mta_bta_overlay()
+    plot_boundaries()
+    plot_vs_bta()
