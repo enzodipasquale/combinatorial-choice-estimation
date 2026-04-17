@@ -1,1 +1,13 @@
-[]
+- name: auction_test
+  script: applications/combinatorial_auction/scripts/estimate.py
+  args: applications/combinatorial_auction/configs/boot_test.yaml
+  outputs: []
+  sbatch:
+    nodes: 1
+    ntasks: 4
+    cpus-per-task: 1
+    mem: 8G
+    time: "00:15:00"
+    account: torch_pr_531_general
+    output: applications/combinatorial_auction/logs/auction_test-%j.out
+    error: applications/combinatorial_auction/logs/err/auction_test-%j.err
