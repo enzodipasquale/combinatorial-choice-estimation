@@ -11,7 +11,6 @@ for the optimal MTA "prices" (item-FE coefficients), holding fixed every
     offset_m         = |m|·α₀ + A·(Z_j'γ_demand) + A·ξ_j         (with_xi)
     offset_m_no_xi   = |m|·α₀ + A·(Z_j'γ_demand)                 (no_xi)
 """
-from typing import Optional
 import numpy as np
 
 from ...data.prepare import prepare
@@ -106,7 +105,10 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     # Aggregate BTA-level covariates to MTA level.
     mod_mta, qid_mta, Q_mta, mta_weight = _aggregate(bta_data, A)
 
-    # obs_bundles: synthetic — each MTA appears in one row.
+    # Synthetic obs_bundles: each MTA must appear exactly once across the rows so
+    # that every MTA item-FE (= price) has a non-zero coefficient in the combest
+    # master LP. The assignment of MTAs to rows is arbitrary — price solutions
+    # are invariant to it (verified empirically).
     n_obs_total = mod_mta.shape[0]
     mta_obs = np.zeros((n_obs_total, n_mtas), dtype=int)
     for m in range(n_mtas):
@@ -134,11 +136,12 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     off += n_id_quad
     for i, n in enumerate(quad_names): names[off + i] = n
 
+    n_item_quad = Q_mta.shape[-1] if Q_mta is not None else 0
     meta = dict(
         n_obs=n_obs_total, n_items=n_mtas, n_btas=n_btas, n_mtas=n_mtas,
         n_id_mod=n_id_mod, n_item_mod=n_mtas,
-        n_id_quad=n_id_quad, n_item_quad=Q_mta.shape[-1] if Q_mta is not None else 0,
-        n_covariates=n_id_mod + n_mtas + n_id_quad + (Q_mta.shape[-1] if Q_mta is not None else 0),
+        n_id_quad=n_id_quad, n_item_quad=n_item_quad,
+        n_covariates=n_id_mod + n_mtas + n_id_quad + n_item_quad,
         covariate_names=names,
         continental_mta_nums=mta_nums,
     )

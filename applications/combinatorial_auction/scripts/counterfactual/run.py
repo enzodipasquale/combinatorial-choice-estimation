@@ -7,8 +7,8 @@ Reads   configs/<SPEC>.yaml, results/<SPEC>/point_estimate/result.json.
 Writes  results/<SPEC>/counterfactual/cf_with_xi.json and cf_no_xi.json.
 
 The 2SLS (IV choice, regressors, instruments, sample, thresholds) is fully
-driven by the `counterfactual:` block of the spec YAML — see scripts_second_stage
-(scripts.second_stage.iv) for the config keys.
+driven by the `counterfactual:` block of the spec YAML — see
+`scripts.second_stage.iv` for the config keys.
 """
 import sys, json, yaml, copy, argparse
 from pathlib import Path
@@ -44,6 +44,7 @@ CF_CONFIG = {
     "callbacks":      {"row_gen": [{"iters": 50, "timeout": 1.0},
                                    {"timeout": 10.0, "retire": True}]},
 }
+# Fixed seed for the CF errors; CF is deterministic for a given point estimate.
 CF_ERROR_SEED = 24
 
 
@@ -134,8 +135,7 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         theta = bta_cov = a0 = a1 = dc = None
 
     if _comm is not None:
-        theta, bta_cov = _comm.bcast(theta, root=0), _comm.bcast(bta_cov, root=0)
-        a0, a1, dc = _comm.bcast((a0, a1, dc), root=0)
+        theta, bta_cov, a0, a1, dc = _comm.bcast((theta, bta_cov, a0, a1, dc), root=0)
 
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if _rank == 0:

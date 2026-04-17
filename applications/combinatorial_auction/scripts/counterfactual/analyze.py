@@ -16,7 +16,7 @@ from applications.combinatorial_auction.data.loaders import load_raw, load_aggre
 
 def run(spec, tag="no_xi", *, results_dir=None):
     res_dir = Path(results_dir) if results_dir else APP_ROOT / "results"
-    cf = json.load(open(res_dir / spec / f"cf_{tag}.json"))
+    cf = json.load(open(res_dir / spec / "counterfactual" / f"cf_{tag}.json"))
     prices_mta = np.asarray(cf["prices"])
     mta_nums   = cf["continental_mta_nums"]
 

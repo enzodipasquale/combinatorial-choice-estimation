@@ -15,10 +15,10 @@ import numpy as np
 import yaml
 from mpi4py import MPI
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from paper.numerical_experiments.unit_demand.run_experiment import (
+from numerical_experiments.unit_demand.run_experiment import (
     run_replication, resolve_n_simulations)
 
 SCRIPT_DIR = Path(__file__).parent

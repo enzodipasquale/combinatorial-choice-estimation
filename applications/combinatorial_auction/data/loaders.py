@@ -13,6 +13,8 @@ from .covariates import WEIGHT_ROUNDING_TICK, QUADRATIC
 DATASETS = Path(__file__).parent / "datasets"
 RAW = DATASETS / "114402-V1" / "Replication-Fox-and-Bajari" / "data"
 
+#  Market strings in btadata's `market` column are truncated to 8 chars in the
+#  source CSV; these prefixes match AK/HI/PR/Guam/USVI/ASamoa/NMI markets.
 NON_CONTINENTAL = (
     "Anchorag", "Fairbank", "Juneau,",
     "Hilo, HI", "Honolulu", "Kahului,", "Lihue, H",
@@ -39,7 +41,10 @@ def load_raw():
     bidders = pd.read_csv(RAW / "biddercblk_03_28_2004_pln.csv")
     f175    = pd.read_csv(RAW / "fccform175nomiss.csv", header=None)
 
-    # Fix missing eligibility for bidder 67; drop sentinel 9999.
+    # Historical fixes from Fox-Bajari's replication archive:
+    #   * bidder 67 has a missing pops_eligible in the main file; pull it from
+    #     FCC Form 175 (column 3 in the headerless CSV = eligibility).
+    #   * bidder_num == 9999 is a sentinel row for unused slots; drop it.
     bidders.loc[bidders["bidder_num_fox"] == 67, "pops_eligible"] = (
         f175.loc[f175[0] == 67, 3].item()
     )
@@ -55,12 +60,9 @@ def load_raw():
     bidders = bidders.merge(extra[["bidder_num_fox", "hq_bta", "designated"]],
                             on="bidder_num_fox")
 
-    # DCR/DCC swap.
-    for a, b in ((190, 234),):
-        m1 = bidders["bidder_num_fox"] == a
-        m2 = bidders["bidder_num_fox"] == b
-        bidders.loc[m1, "bidder_num_fox"] = b
-        bidders.loc[m2, "bidder_num_fox"] = a
+    # DCR/DCC swap (uses the same mapping as _FOX_SWAP used downstream).
+    swapped = bidders["bidder_num_fox"].map(_FOX_SWAP).fillna(bidders["bidder_num_fox"])
+    bidders["bidder_num_fox"] = swapped.astype(int)
 
     adj   = pd.read_csv(RAW / "btamatrix_merged.csv", header=None)\
               .drop(columns=0).values.astype(float)
@@ -76,12 +78,11 @@ def load_raw():
     # at least one continental BTA, plus loser bidders (no wins).
     is_cont = ~btas["market"].isin(NON_CONTINENTAL)
     cont    = np.where(is_cont)[0]
-    noncont = np.where(~is_cont)[0]
 
-    obs_pre = _obs_bundles(bidders, btas)
-    keep_bidders = np.where(
-        (obs_pre.sum(1) - obs_pre[:, noncont].sum(1) > 0) | (obs_pre.sum(1) == 0)
-    )[0]
+    obs_pre  = _obs_bundles(bidders, btas)
+    cont_win = obs_pre[:, cont].sum(1)
+    any_win  = obs_pre.sum(1)
+    keep_bidders = np.where((cont_win > 0) | (any_win == 0))[0]
 
     bidders = bidders.iloc[keep_bidders].reset_index(drop=True)
     btas    = btas.iloc[cont].reset_index(drop=True)
@@ -115,8 +116,8 @@ def build_context(raw):
 
     return dict(
         # integer capacities / weights for the combinatorial solver
-        weight   = np.round(pop90 // WEIGHT_ROUNDING_TICK).astype(int),
-        capacity = np.round(elig  // WEIGHT_ROUNDING_TICK).astype(int),
+        weight   = (pop90 // WEIGHT_ROUNDING_TICK).astype(int),
+        capacity = (elig  // WEIGHT_ROUNDING_TICK).astype(int),
         # normalized (same pop_sum divisor → consistent across covariates & errors)
         pop = pop90 / pop_sum,
         elig = elig / pop_sum,
@@ -128,7 +129,8 @@ def build_context(raw):
         bta_adjacency = raw["bta_adjacency"],
         travel_survey = raw["travel_survey"],
         air_travel    = raw["air_travel"],
-        # BTA covariates (normalized to their max where scale-invariant)
+        # BTA covariates. percapin/density/imwl are on raw scales so we divide
+        # by their max; hhinc35k is already a share in [0, 1].
         percapin = btas["percapin"].to_numpy(dtype=float) / btas["percapin"].max(),
         hhinc35k = btas["hhinc35k"].to_numpy(dtype=float),
         density  = btas["density"].to_numpy(dtype=float)  / btas["density"].max(),
@@ -193,11 +195,14 @@ def last_round_capacity(bidder_data, keep_mask=None):
 
 
 def cholesky_factor(ctx, covariate_name):
-    """Cholesky factor L of Σ = Q + Q.T normalized to unit diagonal, where
-    Q is the QUADRATIC covariate with `covariate_name`. Returns None if name is None.
+    """Cholesky factor L of Σ, where Σ = sym(Q) with its diagonal *set* to 1,
+    and Q is the QUADRATIC covariate with `covariate_name`. Returns None if
+    `covariate_name` is None.
 
-    Raises np.linalg.LinAlgError if the resulting matrix is not PSD — this is
-    a hard error; no silent fallback (see SPEC.md on error-model rigor)."""
+    Note: the diagonal is set to 1 (not rescaled). Off-diagonals are assumed
+    already small enough that the result is PSD — the Cholesky call is the
+    hard PSD check. Raises np.linalg.LinAlgError if not PSD.
+    """
     if covariate_name is None:
         return None
     Q = QUADRATIC[covariate_name](ctx)

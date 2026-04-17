@@ -35,10 +35,14 @@ def prepare(
     quad     = build(QUADRATIC,    quadratic_regressors,    ctx)
     quad_id  = build(QUADRATIC_ID, quadratic_id_regressors, ctx)
 
+    # id_data["modular"] must always be present for combest; quadratics are
+    # optional and we let downstream code branch on `if "quadratic" in ...`.
     if mod_id is None:
         mod_id = np.zeros((n_obs, n_items, 0), dtype=np.float64)
 
-    # Item-level fixed effects: one coefficient per item (n_items columns, -I).
+    # Item-level fixed effects: one coefficient per item. The `-I` sign encodes
+    # the convention δ_j = -θ_fe_j (utility contribution is θ_fe · (-I) · b).
+    # Everything downstream (2SLS, xi, counterfactual) relies on this sign flip.
     item_mod = -np.eye(n_items, dtype=np.float64)
 
     id_data = {

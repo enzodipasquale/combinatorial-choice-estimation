@@ -14,15 +14,15 @@ from mpi4py import MPI
 warnings.filterwarnings("ignore", category=RuntimeWarning,
                         message=".*matmul.*")
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import combest as ce
-from paper.numerical_experiments.unit_demand.dgp import (
+from numerical_experiments.unit_demand.dgp import (
     simulate_probit_individual, simulate_logit_individual)
-from paper.numerical_experiments.unit_demand.ghk import (
+from numerical_experiments.unit_demand.ghk import (
     estimate_probit_mle_individual)
-from paper.numerical_experiments.unit_demand.logit import (
+from numerical_experiments.unit_demand.logit import (
     estimate_logit_mle_individual)
 
 
