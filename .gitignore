@@ -1,5 +1,4 @@
 # Editor settings
-.vscode/
 .cursor/
 .claude/
 CLAUDE.md
@@ -50,45 +49,22 @@ run_with_timeout.sh
 
 # Project-specific directories
 applications/firms_export/data/datasets
-combest/_legacy/
-combest/_deprecated/
-combest/scenarios/
 combest/tests
-debug/
-debug_se/
-experiments/
-paper/small_scale/
-paper/numerical_experiments/small_combinatorial/
-paper/numerical_experiments/registry_scenarios/
-paper/numerical_experiments/scenarios/portfolio/
-applications/portfolio/
-benchmark_warmstart.py
-applications/combinatorial_auction/counterfactuals
-paper/numerical_experiments/large_scale/results
-paper/numerical_experiments/large_scale/calibration_output.log
-paper/numerical_experiments/large_scale/test_small.py
+numerical_experiments/registry_scenarios/
 
 
 #Other
 my_tests/
 *.bash
 debug_*.py
-bundled_choice_estimation.pdf
-requirements_HPC.txt
 applications/**/config*.yaml
-applications/combinatorial_auction/data/maps/
 applications/combinatorial_auction/data/datasets/bta_map_data/
-applications/combinatorial_auction/block_c/se_bayesian_bootstrap/checkpoints
-applications/combinatorial_auction/block_c/se_bayesian_bootstrap/_past_checkpoints
-applications/combinatorial_auction/block_c/estimation_results/
-.cache/
 applications/firms_export/_old/
 **/_old/
 **/INSTRUCTIONS.md
 **/README.md
+**/SPEC.md
 resources/
 **/multi_stage_production/dgp_cache.pkl
 slides/
-CLAUDE.md
-legacy_results/
 applications/combinatorial_auction/results/

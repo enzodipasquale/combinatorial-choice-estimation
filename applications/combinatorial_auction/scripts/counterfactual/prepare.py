@@ -154,20 +154,17 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
 def freeze_bounds(config, meta, cf):
     """Pin β, γ_id, γ_item in the combest theta_bounds so the solver only moves
     the MTA item-FEs (prices). Mutates config in place."""
-    mod_names  = [n for i, n in sorted(meta["covariate_names"].items()) if i < meta["n_id_mod"]]
     bounds = config["row_generation"].setdefault("theta_bounds", {})
     lbs = bounds.setdefault("lbs", {})
     ubs = bounds.setdefault("ubs", {})
 
-    for i, name in enumerate(mod_names):
-        lbs[name] = ubs[name] = float(cf["beta"][i])
-
-    off = meta["n_id_mod"] + meta["n_item_mod"]
-    qid_names = [meta["covariate_names"][off + i] for i in range(len(cf["gamma_id"]))]
-    for i, name in enumerate(qid_names):
-        lbs[name] = ubs[name] = float(cf["gamma_id"][i])
-
-    off += len(cf["gamma_id"])
-    item_names = [meta["covariate_names"][off + i] for i in range(len(cf["gamma_item"]))]
-    for i, name in enumerate(item_names):
-        lbs[name] = ubs[name] = float(cf["gamma_item"][i])
+    # Three parameter blocks to pin. Layout:
+    #   [ modular | MTA_FE (unpinned) | quadratic_id | quadratic ]
+    fe_end = meta["n_id_mod"] + meta["n_item_mod"]
+    blocks = [(0,                            cf["beta"]),
+              (fe_end,                       cf["gamma_id"]),
+              (fe_end + len(cf["gamma_id"]), cf["gamma_item"])]
+    for off, vals in blocks:
+        for i, v in enumerate(vals):
+            name = meta["covariate_names"][off + i]
+            lbs[name] = ubs[name] = float(v)

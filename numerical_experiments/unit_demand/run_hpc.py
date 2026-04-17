@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""
-HPC entry point for probit efficiency benchmarking.
+"""HPC entry point for unit-demand efficiency benchmarking.
 
 Usage:
-  mpiexec ... python run_hpc.py --s-mode match_n --N 200
-  mpiexec ... python run_hpc.py --s-mode one --N 200
-  mpiexec ... python run_hpc.py --s-mode sqrt_n --N 500
-  mpiexec ... python run_hpc.py  # defaults: s-mode=match_n, all cells
+  mpiexec ... python run_hpc.py --model probit --s-mode match_n --N 200
+  mpiexec ... python run_hpc.py --model logit  --s-mode sqrt_n  --N 500
+  mpiexec ... python run_hpc.py --model probit --s-mode one     # all cells
+
+Output: results/{model}/raw/{s_mode}/{model}_J{J}_N{N}.npz
 """
 import sys
 import argparse
@@ -18,7 +18,8 @@ from mpi4py import MPI
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from paper.numerical_experiments.unit_demand.run_experiment import run_replication
+from paper.numerical_experiments.unit_demand.run_experiment import (
+    run_replication, resolve_n_simulations)
 
 SCRIPT_DIR = Path(__file__).parent
 
@@ -29,31 +30,16 @@ S_MODE_TO_CONFIG = {
 }
 
 
-def resolve_n_simulations(s_mode, N):
-    """Return the integer n_simulations for display/logging."""
-    raw = S_MODE_TO_CONFIG[s_mode]
-    if raw == "match_N":
-        return N
-    elif raw == "match_sqrt_N":
-        return int(np.ceil(np.sqrt(N)))
-    return raw
-
-
-def run_cell(J, N, K, beta, n_reps, config, results_dir):
-    """Run all replications for one (J, N) cell, save raw .npz."""
+def run_cell(J, N, K, beta, n_reps, config, results_dir, model):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
     exp = config["experiment"]
-    n_simulations = exp.get("n_simulations", 1)
-    if n_simulations == "match_N":
-        n_simulations = N
-    elif n_simulations == "match_sqrt_N":
-        n_simulations = int(np.ceil(np.sqrt(N)))
+    n_simulations = resolve_n_simulations(exp.get("n_simulations", 1), N)
 
     if rank == 0:
         print(f"\n{'='*60}")
-        print(f"J={J}, N={N}, S={n_simulations}, {n_reps} replications")
+        print(f"{model}: J={J}, N={N}, S={n_simulations}, {n_reps} reps")
         print(f"{'='*60}", flush=True)
 
     betas_mle, betas_cb = [], []
@@ -63,7 +49,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
 
     for rep in range(n_reps):
         try:
-            res = run_replication(N, J, K, beta, replication=rep, config=config)
+            res = run_replication(N, J, K, beta, replication=rep,
+                                  config=config, model=model)
         except Exception as e:
             if rank == 0:
                 print(f"  rep {rep}: FAILED ({e})", flush=True)
@@ -99,22 +86,26 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
                   flush=True)
 
     if rank == 0:
-        output_path = results_dir / f"probit_J{J}_N{N}.npz"
+        output_path = results_dir / f"{model}_J{J}_N{N}.npz"
         betas_mle = np.array(betas_mle)
         betas_cb = np.array(betas_cb)
-        np.savez(output_path,
-                 beta_mle=betas_mle,
-                 beta_cb=betas_cb,
-                 time_mle=np.array(times_mle),
-                 time_cb=np.array(times_cb),
-                 beta_star=beta,
-                 J=J, N=N, K=K,
-                 n_simulations=n_simulations,
-                 sigma=exp["sigma"],
-                 rho=exp["covariate_correlation"],
-                 ghk_draws=exp.get("ghk_draws", 200),
-                 n_failed=n_failed,
-                 n_mle_not_converged=n_mle_not_converged)
+        save_kwargs = dict(
+            beta_mle=betas_mle,
+            beta_cb=betas_cb,
+            time_mle=np.array(times_mle),
+            time_cb=np.array(times_cb),
+            beta_star=beta,
+            J=J, N=N, K=K,
+            n_simulations=n_simulations,
+            sigma=exp["sigma"],
+            rho=exp["covariate_correlation"],
+            n_failed=n_failed,
+            n_mle_not_converged=n_mle_not_converged,
+            model=model,
+        )
+        if model == "probit":
+            save_kwargs["ghk_draws"] = exp.get("ghk_draws", 200)
+        np.savez(output_path, **save_kwargs)
 
         R_valid = len(betas_mle)
         var_mle = np.var(betas_mle, axis=0, ddof=1).mean() if R_valid > 1 else 0
@@ -127,19 +118,17 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--N", type=int, default=None,
-                        help="Run all J values for this N value.")
-    parser.add_argument("--cell-index", type=int, default=None,
-                        help="Index into the (J, N) grid.")
-    parser.add_argument("--s-mode", type=str, default="match_n",
-                        choices=["one", "sqrt_n", "match_n"],
-                        help="Simulation count: one (S=1), sqrt_n, match_n (S=N).")
+    parser.add_argument("--model", choices=["probit", "logit"],
+                        required=True)
+    parser.add_argument("--s-mode", choices=["one", "sqrt_n", "match_n"],
+                        default="match_n")
+    parser.add_argument("--N", type=int, default=None)
+    parser.add_argument("--cell-index", type=int, default=None)
     args = parser.parse_args()
 
     with open(SCRIPT_DIR / "config.yaml") as f:
         config = yaml.safe_load(f)
 
-    # Override n_simulations based on --s-mode
     config["experiment"]["n_simulations"] = S_MODE_TO_CONFIG[args.s_mode]
 
     exp = config["experiment"]
@@ -148,11 +137,9 @@ def main():
     n_reps = exp["n_replications"]
     J_values = config["grid"]["J"]
     N_values = config["grid"]["N"]
-
     cells = [(J, N) for J in J_values for N in N_values]
 
-    # Namespaced output directory
-    results_dir = SCRIPT_DIR / "results" / "raw" / args.s_mode
+    results_dir = (SCRIPT_DIR / "results" / args.model / "raw" / args.s_mode)
     rank = MPI.COMM_WORLD.Get_rank()
     if rank == 0:
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -160,13 +147,14 @@ def main():
 
     if args.N is not None:
         for J in J_values:
-            run_cell(J, args.N, K, beta, n_reps, config, results_dir)
+            run_cell(J, args.N, K, beta, n_reps, config, results_dir,
+                     args.model)
     elif args.cell_index is not None:
         J, N = cells[args.cell_index]
-        run_cell(J, N, K, beta, n_reps, config, results_dir)
+        run_cell(J, N, K, beta, n_reps, config, results_dir, args.model)
     else:
         for J, N in cells:
-            run_cell(J, N, K, beta, n_reps, config, results_dir)
+            run_cell(J, N, K, beta, n_reps, config, results_dir, args.model)
 
 
 if __name__ == "__main__":
