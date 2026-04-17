@@ -33,7 +33,7 @@ row_generation:
             elig_pop: 3000
 
 bootstrap:
-    num_samples: 150
+    num_samples: 100
     seed: 1233
     rowgen_tol: 0.001
     rowgen_max_iters: 250
