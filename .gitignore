@@ -2,6 +2,7 @@
 .vscode/
 .cursor/
 .claude/
+CLAUDE.md
 .cursorrules
 
 # Virtual environments
@@ -87,3 +88,5 @@ applications/firms_export/_old/
 **/README.md
 resources/
 **/multi_stage_production/dgp_cache.pkl
+slides/
+CLAUDE.md
