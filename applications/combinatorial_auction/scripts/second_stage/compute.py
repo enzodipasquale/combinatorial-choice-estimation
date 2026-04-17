@@ -65,12 +65,17 @@ def decompose(spec_stem, *, configs_dir=CONFIGS, results_dir=RESULTS):
     b_obs = input_data["id_data"]["obs_bundles"].astype(float)
     n_obs, n_btas = b_obs.shape
 
-    n_id_mod  = meta["n_id_mod"]
-    mod_names  = app.get("modular_regressors", [])
-    qid_names  = app.get("quadratic_id_regressors", [])
-    quad_names = app.get("quadratic_regressors", [])
+    n_id_mod    = meta["n_id_mod"]
+    mod_names   = app.get("modular_regressors", [])
+    qid_names   = app.get("quadratic_id_regressors", [])
+    quad_names  = app.get("quadratic_regressors", [])
     named_order = mod_names + qid_names + quad_names
-    named_idx = list(range(n_id_mod)) + list(range(n_id_mod + n_btas, n_id_mod + n_btas + meta["n_id_quad"] + meta["n_item_quad"]))
+
+    # Named covariates sit on either side of the FE block (which spans n_btas
+    # positions in θ):  [ modular | FEs | quadratic_id | quadratic ].
+    quad_start = n_id_mod + n_btas
+    quad_end   = quad_start + meta["n_id_quad"] + meta["n_item_quad"]
+    named_idx  = [*range(n_id_mod), *range(quad_start, quad_end)]
 
     r = json.load(open(results_dir / spec_stem / "bootstrap" / "bootstrap_result.json"))
     xbar = np.array(r["xbar"]) if r.get("xbar") is not None else _xbar(input_data, b_obs)

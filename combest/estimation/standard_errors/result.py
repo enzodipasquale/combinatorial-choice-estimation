@@ -14,6 +14,15 @@ class BayesianBootstrapResult:
     u_samples: np.ndarray = None
     converged: np.ndarray = None  # bool array, per sample
 
+    def to_dict(self):
+        return {
+            "theta_hat":        self.mean.tolist(),
+            "se":               self.se.tolist(),
+            "bootstrap_thetas": self.samples.tolist(),
+            "bootstrap_u_hat":  self.u_samples.tolist(),
+            "converged":        self.converged.tolist(),
+        }
+
     def welfare_decomposition(self, pt_result):
         S, N, xbar = pt_result.n_simulations, pt_result.n_obs, pt_result.xbar
         mask = self.converged

@@ -1,15 +1,8 @@
-"""Shared plot style for auction descriptives."""
-
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
-NAVY = "#1B2A4A"
-GOLD = "#B8860B"
-SLATE = "#4A6274"
-RED = "#C0392B"
-
-DPI = 200
+NAVY, GOLD, SLATE = "#1B2A4A", "#B8860B", "#4A6274"
+DPI = 130
 
 
 def style_ax(ax):

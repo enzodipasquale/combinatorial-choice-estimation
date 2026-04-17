@@ -1,39 +1,43 @@
 import numpy as np
 
 
-def adaptive_gurobi_timeout(schedule):
-    phases = schedule[:-1]
-    final = schedule[-1]
+def _schedule_lookup(schedule):
+    phases, final = schedule[:-1], schedule[-1]
     boundaries = np.cumsum([p['iters'] for p in phases])
 
-    def _get_settings(iteration):
+    def lookup(iteration):
         idx = np.searchsorted(boundaries, iteration, side='right')
-        if idx < len(phases):
-            timeout = phases[idx]['timeout']
-        else:
-            timeout = final['timeout']
-        settings = {'TimeLimit': timeout,
+        spec = phases[idx] if idx < len(phases) else final
+        settings = {'TimeLimit': spec['timeout'],
                     'MIPFocus': 1 if iteration == 0 else 0}
-        return settings, idx
+        min_iters = 0 if spec.get('retire', False) else (
+            int(boundaries[idx]) if idx < len(phases) else float('inf'))
+        return settings, min_iters
+    return lookup
 
-    def pt_callback(iteration, row_gen_manager):
-        settings, phase_idx = _get_settings(iteration)
+
+def point_timeout_callback(schedule):
+    lookup = _schedule_lookup(schedule)
+    def cb(iteration, row_gen_manager):
+        settings, min_iters = lookup(iteration)
         row_gen_manager.subproblem_manager.update_gurobi_settings(settings)
-        if phase_idx < len(phases):
-            allow = phases[phase_idx].get('retire', False)
-            row_gen_manager.cfg.min_iters = 0 if allow else int(boundaries[phase_idx])
-        else:
-            allow = final.get('retire', False)
-            row_gen_manager.cfg.min_iters = 0 if allow else float('inf')
+        row_gen_manager.cfg.min_iters = min_iters
+    return cb
 
-    def dist_callback(rg_round, mixin, master):
-        settings, phase_idx = _get_settings(rg_round)
+
+def bootstrap_timeout_callback(schedule, strip=None):
+    lookup = _schedule_lookup(schedule)
+    def cb(rg_round, mixin, master):
+        settings, min_iters = lookup(rg_round)
         mixin.subproblem_manager.update_gurobi_settings(settings)
-        if phase_idx < len(phases):
-            allow = phases[phase_idx].get('retire', False)
-            mixin.config.standard_errors.rowgen_min_iters = 0 if allow else int(boundaries[phase_idx])
-        else:
-            allow = final.get('retire', False)
-            mixin.config.standard_errors.rowgen_min_iters = 0 if allow else float('inf')
+        mixin.config.standard_errors.rowgen_min_iters = min_iters
+        if strip and master is not None and rg_round == 0:
+            master.strip_slack_constraints(
+                percentile=strip['percentile'],
+                hard_threshold=strip['hard_threshold'])
+    return cb
 
-    return pt_callback, dist_callback
+
+def adaptive_gurobi_timeout(schedule):
+    """Back-compat: returns (point_callback, bootstrap_callback) pair."""
+    return point_timeout_callback(schedule), bootstrap_timeout_callback(schedule)

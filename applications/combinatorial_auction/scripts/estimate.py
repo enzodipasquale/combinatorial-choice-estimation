@@ -39,7 +39,9 @@ def _save(path, payload, config, meta):
 
 
 def main(config_path):
-    from combest.estimation.callbacks import adaptive_gurobi_timeout
+    from combest.estimation.callbacks import (
+        point_timeout_callback, bootstrap_timeout_callback,
+    )
     import combest as ce
 
     config = yaml.safe_load(open(config_path))
@@ -86,22 +88,14 @@ def main(config_path):
     model.subproblems.load_solver()
 
     callbacks = config.get("callbacks", {})
-    pt_cb, _ = adaptive_gurobi_timeout(callbacks["row_gen"])
+    pt_cb = point_timeout_callback(callbacks["row_gen"])
 
     # ── Solve ────────────────────────────────────────────────────────
     if mode == "estimation":
         result = model.row_generation.solve(iteration_callback=pt_cb, verbose=True)
         if result is None:
             return
-        _save(out_dir / "result.json", {
-            "theta_hat":  result.theta_hat.tolist(),
-            "u_hat":      result.u_hat.tolist() if result.u_hat is not None else None,
-            "xbar":       result.xbar.tolist()  if result.xbar  is not None else None,
-            "converged":  bool(result.converged),
-            "objective":  float(result.final_objective),
-            "iterations": int(result.num_iterations),
-            "runtime":    float(getattr(result, "runtime", 0.0)),
-        }, config, meta)
+        _save(out_dir / "result.json", result.to_dict(), config, meta)
         print(f"Saved -> {out_dir / 'result.json'}")
         return
 
@@ -113,16 +107,9 @@ def main(config_path):
     overrides = {k: boot_cfg[k] for k in
                  ("rowgen_max_iters", "rowgen_tol", "rowgen_min_iters") if k in boot_cfg}
     if overrides:
-        d = model.config.standard_errors.__dict__.copy(); d.update(overrides)
-        model.config.standard_errors = type(model.config.standard_errors)(**d)
+        model.config.standard_errors = model.config.standard_errors.replace(**overrides)
 
-    _, dist_cb = adaptive_gurobi_timeout(callbacks["boot"])
-    strip = callbacks.get("boot_strip")
-    def boot_cb(it, boot, master):
-        dist_cb(it, boot, master)
-        if master is not None and it == 0 and strip is not None:
-            master.strip_slack_constraints(percentile=strip["percentile"],
-                                           hard_threshold=strip["hard_threshold"])
+    boot_cb = bootstrap_timeout_callback(callbacks["boot"], strip=callbacks.get("boot_strip"))
 
     se = model.standard_errors.compute_distributed_bootstrap(
         num_bootstrap         = boot_cfg.get("num_samples", 2),
@@ -136,13 +123,7 @@ def main(config_path):
     )
     if se is None:
         return
-    payload = {
-        "theta_hat":        se.mean.tolist(),
-        "se":               se.se.tolist(),
-        "bootstrap_thetas": se.samples.tolist(),
-        "bootstrap_u_hat":  se.u_samples.tolist(),
-        "converged":        se.converged.tolist(),
-    }
+    payload = se.to_dict()
     # Carry xbar forward from a prior point-estimate run (for second stage).
     pt = out_dir.parent / "point_estimate" / "result.json"
     if pt.exists():

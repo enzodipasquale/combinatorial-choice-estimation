@@ -4,6 +4,10 @@ import yaml
 import numpy as np
 
 class ConfigMixin:
+    def replace(self, **overrides):
+        d = self.__dict__.copy(); d.update(overrides)
+        return type(self)(**d)
+
     def update_in_place(self, other):
         for f in fields(self):
             if hasattr(self, f.name) and hasattr(other, f.name):

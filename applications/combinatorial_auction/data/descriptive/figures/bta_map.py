@@ -29,7 +29,7 @@ def plot_winners(raw, ctx, top_n=20):
         lambda f: UNWON if pd.isna(f) else color_map.get(int(f), OTHER)
     )
 
-    fig = plt.figure(figsize=(16, 8))
+    fig = plt.figure(figsize=(14, 7))
     ax = fig.add_axes([0.01, 0.02, 0.72, 0.96])
     legend_ax = fig.add_axes([0.74, 0.02, 0.25, 0.96]); legend_ax.axis("off")
     gdf.plot(color=gdf["color"].tolist(), edgecolor="black", linewidth=0.3, ax=ax)
@@ -53,15 +53,13 @@ def plot_winners(raw, ctx, top_n=20):
 
 
 def plot_prices(raw):
-    gdf = load_bta_gdf(raw).assign(bid_m=lambda d: d["bid"] / 1e6)
-    plot_heatmap(gdf, "bid_m", OUT_FIG / "fig_bta_prices.png",
-                 label="Winning bid (USD millions)", cmap="YlOrRd", log=True)
+    plot_heatmap(load_bta_gdf(raw), "bid", OUT_FIG / "fig_bta_prices.png",
+                 label="Winning bid", cmap="YlOrRd", log=True, units="USD")
 
 
 def plot_population(raw):
-    gdf = load_bta_gdf(raw).assign(pop_m=lambda d: d["pop90"] / 1e6)
-    plot_heatmap(gdf, "pop_m", OUT_FIG / "fig_bta_population.png",
-                 label="Population 1990 (millions)", cmap="Blues", log=True)
+    plot_heatmap(load_bta_gdf(raw), "pop90", OUT_FIG / "fig_bta_population.png",
+                 label="Population (1990)", cmap="Blues", log=True)
 
 
 if __name__ == "__main__":

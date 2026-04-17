@@ -43,25 +43,22 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
     out_dir = Path(out_dir) if out_dir else (res_dir / spec / "counterfactual")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    raw = load_raw() if _rank == 0 else None  # cached for the 2SLS loop below
     if _rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
         boot = json.load(open(res_dir / spec / "bootstrap" / "bootstrap_result.json"))
         boot_thetas = np.asarray(boot["bootstrap_thetas"])
         boot_u_hats = np.asarray(boot["bootstrap_u_hat"])
-        raw = load_raw()
-        ctx = build_context(raw)
-        price = raw["bta_data"]["bid"].to_numpy(dtype=float) / 1e9
+        ctx         = build_context(raw)
+        price       = raw["bta_data"]["bid"].to_numpy(dtype=float) / 1e9
         bta_revenue = float((ctx["c_obs_bundles"] @ price).sum())
-        bta_cov = errors.covariance(ctx, app)
+        bta_cov     = errors.covariance(ctx, app)
     else:
         boot_thetas = boot_u_hats = price = bta_revenue = bta_cov = None
 
     if _comm is not None:
-        boot_thetas = _comm.bcast(boot_thetas, root=0)
-        boot_u_hats = _comm.bcast(boot_u_hats, root=0)
-        price       = _comm.bcast(price,       root=0)
-        bta_revenue = _comm.bcast(bta_revenue, root=0)
-        bta_cov     = _comm.bcast(bta_cov,     root=0)
+        boot_thetas, boot_u_hats, price, bta_revenue, bta_cov = _comm.bcast(
+            (boot_thetas, boot_u_hats, price, bta_revenue, bta_cov), root=0)
 
     n_id_mod, n_btas = len(app.get("modular_regressors", [])), len(price)
     rows = []
@@ -72,7 +69,7 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         delta_b = -theta_b[n_id_mod:n_id_mod + n_btas]
 
         if _rank == 0:
-            iv = run_2sls(delta_b, load_raw(), app)
+            iv = run_2sls(delta_b, raw, app)
             a0_b, a1_b, dc_b = iv["a0"], iv["a1"], iv["demand_controls"]
         else:
             a0_b = a1_b = dc_b = None

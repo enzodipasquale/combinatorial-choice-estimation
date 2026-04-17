@@ -25,6 +25,18 @@ class RowGenerationEstimationResult:
     warnings: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
+    def to_dict(self):
+        return {
+            "theta_hat":     self.theta_hat.tolist(),
+            "u_hat":         None if self.u_hat is None else self.u_hat.tolist(),
+            "xbar":          None if self.xbar  is None else self.xbar.tolist(),
+            "n_obs":         self.n_obs,
+            "n_simulations": self.n_simulations,
+            "converged":     bool(self.converged),
+            "objective":     float(self.final_objective),
+            "iterations":    int(self.num_iterations),
+        }
+
     def welfare_decomposition(self):
         agent_surplus = self.u_hat.reshape(self.n_obs, self.n_simulations).mean(axis=1)
         contributions = self.theta_hat * self.xbar

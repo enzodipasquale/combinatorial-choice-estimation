@@ -69,3 +69,6 @@ resources/
 **/multi_stage_production/dgp_cache.pkl
 slides/
 applications/combinatorial_auction/results/
+
+# Firms export cache (binary, too big for GitHub)
+applications/firms_export/data/.cache/
