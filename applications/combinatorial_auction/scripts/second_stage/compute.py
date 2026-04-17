@@ -73,7 +73,7 @@ def decompose(spec_stem, *, configs_dir=CONFIGS, results_dir=RESULTS):
     named_idx = list(range(n_id_mod)) + list(range(n_id_mod + n_btas, n_id_mod + n_btas + meta["n_id_quad"] + meta["n_item_quad"]))
 
     r = json.load(open(results_dir / spec_stem / "bootstrap" / "bootstrap_result.json"))
-    xbar = np.array(r["xbar"]) if "xbar" in r else _xbar(input_data, b_obs)
+    xbar = np.array(r["xbar"]) if r.get("xbar") is not None else _xbar(input_data, b_obs)
     boot_thetas = np.asarray(r["bootstrap_thetas"])
     boot_u_hats = np.asarray(r["bootstrap_u_hat"])
     converged   = r.get("converged", [True] * len(boot_thetas))
