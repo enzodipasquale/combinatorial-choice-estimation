@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CF MTA prices vs A·(observed BTA prices).
 
-Usage: python -m applications.combinatorial_auction.pipeline.counterfactual.analyze SPEC [--tag with_xi|no_xi]
+Usage: python -m applications.combinatorial_auction.scripts.counterfactual.analyze SPEC [--tag with_xi|no_xi]
 """
 import sys, json, argparse
 from pathlib import Path

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Point estimation and bootstrap for the C-block auction (MPI entry).
 
-Usage:  mpirun -n N python -m applications.combinatorial_auction.pipeline.estimate CONFIG.yaml
+Usage:  mpirun -n N python -m applications.combinatorial_auction.scripts.estimate CONFIG.yaml
 
 Config keys (application block):
     mode                'estimation' | 'bootstrap'
     modular_regressors / quadratic_regressors / quadratic_id_regressors  (lists)
     winners_only        bool
     capacity_source     'initial' | 'last_round'
-    error_seed, error_correlation, spatial_rho, error_scaling  (see pipeline.errors)
+    error_seed, error_correlation, spatial_rho, error_scaling  (see scripts.errors)
 
-Results written to  <repo>/results/<config-stem>/result.json  or  bootstrap_result.json .
+Results written to  <repo>/results/<config-stem>/point_estimate/result.json  or
+                    <repo>/results/<config-stem>/bootstrap/bootstrap_result.json .
 """
 import sys, json, yaml, argparse, time
 from pathlib import Path
@@ -30,11 +31,12 @@ except ImportError:
 
 from applications.combinatorial_auction.data.prepare import prepare
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
-from applications.combinatorial_auction.pipeline import errors as E
+from applications.combinatorial_auction.scripts import errors as E
 
 
-def _results_dir(config_path):
-    d = APP_ROOT / "results" / Path(config_path).stem
+def _results_dir(config_path, kind):
+    """kind: 'point_estimate' or 'bootstrap'."""
+    d = APP_ROOT / "results" / Path(config_path).stem / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -170,7 +172,7 @@ def _run_bootstrap(model, config, meta, out_dir):
         "converged":         se.converged.tolist(),
     }
     # xbar, if a prior point-estimate was saved, goes along for second-stage.
-    pt = out_dir / "result.json"
+    pt = out_dir.parent / "point_estimate" / "result.json"
     if pt.exists():
         with open(pt) as f:
             d = json.load(f)
@@ -183,7 +185,9 @@ def _run_bootstrap(model, config, meta, out_dir):
 def main(config_path):
     config = yaml.safe_load(open(config_path))
     app = config["application"]
-    out_dir = _results_dir(config_path)
+    mode = app.get("mode", "estimation")
+    kind = "point_estimate" if mode == "estimation" else "bootstrap"
+    out_dir = _results_dir(config_path, kind)
 
     if _rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -201,7 +205,6 @@ def main(config_path):
 
     model = _build_model(config, input_data, meta, cov, pop_vec)
 
-    mode = app.get("mode", "estimation")
     if mode == "estimation":
         _run_point(model, config, meta, out_dir / "result.json")
     elif mode == "bootstrap":

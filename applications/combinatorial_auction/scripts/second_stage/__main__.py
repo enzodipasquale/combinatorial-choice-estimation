@@ -1,4 +1,4 @@
-"""Entry point: python -m applications.combinatorial_auction.pipeline.second_stage SPEC..."""
+"""Entry point: python -m applications.combinatorial_auction.scripts.second_stage SPEC..."""
 import sys
 from .tables import run
 
