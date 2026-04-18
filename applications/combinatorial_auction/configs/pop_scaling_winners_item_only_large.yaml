@@ -7,8 +7,6 @@ application:
     modular_regressors:
         - elig_pop
         - assets_pop
-        - log_dist_hq
-        - log_dist_hq_pop
     quadratic_regressors:
         - adjacency
         - pop_centroid_delta4

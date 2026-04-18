@@ -1,5 +1,5 @@
 application:
-    mode: bootstrap
+    mode: estimation
     error_seed: 2006
     error_scaling: pop
     winners_only: true
@@ -19,7 +19,7 @@ subproblem:
         TimeLimit: 1.0
 
 row_generation:
-    max_iters: 100
+    max_iters: 250
     tolerance: .01
     master_gurobi_params:
         Method: 0
