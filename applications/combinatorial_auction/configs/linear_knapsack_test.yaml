@@ -1,0 +1,33 @@
+# Linear-knapsack spec (no quadratic covariates) — fast locally.
+application:
+    mode: estimation                   # switch to bootstrap once a spec looks good
+    error_seed: 2006
+    error_scaling: pop                 # same pop-scaled errors as boot_pop_scaling
+    modular_regressors:
+        - elig_pop
+    quadratic_regressors:    []
+    quadratic_id_regressors: []
+
+dimensions:
+    n_simulations: 5
+
+subproblem:
+    name: LinearKnapsackGRB            # ← the only real change
+    gurobi_params:
+        TimeLimit: 0.2
+
+row_generation:
+    max_iters: 100
+    tolerance: .01
+    master_gurobi_params:
+        Method: 0
+    theta_bounds:
+        lb: -200
+        ub: 2000
+        lbs: {elig_pop: -2000}
+        ubs: {elig_pop:  3000}
+
+callbacks:
+    row_gen:
+        - {iters: 50, timeout: 0.2}
+        - {timeout: 1.0, retire: true}

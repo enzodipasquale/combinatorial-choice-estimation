@@ -54,11 +54,9 @@ def prepare(
     if quad_id is not None:
         id_data["quadratic"] = quad_id
 
-    item_data = {
-        "modular":   item_mod,
-        "quadratic": quad,
-        "weight":    ctx["weight"],
-    }
+    item_data = {"modular": item_mod, "weight": ctx["weight"]}
+    if quad is not None:
+        item_data["quadratic"] = quad
 
     input_data = {"id_data": id_data, "item_data": item_data}
 

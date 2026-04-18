@@ -32,7 +32,7 @@ def _xbar(input_data, b_obs):
     combest's internal convention (single-winner-per-item makes this identical
     to δ.sum() within the welfare decomposition)."""
     id_mod  = input_data["id_data"]["modular"]                       # (n_obs, n_bta, K_m)
-    q_item  = input_data["item_data"]["quadratic"]                   # (n_bta, n_bta, K_q)
+    q_item  = input_data["item_data"].get("quadratic")               # (n_bta, n_bta, K_q) or None
     q_id    = input_data["id_data"].get("quadratic")                 # (n_obs, n_bta, n_bta, K_qid)
 
     K_m, n_bta = id_mod.shape[-1], b_obs.shape[1]

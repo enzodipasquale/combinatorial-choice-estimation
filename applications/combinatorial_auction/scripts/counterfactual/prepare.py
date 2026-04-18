@@ -21,7 +21,7 @@ def _aggregate(input_data_bta, A):
     """Aggregate BTA-level arrays to MTA level via the incidence matrix A."""
     mod_bta  = input_data_bta["id_data"]["modular"]                # (n_obs, n_bta, K_mod)
     qid_bta  = input_data_bta["id_data"].get("quadratic")          # (n_obs, n_bta, n_bta, K_qid) or None
-    Qb       = input_data_bta["item_data"]["quadratic"]            # (n_bta, n_bta, K_quad) or None
+    Qb       = input_data_bta["item_data"].get("quadratic")        # (n_bta, n_bta, K_quad) or None
     weight_b = input_data_bta["item_data"]["weight"]               # (n_bta,)
 
     # (n_obs, n_mta, K_mod): mta_mod[i,m,k] = Σ_j A[m,j] · bta_mod[i,j,k]
@@ -122,11 +122,10 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     if qid_mta is not None:
         id_data["quadratic"] = qid_mta
 
-    item_data = {
-        "modular":   -alpha_1 * np.eye(n_mtas, dtype=np.float64),
-        "quadratic": Q_mta,
-        "weight":    mta_weight,
-    }
+    item_data = {"modular": -alpha_1 * np.eye(n_mtas, dtype=np.float64),
+                 "weight":  mta_weight}
+    if Q_mta is not None:
+        item_data["quadratic"] = Q_mta
     input_data = {"id_data": id_data, "item_data": item_data}
 
     # Covariate-name map: modular | MTA_FE(prices) | quadratic_id | quadratic.
