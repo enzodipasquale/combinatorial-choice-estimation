@@ -24,6 +24,7 @@ def prepare(
     *,
     winners_only=False,
     capacity_source="initial",          # "initial" | "last_round"
+    upper_triangular_quadratic=False,   # zero the lower triangle of every quadratic
 ):
     raw = load_raw()
     ctx = build_context(raw)
@@ -34,6 +35,19 @@ def prepare(
     mod_id   = build(MODULAR,      modular_regressors,      ctx)
     quad     = build(QUADRATIC,    quadratic_regressors,    ctx)
     quad_id  = build(QUADRATIC_ID, quadratic_id_regressors, ctx)
+
+    # Optional: keep only the strict upper triangle of every quadratic covariate.
+    # Combest's subproblem computes b' Q b where Q is passed as-is (Gurobi
+    # accepts non-symmetric Q). Zeroing the lower triangle halves each pairwise
+    # contribution to a single directed j→k term with j<k, so the bilinear form
+    # becomes Σ_{j<k} Q_{jk} b_j b_k instead of Σ_{j≠k} Q_{jk} b_j b_k.
+    if upper_triangular_quadratic:
+        if quad is not None:
+            for k in range(quad.shape[-1]):
+                quad[..., k] = np.triu(quad[..., k], k=1)
+        if quad_id is not None:
+            triu_mask = np.triu(np.ones((n_items, n_items), dtype=bool), k=1)
+            quad_id *= triu_mask[None, :, :, None]
 
     # id_data["modular"] must always be present for combest; quadratics are
     # optional and we let downstream code branch on `if "quadratic" in ...`.

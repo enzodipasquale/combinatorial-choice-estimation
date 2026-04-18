@@ -60,6 +60,7 @@ def main(config_path):
             quadratic_id_regressors = app.get("quadratic_id_regressors", []),
             winners_only            = app.get("winners_only", False),
             capacity_source         = app.get("capacity_source", "initial"),
+            upper_triangular_quadratic = app.get("upper_triangular_quadratic", False),
         )
         ctx     = build_context(load_raw())
         cov     = errors.covariance(ctx, app)
