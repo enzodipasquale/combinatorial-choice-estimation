@@ -1,0 +1,39 @@
+# Linear-knapsack spec with pop-and-price correlated errors.
+#   ε_ij = pop_j · N¹_ij + price_j · N²_ij,
+# where N¹_ij ~ N(0,1), N²_ij ~ N(0, σ_price²), corr(N¹,N²) = ρ at each (i,j),
+# iid across (i,j). price_j is share-normalized (bid_j / Σ bid), the same
+# convention as pop_j = pop90_j / Σ pop90.
+application:
+    mode: estimation
+    error_seed: 2006
+    error_scaling: pop
+    sigma_price:    1.0
+    rho_pop_price:  0.0
+    modular_regressors:
+        - elig_pop
+    quadratic_regressors:    []
+    quadratic_id_regressors: []
+
+dimensions:
+    n_simulations: 1
+
+subproblem:
+    name: LinearKnapsackGRB
+    gurobi_params:
+        TimeLimit: 0.2
+
+row_generation:
+    max_iters: 100
+    tolerance: .01
+    master_gurobi_params:
+        Method: 0
+    theta_bounds:
+        lb: -200
+        ub: 2000
+        lbs: {elig_pop: -2000}
+        ubs: {elig_pop:  3000}
+
+callbacks:
+    row_gen:
+        - {iters: 50, timeout: 0.2}
+        - {timeout: 1.0, retire: true}

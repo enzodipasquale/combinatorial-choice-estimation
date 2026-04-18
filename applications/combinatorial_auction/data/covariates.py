@@ -73,7 +73,7 @@ def _(ctx): return ctx["elig"][:, None] * ctx["density"][None, :]
 def _(ctx): return ctx["elig"][:, None] * ctx["imwl"][None, :]
 
 @modular("elig_price")
-def _(ctx): return ctx["elig"][:, None] * ctx["price"][None, :]
+def _(ctx): return ctx["elig"][:, None] * ctx["price_share"][None, :]
 
 @modular("assets_pop")
 def _(ctx): return ctx["assets"][:, None] * ctx["pop"][None, :]

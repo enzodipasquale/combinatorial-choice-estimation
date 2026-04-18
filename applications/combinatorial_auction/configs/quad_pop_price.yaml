@@ -1,0 +1,50 @@
+# Linear-knapsack spec with n_simulations = 1 — sanity check vs ns=5.
+application:
+    mode: estimation
+    error_seed: 2006
+    error_scaling: pop
+    sigma_price:    1.0
+    rho_pop_price:  0.5
+    modular_regressors:
+        - elig_pop
+        - elig_constant
+        - elig_price
+        # - log_dist_hq
+        # - elig_log_dist_hq
+        # - log_dist_hq_pop
+        # - elig_log_dist_hq_pop
+    quadratic_regressors:
+        - adjacency
+        - pop_centroid_delta4
+        - pop_centroid_00
+        - air_travel
+        - travel_survey
+    quadratic_id_regressors:
+        - elig_adjacency
+        - elig_pop_centroid_delta4
+        - elig_pop_centroid_00
+        - elig_air_travel
+        - elig_travel_survey
+dimensions:
+    n_simulations: 15
+
+subproblem:
+    name: LinearKnapsackGRB
+    gurobi_params:
+        TimeLimit: 0.2
+
+row_generation:
+    max_iters: 100
+    tolerance: .001
+    master_gurobi_params:
+        Method: 0
+    theta_bounds:
+        lb: -200
+        ub: 2000
+        lbs: {elig_pop: -2000}
+        ubs: {elig_pop:  3000}
+
+callbacks:
+    row_gen:
+        - {iters: 50, timeout: 0.2}
+        - {timeout: 1.0, retire: true}

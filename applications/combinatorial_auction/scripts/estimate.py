@@ -63,16 +63,20 @@ def main(config_path):
         )
         ctx     = build_context(load_raw())
         cov     = errors.covariance(ctx, app)
-        pop_vec = errors.pop_vector(ctx) if app.get("error_scaling") == "pop" else None
+        scaling = app.get("error_scaling")
+        pop_vec   = ctx["pop"]         if scaling == "pop" else None
+        price_vec = ctx["price_share"] if scaling == "pop" else None
         print(f"{meta['n_obs']} obs, {meta['n_items']} items, {meta['n_covariates']} cov")
     else:
-        input_data = meta = cov = pop_vec = None
+        input_data = meta = cov = pop_vec = price_vec = None
 
     # combest.data_manager.load_and_distribute_input_data is rank-0-only by
     # design (non-root replaces its arg with an empty skeleton), so we don't
     # broadcast input_data here.
     if _comm is not None:
-        config, meta, cov, pop_vec = _comm.bcast((config, meta, cov, pop_vec), root=0)
+        config, meta, cov, pop_vec, price_vec = _comm.bcast(
+            (config, meta, cov, pop_vec, price_vec), root=0
+        )
 
     # ── Every rank: build combest model, install errors ──────────────
     config["dimensions"].update(
@@ -87,7 +91,9 @@ def main(config_path):
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
     errors.install(model, seed=app["error_seed"], cov=cov,
-                   scaling=app.get("error_scaling"), pop=pop_vec)
+                   scaling=app.get("error_scaling"), pop=pop_vec, price=price_vec,
+                   sigma_price=app.get("sigma_price"),
+                   rho=app.get("rho_pop_price"))
     model.subproblems.load_solver()
 
     callbacks = config.get("callbacks", {})

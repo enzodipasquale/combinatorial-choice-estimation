@@ -11,8 +11,11 @@ Config keys consumed (from the `application` block):
     spatial_rho         (float | null)  Σ = (I−ρW)⁻¹(I−ρW)⁻ᵀ over symmetrized,
                                          binarized, row-normalized BTA adjacency.
     error_scaling       ('pop'|'elig'|null)  In-place post-draw scaling.
+    sigma_price         (float, optional; activates the price leg when scaling='pop')
+    rho_pop_price       (float in (-1, 1), optional; only used when sigma_price>0)
 
 error_correlation and spatial_rho are mutually exclusive.
+The price leg (sigma_price > 0) is incompatible with any non-null covariance.
 """
 import numpy as np
 
@@ -57,16 +60,6 @@ def covariance(ctx, app):
     return None
 
 
-def pop_vector(ctx):
-    """Return the normalized per-BTA pop vector used for error_scaling='pop'.
-
-    This is the same ctx['pop'] that appears in the elig_pop covariate and in
-    any pop-centroid quadratic — guaranteed consistent because it's a single
-    reference into the shared context.
-    """
-    return ctx["pop"]
-
-
 def install_aggregated(model, *, seed, A, bta_cov=None, offset=None,
                        scaling=None, pop=None, elig=None):
     """Install a custom oracle that draws BTA-level modular errors, optionally
@@ -99,19 +92,61 @@ def install_aggregated(model, *, seed, A, bta_cov=None, offset=None,
     )
 
 
-def install(model, *, seed, cov, scaling=None, pop=None):
+def _install_pop(model, *, seed, pop, price, sigma_price, rho):
+    """Pop-scaled modular errors with an optional correlated price leg:
+        ε_ij = pop_j · N¹_ij + price_j · N²_ij,
+    with N¹ ~ N(0,1), N² ~ N(0, σ²), corr(N¹, N²) = ρ at each (i,j), iid
+    across (i,j). σ_price=0 (the default) collapses to pure pop scaling.
+    Per-agent RNG seeded by (seed, gid), matching install_aggregated."""
+    if pop is None:
+        raise ValueError("scaling='pop' requires pop vector")
+    s = float(sigma_price or 0.0)
+    r = float(rho or 0.0)
+    if s < 0:
+        raise ValueError(f"sigma_price must be ≥ 0, got {s}")
+    if not -1 < r < 1:
+        raise ValueError(f"rho_pop_price must satisfy |ρ| < 1, got {r}")
+    if s > 0 and price is None:
+        raise ValueError("sigma_price > 0 requires price vector")
+
+    cm = model.features.comm_manager
+    n_items = pop.shape[0]
+    errors = np.zeros((cm.num_local_agent, n_items))
+    c = np.sqrt(1 - r * r)
+    for i, gid in enumerate(cm.agent_ids):
+        z = np.random.default_rng((seed, gid)).standard_normal((2, n_items))
+        e = pop * z[0]
+        if s > 0:
+            e = e + price * (s * (r * z[0] + c * z[1]))
+        errors[i] = e
+    model.features.local_modular_errors = errors
+    model.features.set_error_oracle(
+        lambda b, ids: (model.features.local_modular_errors[ids] * b).sum(-1)
+    )
+
+
+def install(model, *, seed, cov, scaling=None, pop=None, price=None,
+            sigma_price=None, rho=None):
     """Install modular error oracle into `model.features`, on every rank.
 
-    `cov` and `pop` are computed on rank 0 and broadcast by the caller.
+    `cov`, `pop`, `price` are computed on rank 0 and broadcast by the caller.
     """
-    model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
     if scaling == "pop":
-        if pop is None:
-            raise ValueError("scaling='pop' requires pop vector")
-        model.features.local_modular_errors *= pop[None, :]
-    elif scaling == "elig":
+        if cov is not None:
+            raise ValueError(
+                "scaling='pop' with a price leg is incompatible with "
+                "error_correlation / spatial_rho"
+            )
+        _install_pop(model, seed=seed, pop=pop, price=price,
+                     sigma_price=sigma_price, rho=rho)
+        return
+
+    model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
+    if scaling == "elig":
         # Per-rank: combest distributes id_data so each rank's elig is local.
         elig = model.data.local_data.id_data["elig"]
         model.features.local_modular_errors *= elig[:, None]
     elif scaling is not None:
-        raise ValueError(f"error_scaling must be 'pop', 'elig' or null, got {scaling!r}")
+        raise ValueError(
+            f"error_scaling must be 'pop', 'elig' or null, got {scaling!r}"
+        )

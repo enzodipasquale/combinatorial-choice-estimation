@@ -136,6 +136,9 @@ def build_context(raw):
         density  = btas["density"].to_numpy(dtype=float)  / btas["density"].max(),
         imwl     = btas["imwl"].to_numpy(dtype=float)     / btas["imwl"].max(),
         price    = btas["bid"].to_numpy(dtype=float) / 1e9,
+        # share-normalized price (bid_j / Σ_k bid_k), same convention as `pop`.
+        # Used by the pop_price error specification.
+        price_share = btas["bid"].to_numpy(dtype=float) / btas["bid"].sum(),
         # bidder covariates
         assets     = assets / assets.max(),
         designated = desig,
