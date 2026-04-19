@@ -29,7 +29,7 @@ subproblem:
         TimeLimit: 1.0
 
 row_generation:
-    max_iters: 100
+    max_iters: 200
     tolerance: .001
     master_gurobi_params:
         Method: 0
@@ -45,7 +45,7 @@ row_generation:
             elig_pop: 3000
 
 bootstrap:
-    num_samples: 5
+    num_samples: 50
     seed: 1233
     rowgen_tol: 0.001
     rowgen_max_iters: 250

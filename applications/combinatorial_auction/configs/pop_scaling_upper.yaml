@@ -1,18 +1,24 @@
-# Same as boot_pop_scaling.yaml but with `upper_triangular_quadratic: true`:
-# every quadratic covariate is zeroed below the diagonal, so the bilinear form
-# entering combest becomes Σ_{j<k} Q_{jk} b_j b_k instead of Σ_{j≠k} Q_{jk} b_j b_k.
 application:
-    mode: bootstrap
+    mode: estimation
     error_seed: 2006
     error_scaling: pop
     upper_triangular_quadratic: true
     modular_regressors:
         - elig_pop
+        # - log_dist_hq
+        # - elig_log_dist_hq
+        # - log_dist_hq_pop
+        # - elig_log_dist_hq_pop
     quadratic_regressors:
         - adjacency
         - pop_centroid_delta4
+        - air_travel
+        - travel_survey
     quadratic_id_regressors:
         - elig_adjacency
+        - elig_pop_centroid_delta4
+        - elig_air_travel
+        - elig_travel_survey
 dimensions:
     n_simulations: 20
 subproblem:
@@ -21,7 +27,7 @@ subproblem:
         TimeLimit: 1.0
 
 row_generation:
-    max_iters: 100
+    max_iters: 200
     tolerance: .001
     master_gurobi_params:
         Method: 0
@@ -37,30 +43,24 @@ row_generation:
             elig_pop: 3000
 
 bootstrap:
-    num_samples: 100
+    num_samples: 50
     seed: 1233
     rowgen_tol: 0.001
     rowgen_max_iters: 250
 
 callbacks:
     row_gen:
-        - {iters: 50, timeout: 1.0}
-        - {timeout: 5.0, retire: true}
+        - {iters: 50, timeout: 10.0}
+        - {timeout: 10.0, retire: true}
     boot:
-        - {iters: 10, timeout: 1.0}
+        - {iters: 50, timeout: 10.0}
+        - {iters: 5, timeout: 10.0, retire: true}
+        - {iters: 20, timeout: 10.0}
+        - {iters: 5, timeout: 10.0, retire: true}
+        - {iters: 20, timeout: 10.0}
         - {iters: 2, timeout: 5.0, retire: true}
-        - {iters: 10, timeout: 1.0}
-        - {iters: 2, timeout: 5.0, retire: true}
-        - {iters: 10, timeout: 1.0}
-        - {iters: 20, timeout: 1.0, retire: true}
-        - {iters: 20, timeout: 1.0, retire: true}
-        - {iters: 2, timeout: 5.0, retire: true}
-        - {iters: 20, timeout: 1.0, retire: true}
-        - {iters: 2, timeout: 5.0, retire: true}
-        - {iters: 20, timeout: 1.0, retire: true}
-        - {iters: 2, timeout: 5.0, retire: true}
-        - {iters: 20, timeout: 1.0, retire: true}
-        - {iters: 2, timeout: 5.0, retire: true}
+        - {iters: 30, timeout: 10.0}
+        - {iters: 50, timeout: 10.0, retire: true}
 
     boot_strip:
         percentile: 95
