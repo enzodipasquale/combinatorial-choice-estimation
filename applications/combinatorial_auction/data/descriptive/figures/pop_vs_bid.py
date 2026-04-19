@@ -54,7 +54,7 @@ def plot_loglog(raw):
     bta = raw["bta_data"]
     pop = bta["pop90"].values.astype(float)
     bid = bta["bid"].values.astype(float)
-    lp, lb = np.log(pop), np.log(bid)
+    lp, lb = np.log10(pop), np.log10(bid)
     b, r2 = _ols(lp, lb)
 
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
@@ -63,8 +63,8 @@ def plot_loglog(raw):
                edgecolor="white", linewidth=0.3)
     ax.plot(xs, b[0] + b[1] * xs, color=SLATE, lw=1.2, ls="--",
             label=fr"OLS: $\beta={b[1]:.3f}$, $R^2={r2:.3f}$")
-    ax.set_xlabel("log(winning bid)", fontsize=9, family="serif")
-    ax.set_ylabel("log(population)", fontsize=9, family="serif")
+    ax.set_xlabel(r"$\log_{10}$(winning bid)", fontsize=9, family="serif")
+    ax.set_ylabel(r"$\log_{10}$(population)", fontsize=9, family="serif")
     ax.legend(fontsize=8, frameon=False, loc="lower right")
     style_ax(ax)
 

@@ -91,6 +91,12 @@ def load_raw():
     trav    = trav[cont][:, cont]
     air     = air[cont][:, cont]
 
+    # Continental-share normalizations (dimensionless, sum to 1 over continental
+    # BTAs). Used by the IV regression's `pop` regressor and by downstream
+    # compute_xi; same convention as ctx["pop"] / ctx["price_share"].
+    btas["pop90_share"] = btas["pop90"] / btas["pop90"].sum()
+    btas["bid_share"]   = btas["bid"]   / btas["bid"].sum()
+
     return dict(bta_data=btas, bidder_data=bidders,
                 bta_adjacency=adj, geo_distance=geo,
                 travel_survey=trav, air_travel=air)

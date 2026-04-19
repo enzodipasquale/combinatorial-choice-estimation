@@ -12,8 +12,8 @@ from combest.utils import get_logger
 logger = get_logger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from generate_data import generate_synthetic_data, draw_firm_errors
-from solver import MultiStageSolver, flatten_bundle, pack_theta, THETA_NAMES
+from generate_data import generate_synthetic_data
+from solver import MultiStageSolver, pack_theta, THETA_NAMES
 from oracles import build_oracles, N_PARAMS
 from combest.estimation.callbacks import adaptive_gurobi_timeout
 
@@ -67,8 +67,7 @@ def load_dgp_errors(model, dgp_errors, ng_max, P_max, nm_max, L1, L2, N):
     return phi1, phi2, nu
 
 
-def run(dgp_cfg, seed=42, theta_init=None,
-        n_simulations=1, verbose=True):
+def run(dgp_cfg, seed=42, n_simulations=1, verbose=True):
 
     model = ce.Model()
 
@@ -230,14 +229,10 @@ def run(dgp_cfg, seed=42, theta_init=None,
 
     row_gen = model2.point_estimation.n_slack
 
-    if theta_init is None:
-        theta_init = theta_true_vec
-
     if model2.is_root():
-        init_label = "theta_true" if np.allclose(theta_init, theta_true_vec) else "custom"
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"  Row generation ({N_PARAMS} params, S={n_simulations}, init={init_label})")
+        logger.info(f"  Row generation ({N_PARAMS} params, S={n_simulations})")
         logger.info("=" * 60)
 
     pt_schedule = CFG['estimation'].get('gurobi_timeout_schedule', [
@@ -277,7 +272,6 @@ if __name__ == '__main__':
     parser.add_argument('--n-firms', type=int, default=CFG['dgp']['n_firms'])
     parser.add_argument('--seed', type=int,
                         default=CFG.get('monte_carlo', {}).get('seed', 42))
-    parser.add_argument('--from-zero', action='store_true')
     parser.add_argument('--n-simulations', type=int,
                         default=CFG['estimation']['n_simulations'])
     args = parser.parse_args()
@@ -285,6 +279,4 @@ if __name__ == '__main__':
     dgp = dict(CFG['dgp'])
     dgp['n_firms'] = args.n_firms
 
-    theta0 = np.zeros(len(THETA_NAMES)) if args.from_zero else None
-    run(dgp, seed=args.seed, theta_init=theta0,
-        n_simulations=args.n_simulations)
+    run(dgp, seed=args.seed, n_simulations=args.n_simulations)

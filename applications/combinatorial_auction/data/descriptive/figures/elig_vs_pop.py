@@ -15,19 +15,19 @@ def plot(raw, ctx):
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     # non-winners as a rug below the winner cloud
-    rug_y = np.log(pop90.min()) - 0.8
-    ax.scatter(np.log(elig[~win]), np.full((~win).sum(), rug_y),
+    rug_y = np.log10(pop90.min()) - 0.8
+    ax.scatter(np.log10(elig[~win]), np.full((~win).sum(), rug_y),
                s=15, alpha=0.35, color=SLATE, marker="|", zorder=2, label="Non-winners")
 
     w = win & (pkg_pop > 0)
-    ax.scatter(np.log(elig[w]), np.log(pkg_pop[w]),
+    ax.scatter(np.log10(elig[w]), np.log10(pkg_pop[w]),
                s=30, alpha=0.6, color=NAVY, zorder=3, label="Winners")
 
-    lo, hi = np.log(elig.min()) - 0.5, np.log(elig.max()) + 0.5
+    lo, hi = np.log10(elig.min()) - 0.5, np.log10(elig.max()) + 0.5
     ax.plot([lo, hi], [lo, hi], ls="--", color=SLATE, lw=1, zorder=2, label="45° line")
     ax.set_xlim(lo, hi)
-    ax.set_xlabel("log(initial eligibility)", fontsize=9, family="serif")
-    ax.set_ylabel("log(winning package population)", fontsize=9, family="serif")
+    ax.set_xlabel(r"$\log_{10}$(initial eligibility)", fontsize=9, family="serif")
+    ax.set_ylabel(r"$\log_{10}$(winning package population)", fontsize=9, family="serif")
     ax.legend(fontsize=8, frameon=False, loc="upper left")
     style_ax(ax)
 
@@ -35,7 +35,7 @@ def plot(raw, ctx):
     fig.savefig(OUT_FIG / "fig_elig_vs_pop.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 
-    corr = np.corrcoef(np.log(elig[w]), np.log(pkg_pop[w]))[0, 1]
+    corr = np.corrcoef(np.log10(elig[w]), np.log10(pkg_pop[w]))[0, 1]
     print(f"  {len(elig)} bidders ({win.sum()} winners); "
           f"corr on winners = {corr:.3f}")
 

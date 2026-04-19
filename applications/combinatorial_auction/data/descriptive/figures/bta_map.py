@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
+from matplotlib.legend_handler import HandlerTuple
 
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
 from applications.combinatorial_auction.data.descriptive import OUT_FIG
@@ -92,38 +93,50 @@ def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
     #    county-level map of the continental US.
     gdf.plot(ax=ax, facecolor="white", edgecolor=BG_EDGE, linewidth=0.25)
 
-    # 2. Overlay each top bidder with its unique (shade, hatch) combo.
-    #    Same gray border so contours are uniform across the whole map.
+    # 2. Two-pass per bidder:
+    #    (a) fill with the shade and a WHITE hatch (edgecolor=white forces the
+    #        hatch-line color to white regardless of the hatch.color rcParam,
+    #        which matplotlib ignores once edgecolor is set explicitly);
+    #    (b) overlay a transparent-fill patch carrying only the gray contour.
     for rank, fox in enumerate(top_fox):
         sub = gdf[gdf["bidder_num_fox"].fillna(-1).astype(int) == fox]
         if sub.empty:
             continue
         shade, hatch = _key(rank)
-        sub.plot(ax=ax, facecolor=shade, edgecolor=MAIN_EDGE,
-                 linewidth=0.25, hatch=hatch)
+        sub.plot(ax=ax, facecolor=shade, edgecolor="#FFFFFF",
+                 linewidth=0, hatch=hatch)
+        sub.plot(ax=ax, facecolor="none", edgecolor=MAIN_EDGE,
+                 linewidth=0.25)
 
     ax.set_xlim(-125, -66)
     ax.set_ylim(24, 50)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    handles = [
-        Patch(facecolor=_key(rank)[0], edgecolor=MAIN_EDGE, linewidth=0.5,
-              hatch=_key(rank)[1],
-              label=_short_label(fox_to_name[fox], fox_to_key[fox], unit))
-        for rank, fox in enumerate(top_fox)
-    ]
-    handles.append(Patch(facecolor="white", edgecolor=BG_EDGE, linewidth=0.5,
-                         label="Other / non-winners"))
+    # Each legend handle is a (fill+white-hatch, gray-border) tuple so the
+    # swatch matches what the map draws: white hatch over blue, gray contour.
+    handles, labels = [], []
+    for rank, fox in enumerate(top_fox):
+        shade, hatch = _key(rank)
+        handles.append((
+            Patch(facecolor=shade, edgecolor="#FFFFFF", linewidth=0, hatch=hatch),
+            Patch(facecolor="none", edgecolor=MAIN_EDGE, linewidth=0.6),
+        ))
+        labels.append(_short_label(fox_to_name[fox], fox_to_key[fox], unit))
+    handles.append((
+        Patch(facecolor="white", edgecolor=BG_EDGE, linewidth=0.6),
+    ))
+    labels.append("Other / non-winners")
 
     header = "Top 12 by eligibility" if metric == "elig" else "Top 12 by package size"
     lax.legend(
-        handles=handles, loc="center left", bbox_to_anchor=(0.0, 0.5),
+        handles=handles, labels=labels,
+        loc="center left", bbox_to_anchor=(0.0, 0.5),
         fontsize=9.5, frameon=False, borderpad=0.2, labelspacing=0.85,
         handletextpad=0.9, handleheight=1.6, handlelength=2.3,
         prop={"family": "serif", "size": 9.5},
-        title=header, title_fontsize=10,
-        alignment="left",
+        title=header, title_fontsize=10, alignment="left",
+        handler_map={tuple: HandlerTuple(ndivide=1, pad=0.0)},
     )
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight", pad_inches=0.05)

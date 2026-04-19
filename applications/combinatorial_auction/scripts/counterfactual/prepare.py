@@ -69,11 +69,14 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     quad_names = app.get("quadratic_regressors", [])
     qid_names  = app.get("quadratic_id_regressors", [])
 
-    # Single source of truth: BTA-level covariates.
+    # Single source of truth: BTA-level covariates. Must match the estimation-
+    # stage prepare() call (same upper-triangle flag), otherwise Q̃ at the MTA
+    # level disagrees with the matrix that produced the θ̂ we're pinning.
     bta_data, bta_meta = prepare(
         modular_regressors       = mod_names,
         quadratic_regressors     = quad_names,
         quadratic_id_regressors  = qid_names,
+        upper_triangular_quadratic = app.get("upper_triangular_quadratic", False),
     )
     raw = load_raw()
     ctx = build_context(raw)

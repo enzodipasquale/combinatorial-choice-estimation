@@ -1,0 +1,58 @@
+dgp:
+  L1: 10
+  L2: 12
+  N: 24
+  n_firms: 25
+  models_range: [4, 8]
+  cell_groups_range: [1, 2]
+  max_platforms: 5
+  min_platforms: 2
+  feasibility:
+    global_range: [10, 12]
+    regional_range: [4, 10]
+    global_prob: 0.5
+
+theta_true:
+  delta_1: 2.0
+  delta_2: 2.5
+  rho_xi_1: 1.0
+  rho_xi_2: 1.0
+  rho_HQ_1: 1.0
+  rho_HQ_2: 1.0
+  FE_1_r1: 0.5
+  FE_1_r2: 0.2
+  FE_2_r1: 0.3
+  FE_2_r2: 0.2
+  rho_d_1: 0.6
+  rho_d_2: 0.3
+
+sigma:
+  phi: 0.3
+  nu: 0.3
+
+# Smoke test: S=2, B=3 on 4 ranks. Verifies the S>1 + bootstrap path.
+estimation:
+  n_simulations: 2
+  max_iters: 50
+  tolerance: 1.0e-3
+
+monte_carlo:
+  seed: 42
+
+bootstrap:
+  num_samples: 3
+  seed: 7777
+  rowgen_tol: 0.01
+  rowgen_max_iters: 30
+
+callbacks:
+  row_gen:
+    - {iters: 10, timeout: 1}
+    - {timeout: 10, retire: true}
+  boot:
+    - {iters: 10, timeout: 1}
+    - {iters: 5, timeout: 5, retire: true}
+    - {iters: 15, timeout: 1, retire: true}
+  boot_strip:
+    percentile: 95
+    hard_threshold: 5000

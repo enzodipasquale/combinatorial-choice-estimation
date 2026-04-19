@@ -40,15 +40,15 @@ def plot(raw, ctx):
     # Panel (b): assortative matching with last-round eligibility
     pkg_pop = ctx["c_obs_bundles"] @ pop90
     w = win & (pkg_pop > 0) & (elig > 0)
-    log_e, log_p = np.log(elig[w]), np.log(pkg_pop[w])
+    log_e, log_p = np.log10(elig[w]), np.log10(pkg_pop[w])
     ax2.scatter(log_e, log_p, s=30, alpha=0.6, color=NAVY, zorder=3)
     lo = min(log_e.min(), log_p.min()) - 0.3
     hi = max(log_e.max(), log_p.max()) + 0.3
     ax2.plot([lo, hi], [lo, hi], ls="--", color=SLATE, lw=1,
              zorder=2, label="eligibility constraint")
     ax2.set_xlim(lo, hi); ax2.set_ylim(lo, hi)
-    ax2.set_xlabel("log(eligibility, last round)", fontsize=9, family="serif")
-    ax2.set_ylabel("log(winning package population)", fontsize=9, family="serif")
+    ax2.set_xlabel(r"$\log_{10}$(eligibility, last round)", fontsize=9, family="serif")
+    ax2.set_ylabel(r"$\log_{10}$(winning package population)", fontsize=9, family="serif")
     ax2.legend(fontsize=8, frameon=False, loc="upper left")
     style_ax(ax2)
     ax2.text(0.02, 0.95, "(b)", transform=ax2.transAxes,
