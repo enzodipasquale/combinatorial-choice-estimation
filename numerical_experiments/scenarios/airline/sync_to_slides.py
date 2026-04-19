@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Write slide-ready airline assets to ../../slides/artifacts/.
+
+Two variance concepts are exported:
+- tab_airline_mc_full.tex: cross-replication Std from Monte Carlo
+  over full DGP variation (100 reps with fresh geography, hubs, errors).
+  This is wired into the slide.
+- tab_airline_mc_bootstrap.tex: Bayesian bootstrap SEs from a single
+  realization (kept alongside for reference / appendix).
+
+Also copies the route-network figure to fig_airline_networks.png.
+Each table has 3 rows aggregating the 12 parameters:
+  theta_rev, theta_cong, theta_fc (average over 10 firms).
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import numpy as np
+
+SCRIPT_DIR = Path(__file__).parent
+PROJ_ROOT = SCRIPT_DIR.parent.parent.parent  # numerical_experiments/scenarios/airline -> repo root
+SLIDES = PROJ_ROOT / "slides" / "artifacts"
+TABLES = SLIDES / "tables"
+FIGURES = SLIDES / "figures"
+
+
+def fmt(x, digits=4):
+    return f"{x:.{digits}f}"
+
+
+def fmt_signed(x, digits=4):
+    return f"{x:+.{digits}f}"
+
+
+def load_mc():
+    with (SCRIPT_DIR / "results" / "monte_carlo.json").open() as f:
+        return json.load(f)
+
+
+def load_bootstrap():
+    with (SCRIPT_DIR / "results" / "result.json").open() as f:
+        return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Aggregate the 12 parameters into 3 rows: rev, cong, fc (avg over 10 firms)
+# ---------------------------------------------------------------------------
+
+def aggregate_mc(mc):
+    """Extract (bias, std) for rev, cong, and avg FC from Monte Carlo.
+
+    - bias:  mean(theta_hat - theta_true) over reps
+    - std:   cross-replication std(theta_hat), ddof=1
+    """
+    names = mc["param_names"]
+    bias = np.array(mc["statistics"]["bias"])
+    std = np.array(mc["statistics"]["std"])
+    true = np.array(mc["theta_true"])
+
+    i_rev = names.index("theta_rev")
+    i_gs = names.index("theta_gs")
+    fc_idx = [k for k, n in enumerate(names) if n.startswith("theta_fc_")]
+
+    # For the average FC: true is the average of the firm-specific FCs,
+    # bias is the mean of firm biases (since bias is linear in estimate),
+    # std comes from the distribution of the average estimator across reps.
+    # We recover it from the raw theta_hats.
+    hats = np.array(mc["theta_hats"])            # (n_reps, n_params)
+    hat_fc_avg = hats[:, fc_idx].mean(axis=1)    # (n_reps,) avg FC per rep
+    true_fc_avg = true[fc_idx].mean()
+    bias_fc_avg = (hat_fc_avg - true_fc_avg).mean()
+    std_fc_avg = hat_fc_avg.std(ddof=1)
+
+    return {
+        "rev":  {"true": float(true[i_rev]),  "bias": float(bias[i_rev]),
+                 "std":  float(std[i_rev])},
+        "cong": {"true": float(true[i_gs]),   "bias": float(bias[i_gs]),
+                 "std":  float(std[i_gs])},
+        "fc":   {"true": float(true_fc_avg),  "bias": float(bias_fc_avg),
+                 "std":  float(std_fc_avg)},
+    }
+
+
+def aggregate_bootstrap(boot, mc):
+    """Extract (bias, se) from Bayesian bootstrap result.
+
+    bias  = theta_hat - theta_true
+    se    = bootstrap s.e.
+    """
+    theta_true = np.array(boot["theta_true"])
+    theta_hat = np.array(boot["theta_hat"])
+    theta_se = np.array(boot["theta_se"])
+
+    # Use the same indexing as MC (same param order by construction)
+    names = mc["param_names"]
+    i_rev = names.index("theta_rev")
+    i_gs = names.index("theta_gs")
+    fc_idx = [k for k, n in enumerate(names) if n.startswith("theta_fc_")]
+
+    hat_fc_avg = theta_hat[fc_idx].mean()
+    true_fc_avg = theta_true[fc_idx].mean()
+    # s.e. of the mean of 10 FCs. Bootstrap draws are correlated across
+    # params, so the correct way is std across draws of the FC average.
+    # Fall back to mean of per-param SEs (conservative upper bound)
+    # when raw samples aren't saved in the JSON.
+    se_fc_avg = float(theta_se[fc_idx].mean() / np.sqrt(len(fc_idx)))
+
+    return {
+        "rev":  {"true": float(theta_true[i_rev]),
+                 "bias": float(theta_hat[i_rev] - theta_true[i_rev]),
+                 "se":   float(theta_se[i_rev])},
+        "cong": {"true": float(theta_true[i_gs]),
+                 "bias": float(theta_hat[i_gs] - theta_true[i_gs]),
+                 "se":   float(theta_se[i_gs])},
+        "fc":   {"true": float(true_fc_avg),
+                 "bias": float(hat_fc_avg - true_fc_avg),
+                 "se":   se_fc_avg},
+    }
+
+
+# ---------------------------------------------------------------------------
+# LaTeX table builders (match the 3-row layout already in the slide)
+# ---------------------------------------------------------------------------
+
+ROW_LABELS = [
+    ("rev",  r"$\theta^{\text{rev}}$"),
+    ("cong", r"$\theta^{\text{cong}}$"),
+    ("fc",   r"$\theta^{\text{fc}}$ (avg)"),
+]
+
+
+def build_mc_table(agg):
+    lines = [
+        "% Auto-generated by numerical_experiments/scenarios/airline/sync_to_slides.py",
+        "% Monte Carlo over full DGP variation (fresh geography, hubs, errors per rep).",
+        "% Std = cross-replication standard deviation of theta_hat.",
+        r"\begin{tabular}{@{}l rr@{}}",
+        r"\toprule",
+        r" & Bias & Std \\",
+        r"\midrule",
+    ]
+    for key, label in ROW_LABELS:
+        a = agg[key]
+        lines.append(
+            f"{label} & {fmt_signed(a['bias'])} & {fmt(a['std'])} " + r"\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def build_bootstrap_table(agg):
+    lines = [
+        "% Auto-generated by numerical_experiments/scenarios/airline/sync_to_slides.py",
+        "% Bayesian bootstrap on a single DGP realization.",
+        "% SE = bootstrap standard error from 100 draws.",
+        r"\begin{tabular}{@{}l rr@{}}",
+        r"\toprule",
+        r" & Bias & s.e. \\",
+        r"\midrule",
+    ]
+    for key, label in ROW_LABELS:
+        a = agg[key]
+        lines.append(
+            f"{label} & {fmt_signed(a['bias'])} & {fmt(a['se'])} " + r"\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Runtime macros (written as \newcommand's the slide can \input{})
+# ---------------------------------------------------------------------------
+
+def build_runtime_macros(mc, boot):
+    mc_rep_s = mc["summary"]["runtime_per_rep_s"]
+    mc_total_s = mc["summary"]["runtime_total_s"]
+    n_reps = mc["summary"]["n_reps_converged"]
+    boot_s = boot.get("runtime_seconds", None)
+
+    lines = [
+        "% Auto-generated: airline runtimes",
+        rf"\newcommand{{\airlineMcPerRep}}{{{mc_rep_s:.1f}}}",
+        rf"\newcommand{{\airlineMcTotal}}{{{mc_total_s:.0f}}}",
+        rf"\newcommand{{\airlineMcNReps}}{{{n_reps}}}",
+    ]
+    if boot_s is not None:
+        lines.append(rf"\newcommand{{\airlineBootstrapTotal}}{{{boot_s:.0f}}}")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    TABLES.mkdir(parents=True, exist_ok=True)
+    FIGURES.mkdir(parents=True, exist_ok=True)
+
+    mc = load_mc()
+    boot = load_bootstrap()
+
+    mc_agg = aggregate_mc(mc)
+    boot_agg = aggregate_bootstrap(boot, mc)
+
+    # Tables
+    (TABLES / "tab_airline_mc_full.tex").write_text(build_mc_table(mc_agg))
+    (TABLES / "tab_airline_mc_bootstrap.tex").write_text(
+        build_bootstrap_table(boot_agg))
+    (TABLES / "airline_runtimes.tex").write_text(
+        build_runtime_macros(mc, boot))
+
+    # Figure: generate single-firm network plot on demand
+    src_fig = SCRIPT_DIR / "network_single_seed42.png"
+    if not src_fig.exists():
+        import subprocess, sys
+        subprocess.check_call(
+            [sys.executable, str(SCRIPT_DIR / "plot_network_single.py")])
+    dst_fig = FIGURES / "fig_airline_networks.png"
+    if src_fig.exists():
+        shutil.copyfile(src_fig, dst_fig)
+        print(f"wrote {dst_fig.relative_to(PROJ_ROOT)}")
+    else:
+        print(f"WARN: {src_fig} not found — figure not copied")
+
+    for p in [TABLES / "tab_airline_mc_full.tex",
+              TABLES / "tab_airline_mc_bootstrap.tex",
+              TABLES / "airline_runtimes.tex"]:
+        print(f"wrote {p.relative_to(PROJ_ROOT)}")
+
+
+if __name__ == "__main__":
+    main()

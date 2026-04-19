@@ -27,21 +27,16 @@ def plot_boundaries():
 
 
 def plot_vs_bta():
-    """MTAs in muted colors, BTAs as hairlines on top."""
+    """MTAs white-filled with navy outlines, BTAs as hairlines on top."""
     bta = load_bta_gdf()
     mta = load_mta_gdf().reset_index(drop=True)
-    cmap = colormaps["tab20"]
-    mta["_fill"] = [(*cmap(i % 20)[:3], 0.30) for i in range(len(mta))]
 
     fig, ax = plt.subplots(figsize=(14, 8.5))
-    mta.plot(ax=ax, color=mta["_fill"].tolist(),
+    mta.plot(ax=ax, facecolor="white",
              edgecolor=NAVY, linewidth=1.4, zorder=1)
     bta.plot(ax=ax, facecolor="none", edgecolor="black",
              linewidth=0.25, alpha=0.55, zorder=2)
     ax.axis("off")
-    ax.text(0.02, 0.03,
-            f"{len(mta)} MTAs (colored)  ·  {len(bta)} BTAs (thin lines)",
-            transform=ax.transAxes, fontsize=9, family="serif", color=SLATE)
     fig.tight_layout()
     fig.savefig(OUT_FIG / "fig_mta_vs_bta.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)

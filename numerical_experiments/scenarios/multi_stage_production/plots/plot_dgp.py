@@ -185,6 +185,64 @@ def plot_networks(geo, firms, bundles, seed, nf):
     print(f"Saved {out}")
 
 
+def plot_single_firm(geo, firms, bundles, seed, fidx=None):
+    """Single-firm network, no captions/titles/legend. Picks a firm with
+    decent network activity if fidx not given."""
+    if fidx is None:
+        candidates = [(i, bundles[i]['y2'].sum(), bundles[i]['obj'])
+                      for i in range(len(firms)) if bundles[i]['obj'] > 0]
+        candidates.sort(key=lambda x: (-min(x[1], 3), -x[2]))
+        fidx = candidates[0][0]
+
+    cell_locs, asm_locs, mkt_locs = geo['cell_locs'], geo['asm_locs'], geo['mkt_locs']
+    L1, L2 = geo['L1'], geo['L2']
+    model_colors = ['tab:green', 'tab:orange', 'tab:purple', 'tab:red',
+                    'tab:brown', 'tab:pink', 'tab:olive', 'tab:cyan']
+
+    cell_xs = np.sort(cell_locs[:, 0])
+    cell_b1 = (cell_xs[L1 // 3 - 1] + cell_xs[L1 // 3]) / 2
+    cell_b2 = (cell_xs[2 * L1 // 3 - 1] + cell_xs[2 * L1 // 3]) / 2
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_aspect('equal')
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    for r, (lo, hi) in enumerate(zip([0, cell_b1, cell_b2], [cell_b1, cell_b2, 1.0])):
+        ax.axvspan(lo, hi, alpha=0.15,
+                   color=['#d4e6f1', '#fdebd0', '#d5f5e3'][r], zorder=0)
+    for bx in [cell_b1, cell_b2]:
+        ax.axvline(bx, color='gray', linewidth=0.8, linestyle='--', alpha=0.5, zorder=0)
+
+    ax.scatter(mkt_locs[:, 0], mkt_locs[:, 1], c='gray', s=25, zorder=1, alpha=0.5)
+    ax.scatter(cell_locs[:, 0], cell_locs[:, 1], c='blue', s=70, marker='s', zorder=3)
+    ax.scatter(asm_locs[:, 0], asm_locs[:, 1], c='red', s=70, marker='o', zorder=3)
+
+    firm, bun = firms[fidx], bundles[fidx]
+    paths = find_model_paths(firm, bun, geo)
+
+    hq = firm['hq_coord']
+    ax.scatter(hq[0], hq[1], marker='*', s=260, c='black', zorder=5)
+
+    for m, p in enumerate(paths):
+        if p is None:
+            continue
+        color = model_colors[m % len(model_colors)]
+        cl, al = cell_locs[p['cell']], asm_locs[p['asm']]
+        ax.plot([cl[0], al[0]], [cl[1], al[1]], color=color, linewidth=2.8, zorder=2)
+        for n in p['markets']:
+            ax.plot([al[0], mkt_locs[n, 0]], [al[1], mkt_locs[n, 1]],
+                    color=color, linewidth=0.8, alpha=0.45, zorder=1)
+
+    plt.tight_layout(pad=0.1)
+    out = PLOT_DIR / f'network_single_seed{seed}_firm{fidx}.png'
+    fig.savefig(out, dpi=150, bbox_inches='tight')
+    print(f"Saved {out}")
+    return fidx
+
+
 PARAM_NAMES = [
     'delta_1', 'delta_2', 'rho_xi_1', 'rho_xi_2',
     'rho_HQ_1', 'rho_HQ_2', 'FE_1_r1', 'FE_1_r2',
@@ -514,6 +572,7 @@ def main():
     diagnose_identification(geo, firms, bundles, theta_true)
     plot_facility_usage(geo, firms, bundles, seed, nf)
     plot_networks(geo, firms, bundles, seed, nf)
+    plot_single_firm(geo, firms, bundles, seed)
 
 
 if __name__ == '__main__':

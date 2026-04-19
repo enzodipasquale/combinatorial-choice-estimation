@@ -1,3 +1,7 @@
+# Local serial bootstrap, S=1.
+# Used with run_bootstrap_serial.py on a single node (multiple MPI ranks OK;
+# bootstrap samples run sequentially but agents are parallelized per sample).
+
 dgp:
   L1: 10
   L2: 12
@@ -30,29 +34,30 @@ sigma:
   phi: 0.3
   nu: 0.3
 
-# Smoke test: S=2, B=3 on 4 ranks. Verifies the S>1 + bootstrap path.
 estimation:
-  n_simulations: 2
-  max_iters: 50
-  tolerance: 1.0e-3
+  n_simulations: 1
+  max_iters: 200
+  tolerance: 1.0e-6
 
 monte_carlo:
   seed: 42
 
 bootstrap:
-  num_samples: 3
+  num_samples: 150
   seed: 7777
-  rowgen_tol: 0.01
-  rowgen_max_iters: 30
+  rowgen_tol: 0.001
+  rowgen_max_iters: 100
 
 callbacks:
   row_gen:
-    - {iters: 10, timeout: 1}
-    - {timeout: 10, retire: true}
+    - {iters: 20, timeout: 1}
+    - {iters: 5, timeout: 10, retire: false}
+    - {timeout: 60, retire: true}
   boot:
-    - {iters: 10, timeout: 1}
+    - {iters: 15, timeout: 1}
     - {iters: 5, timeout: 5, retire: true}
     - {iters: 15, timeout: 1, retire: true}
+    - {iters: 5, timeout: 5, retire: true}
   boot_strip:
     percentile: 95
     hard_threshold: 5000
