@@ -1,5 +1,5 @@
 application:
-    mode: bootstrap
+    mode: estimation
     error_seed: 2006
     error_scaling: pop
     winners_only: true
