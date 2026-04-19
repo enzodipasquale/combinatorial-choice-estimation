@@ -25,7 +25,7 @@ except ImportError:
     _comm, _rank = None, 0
 
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
-from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls
+from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls, _resolve
 from applications.combinatorial_auction.scripts.counterfactual.prepare import (
     prepare_counterfactual, freeze_bounds,
 )
@@ -136,6 +136,30 @@ def _save(result, meta, alpha_0, alpha_1, path):
     print(f"Saved -> {path}")
 
 
+def _iv_tag(est_app):
+    """Short identifier for the 2SLS spec used by this CF run. Makes CF output
+    filenames self-describing so a CF is never paired with a stale 2SLS.
+
+    Format:  <iv_preset>_<pop_threshold_label>  — e.g. 'blp_500K', 'blpexog_2M',
+    'blpjump_none'. The pop_threshold label is 'XM' (integer millions) for
+    values ≥ 1e6, 'XK' for values ≥ 1e3, 'none' for +∞.
+    """
+    opts = _resolve(est_app)
+    iv = (est_app.get("counterfactual") or {}).get("iv") \
+         or ("blp" if est_app.get("error_scaling") == "pop" else "simple")
+    # Detect pop-exog override (pop among instruments) for labelling.
+    if "pop" in opts["instruments"] and iv == "blp":
+        iv = "blpexog"
+    thr = opts["pop_threshold"]
+    if not np.isfinite(thr):
+        thr_lab = "none"
+    elif thr >= 1_000_000:
+        thr_lab = f"{int(thr/1_000_000)}M"
+    else:
+        thr_lab = f"{int(thr/1_000)}K"
+    return f"{iv}_{thr_lab}"
+
+
 def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
     cfg_dir = Path(configs_dir) if configs_dir else APP_ROOT / "configs"
     res_dir = Path(results_dir) if results_dir else APP_ROOT / "results"
@@ -145,13 +169,15 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
     out_dir  = Path(out_dir) if out_dir else (res_dir / spec / "counterfactual")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    tag = _iv_tag(est_app)
+
     if _rank == 0:
         import warnings; warnings.filterwarnings("ignore", category=RuntimeWarning)
         theta = np.array(json.load(open(pt_path))["theta_hat"])
         raw = load_raw()
         a0, a1, dc = _derive_alphas(theta, raw, est_app)
         bta_cov = errors.covariance(build_context(raw), est_app)
-        print(f"Counterfactual[{spec}]: α₀={a0:.6f}  α₁={a1:.4f}  controls={dc}")
+        print(f"Counterfactual[{spec} / {tag}]: α₀={a0:.6f}  α₁={a1:.4f}  controls={dc}")
     else:
         theta = bta_cov = a0 = a1 = dc = None
 
@@ -160,12 +186,12 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
 
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if _rank == 0:
-            print(f"\n── Counterfactual: {label} ──")
+            print(f"\n── Counterfactual: {tag} {label} ──")
         result, meta = solve_cf(theta, est_app,
                                 alpha_0=a0, alpha_1=a1, demand_controls=dc,
                                 bta_cov=bta_cov, include_xi=include_xi, verbose=True)
         if _rank == 0 and result is not None:
-            _save(result, meta, a0, a1, out_dir / f"cf_{label}.json")
+            _save(result, meta, a0, a1, out_dir / f"cf_{tag}_{label}.json")
 
 
 if __name__ == "__main__":
