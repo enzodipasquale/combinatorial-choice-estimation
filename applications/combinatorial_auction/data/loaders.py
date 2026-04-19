@@ -183,23 +183,27 @@ def filter_winners(input_data):
 
 
 def last_round_capacity(bidder_data, keep_mask=None):
-    """Per-bidder capacity from their last active round, in WEIGHT_ROUNDING_TICK units."""
+    """Per-bidder capacity from their last active round, in WEIGHT_ROUNDING_TICK units.
+
+    For each bidder i, capacity is `baseline_i · (last_elig_i / first_elig_i)`
+    floor-divided by the tick. Fallback to `baseline_i // tick` when round-level
+    eligibility is missing or zero (rather than silently zeroing capacity).
+    """
     elig = pd.read_csv(RAW / "cblock-eligibility.csv")
     if keep_mask is not None:
         bidder_data = bidder_data.iloc[np.where(keep_mask)[0]].reset_index(drop=True)
 
     baseline = bidder_data["pops_eligible"].to_numpy(dtype=float)
-    out = np.zeros(len(bidder_data), dtype=int)
+    out = np.empty(len(bidder_data), dtype=int)
     for i, fox in enumerate(bidder_data["bidder_num_fox"].astype(int)):
         orig = _FOX_SWAP.get(fox, fox)
         sub = elig[(elig["bidder_num_fox"] == orig) & (elig["max_elig"] > 0)]
-        if sub.empty:
+        r1  = elig[(elig["bidder_num_fox"] == orig) & (elig["round_num"] == 1)]["max_elig"]
+        if sub.empty or not len(r1) or r1.iloc[0] <= 0:
             out[i] = int(baseline[i] // WEIGHT_ROUNDING_TICK)
             continue
         last = sub.sort_values("round_num").iloc[-1]["max_elig"]
-        r1 = elig[(elig["bidder_num_fox"] == orig) & (elig["round_num"] == 1)]["max_elig"]
-        if len(r1) and r1.iloc[0] > 0:
-            out[i] = int(np.round(baseline[i] * last / r1.iloc[0] // WEIGHT_ROUNDING_TICK))
+        out[i] = int(baseline[i] * last / r1.iloc[0]) // WEIGHT_ROUNDING_TICK
     return out
 
 

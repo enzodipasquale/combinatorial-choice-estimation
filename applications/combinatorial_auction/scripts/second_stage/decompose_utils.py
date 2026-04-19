@@ -16,7 +16,8 @@ def run(spec):
         d, _ = prepare(app.get("modular_regressors", []), app.get("quadratic_regressors", []),
                        app.get("quadratic_id_regressors", []),
                        winners_only=app.get("winners_only", False),
-                       capacity_source=app.get("capacity_source", "initial"))
+                       capacity_source=app.get("capacity_source", "initial"),
+                       upper_triangular_quadratic=app.get("upper_triangular_quadratic", False))
         xb = _xbar(d, d["id_data"]["obs_bundles"].astype(float))
     else:
         xb = np.asarray(r["xbar"])

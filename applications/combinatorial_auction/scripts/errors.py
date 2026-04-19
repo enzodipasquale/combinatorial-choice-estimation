@@ -130,19 +130,33 @@ def install(model, *, seed, cov, scaling=None, pop=None, price=None,
     """Install modular error oracle into `model.features`, on every rank.
 
     `cov`, `pop`, `price` are computed on rank 0 and broadcast by the caller.
+
+    Dispatch:
+      • `scaling='pop'` + `sigma_price=0` (default) + any `cov`: delegate to
+        combest's oracle (Cholesky-correlates with `cov`, if any), then rescale
+        by pop. Supports `spatial_rho` / `error_correlation`.
+      • `scaling='pop'` + `sigma_price>0`: custom two-field oracle with a
+        correlated price leg. Incompatible with any `cov` (assumes iid N¹/N²).
+      • `scaling='elig'` or null: delegate to combest's oracle with optional
+        elig rescale.
     """
-    if scaling == "pop":
+    s = float(sigma_price or 0.0)
+    if scaling == "pop" and s > 0:
         if cov is not None:
             raise ValueError(
-                "scaling='pop' with a price leg is incompatible with "
-                "error_correlation / spatial_rho"
+                "scaling='pop' with sigma_price>0 is incompatible with "
+                "error_correlation / spatial_rho (price leg assumes iid errors)"
             )
         _install_pop(model, seed=seed, pop=pop, price=price,
-                     sigma_price=sigma_price, rho=rho)
+                     sigma_price=s, rho=rho)
         return
 
     model.features.build_local_modular_error_oracle(seed=seed, covariance_matrix=cov)
-    if scaling == "elig":
+    if scaling == "pop":
+        if pop is None:
+            raise ValueError("scaling='pop' requires pop vector")
+        model.features.local_modular_errors *= pop[None, :]
+    elif scaling == "elig":
         # Per-rank: combest distributes id_data so each rank's elig is local.
         elig = model.data.local_data.id_data["elig"]
         model.features.local_modular_errors *= elig[:, None]

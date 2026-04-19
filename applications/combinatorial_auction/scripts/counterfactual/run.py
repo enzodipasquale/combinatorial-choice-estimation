@@ -33,6 +33,11 @@ from applications.combinatorial_auction.scripts import errors
 
 # Solver settings for every CF run. The estimation spec drives regressors and
 # error model; the CF's own 2SLS knobs live in the counterfactual: config block.
+# `theta_bounds.ub` must be well above any plausible MTA price ($B); the most
+# populous MTA (New York) aggregates roughly $3 B of BTA winning bids, so 10 is
+# a comfortable ceiling. β / γ_id / γ_item bounds are overwritten by
+# `freeze_bounds` below (pinned to the BTA point estimate), so only the MTA
+# item-FE block (prices) actually uses these defaults.
 CF_CONFIG = {
     "application":    {"mode": "estimation"},
     "dimensions":     {"n_simulations": 5},
@@ -40,7 +45,7 @@ CF_CONFIG = {
                        "gurobi_params": {"TimeLimit": 1.0}},
     "row_generation": {"max_iters": 200, "tolerance": 0.01,
                        "master_gurobi_params": {"Method": 0},
-                       "theta_bounds": {"lb": 0, "ub": 1.0}},
+                       "theta_bounds": {"lb": 0, "ub": 10.0}},
     "callbacks":      {"row_gen": [{"iters": 50, "timeout": 1.0},
                                    {"timeout": 10.0, "retire": True}]},
 }
@@ -84,7 +89,23 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls, bta_cov,
     model.subproblems.load_solver()
 
     pt_cb, _ = adaptive_gurobi_timeout(config["callbacks"]["row_gen"])
-    return model.row_generation.solve(iteration_callback=pt_cb, verbose=verbose), meta
+    result = model.row_generation.solve(iteration_callback=pt_cb, verbose=verbose)
+
+    # Guard: MTA prices must not bind at the theta_bounds upper limit — if they
+    # do, the CF revenue is silently truncated and no number reported from this
+    # run is trustworthy. Raise (not warn) so the error can't be ignored.
+    if result is not None and _rank == 0:
+        ub = float(config["row_generation"]["theta_bounds"]["ub"])
+        prices = np.asarray(result.theta_hat)[meta["n_id_mod"]:meta["n_id_mod"] + meta["n_mtas"]]
+        max_p = float(prices.max())
+        n_bound = int((prices >= ub - 1e-6).sum())
+        print(f"[CF guard] max MTA price = {max_p:.4f} $B   (ub = {ub})   at-bound = {n_bound}/{meta['n_mtas']}")
+        if n_bound > 0:
+            raise ValueError(
+                f"{n_bound} MTA price(s) at the upper bound ub={ub}. "
+                f"CF revenue is truncated. Raise CF_CONFIG['row_generation']['theta_bounds']['ub']."
+            )
+    return result, meta
 
 
 def _derive_alphas(theta, raw, app):
