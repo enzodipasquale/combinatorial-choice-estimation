@@ -30,7 +30,7 @@ subproblem:
 
 row_generation:
     max_iters: 100
-    tolerance: .01
+    tolerance: .001
     master_gurobi_params:
         Method: 0
     theta_bounds:
