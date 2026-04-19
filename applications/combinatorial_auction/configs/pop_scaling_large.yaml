@@ -22,7 +22,7 @@ application:
         - elig_air_travel
         - elig_travel_survey
 dimensions:
-    n_simulations: 5
+    n_simulations: 20
 subproblem:
     name: QuadraticKnapsackGRB
     gurobi_params:
