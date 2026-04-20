@@ -14,7 +14,7 @@ def plot(raw, ctx):
     w = ctx["c_obs_bundles"].any(axis=1) & (pkg_pop > 0)
     log_e, log_p = np.log10(elig[w]), np.log10(pkg_pop[w])
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(6, 5))
     ax.scatter(log_e, log_p, s=30, alpha=0.6, color=NAVY, zorder=3)
     lo = min(log_e.min(), log_p.min()) - 0.3
     hi = max(log_e.max(), log_p.max()) + 0.3

@@ -18,25 +18,23 @@ from ...data.loaders import load_raw, build_context, load_aggregation_matrix
 
 
 def _aggregate(input_data_bta, A):
-    """Aggregate BTA-level arrays to MTA level via the incidence matrix A."""
+    """Aggregate BTA-level arrays to MTA level via the incidence matrix A.
+
+    Hot-path note: ``qid_bta`` is a dense (n_obs, n_bta, n_bta, K_qid)
+    tensor — ≈1.9 GB at 252×480×480×4. The 4D einsum for ``qid_mta``
+    must use ``optimize=True``; without it numpy uses the naive plan and
+    takes 8–10 minutes on this problem size.
+    """
     mod_bta  = input_data_bta["id_data"]["modular"]                # (n_obs, n_bta, K_mod)
-    qid_bta  = input_data_bta["id_data"].get("quadratic")          # (n_obs, n_bta, n_bta, K_qid) or None
-    Qb       = input_data_bta["item_data"].get("quadratic")        # (n_bta, n_bta, K_quad) or None
+    qid_bta  = input_data_bta["id_data"].get("quadratic")          # (n_obs, n_bta, n_bta, K_qid)
+    Qb       = input_data_bta["item_data"].get("quadratic")        # (n_bta, n_bta, K_quad)
     weight_b = input_data_bta["item_data"]["weight"]               # (n_bta,)
 
-    # (n_obs, n_mta, K_mod): mta_mod[i,m,k] = Σ_j A[m,j] · bta_mod[i,j,k]
-    mod_mta = np.einsum("ijk,mj->imk", mod_bta, A)
-
-    # (n_mta, n_mta, K_quad): Q_mta[m,n,k] = Σ_{j,l} A[m,j] A[n,l] Q[j,l,k]
-    Q_mta = (np.einsum("mj,jlk,nl->mnk", A, Qb, A) if Qb is not None else None)
-
-    # (n_obs, n_mta, n_mta, K_qid) — each qid covariate is elig_i * (A Q A^T)
-    # By construction (see data/covariates.py) qid_bta[i,j,l,k] = elig_i * Q_k[j,l].
-    # So the aggregated form is qid_mta[i,m,n,k] = elig_i * Q_mta[m,n,k].
-    # Implemented as: aggregate the first-layer quadratic (per i) via A.
-    qid_mta = None
-    if qid_bta is not None:
-        qid_mta = np.einsum("mj,ijlk,nl->imnk", A, qid_bta, A)
+    mod_mta = np.einsum("ijk,mj->imk", mod_bta, A, optimize=True)                # (n_obs, n_mta, K_mod)
+    Q_mta   = (np.einsum("mj,jlk,nl->mnk", A, Qb, A, optimize=True)
+               if Qb is not None else None)                                       # (n_mta, n_mta, K_q)
+    qid_mta = (np.einsum("mj,ijlk,nl->imnk", A, qid_bta, A, optimize=True)
+               if qid_bta is not None else None)                                  # (n_obs, n_mta, n_mta, K_qid)
 
     return mod_mta, qid_mta, Q_mta, (A @ weight_b.astype(float)).astype(int)
 
@@ -108,19 +106,32 @@ def prepare_counterfactual(theta, app, *, alpha_0, alpha_1,
     # Aggregate BTA-level covariates to MTA level.
     mod_mta, qid_mta, Q_mta, mta_weight = _aggregate(bta_data, A)
 
-    # Synthetic obs_bundles: each MTA must appear exactly once across the rows so
-    # that every MTA item-FE (= price) has a non-zero coefficient in the combest
-    # master LP. The assignment of MTAs to rows is arbitrary — price solutions
-    # are invariant to it (verified empirically).
+    # Synthetic obs_bundles: each MTA must appear exactly once across the rows
+    # so that every MTA item-FE (= price) enters the master-LP objective.
+    # The assignment is NOT arbitrary — each bidder's observed bundle must be
+    # *feasible* under their capacity (weight[m] ≤ capacity[i]), otherwise the
+    # subproblem can never generate it as a cut and the LP loses pricing
+    # pressure on that MTA. We match MTAs to bidders by sorted weight/capacity:
+    # the heaviest MTA goes to the highest-capacity bidder.
     n_obs_total = mod_mta.shape[0]
+    cap = (ctx["capacity"] * elig_scale).astype(int)
     mta_obs = np.zeros((n_obs_total, n_mtas), dtype=int)
-    for m in range(n_mtas):
-        mta_obs[m % n_obs_total, m] = 1
+    mta_order = np.argsort(-mta_weight)                  # MTAs by weight desc
+    bidder_order = np.argsort(-cap)                      # bidders by capacity desc
+    for rank, m in enumerate(mta_order):
+        if rank >= n_obs_total:
+            raise ValueError(f"Only {n_obs_total} bidders but {n_mtas} MTAs to assign")
+        i = int(bidder_order[rank])
+        if cap[i] < mta_weight[m]:
+            raise ValueError(
+                f"No bidder has capacity ≥ weight[MTA={m}]={mta_weight[m]} "
+                f"(largest available capacity = {cap[i]}). Increase elig_scale.")
+        mta_obs[i, m] = 1
 
     id_data = {
         "modular":     mod_mta,
         "obs_bundles": mta_obs,
-        "capacity":    (ctx["capacity"] * elig_scale).astype(int),
+        "capacity":    cap,
     }
     if qid_mta is not None:
         id_data["quadratic"] = qid_mta

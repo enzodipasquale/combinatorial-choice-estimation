@@ -60,12 +60,21 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls,
     Shared by the point-estimate run (both xi variants) and by the per-draw
     bootstrap welfare loop.
     """
+    import time
     import combest as ce
     from combest.estimation.callbacks import adaptive_gurobi_timeout
 
+    def _t(label, t0):
+        if _rank == 0:
+            print(f"  [solve_cf] {label} took {time.perf_counter()-t0:.2f}s", flush=True)
+
+    t0 = time.perf_counter()
     input_data, meta, cf = prepare_counterfactual(
         theta, app, alpha_0=alpha_0, alpha_1=alpha_1, demand_controls=demand_controls,
     )
+    _t("prepare_counterfactual", t0)
+
+    t0 = time.perf_counter()
     config = copy.deepcopy(CF_CONFIG)
     freeze_bounds(config, meta, cf)
     config["dimensions"].update(
@@ -76,33 +85,54 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls,
         n_id_mod=meta["n_id_mod"], n_item_mod=meta["n_item_mod"],
         n_id_quad=meta["n_id_quad"], n_item_quad=meta["n_item_quad"],
     )
+    _t("config build", t0)
 
+    t0 = time.perf_counter()
     model = ce.Model()
     model.load_config(config)
+    _t("model.load_config", t0)
+
+    t0 = time.perf_counter()
     model.data.load_and_distribute_input_data(input_data)
+    _t("data.load_and_distribute", t0)
+
+    t0 = time.perf_counter()
     model.features.build_quadratic_covariates_from_data()
+    _t("features.build_quadratic_covariates", t0)
+
+    t0 = time.perf_counter()
     errors.install_aggregated(
         model, seed=CF_ERROR_SEED, A=cf["A"],
         offset=cf["offset_m"] if include_xi else cf["offset_m_no_xi"],
         scaling=app.get("error_scaling"), pop=cf["pop"], elig=cf["elig"],
     )
+    _t("errors.install_aggregated", t0)
+
+    t0 = time.perf_counter()
     model.subproblems.load_solver()
+    _t("subproblems.load_solver", t0)
 
     pt_cb, _ = adaptive_gurobi_timeout(config["callbacks"]["row_gen"])
+    t0 = time.perf_counter()
     result = model.row_generation.solve(iteration_callback=pt_cb, verbose=verbose)
+    _t("row_generation.solve", t0)
 
     # Guard: MTA prices must not bind at the theta_bounds upper limit — if they
     # do, the CF revenue is silently truncated and no number reported from this
     # run is trustworthy. Raise (not warn) so the error can't be ignored.
     if result is not None and _rank == 0:
-        ub = float(config["row_generation"]["theta_bounds"]["ub"])
+        tb = config["row_generation"]["theta_bounds"]
+        lb, ub = float(tb["lb"]), float(tb["ub"])
         prices = np.asarray(result.theta_hat)[meta["n_id_mod"]:meta["n_id_mod"] + meta["n_mtas"]]
-        max_p = float(prices.max())
-        n_bound = int((prices >= ub - 1e-6).sum())
-        print(f"[CF guard] max MTA price = {max_p:.4f} $B   (ub = {ub})   at-bound = {n_bound}/{meta['n_mtas']}")
-        if n_bound > 0:
+        max_p = float(prices.max()); min_p = float(prices.min())
+        n_at_ub  = int((prices >= ub - 1e-6).sum())
+        n_at_lb  = int((prices <= lb + 1e-6).sum())
+        n_neg    = int((prices < -1e-6).sum())
+        print(f"[CF guard] prices: min={min_p:+.4f}  max={max_p:+.4f} $B  "
+              f"(bounds {lb:+.1f}..{ub:+.1f})  at-lb={n_at_lb}  at-ub={n_at_ub}  neg={n_neg}/{meta['n_mtas']}")
+        if n_at_ub > 0:
             raise ValueError(
-                f"{n_bound} MTA price(s) at the upper bound ub={ub}. "
+                f"{n_at_ub} MTA price(s) at the upper bound ub={ub}. "
                 f"CF revenue is truncated. Raise CF_CONFIG['row_generation']['theta_bounds']['ub']."
             )
     return result, meta

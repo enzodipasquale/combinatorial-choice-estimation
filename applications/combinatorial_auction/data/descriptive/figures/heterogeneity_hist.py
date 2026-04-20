@@ -14,7 +14,7 @@ def plot(raw, ctx):
     elig = raw["bidder_data"]["pops_eligible"].values
     win = ctx["c_obs_bundles"].any(axis=1)
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(6, 5))
     bins = np.logspace(np.log10(elig.min() * 0.9), np.log10(elig.max() * 1.1), 25)
     ax.hist(elig[~win], bins=bins, color=SLATE, alpha=0.40, label="Non-winners",
             edgecolor="white", linewidth=0.4, zorder=2)
