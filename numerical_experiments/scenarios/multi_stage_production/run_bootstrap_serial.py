@@ -225,6 +225,8 @@ def main(config_path):
         verbose=True,
         pt_estimate_callbacks=(None, pt_cb),
         method='bayesian',
+        checkpoint_dir=str(results_dir),
+        checkpoint_every=5,
     )
 
     if model2.is_root() and se is not None:

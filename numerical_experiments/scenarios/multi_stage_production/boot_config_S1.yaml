@@ -43,21 +43,19 @@ monte_carlo:
   seed: 42
 
 bootstrap:
-  num_samples: 150
+  num_samples: 50
   seed: 7777
   rowgen_tol: 0.001
-  rowgen_max_iters: 100
+  # Cap row-gen iters so pathological samples exit fast.
+  # Most healthy samples converge in 26-35 iters; 40 leaves modest headroom.
+  rowgen_max_iters: 40
 
 callbacks:
+  # Shared schedule for point estimation and per-sample row gen.
+  # Iter counter resets per row_gen.solve() call, so the schedule applies
+  # fresh to each bootstrap sample. Tighter timeouts than before so
+  # pathological samples are bounded (40 iters * 15s/MILP * 4 agents ≈ 40 min max).
   row_gen:
-    - {iters: 20, timeout: 1}
-    - {iters: 5, timeout: 10, retire: false}
-    - {timeout: 60, retire: true}
-  boot:
     - {iters: 15, timeout: 1}
-    - {iters: 5, timeout: 5, retire: true}
-    - {iters: 15, timeout: 1, retire: true}
-    - {iters: 5, timeout: 5, retire: true}
-  boot_strip:
-    percentile: 95
-    hard_threshold: 5000
+    - {iters: 10, timeout: 5, retire: false}
+    - {timeout: 15, retire: true}

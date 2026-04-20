@@ -5,6 +5,11 @@ map.  Two shades of blue (dark = top 6, medium = ranks 7-12), six distinct
 hatches per shade, for 12 combos with no two bidders sharing the same key.
 The legend lives in its own axes column on the right of the figure so it
 never overlaps the map.
+
+For the package-size ranking we add a 13th category in gold solid fill:
+"Single-license winners" — every bidder who won exactly one BTA.  The
+``_mta`` variants additionally overlay MTA boundaries in a darker, slightly
+thicker line on top of the BTA grid.
 """
 import numpy as np
 import pandas as pd
@@ -16,19 +21,20 @@ from matplotlib.legend_handler import HandlerTuple
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
 from applications.combinatorial_auction.data.descriptive import OUT_FIG
 from applications.combinatorial_auction.data.descriptive.style import DPI
-from applications.combinatorial_auction.data.descriptive.maps import load_bta_gdf, plot_heatmap
+from applications.combinatorial_auction.data.descriptive.maps import load_bta_gdf
 
 # Dark navy for the top 6, medium blue for ranks 7-12.
 SHADE_DARK = "#33507C"   # softened navy — still dark but not inky
 SHADE_MID  = "#7BA1C9"   # lighter mid-blue to keep the band contrast
+SHADE_SOLO = "#B8860B"   # gold accent — single-license winners stand apart
 
-# Six visually distinct hatch patterns per shade band.  Keys carefully chosen so
-# every one of the 12 combos is unambiguous at slide resolution.
+# Six visually distinct hatch patterns per shade band.
 HATCHES_TOP = ["",        "////",   "xxxx",   "....",   "||||",  "++++"]
 HATCHES_MID = ["",        "\\\\\\\\", "oooo", "----",   "****",  "OOOO"]
 
-BG_EDGE   = "#6F6F6F"   # visible gray borders for every BTA
-MAIN_EDGE = "#6F6F6F"   # same gray for colored bidders — uniform contour
+BG_EDGE   = "#6F6F6F"   # gray borders for every BTA
+MAIN_EDGE = "#6F6F6F"   # same gray for colored bidders
+MTA_EDGE  = "#000000"   # near-black for the MTA overlay
 HATCH_LW  = 0.55
 
 
@@ -58,7 +64,8 @@ def _short_label(co_name, value, unit):
     return f"{head} ({int(value)} BTAs)"
 
 
-def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
+def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12,
+                      show_singles=False):
     gdf = load_bta_gdf(raw)
     bidder = raw["bidder_data"]
     c_obs = ctx["c_obs_bundles"]
@@ -79,25 +86,32 @@ def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
     fox_to_name = dict(zip(bidder["bidder_num_fox"].astype(int), bidder["co_name"]))
     fox_to_key  = dict(zip(bidder["bidder_num_fox"].astype(int), key))
 
+    # Single-license winners: not in the top-N, pkg_size == 1.
+    if show_singles:
+        singles_mask = win_mask & (pkg_size == 1)
+        singles_fox = set(bidder.loc[singles_mask, "bidder_num_fox"].astype(int).tolist())
+        singles_fox -= set(top_fox)
+        n_singles = int(singles_mask.sum() - len([f for f in top_fox
+                                                  if fox_to_key[f] == 1 and unit == "BTAs"]))
+    else:
+        singles_fox, n_singles = set(), 0
+
     # Hatch styling is global — set before any polygon is drawn.
     plt.rcParams["hatch.linewidth"] = HATCH_LW
-    plt.rcParams["hatch.color"] = "#FFFFFF"   # white patterns over the blue fills
+    plt.rcParams["hatch.color"]     = "#FFFFFF"
 
-    fig = plt.figure(figsize=(15, 7.2))
-    gs = GridSpec(1, 2, width_ratios=[3.5, 1], wspace=0.015,
-                  left=0.005, right=0.995, top=0.985, bottom=0.015)
+    # Height picked so the map fills its cell with no vertical whitespace:
+    # map axes ≈ 9.1" wide, map aspect ≈ 59°/(26°/1.25) ≈ 2.84 → 5.2" tall.
+    fig = plt.figure(figsize=(12.5, 5.4))
+    gs = GridSpec(1, 2, width_ratios=[2.7, 1], wspace=0.02,
+                  left=0.005, right=0.995, top=0.99, bottom=0.01)
     ax  = fig.add_subplot(gs[0, 0])
     lax = fig.add_subplot(gs[0, 1]); lax.axis("off")
 
-    # 1. Every BTA in white with a visible gray border — reads as a clean
-    #    county-level map of the continental US.
+    # 1. Clean white US with thin gray BTA borders.
     gdf.plot(ax=ax, facecolor="white", edgecolor=BG_EDGE, linewidth=0.25)
 
-    # 2. Two-pass per bidder:
-    #    (a) fill with the shade and a WHITE hatch (edgecolor=white forces the
-    #        hatch-line color to white regardless of the hatch.color rcParam,
-    #        which matplotlib ignores once edgecolor is set explicitly);
-    #    (b) overlay a transparent-fill patch carrying only the gray contour.
+    # 2. Top-N bidders: shade + white hatch + gray contour (two-pass).
     for rank, fox in enumerate(top_fox):
         sub = gdf[gdf["bidder_num_fox"].fillna(-1).astype(int) == fox]
         if sub.empty:
@@ -105,16 +119,20 @@ def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
         shade, hatch = _key(rank)
         sub.plot(ax=ax, facecolor=shade, edgecolor="#FFFFFF",
                  linewidth=0, hatch=hatch)
-        sub.plot(ax=ax, facecolor="none", edgecolor=MAIN_EDGE,
-                 linewidth=0.25)
+        sub.plot(ax=ax, facecolor="none", edgecolor=MAIN_EDGE, linewidth=0.25)
+
+    # 3. Optional 13th category: single-license winners (gold solid).
+    if show_singles and singles_fox:
+        sub = gdf[gdf["bidder_num_fox"].fillna(-1).astype(int).isin(singles_fox)]
+        if not sub.empty:
+            sub.plot(ax=ax, facecolor=SHADE_SOLO, edgecolor=MAIN_EDGE, linewidth=0.25)
 
     ax.set_xlim(-125, -66)
     ax.set_ylim(24, 50)
-    ax.set_aspect("equal")
+    ax.set_aspect(1.25)
     ax.axis("off")
 
-    # Each legend handle is a (fill+white-hatch, gray-border) tuple so the
-    # swatch matches what the map draws: white hatch over blue, gray contour.
+    # Legend — top-N always, gold singles slot optional, no "Other / non-winners" row.
     handles, labels = [], []
     for rank, fox in enumerate(top_fox):
         shade, hatch = _key(rank)
@@ -123,10 +141,12 @@ def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
             Patch(facecolor="none", edgecolor=MAIN_EDGE, linewidth=0.6),
         ))
         labels.append(_short_label(fox_to_name[fox], fox_to_key[fox], unit))
-    handles.append((
-        Patch(facecolor="white", edgecolor=BG_EDGE, linewidth=0.6),
-    ))
-    labels.append("Other / non-winners")
+    if show_singles and singles_fox:
+        handles.append((
+            Patch(facecolor=SHADE_SOLO, edgecolor="#FFFFFF", linewidth=0),
+            Patch(facecolor="none", edgecolor=MAIN_EDGE, linewidth=0.6),
+        ))
+        labels.append(f"Single-license winners ({len(singles_fox)})")
 
     header = "Top 12 by eligibility" if metric == "elig" else "Top 12 by package size"
     lax.legend(
@@ -152,39 +172,15 @@ def _plot_top_winners(raw, ctx, *, metric, outfile, top_n=12):
         shade, hatch = _key(rank)
         print(f"    {name:36}  {nb:3d} BTAs  ({v_str})  "
               f"[{shade} {hatch or '(solid)'}]")
-
-
-def plot_winners_by_elig(raw, ctx, top_n=12):
-    _plot_top_winners(raw, ctx, metric="elig",
-                      outfile=OUT_FIG / "fig_bta_winners_elig.png", top_n=top_n)
+    if show_singles and singles_fox:
+        print(f"    single-license winners: {len(singles_fox)} bidders [gold]")
 
 
 def plot_winners_by_pkg_size(raw, ctx, top_n=12):
     _plot_top_winners(raw, ctx, metric="pkg_size",
-                      outfile=OUT_FIG / "fig_bta_winners_pkg.png", top_n=top_n)
-
-
-def plot_winners(raw, ctx, top_n=12):
-    """Back-compat alias: writes fig_bta_winners.png (same as eligibility map)."""
-    _plot_top_winners(raw, ctx, metric="elig",
-                      outfile=OUT_FIG / "fig_bta_winners.png", top_n=top_n)
-
-
-def plot_prices(raw):
-    plot_heatmap(load_bta_gdf(raw), "bid", OUT_FIG / "fig_bta_prices.png",
-                 label="Winning bid", cmap="YlOrRd", log=True, units="USD")
-
-
-def plot_population(raw):
-    plot_heatmap(load_bta_gdf(raw), "pop90", OUT_FIG / "fig_bta_population.png",
-                 label="Population (1990)", cmap="Blues", log=True)
+                      outfile=OUT_FIG / "fig_bta_winners_pkg.png",
+                      top_n=top_n, show_singles=True)
 
 
 if __name__ == "__main__":
-    raw = load_raw()
-    ctx = build_context(raw)
-    plot_winners(raw, ctx)
-    plot_winners_by_elig(raw, ctx)
-    plot_winners_by_pkg_size(raw, ctx)
-    plot_prices(raw)
-    plot_population(raw)
+    plot_winners_by_pkg_size(load_raw(), build_context(load_raw()))

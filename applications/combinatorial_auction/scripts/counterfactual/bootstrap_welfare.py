@@ -24,7 +24,6 @@ except ImportError:
 
 from applications.combinatorial_auction.data.loaders import load_raw, build_context
 from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls
-from applications.combinatorial_auction.scripts import errors
 from applications.combinatorial_auction.scripts.counterfactual.run import solve_cf
 
 
@@ -52,13 +51,12 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         ctx         = build_context(raw)
         price       = raw["bta_data"]["bid"].to_numpy(dtype=float) / 1e9
         bta_revenue = float((ctx["c_obs_bundles"] @ price).sum())
-        bta_cov     = errors.covariance(ctx, app)
     else:
-        boot_thetas = boot_u_hats = price = bta_revenue = bta_cov = None
+        boot_thetas = boot_u_hats = price = bta_revenue = None
 
     if _comm is not None:
-        boot_thetas, boot_u_hats, price, bta_revenue, bta_cov = _comm.bcast(
-            (boot_thetas, boot_u_hats, price, bta_revenue, bta_cov), root=0)
+        boot_thetas, boot_u_hats, price, bta_revenue = _comm.bcast(
+            (boot_thetas, boot_u_hats, price, bta_revenue), root=0)
 
     n_id_mod, n_btas = len(app.get("modular_regressors", [])), len(price)
     rows = []
@@ -78,7 +76,7 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
 
         result, meta = solve_cf(theta_b, app,
                                 alpha_0=a0_b, alpha_1=a1_b, demand_controls=dc_b,
-                                bta_cov=bta_cov, include_xi=True, verbose=False)
+                                include_xi=True, verbose=False)
         if _rank == 0 and result is not None:
             cf_rev, cf_surp = _welfare(result, meta, a1_b)
             u_b = boot_u_hats[b]

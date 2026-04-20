@@ -6,9 +6,10 @@ Usage:  mpirun -n N python -m applications.combinatorial_auction.scripts.estimat
 Config keys (application block):
     mode                'estimation' | 'bootstrap'
     modular_regressors / quadratic_regressors / quadratic_id_regressors  (lists)
-    winners_only        bool
+    winners_only        bool     Drop non-winner bidders before estimation.
     capacity_source     'initial' | 'last_round'
-    error_seed, error_correlation, spatial_rho, error_scaling  (see scripts.errors)
+    error_seed          int      Base seed for per-agent modular error draws.
+    error_scaling       'pop' | 'elig' | null
 
 Results written to  <repo>/results/<config-stem>/point_estimate/result.json  or
                     <repo>/results/<config-stem>/bootstrap/bootstrap_result.json .
@@ -63,21 +64,17 @@ def main(config_path):
             upper_triangular_quadratic = app.get("upper_triangular_quadratic", False),
         )
         ctx     = build_context(load_raw())
-        cov     = errors.covariance(ctx, app)
         scaling = app.get("error_scaling")
-        pop_vec   = ctx["pop"]         if scaling == "pop" else None
-        price_vec = ctx["price_share"] if scaling == "pop" else None
+        pop_vec = ctx["pop"] if scaling == "pop" else None
         print(f"{meta['n_obs']} obs, {meta['n_items']} items, {meta['n_covariates']} cov")
     else:
-        input_data = meta = cov = pop_vec = price_vec = None
+        input_data = meta = pop_vec = None
 
     # combest.data_manager.load_and_distribute_input_data is rank-0-only by
     # design (non-root replaces its arg with an empty skeleton), so we don't
     # broadcast input_data here.
     if _comm is not None:
-        config, meta, cov, pop_vec, price_vec = _comm.bcast(
-            (config, meta, cov, pop_vec, price_vec), root=0
-        )
+        config, meta, pop_vec = _comm.bcast((config, meta, pop_vec), root=0)
 
     # ── Every rank: build combest model, install errors ──────────────
     config["dimensions"].update(
@@ -91,10 +88,8 @@ def main(config_path):
     model.load_config(config)
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
-    errors.install(model, seed=app["error_seed"], cov=cov,
-                   scaling=app.get("error_scaling"), pop=pop_vec, price=price_vec,
-                   sigma_price=app.get("sigma_price"),
-                   rho=app.get("rho_pop_price"))
+    errors.install(model, seed=app["error_seed"],
+                   scaling=app.get("error_scaling"), pop=pop_vec)
     model.subproblems.load_solver()
 
     callbacks = config.get("callbacks", {})

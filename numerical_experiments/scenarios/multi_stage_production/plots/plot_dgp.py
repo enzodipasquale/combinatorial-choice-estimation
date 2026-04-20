@@ -216,15 +216,18 @@ def plot_single_firm(geo, firms, bundles, seed, fidx=None):
     for bx in [cell_b1, cell_b2]:
         ax.axvline(bx, color='gray', linewidth=0.8, linestyle='--', alpha=0.5, zorder=0)
 
-    ax.scatter(mkt_locs[:, 0], mkt_locs[:, 1], c='gray', s=25, zorder=1, alpha=0.5)
-    ax.scatter(cell_locs[:, 0], cell_locs[:, 1], c='blue', s=70, marker='s', zorder=3)
-    ax.scatter(asm_locs[:, 0], asm_locs[:, 1], c='red', s=70, marker='o', zorder=3)
+    ax.scatter(mkt_locs[:, 0], mkt_locs[:, 1], c='gray', s=25, zorder=1, alpha=0.5,
+               label='Markets')
+    ax.scatter(cell_locs[:, 0], cell_locs[:, 1], c='blue', s=70, marker='s', zorder=3,
+               label='Cell plants')
+    ax.scatter(asm_locs[:, 0], asm_locs[:, 1], c='red', s=70, marker='o', zorder=3,
+               label='Assembly plants')
 
     firm, bun = firms[fidx], bundles[fidx]
     paths = find_model_paths(firm, bun, geo)
 
     hq = firm['hq_coord']
-    ax.scatter(hq[0], hq[1], marker='*', s=260, c='black', zorder=5)
+    ax.scatter(hq[0], hq[1], marker='*', s=260, c='black', zorder=5, label='Firm HQ')
 
     for m, p in enumerate(paths):
         if p is None:
@@ -236,6 +239,8 @@ def plot_single_firm(geo, firms, bundles, seed, fidx=None):
             ax.plot([al[0], mkt_locs[n, 0]], [al[1], mkt_locs[n, 1]],
                     color=color, linewidth=0.8, alpha=0.45, zorder=1)
 
+    ax.legend(loc='upper right', fontsize=10, framealpha=0.85,
+              markerscale=0.9, handletextpad=0.5)
     plt.tight_layout(pad=0.1)
     out = PLOT_DIR / f'network_single_seed{seed}_firm{fidx}.png'
     fig.savefig(out, dpi=150, bbox_inches='tight')

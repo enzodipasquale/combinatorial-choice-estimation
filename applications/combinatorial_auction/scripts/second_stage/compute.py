@@ -82,11 +82,17 @@ def _setup(spec_stem, configs_dir):
 
 def _row(th, u, xbar, *, raw, price, app, named_order, named_idx,
          n_obs, n_btas, n_id_mod, n_sim):
-    """One decomposition row (shared by point-estimate and bootstrap paths)."""
-    surplus  = u.reshape(n_obs, n_sim).mean(axis=1).sum()
-    delta    = -th[n_id_mod:n_id_mod + n_btas]
-    fe_total = delta.sum()
-    contrib  = th * xbar
+    """One decomposition row (shared by point-estimate and bootstrap paths).
+
+    Also reports per-bidder surplus (mean over simulation draws for each bidder):
+        bidder_surplus_utils[i] = (1/S) Σ_s u_{si}   (utils)
+        bidder_surplus_B[i]     = bidder_surplus_utils[i] / α₁   ($B)
+    """
+    u_per_bidder = u.reshape(n_obs, n_sim).mean(axis=1)    # (n_obs,) in utils
+    surplus      = u_per_bidder.sum()
+    delta        = -th[n_id_mod:n_id_mod + n_btas]
+    fe_total     = delta.sum()
+    contrib      = th * xbar
 
     named         = {n: float(th[named_idx[i]])      for i, n in enumerate(named_order)}
     contrib_named = {n: float(contrib[named_idx[i]]) for i, n in enumerate(named_order)}
@@ -102,6 +108,8 @@ def _row(th, u, xbar, *, raw, price, app, named_order, named_idx,
         fe_total=fe_total,
         a0_part=n_btas * iv["a0"], price_part=-iv["a1"] * price.sum(),
         controls_part=controls_part, xi_part=xi.sum(),
+        bidder_surplus_utils=u_per_bidder.tolist(),
+        bidder_surplus_B=(u_per_bidder / iv["a1"]).tolist(),
         **{f"theta_{k}":   v for k, v in named.items()},
         **{f"contrib_{k}": v for k, v in contrib_named.items()},
     )

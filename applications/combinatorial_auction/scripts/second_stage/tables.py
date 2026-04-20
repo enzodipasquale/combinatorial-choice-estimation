@@ -1,6 +1,11 @@
 """Pretty-print post-estimation tables across specs."""
+import json
+from pathlib import Path
 import numpy as np
-from .compute import decompose_all
+import pandas as pd
+
+from ...data.loaders import load_raw, DATASETS
+from .compute import decompose_all, RESULTS
 
 W, CW = 30, 20
 
@@ -110,6 +115,49 @@ def table_surplus(results):
     print()
 
 
+def table_per_bidder_surplus(results, top=15):
+    """Top-N bidders by model-implied surplus ($B = utils/α₁).
+
+    For bootstrap rows: averages per-bidder surplus across converged draws.
+    Merges with bidder_data.csv (co_name, pops_eligible, Applicant_Status) so
+    the top-bidder list can be eyeballed against real-world names.
+    """
+    bd = pd.read_csv(DATASETS / "bidder_data.csv")[
+        ["bidder_num_fox", "co_name", "pops_eligible", "Applicant_Status"]
+    ]
+    print("  TABLE 4: TOP BIDDERS BY MODEL-IMPLIED SURPLUS  ($B)")
+    for spec, (rows, _) in results.items():
+        # Stack per-bidder arrays across draws; shape (n_draws, n_obs)
+        arr_B = np.array([r["bidder_surplus_B"] for r in rows])
+        arr_utils = np.array([r["bidder_surplus_utils"] for r in rows])
+        mean_B  = arr_B.mean(axis=0)
+        std_B   = arr_B.std(axis=0)
+        df = pd.DataFrame({
+            "surp_B_mean": mean_B,
+            "surp_B_std":  std_B,
+            "surp_utils":  arr_utils.mean(axis=0),
+        })
+        # Load raw bidder data in estimation order (from Fox-Bajari loader).
+        raw = load_raw()
+        bidders = raw["bidder_data"][["bidder_num_fox", "pops_eligible"]].copy()
+        bidders = bidders.merge(bd[["bidder_num_fox", "co_name", "Applicant_Status"]],
+                                on="bidder_num_fox", how="left")
+        df = pd.concat([bidders.reset_index(drop=True), df], axis=1)
+        df = df.sort_values("surp_B_mean", ascending=False).head(top).reset_index(drop=True)
+        print(f"\n  {spec}  (total bidders: {len(mean_B)}, total surplus: {mean_B.sum():.4f} $B)")
+        # Compact display
+        for _, r in df.iterrows():
+            de_tag = ""
+            if isinstance(r.get("Applicant_Status"), str):
+                de_tag = " [" + ",".join(x.strip()[:3] for x in r["Applicant_Status"].split(",")) + "]"
+            print(f"    bidder {int(r['bidder_num_fox']):>3d}  "
+                  f"{(r.get('co_name') or '—')[:35]:<35} "
+                  f"surp=${r['surp_B_mean']:+8.4f}B "
+                  f"(±{r['surp_B_std']:.4f})  "
+                  f"elig={r['pops_eligible']:.2e}{de_tag}")
+    print()
+
+
 def run(specs):
     results = decompose_all(specs)
     if not results:
@@ -118,3 +166,4 @@ def run(specs):
     table_first_stage(results)
     table_iv(results)
     table_surplus(results)
+    table_per_bidder_surplus(results)

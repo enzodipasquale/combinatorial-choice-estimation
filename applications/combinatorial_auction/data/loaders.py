@@ -207,18 +207,3 @@ def last_round_capacity(bidder_data, keep_mask=None):
     return out
 
 
-def cholesky_factor(ctx, covariate_name):
-    """Cholesky factor L of Σ, where Σ = sym(Q) with its diagonal *set* to 1,
-    and Q is the QUADRATIC covariate with `covariate_name`. Returns None if
-    `covariate_name` is None.
-
-    Note: the diagonal is set to 1 (not rescaled). Off-diagonals are assumed
-    already small enough that the result is PSD — the Cholesky call is the
-    hard PSD check. Raises np.linalg.LinAlgError if not PSD.
-    """
-    if covariate_name is None:
-        return None
-    Q = QUADRATIC[covariate_name](ctx)
-    Sigma = (Q + Q.T) / 2
-    np.fill_diagonal(Sigma, 1.0)
-    return np.linalg.cholesky(Sigma)

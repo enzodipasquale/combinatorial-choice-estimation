@@ -12,7 +12,9 @@ class SerialBootstrapMixin:
                           seed=None, verbose=False,
                           pt_estimate_callbacks=(None, None),
                           bootstrap_callback=None,
-                          method='bayesian'):
+                          method='bayesian',
+                          checkpoint_dir=None,
+                          checkpoint_every=5):
         from combest.estimation.point_estimation.n_slack import NSlackSolver
         if not isinstance(self.row_generation_manager, NSlackSolver):
             raise TypeError("Bootstrap requires the n_slack formulation.")
@@ -79,6 +81,19 @@ class SerialBootstrapMixin:
                 theta_boots.append(self.row_gen.master_variables[0].X.copy())
                 u_boots.append(self.row_gen.master_variables[1].X.copy())
                 self._update_bootstrap_info(b)
+                # Incremental checkpoint: persist partial results so a kill or
+                # pathological later sample doesn't lose earlier work.
+                if checkpoint_dir is not None and (b + 1) % checkpoint_every == 0:
+                    from pathlib import Path as _P
+                    p = _P(checkpoint_dir)
+                    p.mkdir(parents=True, exist_ok=True)
+                    np.savez(p / 'partial.npz',
+                             theta_boots=np.asarray(theta_boots),
+                             u_boots=np.asarray(u_boots),
+                             converged=np.asarray([
+                                 self.bootstrap_history[i].get('converged', False)
+                                 for i in range(b + 1)]),
+                             b_completed=b + 1)
             self._log_bootstrap_iteration(b)
 
         total_time = time.perf_counter() - t0

@@ -24,7 +24,7 @@ try:
 except ImportError:
     _comm, _rank = None, 0
 
-from applications.combinatorial_auction.data.loaders import load_raw, build_context
+from applications.combinatorial_auction.data.loaders import load_raw
 from applications.combinatorial_auction.scripts.second_stage.iv import run_2sls, _resolve
 from applications.combinatorial_auction.scripts.counterfactual.prepare import (
     prepare_counterfactual, freeze_bounds,
@@ -53,7 +53,7 @@ CF_CONFIG = {
 CF_ERROR_SEED = 24
 
 
-def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls, bta_cov,
+def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls,
              include_xi, verbose=False):
     """Solve one CF (given (θ, α₀, α₁, demand_controls)); return (Result, meta).
 
@@ -82,7 +82,7 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls, bta_cov,
     model.data.load_and_distribute_input_data(input_data)
     model.features.build_quadratic_covariates_from_data()
     errors.install_aggregated(
-        model, seed=CF_ERROR_SEED, A=cf["A"], bta_cov=bta_cov,
+        model, seed=CF_ERROR_SEED, A=cf["A"],
         offset=cf["offset_m"] if include_xi else cf["offset_m_no_xi"],
         scaling=app.get("error_scaling"), pop=cf["pop"], elig=cf["elig"],
     )
@@ -176,20 +176,19 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         theta = np.array(json.load(open(pt_path))["theta_hat"])
         raw = load_raw()
         a0, a1, dc = _derive_alphas(theta, raw, est_app)
-        bta_cov = errors.covariance(build_context(raw), est_app)
         print(f"Counterfactual[{spec} / {tag}]: α₀={a0:.6f}  α₁={a1:.4f}  controls={dc}")
     else:
-        theta = bta_cov = a0 = a1 = dc = None
+        theta = a0 = a1 = dc = None
 
     if _comm is not None:
-        theta, bta_cov, a0, a1, dc = _comm.bcast((theta, bta_cov, a0, a1, dc), root=0)
+        theta, a0, a1, dc = _comm.bcast((theta, a0, a1, dc), root=0)
 
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if _rank == 0:
             print(f"\n── Counterfactual: {tag} {label} ──")
         result, meta = solve_cf(theta, est_app,
                                 alpha_0=a0, alpha_1=a1, demand_controls=dc,
-                                bta_cov=bta_cov, include_xi=include_xi, verbose=True)
+                                include_xi=include_xi, verbose=True)
         if _rank == 0 and result is not None:
             _save(result, meta, a0, a1, out_dir / f"cf_{tag}_{label}.json")
 
