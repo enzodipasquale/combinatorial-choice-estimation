@@ -59,7 +59,6 @@ class BootstrapMaster:
 
     @classmethod
     def build(cls, base_data, theta_obj, u_weights, gurobi_params=None):
-        A, rhs, sense = base_data['A'], base_data['rhs'], base_data['sense']
         with suppress_output():
             model = gp.Model()
             params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0}
@@ -72,14 +71,11 @@ class BootstrapMaster:
                                   lb=base_data['theta_lb'], ub=base_data['theta_ub'],
                                   name='parameter')
             u = model.addMVar(len(u_weights), lb=0, obj=u_weights, name='utility')
-            model.update()
-            all_mvar = gp.MVar.fromlist(model.getVars())
-            for s in np.unique(sense):
-                mask = sense == s
-                model.addMConstr(A[mask], all_mvar, s, rhs[mask])
+            master = cls(model, theta, u)
+            master.add_cuts(base_data['cut_rows'])
             model.update()
             model.optimize()
-        return cls(model, theta, u)
+        return master
 
     @classmethod
     def load(cls, path, n_covariates, n_agents):
@@ -352,13 +348,24 @@ class DistributedBootstrapMixin:
         if self.comm_manager.is_root():
             model = self.row_generation_manager.master_model
             theta, _ = self.row_generation_manager.master_variables
+            nc = self.dim.n_covariates
+
+            # Sparse extraction: cuts have form u[i] - cov · theta >= err.
+            # Each row has exactly one nonzero in the u-block (coef 1) and
+            # n_covariates nonzeros in the theta-block (coef -cov_k).
+            A = model.getA().tocsr()
+            covariates = -A[:, :nc].toarray()          # (M, nc), small
+            u_coo = A[:, nc:].tocoo()                  # one nz per row
+            agent_ids = np.empty(A.shape[0], dtype=np.float64)
+            agent_ids[u_coo.row] = u_coo.col
+            rhs = np.array(model.getAttr('RHS', model.getConstrs()))
+
             data = {
-                'A': model.getA().toarray(),
-                'rhs': np.array(model.getAttr('RHS', model.getConstrs())),
-                'sense': np.array([c.Sense for c in model.getConstrs()]),
-                'theta_lb': np.array([theta[i].LB for i in range(self.dim.n_covariates)]),
-                'theta_ub': np.array([theta[i].UB for i in range(self.dim.n_covariates)]),
+                'cut_rows': np.column_stack([agent_ids, covariates, rhs]),
+                'theta_lb': np.array([theta[i].LB for i in range(nc)]),
+                'theta_ub': np.array([theta[i].UB for i in range(nc)]),
             }
+            del A, covariates, u_coo, agent_ids, rhs
         else:
             data = {}
         data = self.comm_manager.bcast_dict(data)
