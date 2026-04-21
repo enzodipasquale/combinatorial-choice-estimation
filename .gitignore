@@ -70,6 +70,7 @@ resources/
 slides/
 applications/combinatorial_auction/results/
 applications/combinatorial_auction/legacy/
+applications/combinatorial_auction/research_ideas/
 requirements_HPC.txt
 HPC/
 

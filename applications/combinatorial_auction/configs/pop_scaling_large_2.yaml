@@ -38,30 +38,30 @@ row_generation:
         lb: -200
         ub: 1000
         lbs:
-            - elig_pop: -50
-            - adjacency: -50
-            - pop_centroid_delta4: -50
-            - air_travel: -50
-            - travel_survey: -50
-            - elig_adjacency: -50
-            - elig_pop_centroid_delta4: -50
-            - elig_air_travel: -50
-            - elig_travel_survey: -50
+            elig_pop: -50
+            adjacency: -50
+            pop_centroid_delta4: -50
+            air_travel: -50
+            travel_survey: -50
+            elig_adjacency: -50
+            elig_pop_centroid_delta4: -50
+            elig_air_travel: -50
+            elig_travel_survey: -50
         ubs:
-            - elig_pop: 50
-            - adjacency: 50
-            - pop_centroid_delta4: 50
-            - air_travel: 50
-            - travel_survey: 50
-            - elig_adjacency: 50
-            - elig_pop_centroid_delta4: 50
-            - elig_air_travel: 50
-            - elig_travel_survey: 50
+            elig_pop: 50
+            adjacency: 50
+            pop_centroid_delta4: 50
+            air_travel: 50
+            travel_survey: 50
+            elig_adjacency: 50
+            elig_pop_centroid_delta4: 50
+            elig_air_travel: 50
+            elig_travel_survey: 50
 bootstrap:
-    num_samples: 50
+    num_samples: 100
     seed: 1233
-    rowgen_tol: 0.001
-    rowgen_max_iters: 250
+    rowgen_tol: 0.000001
+    rowgen_max_iters: 600
 
 callbacks:
     row_gen:

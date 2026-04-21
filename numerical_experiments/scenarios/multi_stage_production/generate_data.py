@@ -102,6 +102,25 @@ def build_firms(cfg, geo, rng):
     P_min = cfg.get('min_platforms', 2)
     feas_cfg = cfg.get('feasibility', {})
     mkt_region = geo['mkt_region']
+    mkt_locs = geo['mkt_locs']
+
+    share_boost = cfg.get('share_focus_boost', 2.0)
+
+    # Stratified HQ assignment: each firm's HQ is AT a randomly drawn market
+    # in its assigned region. Markets are uniformly scattered in [0,1]^2, so
+    # firms in the same region have genuinely diverse HQ positions (unlike
+    # narrow x-strip placement which only allows y-variation that torus
+    # geometry partially cancels).
+    n_per_strip = max(1, (nf + 2) // 3)
+    hq_markets_by_region = {}
+    for r in range(3):
+        mkts_in_r = np.where(mkt_region == r)[0]
+        if len(mkts_in_r) < n_per_strip:
+            # Wrap with replacement if not enough markets in a region
+            choice = rng.choice(mkts_in_r, size=n_per_strip, replace=True)
+        else:
+            choice = rng.choice(mkts_in_r, size=n_per_strip, replace=False)
+        hq_markets_by_region[r] = choice
 
     firms = []
     for i in range(nf):
@@ -114,15 +133,27 @@ def build_firms(cfg, geo, rng):
         # Per-model feasibility
         feas = _draw_feasible_markets(nm, N, mkt_region, feas_cfg, rng)
 
-        shares = np.zeros((nm, N))
-        for m in range(nm):
-            shares[m] = rng.uniform(0.5, 1.5, N) / 100.0
-
-        # HQ in firm's assigned region strip (i % 3)
+        # HQ region (logical label for focus-offset logic)
         hq_region = i % 3
-        hq_x = rng.uniform(hq_region / 3.0, (hq_region + 1) / 3.0)
-        hq_y = rng.uniform(0, 1)
-        hq_coord = np.array([[hq_x, hq_y]])
+        firm_in_strip = i // 3
+
+        # Market focus region: ALWAYS different from HQ region (offset in {1,2}).
+        # Two firms with same focus but different HQ open in same region but
+        # at very different d_HQ -> decouples delta from rho_HQ.
+        focus_offset = 1 + (firm_in_strip % 2)   # in {1, 2}
+        mkt_focus = (hq_region + focus_offset) % 3
+
+        # Shares: higher in focus region (boost factor = share_focus_boost)
+        shares = np.zeros((nm, N))
+        focus_mask = (mkt_region == mkt_focus).astype(float)
+        for m in range(nm):
+            base = rng.uniform(0.5, 1.5, N) / 100.0
+            shares[m] = base * (1.0 + share_boost * focus_mask)
+
+        # HQ position: at a drawn market in hq_region. Markets scatter in
+        # [0,1]^2 uniformly, giving genuine 2D spread of HQs even at small N.
+        hq_mkt_idx = int(hq_markets_by_region[hq_region][firm_in_strip % n_per_strip])
+        hq_coord = mkt_locs[hq_mkt_idx:hq_mkt_idx + 1]
         d_hq1 = np.log1p(_torus_dist(hq_coord, geo['cell_locs']).ravel())
         d_hq2 = np.log1p(_torus_dist(hq_coord, geo['asm_locs']).ravel())
 
@@ -137,6 +168,8 @@ def build_firms(cfg, geo, rng):
             d_hq1=d_hq1,
             d_hq2=d_hq2,
             hq_coord=hq_coord.ravel(),
+            hq_region=hq_region,
+            mkt_focus=mkt_focus,
         ))
     return firms
 

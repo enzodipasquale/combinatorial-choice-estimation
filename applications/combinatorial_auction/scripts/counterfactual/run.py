@@ -40,10 +40,15 @@ from applications.combinatorial_auction.scripts import errors
 # item-FE block (prices) actually uses these defaults.
 CF_CONFIG = {
     "application":    {"mode": "estimation"},
-    "dimensions":     {"n_simulations": 5},
+    # n_simulations=5 and tolerance=1e-2 were defaults but caused two
+    # artifacts: (a) LP under-convergence produced spurious zero-price MTAs,
+    # (b) per-MTA prices were unstable across random error realizations.
+    # See applications/combinatorial_auction/research_ideas/cf_investigation/
+    # findings_log.md for the full convergence sweep.
+    "dimensions":     {"n_simulations": 20},
     "subproblem":     {"name": "QuadraticKnapsackGRB",
                        "gurobi_params": {"TimeLimit": 1.0}},
-    "row_generation": {"max_iters": 200, "tolerance": 0.01,
+    "row_generation": {"max_iters": 600, "tolerance": 1e-5,
                        "master_gurobi_params": {"Method": 0},
                        "theta_bounds": {"lb": 0, "ub": 10.0}},
     "callbacks":      {"row_gen": [{"iters": 50, "timeout": 1.0},
