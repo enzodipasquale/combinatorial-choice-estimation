@@ -22,7 +22,7 @@ application:
         pop_threshold: .inf
 
 dimensions:
-    n_simulations: 20
+    n_simulations: 1
 
 subproblem:
     name: QuadraticKnapsackGRB
@@ -30,13 +30,13 @@ subproblem:
         TimeLimit: 1.0
 
 row_generation:
-    max_iters: 200
+    max_iters: 1
     tolerance: .00001
     master_gurobi_params:
         Method: -1
     theta_bounds:
-        lb: -50
-        ub: 50
+        lb: -200
+        ub: 1000
         lbs:
             elig_pop: -50
             adjacency: -50
@@ -58,29 +58,16 @@ row_generation:
             elig_air_travel: 50
             elig_travel_survey: 50
 bootstrap:
-    num_samples: 100
+    num_samples: 2
     seed: 1233
     rowgen_tol: 0.00001
-    rowgen_max_iters: 300
+    rowgen_max_iters: 1
 
 callbacks:
     row_gen:
-        - {iters: 80, timeout: 5.0}
-        - {iters: 20, timeout: 10.0}
-        - {iters: 100, timeout: 60.0, retire: true}
+        - {iters: 100, timeout: 1.0, retire: true}
     boot:
-        - {iters: 50, timeout: 2.0}
-        - {iters: 5,  timeout: 10.0, retire: true}
-        - {iters: 1,  timeout: 30.0, retire: true}
-        - {iters: 20, timeout: 2.0}
-        - {iters: 5,  timeout: 10.0, retire: true}
-        - {iters: 1,  timeout: 30.0, retire: true}
-        - {iters: 20, timeout: 2.0}
-        - {iters: 5,  timeout: 10.0, retire: true}
-        - {iters: 1,  timeout: 30.0, retire: true}
-        - {iters: 30, timeout: 2.0}
-        - {iters: 5,  timeout: 10.0, retire: true}
-        - {iters: 1,  timeout: 30.0, retire: true}
+        - {iters: 50, timeout: 1.0, retire: true}
     boot_strip:
         percentile: 95
         hard_threshold: 100000
