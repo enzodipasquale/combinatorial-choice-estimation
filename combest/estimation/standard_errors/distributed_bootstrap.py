@@ -6,6 +6,8 @@ import gurobipy as gp
 from mpi4py import MPI
 from combest.utils import get_logger, suppress_output, format_number
 from combest.estimation.result import RowGenerationEstimationResult
+from combest.estimation.bundle_store import (
+    BundleStore, n_bundle_float_slots, pack_bundles_to_float, unpack_bundles_from_float)
 
 logger = get_logger(__name__)
 
@@ -52,13 +54,17 @@ def _parse_vars_from_sol(sol_path):
 # =========================================================================
 
 class BootstrapMaster:
-    def __init__(self, model, theta, u):
+    def __init__(self, model, theta, u, n_items, bundle_store=None, cut_agent_ids=None):
         self.model = model
         self.theta = theta
         self.u = u
+        self.n_items = int(n_items)
+        self.bundle_store = bundle_store if bundle_store is not None else BundleStore(n_items)
+        self.cut_agent_ids = (cut_agent_ids if cut_agent_ids is not None
+                              else np.empty(0, dtype=np.int32))
 
     @classmethod
-    def build(cls, base_data, theta_obj, u_weights, gurobi_params=None):
+    def build(cls, base_data, theta_obj, u_weights, n_items, gurobi_params=None):
         with suppress_output():
             model = gp.Model()
             params = {"Method": 0, "LPWarmStart": 2, "OutputFlag": 0}
@@ -66,19 +72,26 @@ class BootstrapMaster:
             for p, v in params.items():
                 if v is not None:
                     model.setParam(p, v)
-            nf = len(theta_obj)
-            theta = model.addMVar(nf, obj=theta_obj,
+            theta = model.addMVar(len(theta_obj), obj=theta_obj,
                                   lb=base_data['theta_lb'], ub=base_data['theta_ub'],
                                   name='parameter')
             u = model.addMVar(len(u_weights), lb=0, obj=u_weights, name='utility')
-            master = cls(model, theta, u)
-            master.add_cuts(base_data['cut_rows'])
+            # Reconstruct bundle store from pt-estimate state
+            bs = BundleStore.from_state(n_items, {k[3:]: base_data[k] for k in
+                                                  ('bs_packed', 'bs_cut_to_bundle', 'bs_refcount')})
+            cut_rows = base_data['cut_rows']
+            cut_agent_ids = cut_rows[:, 0].astype(np.int32)
+            master = cls(model, theta, u, n_items, bundle_store=bs, cut_agent_ids=cut_agent_ids)
+            # Replay cuts (bundles already in bs and aligned — don't re-intern)
+            if len(cut_rows):
+                ids = cut_rows[:, 0].astype(np.int64)
+                model.addConstr(u[ids] >= cut_rows[:, 1:-1] @ theta + cut_rows[:, -1])
             model.update()
             model.optimize()
         return master
 
     @classmethod
-    def load(cls, path, n_covariates, n_agents):
+    def load(cls, path, n_covariates, n_agents, n_items):
         model = _load_gurobi_model(os.path.join(path, "master.lp"),
                                    os.path.join(path, "master.sol"))
         theta, u = _extract_master_vars(model, n_covariates, n_agents)
@@ -87,49 +100,74 @@ class BootstrapMaster:
         if os.path.exists(meta_path):
             with open(meta_path) as f:
                 converged = json.load(f).get('converged', False)
-        return cls(model, theta, u), converged
+        bs_path = os.path.join(path, "bundles.npz")
+        ids_path = os.path.join(path, "cut_agent_ids.npy")
+        bs = BundleStore.load(bs_path) if os.path.exists(bs_path) else None
+        ids = np.load(ids_path) if os.path.exists(ids_path) else None
+        return cls(model, theta, u, n_items, bundle_store=bs, cut_agent_ids=ids), converged
 
     def save(self, path, converged):
         os.makedirs(path, exist_ok=True)
         self.model.write(os.path.join(path, "master.lp"))
         self.model.write(os.path.join(path, "master.sol"))
+        self.bundle_store.save(os.path.join(path, "bundles.npz"))
+        np.save(os.path.join(path, "cut_agent_ids.npy"), self.cut_agent_ids)
         with open(os.path.join(path, "meta.json"), 'w') as f:
             json.dump({'converged': converged}, f)
 
-    def add_cuts(self, rows):
+    def add_cuts(self, rows, bundles):
         if len(rows) == 0:
             return
         ids = rows[:, 0].astype(np.int64)
         self.model.addConstr(self.u[ids] >= rows[:, 1:-1] @ self.theta + rows[:, -1])
+        self.bundle_store.add_cuts(bundles)
+        self.cut_agent_ids = np.concatenate([self.cut_agent_ids, ids.astype(np.int32)])
 
+    def _apply_keep_mask(self, keep_mask):
+        constrs = self.model.getConstrs()
+        remove = [constrs[i] for i in np.where(~keep_mask)[0]]
+        self.model.remove(remove)
+        self.bundle_store.prune(keep_mask)
+        self.cut_agent_ids = self.cut_agent_ids[keep_mask]
+        return len(remove)
 
-    def strip_slack_constraints(self, percentile=100, hard_threshold = float('inf')):
+    def strip_slack_constraints(self, percentile=100, hard_threshold=float('inf')):
         constrs = self.model.getConstrs()
         if not constrs:
             return 0
         slacks = np.array([c.Slack for c in constrs], dtype=float)
-        threshold = np.percentile(slacks, 100.0 - percentile)
-        below_threshold = slacks < threshold
-        n_below = below_threshold.sum()
-        if n_below < len(slacks) - hard_threshold:
+        below = slacks < np.percentile(slacks, 100.0 - percentile)
+        if below.sum() < len(slacks) - hard_threshold:
             return self.strip_constraints_hard_threshold(hard_threshold)
-        to_remove_id = np.where(below_threshold)[0]
-        to_remove = [constrs[i] for i in to_remove_id]
-        self.model.remove(to_remove)
-        return len(to_remove_id)
+        return self._apply_keep_mask(~below)
 
-    def strip_constraints_hard_threshold(self, n_constraints = float('inf')):
+    def strip_constraints_hard_threshold(self, n_constraints=float('inf')):
         if self.model.NumConstrs < n_constraints:
             return 0
         constrs = self.model.getConstrs()
         if not constrs:
             return 0
         slacks = np.array([c.Slack for c in constrs], dtype=float)
-        sorted_indices = np.argsort(slacks)
-        to_remove_id = sorted_indices[:-int(n_constraints)]
-        to_remove = [constrs[i] for i in to_remove_id]
-        self.model.remove(to_remove)
-        return len(to_remove_id)
+        keep_idx = np.argsort(slacks)[-int(n_constraints):]
+        keep_mask = np.zeros(len(slacks), dtype=bool)
+        keep_mask[keep_idx] = True
+        return self._apply_keep_mask(keep_mask)
+
+    def dual_solution(self, n_obs, atol=1e-10):
+        if self.cut_agent_ids.size == 0:
+            return None
+        pi = np.asarray(self.model.getAttr('Pi', self.model.getConstrs()))
+        if len(pi) != len(self.cut_agent_ids) or len(pi) != self.bundle_store.cut_to_bundle.size:
+            return None
+        nz = np.where(np.abs(pi) > atol)[0]
+        aid = self.cut_agent_ids[nz]
+        return {
+            'agent_ids': aid,
+            'sim_ids': (aid // n_obs).astype(np.int32),
+            'obs_ids': (aid % n_obs).astype(np.int32),
+            'bundles': self.bundle_store.get(nz),
+            'pi': pi[nz],
+        }
 
 
 # =========================================================================
@@ -268,8 +306,20 @@ class DistributedBootstrapMixin:
         self._save_dir = os.path.join(save_dir, "bootstrap") if save_dir else None
         self._distributed_rg_loop(state, master, is_converged, bootstrap_callback)
 
-        # === Phase 6: Statistics ===
-        return self._compute_and_log_stats(state, time.perf_counter() - t0)
+        # === Phase 6: Gather per-boot duals ===
+        duals_by_boot = self._gather_bootstrap_duals(state, master)
+
+        # === Phase 7: Statistics ===
+        return self._compute_and_log_stats(state, time.perf_counter() - t0,
+                                           duals_by_boot=duals_by_boot)
+
+    def _gather_bootstrap_duals(self, state, master):
+        local = (state.boot_id, master.dual_solution(self.dim.n_obs)) \
+                if (master is not None and state.boot_id is not None) else (None, None)
+        gathered = self.comm_manager.comm.gather(local, root=self.comm_manager.root)
+        if not self.comm_manager.is_root():
+            return None
+        return {bid: d for bid, d in gathered if bid is not None and d is not None}
 
     # -------------------------------------------------------------------------
     # Phase 1: Point estimation
@@ -296,13 +346,19 @@ class DistributedBootstrapMixin:
             verbose=self.verbose)
 
     def _load_point_estimate(self, pt_dir):
+        from combest.estimation.bundle_store import BundleStore
         converged = False
         if self.comm_manager.is_root():
             model = _load_gurobi_model(
                 os.path.join(pt_dir, "master.lp"),
                 os.path.join(pt_dir, "master.sol"))
             theta, u = _extract_master_vars(model, self.dim.n_covariates, self.dim.n_agents)
-            self.row_generation_manager.install_master_model(model, (theta, u))
+            bs_path = os.path.join(pt_dir, "bundles.npz")
+            ids_path = os.path.join(pt_dir, "cut_agent_ids.npy")
+            bundle_store = BundleStore.load(bs_path) if os.path.exists(bs_path) else None
+            cut_agent_ids = np.load(ids_path) if os.path.exists(ids_path) else None
+            self.row_generation_manager.install_master_model(
+                model, (theta, u), cut_agent_ids=cut_agent_ids, bundle_store=bundle_store)
             theta_hat = theta.X.copy()
             meta_path = os.path.join(pt_dir, "meta.json")
             if os.path.exists(meta_path):
@@ -334,8 +390,12 @@ class DistributedBootstrapMixin:
             if self.comm_manager.is_root():
                 pt_dir = os.path.join(save_dir, "point_estimate")
                 os.makedirs(pt_dir, exist_ok=True)
-                self.row_generation_manager.master_model.write(os.path.join(pt_dir, "master.lp"))
-                self.row_generation_manager.master_model.write(os.path.join(pt_dir, "master.sol"))
+                rg = self.row_generation_manager
+                rg.master_model.write(os.path.join(pt_dir, "master.lp"))
+                rg.master_model.write(os.path.join(pt_dir, "master.sol"))
+                if rg.bundle_store is not None:
+                    rg.bundle_store.save(os.path.join(pt_dir, "bundles.npz"))
+                    np.save(os.path.join(pt_dir, "cut_agent_ids.npy"), rg.cut_agent_ids)
                 with open(os.path.join(pt_dir, "meta.json"), 'w') as f:
                     json.dump({'converged': bool(self.point_result.converged)}, f)
         return self.comm_manager.bcast(save_dir)
@@ -346,16 +406,15 @@ class DistributedBootstrapMixin:
 
     def _extract_base_model(self):
         if self.comm_manager.is_root():
-            model = self.row_generation_manager.master_model
-            theta, _ = self.row_generation_manager.master_variables
+            rg = self.row_generation_manager
+            model = rg.master_model
+            theta, _ = rg.master_variables
             nc = self.dim.n_covariates
 
             # Sparse extraction: cuts have form u[i] - cov · theta >= err.
-            # Each row has exactly one nonzero in the u-block (coef 1) and
-            # n_covariates nonzeros in the theta-block (coef -cov_k).
             A = model.getA().tocsr()
-            covariates = -A[:, :nc].toarray()          # (M, nc), small
-            u_coo = A[:, nc:].tocoo()                  # one nz per row
+            covariates = -A[:, :nc].toarray()
+            u_coo = A[:, nc:].tocoo()
             agent_ids = np.empty(A.shape[0], dtype=np.float64)
             agent_ids[u_coo.row] = u_coo.col
             rhs = np.array(model.getAttr('RHS', model.getConstrs()))
@@ -365,6 +424,10 @@ class DistributedBootstrapMixin:
                 'theta_lb': np.array([theta[i].LB for i in range(nc)]),
                 'theta_ub': np.array([theta[i].UB for i in range(nc)]),
             }
+            # Ship pt-estimate bundle store (empty if unavailable).
+            bs = rg.bundle_store if rg.bundle_store is not None else BundleStore(self.dim.n_items)
+            for k, v in bs.state().items():
+                data[f'bs_{k}'] = v
             del A, covariates, u_coo, agent_ids, rhs
         else:
             data = {}
@@ -423,7 +486,7 @@ class DistributedBootstrapMixin:
                         if load_dir else None)
             if boot_dir and os.path.exists(os.path.join(boot_dir, "master.lp")):
                 master, is_converged = BootstrapMaster.load(
-                    boot_dir, self.dim.n_covariates, self.dim.n_agents)
+                    boot_dir, self.dim.n_covariates, self.dim.n_agents, self.dim.n_items)
                 if self.verbose:
                     logger.info(" Rank %d: loaded boot %d from %s (%s)",
                                 self.comm_manager.rank, state.boot_id, boot_dir,
@@ -431,6 +494,7 @@ class DistributedBootstrapMixin:
             else:
                 master = BootstrapMaster.build(
                     base_data, theta_obj_all[state.boot_id], boot_agent_weights,
+                    self.dim.n_items,
                     self.config.standard_errors.master_gurobi_params)
 
         return master, is_converged
@@ -456,9 +520,12 @@ class DistributedBootstrapMixin:
         u_cuts = np.einsum('bif,bf->bi', features, state.theta_vals[active]) + errors
         reduced_costs = self._local_weights[:, active].T * (u_cuts - state.local_u_master())
 
+        # Pack bundles as float64 slots, append to cut rows so they ride through alltoallv.
+        bundle_slots = pack_bundles_to_float(
+            bundles.reshape(-1, state.dim.n_items)).reshape(n_active, n_local, -1)
         cut_rows = np.concatenate([
             np.tile(state.comm_manager.agent_ids, (n_active, 1))[:, :, None],
-            features, errors[:, :, None]], axis=-1)
+            features, errors[:, :, None], bundle_slots], axis=-1)
 
         return cut_rows, reduced_costs
 
@@ -520,7 +587,13 @@ class DistributedBootstrapMixin:
             # --- Step 5: Add cuts, re-solve, retire ---
             t_master = time.perf_counter()
             if state.has_active_boot and not converged_mask[state.boot_id]:
-                master.add_cuts(recvbuf.reshape(-1, state.dim.n_covariates + 2))
+                n_bs = n_bundle_float_slots(state.dim.n_items)
+                row_width = state.dim.n_covariates + 2 + n_bs
+                rows_full = recvbuf.reshape(-1, row_width)
+                cut_rows_part = rows_full[:, :state.dim.n_covariates + 2]
+                bundles_part = unpack_bundles_from_float(
+                    rows_full[:, state.dim.n_covariates + 2:], state.dim.n_items)
+                master.add_cuts(cut_rows_part, bundles_part)
                 master.model.optimize()
 
             self.comm_manager.comm.Barrier()
@@ -607,7 +680,7 @@ class DistributedBootstrapMixin:
     # Phase 6: Statistics
     # -------------------------------------------------------------------------
 
-    def _compute_and_log_stats(self, state, total_time):
+    def _compute_and_log_stats(self, state, total_time, duals_by_boot=None):
         if not self.comm_manager.is_root():
             return None
         theta_vals = state.theta_vals
@@ -617,6 +690,8 @@ class DistributedBootstrapMixin:
         stats = self.create_bootstrap_result(
             theta_vals, state.u_vals,
             converged_mask if n_converged > 0 else None)
+        if duals_by_boot is not None:
+            stats.dual_solutions = duals_by_boot
         if self.verbose:
             theta_hat = self.point_result.theta_hat
             idx = self.dim.display_indices

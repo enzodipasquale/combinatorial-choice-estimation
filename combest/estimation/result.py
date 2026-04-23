@@ -24,6 +24,7 @@ class RowGenerationEstimationResult:
     iteration_history: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    dual_solution: dict = None
 
     def to_dict(self):
         return {

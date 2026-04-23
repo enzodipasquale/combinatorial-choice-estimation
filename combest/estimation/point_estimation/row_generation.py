@@ -42,6 +42,9 @@ class RowGenerationSolver:
     def _result_u_hat(self):
         return None
 
+    def dual_solution(self, atol=1e-10):
+        return None
+
     # ------------------------------------------------------------------
     # Solve
     # ------------------------------------------------------------------
@@ -220,7 +223,8 @@ class RowGenerationSolver:
             n_simulations=self.dim.n_simulations,
             xbar=-np.array(self.master_variables[0].Obj) / self.dim.n_simulations,
             timing=(pricing_times, master_times),
-            warnings=[])
+            warnings=[],
+            dual_solution=self.dual_solution())
 
     def _check_bounds_hit(self, tol=None):
         empty = {'hit_lower': [], 'hit_upper': [], 'any_hit': False}

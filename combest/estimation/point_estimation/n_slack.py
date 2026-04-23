@@ -2,6 +2,7 @@ import time
 import numpy as np
 import gurobipy as gp
 from combest.utils import get_logger
+from combest.estimation.bundle_store import BundleStore
 from .row_generation import RowGenerationSolver
 
 logger = get_logger(__name__)
@@ -13,6 +14,8 @@ class NSlackSolver(RowGenerationSolver):
         super().__init__(pt_estimation_manager)
         self.u_iter_local = None
         self.all_concatenated_constraints = None
+        self.cut_agent_ids = np.empty(0, dtype=np.int32)
+        self.bundle_store = None    # lazily created in _initialize_master (needs dim.n_items)
 
     # ------------------------------------------------------------------
     # Template implementations
@@ -30,6 +33,8 @@ class NSlackSolver(RowGenerationSolver):
             self.master_variables = (theta, u)
             self.master_model.optimize()
             self.all_concatenated_constraints = None
+            self.cut_agent_ids = np.empty(0, dtype=np.int32)
+            self.bundle_store = BundleStore(self.dim.n_items)
             if self.master_model.Status != gp.GRB.OPTIMAL:
                 raise RuntimeError(f'Master problem cannot be solved at initialization, status={self.master_model.Status}')
 
@@ -119,11 +124,11 @@ class NSlackSolver(RowGenerationSolver):
             error = covariates_and_error[:, -1]
             n_violations = len(violations_id)
         else:
-            covariates, error, n_violations = None, None, None
+            covariates, error, bundles, n_violations = None, None, None, None
 
-        return (violations_id, covariates, error), (stop, reduced_cost, n_violations)
+        return (violations_id, covariates, error, bundles), (stop, reduced_cost, n_violations)
 
-    def add_master_constraints(self, indices, covariates, error):
+    def add_master_constraints(self, indices, covariates, error, bundles):
         if not self.comm_manager.is_root() or self.master_model is None:
             return
         theta, u = self.master_variables
@@ -132,6 +137,8 @@ class NSlackSolver(RowGenerationSolver):
             self.all_concatenated_constraints = constr
         else:
             self.all_concatenated_constraints = gp.concatenate([self.all_concatenated_constraints, constr])
+        self.cut_agent_ids = np.concatenate([self.cut_agent_ids, np.asarray(indices, dtype=np.int32)])
+        self.bundle_store.add_cuts(bundles)
         return constr
 
     # ------------------------------------------------------------------
@@ -150,39 +157,46 @@ class NSlackSolver(RowGenerationSolver):
 
     def copy_master_model(self):
         if not self.comm_manager.is_root() or self.master_model is None:
-            return None, None
+            return None, None, None, None
         model = self.master_model.copy()
         all_vars = model.getVars()
         theta = gp.MVar.fromlist(all_vars[:self.dim.n_covariates])
         u = gp.MVar.fromlist(all_vars[self.dim.n_covariates:self.dim.n_covariates + self.dim.n_agents])
-        return model, (theta, u)
+        cut_agent_ids = self.cut_agent_ids.copy()
+        bundle_store = BundleStore.from_state(
+            self.dim.n_items, {k: v.copy() for k, v in self.bundle_store.state().items()})
+        return model, (theta, u), cut_agent_ids, bundle_store
 
-    def install_master_model(self, model, variables):
+    def install_master_model(self, model, variables, cut_agent_ids=None, bundle_store=None):
         if not self.comm_manager.is_root():
             return
         self.master_model = model
         self.master_variables = variables
         self.all_concatenated_constraints = None
+        self.cut_agent_ids = np.empty(0, dtype=np.int32) if cut_agent_ids is None else cut_agent_ids
+        self.bundle_store = BundleStore(self.dim.n_items) if bundle_store is None else bundle_store
 
     # ------------------------------------------------------------------
     # Constraint management
     # ------------------------------------------------------------------
 
+    def _apply_keep_mask(self, keep_mask):
+        remove_idx = np.where(~keep_mask)[0]
+        keep_idx = np.where(keep_mask)[0]
+        self.master_model.remove(self.all_concatenated_constraints[remove_idx])
+        self.all_concatenated_constraints = self.all_concatenated_constraints[keep_idx]
+        self.cut_agent_ids = self.cut_agent_ids[keep_mask]
+        self.bundle_store.prune(keep_mask)
+        return len(remove_idx)
+
     def strip_slack_constraints(self, percentile=100, hard_threshold=float('inf')):
         if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
             return 0
         slacks = self.all_concatenated_constraints.Slack
-        threshold = np.percentile(slacks, 100.0 - percentile)
-        below_threshold = slacks < threshold
-        n_below = below_threshold.sum()
-        if n_below < len(slacks) - hard_threshold:
+        below = slacks < np.percentile(slacks, 100.0 - percentile)
+        if below.sum() < len(slacks) - hard_threshold:
             return self.strip_constraints_hard_threshold(hard_threshold)
-        to_keep_id = np.where(~below_threshold)[0]
-        to_remove_id = np.where(below_threshold)[0]
-        to_remove = self.all_concatenated_constraints[to_remove_id]
-        self.all_concatenated_constraints = self.all_concatenated_constraints[to_keep_id]
-        self.master_model.remove(to_remove)
-        return len(to_remove_id)
+        return self._apply_keep_mask(~below)
 
     def strip_constraints_hard_threshold(self, n_constraints=float('inf')):
         if not self.comm_manager.is_root() or self.master_model is None or self.all_concatenated_constraints is None:
@@ -190,9 +204,30 @@ class NSlackSolver(RowGenerationSolver):
         if self.master_model.NumConstrs < n_constraints:
             return 0
         slacks = self.all_concatenated_constraints.Slack
-        sorted_slacks = np.argsort(slacks)
-        to_remove_id, to_keep_id = sorted_slacks[:-n_constraints], sorted_slacks[-n_constraints:]
-        to_remove = self.all_concatenated_constraints[to_remove_id]
-        self.all_concatenated_constraints = self.all_concatenated_constraints[to_keep_id]
-        self.master_model.remove(to_remove)
-        return len(to_remove_id)
+        keep_idx = np.argsort(slacks)[-int(n_constraints):]
+        keep_mask = np.zeros(len(slacks), dtype=bool)
+        keep_mask[keep_idx] = True
+        return self._apply_keep_mask(keep_mask)
+
+    # ------------------------------------------------------------------
+    # Dual solution (agent, sim, bundle, pi) for nonzero duals
+    # ------------------------------------------------------------------
+
+    def dual_solution(self, atol=1e-10):
+        if not self.comm_manager.is_root() or self.master_model is None:
+            return None
+        constrs = self.master_model.getConstrs()
+        if not constrs:
+            return None
+        pi = np.asarray(self.master_model.getAttr('Pi', constrs))
+        if len(pi) != len(self.cut_agent_ids) or len(pi) != self.bundle_store.cut_to_bundle.size:
+            return None    # tracking state out of sync with model (e.g. legacy checkpoint)
+        nz = np.where(np.abs(pi) > atol)[0]
+        agent_ids = self.cut_agent_ids[nz]
+        return {
+            'agent_ids': agent_ids,
+            'sim_ids': (agent_ids // self.dim.n_obs).astype(np.int32),
+            'obs_ids': (agent_ids % self.dim.n_obs).astype(np.int32),
+            'bundles': self.bundle_store.get(nz),
+            'pi': pi[nz],
+        }

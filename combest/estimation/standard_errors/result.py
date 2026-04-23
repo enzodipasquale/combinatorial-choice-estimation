@@ -13,6 +13,7 @@ class BayesianBootstrapResult:
     samples: np.ndarray = None
     u_samples: np.ndarray = None
     converged: np.ndarray = None  # bool array, per sample
+    dual_solutions: dict = None    # {boot_id: {agent_ids, sim_ids, obs_ids, bundles, pi}}
 
     def to_dict(self):
         return {

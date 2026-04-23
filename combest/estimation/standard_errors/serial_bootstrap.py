@@ -2,6 +2,7 @@ import numpy as np
 import gurobipy as gp
 import time
 from combest.utils import get_logger, format_number
+from combest.estimation.bundle_store import BundleStore
 
 logger = get_logger(__name__)
 
@@ -19,7 +20,7 @@ class SerialBootstrapMixin:
         if not isinstance(self.row_generation_manager, NSlackSolver):
             raise TypeError("Bootstrap requires the n_slack formulation.")
         initialization_callback, iteration_callback = pt_estimate_callbacks
-        theta_boots, u_boots = [], []
+        theta_boots, u_boots, dual_boots = [], [], []
         self.bootstrap_history = {}
         self.verbose = verbose
         self.row_gen = self.row_generation_manager
@@ -35,7 +36,7 @@ class SerialBootstrapMixin:
         )
 
         # === 2. Snapshot the converged model (root only) ===
-        base_model, base_vars = self.row_gen.copy_master_model()
+        base_model, base_vars, base_ids, base_bs = self.row_gen.copy_master_model()
 
         # === 3. Generate and scatter bootstrap weights ===
         gen = self.generate_weights_bayesian_bootstrap if method == 'bayesian' \
@@ -62,7 +63,11 @@ class SerialBootstrapMixin:
                 theta_b = gp.MVar.fromlist(all_vars[:self.dim.n_covariates])
                 u_b = gp.MVar.fromlist(all_vars[self.dim.n_covariates:
                                                 self.dim.n_covariates + self.dim.n_agents])
-                self.row_gen.install_master_model(model_b, (theta_b, u_b))
+                ids_b = base_ids.copy()
+                bs_b = BundleStore.from_state(self.dim.n_items,
+                                              {k: v.copy() for k, v in base_bs.state().items()})
+                self.row_gen.install_master_model(model_b, (theta_b, u_b),
+                                                  cut_agent_ids=ids_b, bundle_store=bs_b)
 
             if bootstrap_callback is not None:
                 bootstrap_callback(b, self)
@@ -80,6 +85,7 @@ class SerialBootstrapMixin:
             if self.comm_manager.is_root():
                 theta_boots.append(self.row_gen.master_variables[0].X.copy())
                 u_boots.append(self.row_gen.master_variables[1].X.copy())
+                dual_boots.append(self.row_gen.dual_solution())
                 self._update_bootstrap_info(b)
                 # Incremental checkpoint: persist partial results so a kill or
                 # pathological later sample doesn't lose earlier work.
@@ -101,6 +107,7 @@ class SerialBootstrapMixin:
             return None
 
         stats_result = self.create_bootstrap_result(theta_boots, u_boots)
+        stats_result.dual_solutions = {b: d for b, d in enumerate(dual_boots) if d is not None}
         self._log_bootstrap_summary(num_bootstrap, total_time, stats_result)
         return stats_result
 
