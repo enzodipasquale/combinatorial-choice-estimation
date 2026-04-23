@@ -1,7 +1,36 @@
-"""DGP for multi-stage production facility location — HMMY Section 5 template.
+"""DGP for multi-stage production facility location.
 
-Symmetric geography on [0,1]^2 torus, torus distances, per-firm HQ, region FEs.
-Firms: nm~U[1,3] models, ng=1 cell group, P~U[1,nm] platforms.
+Inspired by HMMY (2026) multi-stage production networks, adapted to a
+synthetic unit-torus geometry for numerical experiments.
+
+Geography
+---------
+- L1 cell-plant locations, L2 assembly locations, N markets drawn uniformly
+  on [0,1]^2 torus; torus distances.
+- Regions r in {0,1,2} partition locations by x-tercile.
+
+Firms (n_firms total)
+---------------------
+- Models per firm nm ~ U[models_range] (default [4,8]).
+- Cell groups per firm ng ~ U[cell_groups_range] (default [1,2]).
+- Platforms per firm P ~ U[min_platforms, min(nm, max_platforms)].
+- Quality shocks ln_xi_1 ~ N(0, 0.5) per group, ln_xi_2 per platform.
+
+Identification design (key structural choices)
+----------------------------------------------
+- Firm i's HQ region: i % 3 (logical label used for focus-offset logic).
+- HQ *position*: drawn from markets in hq_region, stratified so each firm
+  gets a distinct market as its HQ. Markets scatter in [0,1]^2 uniformly,
+  so HQs have genuine 2D spread even at small N.
+- Market focus region: (hq_region + focus_offset) % 3 with focus_offset
+  in {1, 2} -> focus is ALWAYS different from HQ region.
+- Share boost: markets in firm's focus region get (1 + share_focus_boost)x
+  shares. This forces cross-firm heterogeneity in which region each firm
+  serves, decoupling delta (count of opens) from rho_HQ (sum of d_HQ
+  over opens): two firms sharing a focus region but with different HQ
+  regions open in the same region but at very different d_HQ.
+- Per-model feasibility: two tiers (global vs regional), with >=1 market
+  guaranteed from each region.
 """
 
 import numpy as np

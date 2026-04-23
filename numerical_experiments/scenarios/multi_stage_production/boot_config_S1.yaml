@@ -43,12 +43,14 @@ monte_carlo:
   seed: 42
 
 bootstrap:
+  method: serial                   # samples run sequentially; no B<=comm_size cap
   num_samples: 50
   seed: 7777
   rowgen_tol: 0.001
   # Cap row-gen iters so pathological samples exit fast.
   # Most healthy samples converge in 26-35 iters; 40 leaves modest headroom.
   rowgen_max_iters: 40
+  checkpoint_every: 5              # partial.npz written every K samples
 
 callbacks:
   # Shared schedule for point estimation and per-sample row gen.

@@ -39,6 +39,7 @@ monte_carlo:
   seed: 42
 
 bootstrap:
+  method: distributed              # one sample per MPI rank; requires B <= comm_size
   num_samples: 150
   seed: 7777
   rowgen_tol: 0.001

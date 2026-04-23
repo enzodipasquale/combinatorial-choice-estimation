@@ -140,22 +140,3 @@ class MultiStageSolver(SubproblemSolver):
                 np.asarray(z.X) > 0.5).ravel()
 
         return results
-
-
-def flatten_bundle(bun, ng_max, P_max, nm_max, L1, L2, N):
-    n_items = ng_max * L1 + P_max * L2 + nm_max * N
-    b = np.zeros(n_items, dtype=bool)
-    ng, P, nm = bun['y1'].shape[0], bun['y2'].shape[0], bun['z'].shape[0]
-    off = 0
-    y1 = np.zeros((ng_max, L1), dtype=bool)
-    y1[:ng] = bun['y1']
-    b[off:off + ng_max * L1] = y1.ravel()
-    off += ng_max * L1
-    y2 = np.zeros((P_max, L2), dtype=bool)
-    y2[:P] = bun['y2']
-    b[off:off + P_max * L2] = y2.ravel()
-    off += P_max * L2
-    z = np.zeros((nm_max, N), dtype=bool)
-    z[:nm] = bun['z']
-    b[off:off + nm_max * N] = z.ravel()
-    return b

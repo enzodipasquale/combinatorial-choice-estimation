@@ -46,13 +46,19 @@ def _minimal_ne(X, D, U, beta, delta):
 # ---------------------------------------------------------------------------
 
 def _threshold_finder(X, D, Y, beta, delta, U, t):
-    """Return h_t: the largest value of U_t consistent with Y being a min NE.
+    """Compute threshold h_t and return the pinned minimal NE Ytilde.
 
-    Step 1: build a provisional shock vector Ũ using current U for players
-    where h has already been found (y_t'=0 or y_t'=1 with t'<t), and a
-    "low" value X_t'β − 1 for y_t'=1 with t'>t (those are still undrawn).
-    Step 2: set Ũ_t = X_t'β + δ·G_t Y + 1 (strictly dominant to NOT pick 1).
-    Step 3: find the minimal NE Ỹ at Ũ, return h_t = X_t'β + δ·D_t Ỹ.
+    At sampling time we invoke this with (beta_0, delta_0) and cache the
+    *pinned* Ytilde for later scenario recycling. For a new theta under
+    recycling we do NOT re-invoke the minimal-NE solver: the bucket
+    boundary h_t(theta) = X_t' beta + delta * D_t @ Ytilde is affine in
+    theta with Ytilde held fixed.
+
+    Returns:
+        h_t    (float): threshold at the sampling theta (beta, delta).
+        Ytilde (bool array, shape (T,)): the pinned minimal NE used to
+               compute h_t. Cache this so bucket bounds can be re-evaluated
+               affinely at any new theta.
     """
     T = X.shape[0]
     Xb = X @ beta
@@ -68,7 +74,7 @@ def _threshold_finder(X, D, Y, beta, delta, U, t):
     Utilde[t] = Xb[t] + delta * (D[t].astype(float) @ Y.astype(float)) + 1.0
     Ytilde = _minimal_ne(X, D, Utilde, beta, delta)
     h_t = Xb[t] + delta * (D[t].astype(float) @ Ytilde.astype(float))
-    return h_t
+    return h_t, Ytilde
 
 
 # ---------------------------------------------------------------------------

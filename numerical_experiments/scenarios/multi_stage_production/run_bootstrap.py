@@ -1,5 +1,18 @@
 #!/bin/env python
-"""Distributed bootstrap for multi-stage production (linear parametrization)."""
+"""Bootstrap for multi-stage production — distributed or serial.
+
+Mode is selected by `bootstrap.method` in the config YAML:
+  - "distributed": calls combest.standard_errors.compute_distributed_bootstrap.
+        Requires num_bootstrap <= comm_size (one sample per rank). HPC path.
+  - "serial":      calls combest.standard_errors.compute_bootstrap.
+        Samples run sequentially, each warm-started from the converged
+        point-estimate master. Agents are parallelized across ranks within
+        each sample. Use when B > comm_size (e.g. local 4-8 rank setup
+        with B=50-150).
+
+Phases 1 and 2 (DGP solve at theta_true + point estimation) are identical
+across modes.
+"""
 
 import json
 import sys
@@ -33,6 +46,10 @@ def main(config_path):
     n_simulations = cfg['estimation']['n_simulations']
     boot_cfg = cfg.get('bootstrap', {})
     callbacks = cfg.get('callbacks', {})
+    method = boot_cfg.get('method', 'distributed')
+    if method not in ('distributed', 'serial'):
+        raise ValueError(f"bootstrap.method must be 'distributed' or 'serial', "
+                         f"got {method!r}")
 
     results_dir = BASE / 'results' / Path(config_path).stem
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +182,8 @@ def main(config_path):
         },
         'standard_errors': {
             'rowgen_tol': boot_cfg.get('rowgen_tol', 1e-3),
-            'rowgen_max_iters': boot_cfg.get('rowgen_max_iters', 200),
+            'rowgen_max_iters': boot_cfg.get('rowgen_max_iters',
+                                             200 if method == 'distributed' else 100),
         },
     }
 
@@ -196,36 +214,52 @@ def main(config_path):
     model2.subproblems.load_solver(MultiStageSolver)
     model2.subproblems.initialize_solver()
 
-    # ---- Phase 3: Point estimation + distributed bootstrap ----
+    # ---- Phase 3: Point estimation + bootstrap ----
 
     pt_cb, _ = adaptive_gurobi_timeout(callbacks['row_gen'])
-    _, dist_cb = adaptive_gurobi_timeout(callbacks['boot'])
-
-    def boot_callback(it, boot, master):
-        dist_cb(it, boot, master)
-        strip = callbacks.get('boot_strip')
-        if master is not None and it == 0 and strip:
-            master.strip_slack_constraints(
-                percentile=strip['percentile'],
-                hard_threshold=strip['hard_threshold'])
 
     if model2.is_root():
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"  Distributed bootstrap (K={N_PARAMS}, S={n_simulations}, "
-                    f"B={boot_cfg.get('num_samples', 150)})")
+        logger.info(f"  {method.capitalize()} bootstrap (K={N_PARAMS}, "
+                    f"S={n_simulations}, B={boot_cfg.get('num_samples', 150)})")
         logger.info("=" * 60)
 
-    se = model2.standard_errors.compute_distributed_bootstrap(
-        num_bootstrap=boot_cfg.get('num_samples', 150),
-        seed=boot_cfg.get('seed', 7777),
-        verbose=True,
-        pt_estimate_callbacks=(None, pt_cb),
-        bootstrap_callback=boot_callback,
-        method='bayesian',
-        save_model_dir=str(results_dir / 'checkpoints'),
-        load_model_dir=str(results_dir / 'checkpoints'),
-    )
+    if method == 'distributed':
+        _, dist_cb = adaptive_gurobi_timeout(callbacks['boot'])
+
+        def boot_callback(it, boot, master):
+            dist_cb(it, boot, master)
+            strip = callbacks.get('boot_strip')
+            if master is not None and it == 0 and strip:
+                master.strip_slack_constraints(
+                    percentile=strip['percentile'],
+                    hard_threshold=strip['hard_threshold'])
+
+        se = model2.standard_errors.compute_distributed_bootstrap(
+            num_bootstrap=boot_cfg.get('num_samples', 150),
+            seed=boot_cfg.get('seed', 7777),
+            verbose=True,
+            pt_estimate_callbacks=(None, pt_cb),
+            bootstrap_callback=boot_callback,
+            method='bayesian',
+            save_model_dir=str(results_dir / 'checkpoints'),
+            load_model_dir=str(results_dir / 'checkpoints'),
+        )
+    else:  # serial
+        # Serial uses a single pt_cb for both point estimation and each
+        # bootstrap sample. The iteration counter resets per row_gen.solve()
+        # call, so the timeout schedule applies fresh to every sample
+        # (warm-started from the base model's cuts).
+        se = model2.standard_errors.compute_bootstrap(
+            num_bootstrap=boot_cfg.get('num_samples', 150),
+            seed=boot_cfg.get('seed', 7777),
+            verbose=True,
+            pt_estimate_callbacks=(None, pt_cb),
+            method='bayesian',
+            checkpoint_dir=str(results_dir),
+            checkpoint_every=boot_cfg.get('checkpoint_every', 5),
+        )
 
     if model2.is_root() and se is not None:
         logger.info("")
@@ -254,6 +288,7 @@ def main(config_path):
             'bootstrap_thetas': se.samples.tolist(),
             'converged': se.converged.tolist(),
             'param_names': THETA_NAMES,
+            'method': method,
             'config': cfg,
         }
         if se.u_samples is not None:
