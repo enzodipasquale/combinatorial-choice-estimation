@@ -1,33 +1,30 @@
 """Second-stage IV regressions.
 
 One entry point: `run_2sls(delta, raw, app)`. The regressors, instruments,
-and sample filter come from `app.counterfactual`; sensible defaults apply
-when the block is absent.
+and sample filter come from `app.counterfactual`; presets in `_PRESETS` below.
 
-Two presets are supported:
-
-    simple : regressors=[const, neg_price]
-             instruments=[const, distant_pop_mean, distant_hhinc_mean]
-             sample=all
-
-    blp    : regressors=[const, pop, neg_price]        (pop = pop90_share)
-             instruments=[const] + BLP within-MTA exclude-one means
-             sample=rural
+All presets share regressors=[const, pop, neg_price] (pop = pop90_share) and
+differ only in the excluded-instrument set used for neg_price (and pop, when
+pop is treated as endogenous). The `far1500u_popexog` preset additionally
+lists `pop` among the instruments, which makes pop exogenous and leaves only
+neg_price endogenous.
 
 Override any field via the `counterfactual:` block in the estimation YAML:
 
     counterfactual:
-        iv: simple                   # 'simple' | 'blp'
+        iv: far1500u_popexog         # one of the keys in _PRESETS
         sample: all                  # 'all' | 'rural'
         pop_threshold: .inf          # rural cutoff
-        distance_threshold: 500      # km, for distant-mean IVs
-        regressors:  [const, neg_price]    # (optional; overrides preset)
-        instruments: [const, distant_pop_mean]
+        distance_threshold: 500      # km, for legacy distant-mean IVs
+        regressors:  [...]           # (optional; overrides preset)
+        instruments: [...]
 
 Returns `{a0, a1, se_a0, se_a1, r2, n, demand_controls}` where
-`demand_controls` maps each non-(const, neg_price) regressor to its
-raw BTA-level column name and estimated coefficient (consumed by
-`prepare_counterfactual` and `compute_xi`).
+    a0 = const coefficient (α₀)
+    a1 = neg_price coefficient (the price sensitivity, α₂ in the paper)
+    demand_controls = {raw_col_name: coef} for every non-(const, neg_price)
+        regressor, e.g. {"pop90_share": α₁}. Consumed by `prepare_counterfactual`
+        and `compute_xi`.
 """
 import numpy as np
 import pandas as pd
@@ -67,6 +64,27 @@ _PRESETS = {
     "out_w1":      dict(regressors=_REGS_BLP, instruments=_ivs("outW1"), sample="all"),
     "out_w2":      dict(regressors=_REGS_BLP, instruments=_ivs("outW2"), sample="all"),
     "out_w4":      dict(regressors=_REGS_BLP, instruments=_ivs("outW4"), sample="all"),
+
+    # Uniform-weighted average of BLP_VARS over BTAs with d(j,k) > 1500 km.
+    # pop90_share is treated as EXOGENOUS (listed in both regressors and
+    # instruments); only neg_price is endogenous.
+    "far1500u_popexog": dict(
+        regressors  = _REGS_BLP,
+        instruments = ["const", "pop"] + [f"farU1500_{v}" for v in BLP_VARS],
+        sample="all",
+    ),
+
+    # Linear-ramp kernel: weight = 0 at d ≤ 1000 km, grows linearly to 1 at
+    # d ≥ 2000 km, capped at 1 beyond.  Only two BLP variables are used as
+    # excluded instruments (pop90 and imwl — the two level-scale quantities,
+    # which carry most of the cross-j identifying variation). pop90_share is
+    # treated as EXOGENOUS (listed in both regressors and instruments); only
+    # neg_price is endogenous.
+    "far_ramp1000_2000_popexog": dict(
+        regressors  = _REGS_BLP,
+        instruments = ["const", "pop", "ramp1000_2000_pop90", "ramp1000_2000_imwl"],
+        sample="all",
+    ),
 }
 
 
@@ -213,18 +231,64 @@ def _iv_requirements(instr_names):
                                if n.startswith("outR")}))
     out_powers = tuple(sorted({int(n.split("_", 1)[0][4:]) for n in instr_names
                                if n.startswith("outW")}))
+    far_uniform_cuts = tuple(sorted({int(n.split("_", 1)[0][4:]) for n in instr_names
+                                     if n.startswith("farU")}))
+    # "ramp<lo>_<hi>_<var>"  →  (lo, hi) pairs
+    ramp_pairs = tuple(sorted({
+        (int(n.split("_")[0][4:]), int(n.split("_")[1]))
+        for n in instr_names if n.startswith("ramp")
+    }))
     return dict(
         needs_blp   = any(n.startswith("blp_")    for n in instr_names),
         needs_adj   = any(n.startswith("adj_")    for n in instr_names),
         needs_adjout= any(n.startswith("adjout_") for n in instr_names),
         out_radii   = out_radii,
         out_powers  = out_powers,
+        far_uniform_cuts = far_uniform_cuts,
+        ramp_pairs  = ramp_pairs,
     )
+
+
+def _far_uniform(raw, min_km):
+    """Uniform mean of BLP_VARS over BTAs with d(j,k) > D km.
+    Columns ``farU<D>_<var>``."""
+    df = _blp_df(raw)
+    D = raw["geo_distance"].astype(float).copy()
+    np.fill_diagonal(D, 0.0)
+    mask = D > float(min_km)
+    n_nbr = mask.sum(axis=1).astype(float)
+    out, tag = {}, f"farU{int(min_km)}"
+    for v in BLP_VARS:
+        vals = df[v].to_numpy(dtype=float)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            m = (mask @ vals) / n_nbr
+        m[n_nbr == 0] = np.nan
+        out[f"{tag}_{v}"] = m
+    return out
+
+
+def _far_ramp(raw, lo_km, hi_km):
+    """Linear-ramp-weighted average of BLP_VARS: weight is 0 at d ≤ lo_km,
+    1 at d ≥ hi_km, linear in between.  Columns ``ramp<lo>_<hi>_<var>``."""
+    df = _blp_df(raw)
+    D = raw["geo_distance"].astype(float).copy()
+    np.fill_diagonal(D, 0.0)
+    W = np.clip((D - float(lo_km)) / (float(hi_km) - float(lo_km)), 0.0, 1.0)
+    np.fill_diagonal(W, 0.0)
+    denom = W.sum(axis=1)
+    out, tag = {}, f"ramp{int(lo_km)}_{int(hi_km)}"
+    for v in BLP_VARS:
+        vals = df[v].to_numpy(dtype=float)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            m = (W @ vals) / denom
+        m[denom == 0] = np.nan
+        out[f"{tag}_{v}"] = m
+    return out
 
 
 def _columns(raw, pop_threshold, distance_threshold,
              needs_blp=False, needs_adj=False, needs_adjout=False,
-             out_radii=(), out_powers=()):
+             out_radii=(), out_powers=(), far_uniform_cuts=(), ramp_pairs=()):
     pop       = raw["bta_data"]["pop90"].to_numpy(dtype=float)
     pop_share = raw["bta_data"]["pop90_share"].to_numpy(dtype=float)
     price     = raw["bta_data"]["bid"].to_numpy(dtype=float) / 1e9
@@ -240,6 +304,8 @@ def _columns(raw, pop_threshold, distance_threshold,
     if needs_adjout: cols.update(_adj_excludeone_outside_mta(raw))
     for R in out_radii: cols.update(_out_radius(raw, R))
     for p in out_powers: cols.update(_out_invdist(raw, p))
+    for Dk in far_uniform_cuts: cols.update(_far_uniform(raw, Dk))
+    for (lo, hi) in ramp_pairs: cols.update(_far_ramp(raw, lo, hi))
     return cols, (pop < pop_threshold)
 
 

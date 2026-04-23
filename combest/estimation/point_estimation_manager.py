@@ -72,6 +72,8 @@ class PointEstimationManager:
 
 
     def compute_polyhedral_obj_and_grad_at_root(self, theta, local_obs_weights=None):
+        if local_obs_weights is None:
+            local_obs_weights = self.data_manager.local_obs_quantity
         grads, _, val, _ = self.compute_cuts(theta)
         grad = self.comm_manager.sum_row_andReduce(local_obs_weights[:, None] * grads)
         val = self.comm_manager.sum_row_andReduce(local_obs_weights * val)

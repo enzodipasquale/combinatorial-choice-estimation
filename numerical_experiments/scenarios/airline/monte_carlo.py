@@ -103,18 +103,22 @@ def run_one_rep(rep, theta_star, base_cfg):
     N = dgp_cfg["N"]
     fe_mode = dgp_cfg["fe_mode"]
     sigma = dgp_cfg["sigma"]
-    M = C * (C - 1)
+    M = C * (C - 1) // 2  # undirected
     n_shared = n_shared_covariates(C, fe_mode)
 
     # --- Fresh geography + hubs ---
     rng_geo = np.random.default_rng(dgp_geo_seed(seeds["dgp"], rep))
     locations, dists, populations = build_geography(
-        C, dgp_cfg["pop_log_std"], rng_geo)
-    _, origin_of, dest_of, _ = build_edges(C)
-    phi = build_covariates(C, M, origin_of, dest_of, dists, populations, fe_mode)
+        C, dgp_cfg["pop_log_std"], rng_geo,
+        pop_dist=dgp_cfg.get("pop_dist", "lognormal"),
+        pareto_alpha=dgp_cfg.get("pareto_alpha", 1.5))
+    _, endpoints_a, endpoints_b, _ = build_edges(C)
+    phi = build_covariates(C, M, endpoints_a, endpoints_b, dists, populations,
+                           fe_mode)
     hubs = build_hubs(N, C, populations,
                      dgp_cfg["min_hubs"], dgp_cfg["max_hubs"],
-                     dgp_cfg["hub_pool_frac"], rng_geo)
+                     dgp_cfg["hub_pool_frac"], rng_geo,
+                     hub_pool_size=dgp_cfg.get("hub_pool_size", None))
 
     # --- Fresh DGP errors (independent stream) ---
     rng_err = np.random.default_rng(dgp_err_seed(seeds["dgp"], rep))
@@ -129,7 +133,7 @@ def run_one_rep(rep, theta_star, base_cfg):
     for i in range(N):
         obs_bundles[i] = greedy_demand(
             phi, theta_rev, theta_fc[i], theta_gs,
-            hubs[i], origin_of, errors[i], M)
+            hubs[i], endpoints_a, endpoints_b, errors[i], M)
 
     sizes = obs_bundles.sum(axis=1)
 
@@ -153,7 +157,10 @@ def run_one_rep(rep, theta_star, base_cfg):
             "hubs": [list(h) for h in hubs],
         },
         "item_data": {
-            "phi": phi, "origin_of": origin_of, "N_firms": N,
+            "phi": phi,
+            "endpoints_a": endpoints_a,
+            "endpoints_b": endpoints_b,
+            "N_firms": N,
         },
     }
 
@@ -256,7 +263,7 @@ def run_monte_carlo(n_reps=30, base_cfg=None, theta_star=None, out_dir=None):
     N = dgp_cfg["N"]
     fe_mode = dgp_cfg["fe_mode"]
     sigma = dgp_cfg["sigma"]
-    M = C * (C - 1)
+    M = C * (C - 1) // 2  # undirected
     n_shared = n_shared_covariates(C, fe_mode)
     n_p = n_params(C, N, fe_mode)
 

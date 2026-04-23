@@ -112,11 +112,16 @@ def estimate_probit_mle_individual(X, choices, Sigma, R=500, seed=42,
     if beta0 is None:
         beta0 = np.zeros(K)
 
-    result = minimize(neg_ll_and_grad, beta0, method='L-BFGS-B', jac=True)
+    # Tight tolerances so optimizer stops on gradient, not loose function
+    # change.  Default L-BFGS-B uses factr=1e7*eps (~2e-9) which can stop
+    # with ||grad||~1e-2 on a sum-over-N log-likelihood.
+    opts = {'ftol': 1e-12, 'gtol': 1e-10, 'maxiter': 1000}
+    result = minimize(neg_ll_and_grad, beta0, method='L-BFGS-B', jac=True,
+                      options=opts)
 
     if not result.success:
         alt = minimize(neg_ll_and_grad, np.zeros(K), method='L-BFGS-B',
-                       jac=True)
+                       jac=True, options=opts)
         if alt.fun < result.fun:
             result = alt
 

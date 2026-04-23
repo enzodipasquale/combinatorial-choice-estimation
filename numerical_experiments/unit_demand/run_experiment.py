@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Single replication of the unit-demand efficiency benchmark.
 
-Selects DGP, MLE, and combest error oracle based on `model` ∈ {probit, logit}.
+Decouples the data-generating process (`dgp`) from the estimator assumption
+(`est`).  Both MLE and combest's error oracle are built from `est`.
+Supports: probit (iid normal), probit_corr (equicorrelated normal), logit.
 """
 import sys
 import time
@@ -42,8 +44,7 @@ def resolve_n_simulations(raw, N):
     return int(raw)
 
 
-def _run_probit_mle(X, choices, beta, sigma, ghk_draws, seed):
-    Sigma = sigma**2 * np.eye(X.shape[1])
+def _run_probit_mle_with_sigma(X, choices, beta, Sigma, ghk_draws, seed):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
@@ -61,7 +62,27 @@ def _run_logit_mle(X, choices):
         return np.full(X.shape[2], np.nan), None
 
 
-def run_replication(N, J, K, beta, replication=0, config=None, model="probit"):
+def _probit_sigma(J, sigma, error_rho):
+    """Equicorrelated covariance σ²·[(1−ρ)I + ρ·11ᵀ]; ρ=0 reduces to σ²I."""
+    base = (1 - error_rho) * np.eye(J) + error_rho * np.ones((J, J))
+    return sigma**2 * base
+
+
+def run_replication(N, J, K, beta, replication=0, config=None,
+                    dgp="probit", est=None, solver="one_slack"):
+    """Run one replication.
+
+    Parameters
+    ----------
+    dgp : {"probit", "probit_corr", "logit"}
+        Data-generating process.  "probit_corr" uses equicorrelated normal
+        errors with correlation `error_rho` from config (default 0.3).
+    est : {"probit", "probit_corr", "logit"} or None
+        Estimator assumption (MLE + combest oracle).
+        Defaults to `dgp` (correctly-specified case).
+    """
+    if est is None:
+        est = dgp
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -69,28 +90,40 @@ def run_replication(N, J, K, beta, replication=0, config=None, model="probit"):
     exp = cfg.get("experiment", {})
     sigma = exp.get("sigma", 1.0)
     rho = exp.get("covariate_correlation", 0.0)
+    error_rho = exp.get("error_correlation", 0.3)
     n_simulations = resolve_n_simulations(exp.get("n_simulations", 1), N)
     ghk_draws = exp.get("ghk_draws", 200)
     seed = replication * 1000 + 42
 
     # --- Data generation and MLE on rank 0 only ---
     if rank == 0:
-        if model == "probit":
-            Sigma = sigma**2 * np.eye(J)
+        if dgp == "probit":
             X, choices = simulate_probit_individual(
-                N, J, K, beta, Sigma=Sigma, rho=rho, seed=seed)
-        elif model == "logit":
+                N, J, K, beta, Sigma=_probit_sigma(J, sigma, 0.0),
+                rho=rho, seed=seed)
+        elif dgp == "probit_corr":
+            X, choices = simulate_probit_individual(
+                N, J, K, beta, Sigma=_probit_sigma(J, sigma, error_rho),
+                rho=rho, seed=seed)
+        elif dgp == "logit":
             X, choices = simulate_logit_individual(
                 N, J, K, beta, sigma=sigma, rho=rho, seed=seed)
         else:
-            raise ValueError(f"Unknown model: {model}")
+            raise ValueError(f"Unknown dgp: {dgp}")
 
         t0 = time.perf_counter()
-        if model == "probit":
-            beta_mle, mle_result = _run_probit_mle(
-                X, choices, beta, sigma, ghk_draws, seed=seed + 1)
-        else:
+        if est == "probit":
+            beta_mle, mle_result = _run_probit_mle_with_sigma(
+                X, choices, beta, _probit_sigma(J, sigma, 0.0),
+                ghk_draws, seed=seed + 1)
+        elif est == "probit_corr":
+            beta_mle, mle_result = _run_probit_mle_with_sigma(
+                X, choices, beta, _probit_sigma(J, sigma, error_rho),
+                ghk_draws, seed=seed + 1)
+        elif est == "logit":
             beta_mle, mle_result = _run_logit_mle(X, choices)
+        else:
+            raise ValueError(f"Unknown est: {est}")
         runtime_mle = time.perf_counter() - t0
         mle_converged = mle_result is not None and mle_result.success
 
@@ -114,14 +147,26 @@ def run_replication(N, J, K, beta, replication=0, config=None, model="probit"):
     })
     cb.data.load_and_distribute_input_data(input_data)
     cb.features.build_quadratic_covariates_from_data()
-    error_distribution = "gumbel" if model == "logit" else "normal"
+    if est == "logit":
+        error_distribution = "gumbel"
+        cov_mat = None
+    elif est == "probit_corr":
+        error_distribution = "normal"
+        # sigma scaling is already in cov matrix; oracle applies Cholesky
+        cov_mat = _probit_sigma(J, 1.0, error_rho)
+    else:  # probit
+        error_distribution = "normal"
+        cov_mat = None
     cb.features.build_local_modular_error_oracle(
         seed=3 * replication + 2, sigma=sigma,
-        distribution=error_distribution)
+        distribution=error_distribution,
+        covariance_matrix=cov_mat)
     cb.subproblems.load_solver()
 
+    if solver not in {"one_slack", "n_slack"}:
+        raise ValueError(f"Unknown solver: {solver}")
     t0 = time.perf_counter()
-    result = cb.point_estimation.one_slack.solve(verbose=False)
+    result = getattr(cb.point_estimation, solver).solve(verbose=False)
     runtime_combest = time.perf_counter() - t0
 
     if rank != 0:

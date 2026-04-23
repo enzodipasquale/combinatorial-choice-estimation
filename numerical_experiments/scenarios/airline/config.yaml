@@ -19,10 +19,13 @@ dgp:
   N: 10                    # number of airlines
   fe_mode: "none"          # "none" or "origin" (origin fixed effects)
   sigma: 1.0               # std of modular errors nu_{ij}
-  pop_log_std: 1.0         # std of log-population (controls city-size spread)
-  hub_pool_frac: 0.33      # fraction of cities eligible as hubs (biggest)
-  min_hubs: 1              # min hubs per airline
-  max_hubs: 5              # max hubs per airline
+  pop_dist: "pareto"       # "lognormal" or "pareto"
+  pop_log_std: 1.0         # std of log-population (if pop_dist=lognormal)
+  pareto_alpha: 1.5        # Pareto shape (if pop_dist=pareto). Smaller = heavier tail.
+  hub_pool_size: 10        # top-K cities eligible as hubs (overrides hub_pool_frac)
+  hub_pool_frac: 0.33      # fallback if hub_pool_size not set
+  min_hubs: 3              # min hubs per airline (ensures clique + spokes)
+  max_hubs: 6              # max hubs per airline
 
 # --- Random seeds ---
 seeds:
@@ -44,12 +47,12 @@ estimation:
 # checking that the generated bundles are informative.
 healthy_dgp:
   max_candidates: 500       # max search trials before failure
-  theta_rev_range: [0.1, 3.0]   # gravity revenue (scaled by data std)
-  theta_fc_range: [0.1, 3.0]    # per-route fixed cost mean (scaled by sigma)
+  theta_rev_range: [1.5, 3.5]   # rev_unit = theta_rev * median_gravity, in sigma units
+  theta_fc_range: [0.3, 0.9]    # FC as fraction of rev_unit (< 1 so net positive)
   theta_fc_dispersion: 0.3       # CV of firm-specific FCs around the mean
-  theta_gs_range: [0.5, 5.0]    # hub congestion penalty
-  min_mean_bundle_frac: 0.1      # min fraction of routes active (mean)
-  max_mean_bundle_frac: 0.55     # max fraction of routes active (mean)
+  theta_gs_range: [0.5, 1.5]    # marginal congestion at k=10 spokes/hub, as fraction of rev_unit
+  min_mean_bundle_frac: 0.005    # min fraction of routes active (undirected, hub-restricted)
+  max_mean_bundle_frac: 0.20     # max fraction of routes active
   min_frac_with_hub_routes: 0.5  # min share of airlines with hub-originating routes
   min_congestion_std: 0.1        # min std of congestion feature across airlines
 

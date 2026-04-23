@@ -66,7 +66,8 @@ def run(cfg=None):
             },
             'item_data': {
                 'phi': dgp_data['phi'],
-                'origin_of': dgp_data['origin_of'],
+                'endpoints_a': dgp_data['endpoints_a'],
+                'endpoints_b': dgp_data['endpoints_b'],
                 'N_firms': N,
             },
         }

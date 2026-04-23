@@ -19,7 +19,10 @@ S_LABELS = {
     "sqrt_n": r"$S{=}\sqrt{N}$",
     "match_n": r"$S{=}N$",
 }
-MLE_LABEL = {"probit": "Probit MLE", "logit": "Logit MLE (closed form)"}
+MLE_LABEL = {
+    "probit": "Probit MLE",
+    "logit": "Logit MLE",
+}
 
 
 def results_root(model):
@@ -58,7 +61,7 @@ def generate_table(all_stats, J_values, N_values, beta, model, output_path):
     K = len(beta)
     n_cols = len(N_values)
     beta_str = ",".join(f"{b:.1f}" for b in beta)
-    mle_name = {"probit": "Probit MLE", "logit": "Logit MLE"}[model]
+    mle_name = MLE_LABEL[model]
 
     lines = [
         r"\begin{table}[t]",

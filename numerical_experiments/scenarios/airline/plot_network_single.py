@@ -25,8 +25,8 @@ def main(airline_rank="median"):
     locations = dgp_data["locations"]
     populations = dgp_data["populations"]
     hubs = dgp_data["hubs"]
-    origin_of = dgp_data["origin_of"]
-    dest_of = dgp_data["dest_of"]
+    endpoints_a = dgp_data["endpoints_a"]
+    endpoints_b = dgp_data["endpoints_b"]
     M = dgp_data["M"]
 
     sizes = obs_bundles.sum(axis=1)
@@ -42,7 +42,7 @@ def main(airline_rank="median"):
 
     fig, ax = plt.subplots(figsize=(7, 7))
     plot_airline_network(ax, locations, populations, hubs[idx],
-                         obs_bundles[idx], origin_of, dest_of, C,
+                         obs_bundles[idx], endpoints_a, endpoints_b, C,
                          idx, edges_color="#1f77b4")
     ax.set_title("")  # no caption for slides
 

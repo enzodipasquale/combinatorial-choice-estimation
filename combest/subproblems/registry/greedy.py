@@ -1,3 +1,5 @@
+import inspect
+
 import numpy as np
 from ..solver_base import SubproblemSolver
 
@@ -14,6 +16,18 @@ class GreedySolver(SubproblemSolver):
             else:
                 results[i] = self._naive_greedy_solve(i, theta)
         return results
+
+    def _find_best_item_accepts_cache(self):
+        """Detect whether the user's find_best_item accepts a `cache` kwarg."""
+        try:
+            sig = inspect.signature(self.find_best_item)
+        except (TypeError, ValueError):
+            return False
+        if "cache" in sig.parameters:
+            return True
+        # Also allow **kwargs
+        return any(p.kind == inspect.Parameter.VAR_KEYWORD
+                   for p in sig.parameters.values())
 
     def _naive_greedy_solve(self, local_id, theta):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
@@ -40,9 +54,17 @@ class GreedySolver(SubproblemSolver):
         bundle = np.zeros(self.dimensions_cfg.n_items, dtype=bool)
         items_left = np.ones(self.dimensions_cfg.n_items, dtype=bool)
         best_val = 0
-        cache = {}
+        accepts_cache = self._find_best_item_accepts_cache()
+        cache = {} if accepts_cache else None
         while np.any(items_left):
-            best_item, val = self.find_best_item(local_id, bundle, items_left, theta, best_val, self.data_manager.local_data, modular_error, cache=cache)
+            if accepts_cache:
+                best_item, val = self.find_best_item(
+                    local_id, bundle, items_left, theta, best_val,
+                    self.data_manager.local_data, modular_error, cache=cache)
+            else:
+                best_item, val = self.find_best_item(
+                    local_id, bundle, items_left, theta, best_val,
+                    self.data_manager.local_data, modular_error)
             if val <= best_val:
                 break
             bundle[best_item] = True

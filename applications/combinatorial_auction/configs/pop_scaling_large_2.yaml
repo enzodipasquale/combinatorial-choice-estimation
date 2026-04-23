@@ -17,7 +17,7 @@ application:
         - elig_air_travel
         - elig_travel_survey
     counterfactual:
-        iv: out_w2
+        iv: far_ramp1000_2000_popexog
         sample: all
         pop_threshold: .inf
 
@@ -83,4 +83,4 @@ callbacks:
         - {iters: 1,  timeout: 30.0, retire: true}
     boot_strip:
         percentile: 95
-        hard_threshold: 100000
+        hard_threshold: 30000

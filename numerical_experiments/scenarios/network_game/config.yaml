@@ -1,0 +1,46 @@
+# ============================================================
+# Network peer-effects game (Graham & Gonzalez 2023, Panel B)
+#
+# Single game (N = 1), T players, binary action y_t in {0, 1}.
+# Payoff for player t:
+#     v_t(y) = y_t * ( x_t' beta + delta * sum_{s != t} D_ts y_s  -  U_t )
+# with D symmetric binary (geometric graph, avg degree ~ 10) and
+# U_t ~ N(0, 1). The game has a potential V(y) = L'y + (delta/2) y'Dy
+# with L_t = x_t'beta - U_t. combest identifies theta assuming Y is the
+# global maximizer of V over {0,1}^T; the paper's SML identifies theta
+# assuming Y is the minimal Nash equilibrium. At T=500 these are
+# different bundles — see paper_sml/README.md for the implications.
+# ============================================================
+
+dgp:
+  T: 500                    # number of players in the single game
+  beta: [-1.0, -0.5, -1.0, 0.5]   # true coefficients on X_1, X_2, X_3, X_4
+  delta_true: 0.20          # strategic (peer-effect) coefficient
+  avg_degree: 10            # target E[deg] in the geometric graph
+  # r = sqrt(avg_degree / (0.75 * pi))  (paper, Appendix B)
+  # U_t ~ N(0, 1); X_1, X_2 ~ Bern(0.5); X_3, X_4 ~ U[0, 1]
+
+seeds:
+  graph: 20260423           # fixes D and X across all MC reps (paper's convention)
+  mc_base: 1000             # base seed for U draws in MC (rep i uses mc_base + i)
+
+monte_carlo:
+  n_reps: 500               # paper uses 500 reps
+  save_all_theta_hats: true
+
+estimation:
+  # With N = 1 (single game), identification comes from counterfactual
+  # error draws. S controls how many; bump from 1 if point estimate is noisy.
+  n_simulations: 100
+  max_iters: 500
+  tolerance: 1.0e-6
+  # theta layout: [beta_1, beta_2, beta_3, beta_4, delta]
+  # delta must be >= 0 (supermodular constraint)
+  theta_bounds:
+    lb: -5.0
+    ub: 5.0
+    lbs: {4: 0.0}           # delta >= 0
+
+# Paper's SML benchmark (implemented in paper_sml/). S = scenarios drawn.
+paper_sml:
+  S_list: [1, 10, 100]

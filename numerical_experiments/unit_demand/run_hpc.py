@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""HPC entry point for unit-demand efficiency benchmarking.
+"""HPC entry point for unit-demand efficiency benchmarking (correctly
+specified: DGP = estimator).
 
 Usage:
-  mpiexec ... python run_hpc.py --model probit --s-mode match_n --N 200
-  mpiexec ... python run_hpc.py --model logit  --s-mode sqrt_n  --N 500
-  mpiexec ... python run_hpc.py --model probit --s-mode one     # all cells
+  mpiexec ... python run_hpc.py --model probit --s-mode match_n --N 500
+  mpiexec ... python run_hpc.py --model logit  --s-mode sqrt_n
+  mpiexec ... python run_hpc.py --model probit --s-mode one  # all cells
 
 Output: results/{model}/raw/{s_mode}/{model}_J{J}_N{N}.npz
 """
@@ -30,7 +31,8 @@ S_MODE_TO_CONFIG = {
 }
 
 
-def run_cell(J, N, K, beta, n_reps, config, results_dir, model):
+def run_cell(J, N, K, beta, n_reps, config, results_dir, model,
+             solver="one_slack"):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
@@ -39,7 +41,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir, model):
 
     if rank == 0:
         print(f"\n{'='*60}")
-        print(f"{model}: J={J}, N={N}, S={n_simulations}, {n_reps} reps")
+        print(f"{model}: J={J}, N={N}, S={n_simulations}, solver={solver}, "
+              f"{n_reps} reps")
         print(f"{'='*60}", flush=True)
 
     betas_mle, betas_cb = [], []
@@ -50,7 +53,8 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir, model):
     for rep in range(n_reps):
         try:
             res = run_replication(N, J, K, beta, replication=rep,
-                                  config=config, model=model)
+                                  config=config, dgp=model, est=model,
+                                  solver=solver)
         except Exception as e:
             if rank == 0:
                 print(f"  rep {rep}: FAILED ({e})", flush=True)
@@ -102,6 +106,7 @@ def run_cell(J, N, K, beta, n_reps, config, results_dir, model):
             n_failed=n_failed,
             n_mle_not_converged=n_mle_not_converged,
             model=model,
+            solver=solver,
         )
         if model == "probit":
             save_kwargs["ghk_draws"] = exp.get("ghk_draws", 200)
@@ -122,6 +127,8 @@ def main():
                         required=True)
     parser.add_argument("--s-mode", choices=["one", "sqrt_n", "match_n"],
                         default="match_n")
+    parser.add_argument("--solver", choices=["one_slack", "n_slack"],
+                        default="one_slack")
     parser.add_argument("--N", type=int, default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     args = parser.parse_args()
@@ -148,13 +155,15 @@ def main():
     if args.N is not None:
         for J in J_values:
             run_cell(J, args.N, K, beta, n_reps, config, results_dir,
-                     args.model)
+                     args.model, solver=args.solver)
     elif args.cell_index is not None:
         J, N = cells[args.cell_index]
-        run_cell(J, N, K, beta, n_reps, config, results_dir, args.model)
+        run_cell(J, N, K, beta, n_reps, config, results_dir, args.model,
+                 solver=args.solver)
     else:
         for J, N in cells:
-            run_cell(J, N, K, beta, n_reps, config, results_dir, args.model)
+            run_cell(J, N, K, beta, n_reps, config, results_dir, args.model,
+                     solver=args.solver)
 
 
 if __name__ == "__main__":

@@ -11,8 +11,9 @@ from generate_data import generate_data
 
 
 def plot_airline_network(ax, locations, populations, hubs_i, bundle,
-                         origin_of, dest_of, C, airline_idx, edges_color='C0'):
-    """Plot one airline's network on an axes."""
+                         endpoints_a, endpoints_b, C, airline_idx,
+                         edges_color='C0'):
+    """Plot one airline's network on an axes (undirected edges)."""
     # City sizes proportional to population
     pop_sizes = 30 + 200 * (populations / populations.max())
 
@@ -20,14 +21,13 @@ def plot_airline_network(ax, locations, populations, hubs_i, bundle,
     ax.scatter(locations[:, 0], locations[:, 1], s=pop_sizes,
                c='lightgrey', edgecolors='grey', zorder=3, linewidths=0.5)
 
-    # Draw selected routes as arrows
+    # Draw selected routes as undirected lines
     active = np.where(bundle)[0]
     for j in active:
-        o, d = origin_of[j], dest_of[j]
-        ax.annotate('', xy=locations[d], xytext=locations[o],
-                    arrowprops=dict(arrowstyle='->', color=edges_color,
-                                    alpha=0.35, lw=0.7,
-                                    connectionstyle='arc3,rad=0.1'))
+        a, b = endpoints_a[j], endpoints_b[j]
+        ax.plot([locations[a, 0], locations[b, 0]],
+                [locations[a, 1], locations[b, 1]],
+                color=edges_color, alpha=0.35, lw=0.7)
 
     # Highlight hub cities
     hub_list = sorted(hubs_i)
@@ -64,8 +64,8 @@ def main():
     locations = dgp_data['locations']
     populations = dgp_data['populations']
     hubs = dgp_data['hubs']
-    origin_of = dgp_data['origin_of']
-    dest_of = dgp_data['dest_of']
+    endpoints_a = dgp_data['endpoints_a']
+    endpoints_b = dgp_data['endpoints_b']
     M = dgp_data['M']
 
     # Pick 4 airlines with varied bundle sizes for visual interest
@@ -84,7 +84,7 @@ def main():
     for idx, (airline, color) in enumerate(zip(picks, colors)):
         ax = axes[idx // 2, idx % 2]
         plot_airline_network(ax, locations, populations, hubs[airline],
-                             obs_bundles[airline], origin_of, dest_of, C,
+                             obs_bundles[airline], endpoints_a, endpoints_b, C,
                              airline, edges_color=color)
 
     plt.tight_layout(rect=[0, 0, 1, 0.94])

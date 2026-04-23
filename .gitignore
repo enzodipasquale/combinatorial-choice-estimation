@@ -60,6 +60,7 @@ my_tests/
 debug_*.py
 applications/**/config*.yaml
 applications/combinatorial_auction/data/datasets/bta_map_data/
+applications/combinatorial_auction/data/ab_block_data/
 applications/firms_export/_old/
 **/_old/
 **/INSTRUCTIONS.md

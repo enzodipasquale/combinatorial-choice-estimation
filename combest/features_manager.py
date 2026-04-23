@@ -74,15 +74,18 @@ class FeaturesManager:
             else:
                 self.local_modular_errors[i] = rng.normal(0, sigma, n_items)
         if covariance_matrix is not None:
+            # For z row-vectors with Cov(z)=I and L from np.linalg.cholesky
+            # (so L@L.T == Σ), the sampled rows must be z @ L.T so that
+            # Cov(z @ L.T) = L @ L.T = Σ. (Diagonal Σ is unaffected.)
             if covariance_matrix.ndim == 2:
                 L = np.linalg.cholesky(covariance_matrix)
-                self.local_modular_errors = self.local_modular_errors @ L
+                self.local_modular_errors = self.local_modular_errors @ L.T
             elif covariance_matrix.ndim == 3:
                 obs_ids = self.comm_manager.obs_ids
                 for obs_idx in np.unique(obs_ids):
                     mask = obs_ids == obs_idx
                     L = np.linalg.cholesky(covariance_matrix[obs_idx])
-                    self.local_modular_errors[mask] = self.local_modular_errors[mask] @ L
+                    self.local_modular_errors[mask] = self.local_modular_errors[mask] @ L.T
         self._error_oracle = lambda bundles, ids: (self.local_modular_errors[ids] * bundles).sum(-1)
         self._error_oracle_takes_data = False
         return self._error_oracle
