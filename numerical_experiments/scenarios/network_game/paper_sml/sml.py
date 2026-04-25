@@ -1,23 +1,21 @@
-"""Simulated MLE for the peer-effects game via the scenario sampler.
+"""Simulated MLE for the peer-effects game via the paper's scenario sampler
+(Graham and Gonzalez 2023), with scenario recycling (Appendix D).
 
-For a single observed game (X, D, Y), the likelihood is
-   Pr(Y | X; θ) = sum_{b in B_Y} ζ(b; θ)
-with ζ(b; θ) = prod_t [F(b_upper_t; θ) - F(b_lower_t; θ)] and B_Y the set
-of scenarios (T-dim rectangles in ℝ^T) whose minimal NE equals Y.
-
-Paper's SML estimator draws S scenarios from an importance distribution
-λ_y(b; θ^{(0)}) and estimates
+For a single observed game (X, D, Y), Pr(Y | X; θ) = sum_{b in B_Y} ζ(b; θ)
+with B_Y the set of scenarios (T-dim rectangles in R^T) whose minimal NE
+equals Y. Paper's importance-sampled estimate is
    Pr̂(Y | X; θ) = (1/S) sum_s ζ(B̃^{(s)}; θ) / λ_y(B̃^{(s)}; θ^{(0)}).
 
-With a pre-drawn set of S scenarios at θ^{(0)}, the bucket boundaries
-(b_lower, b_upper) are affine functions of θ (through X_t'β and δ·(D Y)_t —
-see Section 3.1). So we can re-evaluate ζ at any θ without re-sampling, as
-long as the scenario rectangles themselves don't change (scenario recycling,
-Appendix D).
+Scenario recycling: at sampling time (at θ^{(0)}) we pin, per agent, the
+delta-coefficient of the bucket boundary. With a SINGLE strategic parameter
+δ, these boundaries are affine in θ, so re-evaluating ζ at any θ costs
+O(S * T) — no Threshold Finder re-runs. See `bucket_bounds` below.
 
-IMPORTANT: For the peer-effects game with a SINGLE strategic parameter
-δ, the paper proves scenario recycling is exact (buckets are continuous
-affine functions of θ). We exploit this.
+The file also provides helpers to reproduce paper's Table 1 Panel B:
+
+  * ``fit_sml_constrained_delta`` — MLE with δ fixed (for the LR test).
+  * ``numerical_hessian`` — symmetric central-difference Hessian of
+    ``simulated_loglik`` at θ̂, used for the Wald-SE and CI reports.
 """
 
 from __future__ import annotations
@@ -26,43 +24,28 @@ import numpy as np
 from scipy.stats import norm
 from scipy.optimize import minimize
 
-from .scenario_sampler import sample_scenario
+from .scenario_sampler import sample_scenario, sample_scenario_at_theta
 
 
 # ---------------------------------------------------------------------------
 # Bucket bounds as affine functions of θ
 # ---------------------------------------------------------------------------
 
-def bucket_bounds(X, D, Y, beta, delta, U, selection="min"):
-    """Given U drawn at (θ^{(0)}), evaluate bucket boundaries at θ = (β, δ).
+def bucket_bounds(X, beta, delta, coef_lo, coef_hi):
+    """Affine sub-bucket bounds under scenario recycling (paper Appendix D).
 
-    For minimal NE with peer effects:
-      - If y_t = 0: bucket is (x_t'β + δ·(DY)_t , ∞)   → lower = that, upper = ∞
-      - If y_t = 1: bucket is (−∞, h_t(θ; U_<=t)]
-        where h_t was pinned at sampling time. Under scenario recycling,
-        h_t is re-computed at the new θ via the Threshold Finder on U (which
-        is held fixed).
+    Given the per-agent integer delta-multipliers ``coef_lo`` and ``coef_hi``
+    cached at sampling time (see ``scenario_sampler._sample_scenario_min``),
+    the scenario's bucket boundaries are affine in theta:
+
+        b̌_t(theta) = X_t' beta + delta * coef_lo[t]   (−∞ sentinel allowed)
+        b̄_t(theta) = X_t' beta + delta * coef_hi[t]   (+∞ sentinel allowed)
+
+    Returns (lowers, uppers), both shape (T,).
     """
-    # Importing here to avoid a circular import with scenario_sampler.
-    from .scenario_sampler import _threshold_finder
-
-    if selection != "min":
-        raise NotImplementedError("Only 'min' selection supported.")
-
-    T = X.shape[0]
     Xb = X @ beta
-    lowers = np.full(T, -np.inf)
-    uppers = np.full(T, np.inf)
-    for t in range(T):
-        if not Y[t]:
-            lowers[t] = Xb[t] + delta * (D[t].astype(float) @ Y.astype(float))
-            uppers[t] = np.inf
-    for t in range(T):
-        if Y[t]:
-            h = _threshold_finder(X, D, Y, beta, delta, U, t)
-            lowers[t] = -np.inf
-            uppers[t] = h
-
+    lowers = np.where(np.isfinite(coef_lo), Xb + delta * coef_lo, -np.inf)
+    uppers = np.where(np.isfinite(coef_hi), Xb + delta * coef_hi,  np.inf)
     return lowers, uppers
 
 
@@ -86,31 +69,123 @@ def log_bucket_mass(lowers, uppers):
 # ---------------------------------------------------------------------------
 
 def draw_scenarios(X, D, Y, beta0, delta0, S, seed, selection="min"):
-    """Draw S scenarios at θ^{(0)} = (beta0, delta0). Returns list of dicts."""
+    """Draw S scenarios at θ^{(0)} = (beta0, delta0). Each scenario stores:
+      * ``coef_lo``, ``coef_hi``: per-agent integer δ-multipliers for the
+        sub-bucket boundaries (±inf sentinels where a side is unbounded).
+      * ``log_mass0``: Σ_t log[F(b̄_t^(0)) − F(b̌_t^(0))] evaluated at θ^{(0)}.
+      * ``log_omega``: Σ_t log ω_t(θ^{(0)}) (paper Eq 11), the constant
+        denominator of the importance-weight ratio.
+    """
     rng = np.random.default_rng(seed)
     scenarios = []
-    for s in range(S):
-        U, lo, up, lm0 = sample_scenario(
+    for _ in range(S):
+        _U, c_lo, c_hi, lm0, lw = sample_scenario(
             X, D, Y, beta0, delta0, rng, selection=selection)
-        scenarios.append({"U": U, "lower0": lo, "upper0": up,
-                          "log_mass0": lm0})
+        scenarios.append({"coef_lo":   c_lo,
+                          "coef_hi":   c_hi,
+                          "log_mass0": lm0,
+                          "log_omega": lw})
     return scenarios
 
 
 def simulated_loglik(X, D, Y, beta, delta, scenarios, selection="min"):
-    """Evaluate log Pr̂(Y|X; θ) using S pre-drawn scenarios."""
+    """Evaluate log Pr̂(Y|X;θ) = log[(1/S) Σ_s ζ(B̃_s;θ)/λ_y(B̃_s;θ^{(0)})].
+
+    Implements paper's Eq (3) with scenario recycling (Appendix D): each
+    scenario's sub-bucket boundaries are affine in theta via ``coef_lo``
+    and ``coef_hi``; ``log_omega`` and ``log_mass0`` are the constants
+    making up log λ_y(B̃_s; θ^{(0)}) = log_omega + log_mass0.
+
+    log-ratio for scenario s:
+        log ζ(B̃_s; θ) − log λ_y(B̃_s; θ^{(0)})
+      = Σ_t log[F(b̄_t(θ)) − F(b̌_t(θ))]   −   log_omega_s   −   log_mass0_s.
+    """
+    if selection != "min":
+        raise NotImplementedError("Only 'min' selection supported.")
     S = len(scenarios)
     if S == 0:
         return -np.inf
-    # log[ (1/S) sum_s exp(log_mass_theta(s) - log_mass_0(s)) ]
     log_ratios = np.empty(S)
     for s, sc in enumerate(scenarios):
-        lo, up = bucket_bounds(X, D, Y, beta, delta, sc["U"], selection)
-        log_mass = log_bucket_mass(lo, up).sum()
-        log_ratios[s] = log_mass - sc["log_mass0"]
-    # logsumexp
+        lo, up = bucket_bounds(X, beta, delta, sc["coef_lo"], sc["coef_hi"])
+        log_zeta = log_bucket_mass(lo, up).sum()
+        log_ratios[s] = log_zeta - sc["log_omega"] - sc["log_mass0"]
     m = log_ratios.max()
     return float(m + np.log(np.exp(log_ratios - m).mean()))
+
+
+# ---------------------------------------------------------------------------
+# CRN simulated log-likelihood (paper Appendix D first paragraph)
+# ---------------------------------------------------------------------------
+
+def simulated_loglik_crn(X, D, Y, beta, delta, uniforms_S):
+    """CRN-protocol simulated log-likelihood (paper Appendix D, first
+    paragraph).
+
+    Given pre-drawn S × T standard uniforms held fixed across optimization,
+    regenerate scenarios at the current (beta, delta) via inverse-CDF on
+    the truncated normal densities of Algorithm 3. The IS proposal is at
+    the current θ (not at a fixed anchor θ⁽⁰⁾), so the per-scenario IS
+    ratio collapses to ζ/λ = 1/Πₜ ωₜ(θ).
+
+        log L̂(θ) = log[(1/S) Σ_s exp(-log_omega^{(s)}(θ))].
+    """
+    S = uniforms_S.shape[0]
+    log_ratios = np.empty(S)
+    for s in range(S):
+        log_omega = sample_scenario_at_theta(
+            X, D, Y, beta, delta, uniforms_S[s])
+        log_ratios[s] = -log_omega
+    m = log_ratios.max()
+    return float(m + np.log(np.exp(log_ratios - m).mean()))
+
+
+def draw_uniforms(S, T, seed):
+    """S × T standard uniforms, fixed across optimization (CRN protocol)."""
+    return np.random.default_rng(seed).uniform(0.0, 1.0, size=(S, T))
+
+
+def fit_sml_crn(X, D, Y, uniforms_S, theta_init=None, verbose=False,
+                bounds=None, max_iter=200):
+    """SML fit using the CRN protocol (paper Appendix D first paragraph).
+
+    Pre-drawn S × T uniforms `uniforms_S` are held fixed; scenarios are
+    regenerated at every θ during L-BFGS-B via inverse-CDF. No anchor
+    θ⁽⁰⁾, no recycling. Returns (theta_hat, scipy_result).
+    """
+    if theta_init is None:
+        theta_init = np.array([0.0, 0.0, 0.0, 0.0, 0.1])
+    if bounds is None:
+        bounds = [(-5.0, 5.0)] * 4 + [(0.0, 5.0)]
+
+    def negll(theta):
+        beta = theta[:4]
+        delta = float(max(theta[4], 0.0))
+        return -simulated_loglik_crn(X, D, Y, beta, delta, uniforms_S)
+
+    res = minimize(negll, theta_init, method="L-BFGS-B", bounds=bounds,
+                   options={"disp": verbose, "maxiter": max_iter})
+    return res.x, res
+
+
+def fit_sml_crn_constrained_delta(X, D, Y, uniforms_S, delta_fixed,
+                                   beta_init=None, verbose=False,
+                                   max_iter=200):
+    """CRN-protocol SML with δ fixed at `delta_fixed` (for LR test).
+
+    Reuses the same `uniforms_S` as the unconstrained fit so the LR
+    statistic is computed on the same simulated likelihood.
+    """
+    if beta_init is None:
+        beta_init = np.zeros(4)
+
+    def negll(beta):
+        return -simulated_loglik_crn(X, D, Y, beta, delta_fixed, uniforms_S)
+
+    res = minimize(negll, beta_init, method="L-BFGS-B",
+                   bounds=[(-5.0, 5.0)] * 4,
+                   options={"disp": verbose, "maxiter": max_iter})
+    return res.x, res
 
 
 def fit_sml(X, D, Y, S, seed, selection="min", theta_init=None,

@@ -74,9 +74,9 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
         if _comm is not None:
             a0_b, a1_b, dc_b = _comm.bcast((a0_b, a1_b, dc_b), root=0)
 
-        result, meta = solve_cf(theta_b, app,
-                                alpha_0=a0_b, alpha_1=a1_b, demand_controls=dc_b,
-                                include_xi=True, verbose=False)
+        result, meta, _ = solve_cf(theta_b, app,
+                                   alpha_0=a0_b, alpha_1=a1_b, demand_controls=dc_b,
+                                   include_xi=True, verbose=False)
         if _rank == 0 and result is not None:
             cf_rev, cf_surp = _welfare(result, meta, a1_b)
             u_b = boot_u_hats[b]

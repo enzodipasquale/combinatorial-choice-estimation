@@ -67,7 +67,7 @@ def _gap(Y, X, D, U, beta, delta):
 # One MC replication
 # ---------------------------------------------------------------------------
 
-def _fit_one(design, theta_true, shock_seed, est_cfg):
+def _fit_one(design, theta_true, shock_seed, est_cfg, selection):
     beta_true, delta_true = theta_true[:4], float(theta_true[4])
     T = design["X"].shape[0]
 
@@ -75,7 +75,7 @@ def _fit_one(design, theta_true, shock_seed, est_cfg):
     is_root = model.is_root()
 
     rep = generate_one_rep(design, beta_true, delta_true,
-                           shock_seed=shock_seed, selection="min")
+                           shock_seed=shock_seed, selection=selection)
     Y, U = rep["Y"], rep["U"]
 
     input_data = (build_combest_input(Y, design["X"], design["D"])
@@ -201,7 +201,7 @@ def run(selection, n_reps, S=None, max_iters=None, tolerance=None,
     t_total = time.perf_counter()
     for i in range(n_reps):
         shock_seed = mc_base + i
-        out = _fit_one(design, theta_true, shock_seed, est)
+        out = _fit_one(design, theta_true, shock_seed, est, selection)
         if out is None:
             continue
         out.update({"rep_index": i,

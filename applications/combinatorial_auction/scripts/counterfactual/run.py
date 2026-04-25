@@ -140,7 +140,7 @@ def solve_cf(theta, app, *, alpha_0, alpha_1, demand_controls,
                 f"{n_at_ub} MTA price(s) at the upper bound ub={ub}. "
                 f"CF revenue is truncated. Raise CF_CONFIG['row_generation']['theta_bounds']['ub']."
             )
-    return result, meta
+    return result, meta, model
 
 
 def _derive_alphas(theta, raw, app):
@@ -151,7 +151,7 @@ def _derive_alphas(theta, raw, app):
     return iv["a0"], iv["a1"], iv["demand_controls"]
 
 
-def _save(result, meta, alpha_0, alpha_1, path):
+def _save(result, meta, alpha_0, alpha_1, path, model=None):
     theta  = result.theta_hat
     prices = theta[meta["n_id_mod"]:meta["n_id_mod"] + meta["n_mtas"]]
     out = {
@@ -169,6 +169,24 @@ def _save(result, meta, alpha_0, alpha_1, path):
         out["u_hat"] = result.u_hat.tolist()
     json.dump(out, open(path, "w"), indent=2)
     print(f"Saved -> {path}")
+
+    # Optional: dump the bundle_store + cut_agent_ids alongside the json so we
+    # can later recover which (obs, sim, bundle) produced each active cut.
+    # Plus the LP dual π for each cut so we can weight bundles by their
+    # contribution at the optimum (needed for welfare decomposition at CF).
+    if model is not None:
+        rg = model.row_generation
+        if getattr(rg, "bundle_store", None) is not None and rg.bundle_store.cut_to_bundle.size > 0:
+            stem = path.with_suffix("")  # strip ".json"
+            rg.bundle_store.save(str(stem) + "_bundles.npz")
+            np.save(str(stem) + "_cut_agent_ids.npy", rg.cut_agent_ids)
+            # Full dual vector (one per cut, aligned with cut_agent_ids / bundle_store order)
+            pi_all = np.asarray(rg.master_model.getAttr(
+                "Pi", rg.master_model.getConstrs()), dtype=np.float64)
+            np.save(str(stem) + "_pi.npy", pi_all)
+            n_active = int((np.abs(pi_all) > 1e-10).sum())
+            print(f"Saved -> {stem}_bundles.npz  ({rg.bundle_store.packed.shape[0]} unique bundles, "
+                  f"{rg.bundle_store.cut_to_bundle.size} cuts, {n_active} with |π|>0)")
 
 
 def _iv_tag(est_app):
@@ -221,11 +239,11 @@ def main(spec, *, configs_dir=None, results_dir=None, out_dir=None):
     for include_xi, label in [(True, "with_xi"), (False, "no_xi")]:
         if _rank == 0:
             print(f"\n── Counterfactual: {tag} {label} ──")
-        result, meta = solve_cf(theta, est_app,
-                                alpha_0=a0, alpha_1=a1, demand_controls=dc,
-                                include_xi=include_xi, verbose=True)
+        result, meta, model = solve_cf(theta, est_app,
+                                       alpha_0=a0, alpha_1=a1, demand_controls=dc,
+                                       include_xi=include_xi, verbose=True)
         if _rank == 0 and result is not None:
-            _save(result, meta, a0, a1, out_dir / f"cf_{tag}_{label}.json")
+            _save(result, meta, a0, a1, out_dir / f"cf_{tag}_{label}.json", model=model)
 
 
 if __name__ == "__main__":

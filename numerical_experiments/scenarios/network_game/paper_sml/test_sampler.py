@@ -34,18 +34,20 @@ def test_min_sampler():
     print(f"[min] Y from DGP: {Y_min.astype(int)}  sum={Y_min.sum()}")
 
     # Sample one scenario anchored at (β, δ)
-    U_sampled, lo, up, lm = sample_scenario(X, D, Y_min, beta, delta,
-                                             np.random.default_rng(42),
-                                             selection="min")
+    U_sampled, c_lo, c_hi, lm0, lw = sample_scenario(
+        X, D, Y_min, beta, delta, np.random.default_rng(42), selection="min")
     Y_check = minimal_ne(X, D, U_sampled, beta, delta)
     ok = np.array_equal(Y_check, Y_min)
     print(f"[min] Y reconstructed from sampled U: {Y_check.astype(int)}  "
-          f"match={ok}  log_mass={lm:.2f}")
-    # Check U_sampled respects bucket
+          f"match={ok}  log_mass0={lm0:.2f}  log_omega={lw:.2f}")
+    # Check U_sampled lands in its identified sub-bucket.
+    Xb = X @ beta
+    lo = np.where(np.isfinite(c_lo), Xb + delta * c_lo, -np.inf)
+    up = np.where(np.isfinite(c_hi), Xb + delta * c_hi,  np.inf)
     for t in range(8):
         assert lo[t] - 1e-6 <= U_sampled[t] <= up[t] + 1e-6, \
             f"U[{t}] = {U_sampled[t]} not in [{lo[t]}, {up[t]}]"
-    print(f"[min] U in bucket ✓")
+    print(f"[min] U in sub-bucket ✓")
     return ok
 
 
