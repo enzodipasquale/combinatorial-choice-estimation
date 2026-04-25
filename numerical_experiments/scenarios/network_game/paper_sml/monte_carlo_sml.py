@@ -68,10 +68,20 @@ def _fit_one(design, theta_true, shock_seed, S, eval_seed, selection,
         T = design["X"].shape[0]
         uniforms_S = draw_uniforms(S, T, seed=shock_seed + 10_000)
 
-        # Optimizer init. Paper doesn't specify; we use naive-probit on Y
-        # (Y-dependent, what a real researcher would pick).
-        theta_init_vec = np.asarray(
-            naive_probit(Y, design["X"], design["D"]), dtype=float)
+        # Optimizer init. Paper doesn't specify; we honor --init.
+        if init == "truth":
+            theta_init_vec = theta_true.copy()
+        elif init == "truth_perturb":
+            rng_init = np.random.default_rng(shock_seed + 99_999)
+            theta_init_vec = theta_true + 0.1 * rng_init.standard_normal(5)
+            theta_init_vec[4] = max(float(theta_init_vec[4]), 0.01)
+        elif init == "naive":
+            theta_init_vec = np.asarray(
+                naive_probit(Y, design["X"], design["D"]), dtype=float)
+        elif init == "zeros":
+            theta_init_vec = np.zeros(5)
+        else:
+            raise ValueError(f"init={init!r} not supported with protocol='crn'")
 
         t0 = time.perf_counter()
         theta_hat, res = fit_sml_crn(
@@ -366,11 +376,13 @@ if __name__ == "__main__":
                         help="DGP equilibrium-selection rule (default: min, "
                              "matching Graham and Gonzalez; 'argmax' is the "
                              "mirror misspecification experiment)")
-    parser.add_argument("--init", choices=["truth", "naive", "zeros"],
+    parser.add_argument("--init",
+                        choices=["truth", "truth_perturb", "naive", "zeros"],
                         default="truth",
-                        help="optimizer init. truth (default) uses "
-                             "theta_true; naive uses a single-agent probit "
-                             "on Y; zeros is a blind cold start.")
+                        help="optimizer init. truth uses theta_true; "
+                             "truth_perturb uses theta_true + N(0, 0.1) "
+                             "(seeded per rep); naive uses single-agent "
+                             "probit on Y; zeros is a blind cold start.")
     parser.add_argument("--anchor", choices=["same", "truth", "naive"],
                         default="same",
                         help="importance-sampler anchor θ^(0). 'same' "
